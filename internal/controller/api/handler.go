@@ -41,7 +41,7 @@ func handleSummary(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
 		return
 	}
-	writeJSON(w, http.StatusOK, SummaryResponse{Nodes: mockNodes(), LatencyPoints: mockLatencyPoints("hytron")})
+	writeJSON(w, http.StatusOK, SummaryResponse{Nodes: mockNodes(), LatencyPoints: mockLatencyPoints("hytron", "1h")})
 }
 
 func handleNodeLatency(w http.ResponseWriter, r *http.Request) {
@@ -61,10 +61,12 @@ func handleNodeLatency(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	rangeName := r.URL.Query().Get("range")
-	if rangeName == "" {
-		rangeName = "1h"
+	window, ok := resolveMockLatencyWindow(rangeName)
+	if !ok {
+		writeError(w, http.StatusBadRequest, "unsupported range")
+		return
 	}
-	writeJSON(w, http.StatusOK, LatencyResponse{NodeID: nodeID, Range: rangeName, Points: mockLatencyPoints(nodeID)})
+	writeJSON(w, http.StatusOK, LatencyResponse{NodeID: nodeID, Range: window.Name, Points: mockLatencyPoints(nodeID, window.Name)})
 }
 
 func mockNodeExists(nodeID string) bool {

@@ -66,8 +66,36 @@ func mockNodes() []Node {
 	}
 }
 
-func mockLatencyPoints(nodeID string) []LatencyPoint {
-	base := time.Date(2026, 7, 2, 12, 0, 0, 0, time.UTC)
+type mockLatencyWindow struct {
+	Name    string
+	Samples int
+	Step    time.Duration
+}
+
+func resolveMockLatencyWindow(rangeName string) (mockLatencyWindow, bool) {
+	switch rangeName {
+	case "", "1h":
+		return mockLatencyWindow{Name: "1h", Samples: 36, Step: 2 * time.Minute}, true
+	case "1d":
+		return mockLatencyWindow{Name: "1d", Samples: 48, Step: 30 * time.Minute}, true
+	case "7d":
+		return mockLatencyWindow{Name: "7d", Samples: 56, Step: 3 * time.Hour}, true
+	case "30d":
+		return mockLatencyWindow{Name: "30d", Samples: 60, Step: 12 * time.Hour}, true
+	default:
+		return mockLatencyWindow{}, false
+	}
+}
+
+func mockLatencyPoints(nodeID string, rangeNames ...string) []LatencyPoint {
+	window, ok := resolveMockLatencyWindow("")
+	if len(rangeNames) > 0 {
+		window, ok = resolveMockLatencyWindow(rangeNames[0])
+	}
+	if !ok {
+		window, _ = resolveMockLatencyWindow("")
+	}
+	end := time.Date(2026, 7, 2, 13, 30, 0, 0, time.UTC)
 	targets := []struct {
 		id       string
 		name     string
@@ -90,22 +118,25 @@ func mockLatencyPoints(nodeID string) []LatencyPoint {
 		{id: "bage", name: "BAGE", baseMS: 144.8, jitterMS: 7.5, loss: 0.16},
 	}
 
-	points := make([]LatencyPoint, 0, 36*len(targets))
-	for index := 0; index < 36; index++ {
-		ts := base.Add(time.Duration(index*2) * time.Minute).Format(time.RFC3339)
+	points := make([]LatencyPoint, 0, window.Samples*len(targets))
+	spikeIndex := window.Samples / 2
+	partialLossIndex := window.Samples / 3
+	fullLossIndex := window.Samples * 2 / 3
+	for index := 0; index < window.Samples; index++ {
+		ts := end.Add(-time.Duration(window.Samples-1-index) * window.Step).Format(time.RFC3339)
 		for targetIndex, target := range targets {
 			wave := float64((index+targetIndex)%6) / 5
 			median := target.baseMS + wave*target.jitterMS
-			if index == 18 && (target.id == "cq-telecom" || target.id == "telegram-dc5") {
+			if index == spikeIndex && (target.id == "cq-telecom" || target.id == "telegram-dc5") {
 				median += 110
 			}
 
 			loss := target.loss
 			var medianPtr *float64
-			if target.id == "telegram-dc1" && index == 24 {
+			if target.id == "telegram-dc1" && index == fullLossIndex {
 				loss = 100
 			} else {
-				if target.id == "telegram-dc1" && index == 12 {
+				if target.id == "telegram-dc1" && index == partialLossIndex {
 					loss = 30
 				}
 				medianPtr = ptr(median)

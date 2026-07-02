@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestHealthEndpoint(t *testing.T) {
@@ -104,6 +105,32 @@ func TestNodeLatencyEndpointReturnsKulinStyleMonitorTargets(t *testing.T) {
 	}
 }
 
+func TestNodeLatencyEndpointUsesRangeSpecificWindows(t *testing.T) {
+	oneDay := requestLatency(t, "/api/public/v1/nodes/sharon/latency?range=1d")
+	sevenDays := requestLatency(t, "/api/public/v1/nodes/sharon/latency?range=7d")
+	thirtyDays := requestLatency(t, "/api/public/v1/nodes/sharon/latency?range=30d")
+
+	if got := len(uniquePointTimes(oneDay.Points)); got != 48 {
+		t.Fatalf("1d timestamps = %d, want 48 half-hour samples", got)
+	}
+	if got := len(uniquePointTimes(sevenDays.Points)); got != 56 {
+		t.Fatalf("7d timestamps = %d, want 56 three-hour samples", got)
+	}
+	if got := len(uniquePointTimes(thirtyDays.Points)); got != 60 {
+		t.Fatalf("30d timestamps = %d, want 60 twelve-hour samples", got)
+	}
+
+	if pointSpan(t, oneDay.Points) < 23*time.Hour {
+		t.Fatalf("1d window span = %s, want roughly one day", pointSpan(t, oneDay.Points))
+	}
+	if pointSpan(t, sevenDays.Points) < 6*24*time.Hour {
+		t.Fatalf("7d window span = %s, want roughly seven days", pointSpan(t, sevenDays.Points))
+	}
+	if pointSpan(t, thirtyDays.Points) < 29*24*time.Hour {
+		t.Fatalf("30d window span = %s, want roughly thirty days", pointSpan(t, thirtyDays.Points))
+	}
+}
+
 func TestNodeLatencyEndpointPreservesLossOnlyPointsAsNullLatency(t *testing.T) {
 	handler := NewHandler()
 	recorder := httptest.NewRecorder()
@@ -138,6 +165,51 @@ func TestNodeLatencyEndpointPreservesLossOnlyPointsAsNullLatency(t *testing.T) {
 	if !sawLossOnly {
 		t.Fatal("expected at least one telegram-dc1 100% loss point")
 	}
+}
+
+func requestLatency(t *testing.T, path string) LatencyResponse {
+	t.Helper()
+	handler := NewHandler()
+	recorder := httptest.NewRecorder()
+	handler.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, path, nil))
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d; body=%s", recorder.Code, http.StatusOK, recorder.Body.String())
+	}
+
+	var response LatencyResponse
+	if err := json.NewDecoder(recorder.Body).Decode(&response); err != nil {
+		t.Fatalf("decode latency response: %v", err)
+	}
+	return response
+}
+
+func uniquePointTimes(points []LatencyPoint) map[string]bool {
+	times := map[string]bool{}
+	for _, point := range points {
+		times[point.TS] = true
+	}
+	return times
+}
+
+func pointSpan(t *testing.T, points []LatencyPoint) time.Duration {
+	t.Helper()
+	if len(points) == 0 {
+		return 0
+	}
+	var first, last time.Time
+	for index, point := range points {
+		ts, err := time.Parse(time.RFC3339, point.TS)
+		if err != nil {
+			t.Fatalf("parse point timestamp %q: %v", point.TS, err)
+		}
+		if index == 0 || ts.Before(first) {
+			first = ts
+		}
+		if index == 0 || ts.After(last) {
+			last = ts
+		}
+	}
+	return last.Sub(first)
 }
 
 func TestStaticWebFallbackServesIndexForDashboardRoutes(t *testing.T) {
