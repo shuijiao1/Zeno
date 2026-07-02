@@ -10,7 +10,7 @@ const points: LatencyPoint[] = [
 ]
 
 describe('summarizeLatencyTargets', () => {
-  it('keeps first-seen target order and averages valid latency/loss samples', () => {
+  it('keeps first-seen target order and displays Kulin-style latest delay plus average packet loss', () => {
     const targets = summarizeLatencyTargets(points)
 
     expect(targets.map((target) => target.targetId)).toEqual(['google', 'dc1'])
@@ -18,19 +18,19 @@ describe('summarizeLatencyTargets', () => {
       targetId: 'google',
       targetName: 'Google',
       sampleCount: 2,
-      avgMs: 2,
+      avgMs: 3,
       lossPercent: 1,
     })
     expect(targets[1]).toMatchObject({
       targetId: 'dc1',
       targetName: 'DC1',
-      sampleCount: 1,
+      sampleCount: 2,
       avgMs: 180,
       lossPercent: 50,
     })
   })
 
-  it('uses null latency instead of zero when every sample is loss-only', () => {
+  it('uses 0ms for all-loss samples like Kulin service monitor delay arrays', () => {
     const targets = summarizeLatencyTargets([
       { ts: '2026-07-02T12:00:00Z', targetId: 'dc2', targetName: 'DC2', medianMs: null, lossPercent: 100 },
       { ts: '2026-07-02T12:02:00Z', targetId: 'dc2', targetName: 'DC2', medianMs: null, lossPercent: 100 },
@@ -40,8 +40,8 @@ describe('summarizeLatencyTargets', () => {
       {
         targetId: 'dc2',
         targetName: 'DC2',
-        sampleCount: 0,
-        avgMs: null,
+        sampleCount: 2,
+        avgMs: 0,
         lossPercent: 100,
       },
     ])

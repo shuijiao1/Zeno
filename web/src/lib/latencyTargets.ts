@@ -11,8 +11,8 @@ export interface LatencyTargetSummary {
 interface Accumulator {
   targetId: string
   targetName: string
-  latencyTotal: number
-  latencyCount: number
+  sampleCount: number
+  latestDelay: number | null
   lossTotal: number
   lossCount: number
 }
@@ -25,17 +25,15 @@ export function summarizeLatencyTargets(points: LatencyPoint[]): LatencyTargetSu
     const acc = existing ?? {
       targetId: point.targetId,
       targetName: point.targetName,
-      latencyTotal: 0,
-      latencyCount: 0,
+      sampleCount: 0,
+      latestDelay: null,
       lossTotal: 0,
       lossCount: 0,
     }
 
     acc.targetName = point.targetName
-    if (point.medianMs !== null && Number.isFinite(point.medianMs)) {
-      acc.latencyTotal += point.medianMs
-      acc.latencyCount += 1
-    }
+    acc.sampleCount += 1
+    acc.latestDelay = point.medianMs ?? 0
     if (Number.isFinite(point.lossPercent)) {
       acc.lossTotal += point.lossPercent
       acc.lossCount += 1
@@ -47,8 +45,8 @@ export function summarizeLatencyTargets(points: LatencyPoint[]): LatencyTargetSu
   return [...byTarget.values()].map((acc) => ({
     targetId: acc.targetId,
     targetName: acc.targetName,
-    sampleCount: acc.latencyCount,
-    avgMs: acc.latencyCount > 0 ? round2(acc.latencyTotal / acc.latencyCount) : null,
+    sampleCount: acc.sampleCount,
+    avgMs: acc.latestDelay !== null ? round2(acc.latestDelay) : null,
     lossPercent: acc.lossCount > 0 ? round2(acc.lossTotal / acc.lossCount) : 0,
   }))
 }

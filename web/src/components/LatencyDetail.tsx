@@ -22,9 +22,16 @@ const rangeOptions = [
 
 export function LatencyDetail({ node, points, range, loading = false, error, onBack, onRangeChange }: LatencyDetailProps) {
   const targetSummaries = useMemo(() => summarizeLatencyTargets(points), [points])
-  const [activeTargetId, setActiveTargetId] = useState<string | null>(null)
+  const [activeTargetIds, setActiveTargetIds] = useState<string[]>([])
   const [peakCut, setPeakCut] = useState(false)
-  const activeTarget = targetSummaries.find((target) => target.targetId === activeTargetId) ?? targetSummaries[0]
+  const activeTargetNames = targetSummaries
+    .filter((target) => activeTargetIds.includes(target.targetId))
+    .map((target) => target.targetName)
+  const toggleTarget = (targetId: string) => {
+    setActiveTargetIds((current) => (
+      current.includes(targetId) ? current.filter((id) => id !== targetId) : [...current, targetId]
+    ))
+  }
 
   return (
     <div className="kulin-container detail-container">
@@ -77,8 +84,8 @@ export function LatencyDetail({ node, points, range, loading = false, error, onB
                 <button
                   key={target.targetId}
                   type="button"
-                  data-active={target.targetId === activeTarget?.targetId}
-                  onClick={() => setActiveTargetId(target.targetId)}
+                  data-active={activeTargetIds.includes(target.targetId)}
+                  onClick={() => toggleTarget(target.targetId)}
                 >
                   <span>{target.targetName}</span>
                   <strong>{formatLatency(target.avgMs)}</strong>
@@ -89,10 +96,11 @@ export function LatencyDetail({ node, points, range, loading = false, error, onB
 
             <LatencyChart
               points={points}
-              title={`${activeTarget?.targetName ?? node.displayName} 网络延迟`}
+              title={`${node.displayName} 网络延迟`}
               eyebrow={`${rangeOptions.find((option) => option.value === range)?.label ?? range} · ${targetSummaries.length} 个监控服务${peakCut ? ' · 削峰' : ''}`}
               compactHeader
               peakCut={peakCut}
+              activeTargetNames={activeTargetNames}
             />
           </>
         )}
