@@ -10,6 +10,7 @@ type PreviewSeedOptions struct {
 	NodeID      string
 	DisplayName string
 	CountryCode string
+	AgentToken  string
 }
 
 type ProbeTarget struct {
@@ -38,6 +39,10 @@ func (s *SQLiteStore) SeedPreviewData(ctx context.Context, options PreviewSeedOp
 	}
 
 	now := time.Now().UTC().Unix()
+	tokenHash := "preview-local-collector-token-hash"
+	if options.AgentToken != "" {
+		tokenHash = hashAgentToken(options.AgentToken)
+	}
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return err
@@ -46,15 +51,16 @@ func (s *SQLiteStore) SeedPreviewData(ctx context.Context, options PreviewSeedOp
 
 	if _, err := tx.ExecContext(ctx, `
 		INSERT INTO nodes (id, display_name, token_hash, status, country_code, billing_mode, monthly_quota_bytes, monthly_reset_day, disabled, created_at, updated_at, last_seen_at)
-		VALUES (?, ?, 'preview-local-collector-token-hash', 'online', ?, 'both', ?, 1, 0, ?, ?, ?)
+		VALUES (?, ?, ?, 'online', ?, 'both', ?, 1, 0, ?, ?, ?)
 		ON CONFLICT(id) DO UPDATE SET
 			display_name = excluded.display_name,
+			token_hash = excluded.token_hash,
 			status = 'online',
 			country_code = excluded.country_code,
 			monthly_quota_bytes = excluded.monthly_quota_bytes,
 			updated_at = excluded.updated_at,
 			last_seen_at = excluded.last_seen_at
-	`, nodeID, displayName, countryCode, int64(10*1024*1024*1024*1024), now, now, now); err != nil {
+	`, nodeID, displayName, tokenHash, countryCode, int64(10*1024*1024*1024*1024), now, now, now); err != nil {
 		return err
 	}
 

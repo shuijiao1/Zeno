@@ -5,6 +5,8 @@ import (
 	"flag"
 	"log"
 	"net/http"
+	"os"
+	"strings"
 	"time"
 
 	"github.com/shuijiao1/jiaoprobe/internal/controller/api"
@@ -15,6 +17,7 @@ type handlerConfig struct {
 	WebDir      string
 	SeedPreview bool
 	NodeID      string
+	AgentToken  string
 }
 
 type controllerRuntime struct {
@@ -36,7 +39,7 @@ func buildController(config handlerConfig) (*controllerRuntime, error) {
 		options.Store = store
 		cleanup = store.Close
 		if config.SeedPreview {
-			if err := store.SeedPreviewData(context.Background(), api.PreviewSeedOptions{NodeID: config.NodeID, DisplayName: "Hytron", CountryCode: "HK"}); err != nil {
+			if err := store.SeedPreviewData(context.Background(), api.PreviewSeedOptions{NodeID: config.NodeID, DisplayName: "Hytron", CountryCode: "HK", AgentToken: config.AgentToken}); err != nil {
 				_ = cleanup()
 				return nil, err
 			}
@@ -53,6 +56,17 @@ func buildHandler(config handlerConfig) (http.Handler, func() error, error) {
 	return runtime.Handler, runtime.Cleanup, nil
 }
 
+func readAgentToken(tokenValue, tokenFile string) (string, error) {
+	if tokenFile != "" {
+		content, err := os.ReadFile(tokenFile)
+		if err != nil {
+			return "", err
+		}
+		return strings.TrimSpace(string(content)), nil
+	}
+	return strings.TrimSpace(tokenValue), nil
+}
+
 func main() {
 	addr := flag.String("addr", "127.0.0.1:18980", "controller listen address")
 	webDir := flag.String("web-dir", "", "optional built web dashboard directory")
@@ -60,10 +74,17 @@ func main() {
 	seedPreview := flag.Bool("seed-preview", false, "seed the Hytron preview node and TCP probe targets into SQLite; requires -db")
 	collectLocal := flag.Bool("collect-local", false, "run a controller-local TCP probe collector for preview real latency data; requires -db")
 	nodeID := flag.String("node-id", "hytron", "node id for seeded preview data and controller-local collection")
+	agentToken := flag.String("agent-token", "", "agent API bearer token for seeded preview node; prefer -agent-token-file in deployments")
+	agentTokenFile := flag.String("agent-token-file", "", "file containing the agent API bearer token for seeded preview node")
 	probeInterval := flag.Duration("probe-interval", time.Minute, "controller-local probe collection interval")
 	flag.Parse()
 
-	runtime, err := buildController(handlerConfig{DBPath: *dbPath, WebDir: *webDir, SeedPreview: *seedPreview, NodeID: *nodeID})
+	token, err := readAgentToken(*agentToken, *agentTokenFile)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	runtime, err := buildController(handlerConfig{DBPath: *dbPath, WebDir: *webDir, SeedPreview: *seedPreview, NodeID: *nodeID, AgentToken: token})
 	if err != nil {
 		log.Fatal(err)
 	}
