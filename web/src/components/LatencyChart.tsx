@@ -4,13 +4,15 @@ import { formatLatency, formatPercent } from '../lib/format'
 
 interface LatencyChartProps {
   points: LatencyPoint[]
+  eyebrow?: string
+  title?: string
 }
 
 const width = 960
 const height = 320
 const pad = { left: 52, right: 24, top: 24, bottom: 44 }
 
-export function LatencyChart({ points }: LatencyChartProps) {
+export function LatencyChart({ points, eyebrow = 'Latency', title = '多目标延迟图' }: LatencyChartProps) {
   const series = buildLatencySeries(points)
   const domain = yDomain(points)
   const timestamps = [...new Set(points.map((point) => point.ts))].sort()
@@ -31,8 +33,8 @@ export function LatencyChart({ points }: LatencyChartProps) {
     <section className="latency-panel">
       <div className="latency-panel__header">
         <div>
-          <p className="eyebrow">Latency</p>
-          <h2>多目标延迟图</h2>
+          <p className="eyebrow">{eyebrow}</p>
+          <h2>{title}</h2>
         </div>
         <div className="range-tabs" aria-label="range selector mock">
           <button className="is-active">1h</button>

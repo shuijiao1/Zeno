@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { normalizeSummary } from './client'
+import { normalizeNodeLatency, normalizeSummary } from './client'
 
 describe('normalizeSummary', () => {
   it('maps controller snake_case JSON into frontend camelCase models', () => {
@@ -45,5 +45,24 @@ describe('normalizeSummary', () => {
     expect(summary.latencyPoints[0].targetId).toBe('google')
     expect(summary.latencyPoints[0].medianMs).toBeNull()
     expect(summary.latencyPoints[0].lossPercent).toBe(100)
+  })
+})
+
+describe('normalizeNodeLatency', () => {
+  it('keeps node id, range, and loss-only null latency points', () => {
+    const data = normalizeNodeLatency({
+      node_id: 'hytron',
+      range: '1h',
+      points: [
+        { ts: '2026-07-02T12:00:00Z', target_id: 'telegram-dc1', target_name: 'Telegram DC1', median_ms: null, loss_percent: 100 },
+        { ts: '2026-07-02T12:02:00Z', target_id: 'google', target_name: 'Google', median_ms: 0.8, loss_percent: 0 },
+      ],
+    })
+
+    expect(data.nodeId).toBe('hytron')
+    expect(data.range).toBe('1h')
+    expect(data.points[0].targetName).toBe('Telegram DC1')
+    expect(data.points[0].medianMs).toBeNull()
+    expect(data.points[0].lossPercent).toBe(100)
   })
 })

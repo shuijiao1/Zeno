@@ -43,9 +43,21 @@ export interface ApiSummaryResponse {
   latency_points: ApiLatencyPoint[]
 }
 
+export interface ApiLatencyResponse {
+  node_id: string
+  range: string
+  points: ApiLatencyPoint[]
+}
+
 export interface SummaryData {
   nodes: HomeCardNode[]
   latencyPoints: LatencyPoint[]
+}
+
+export interface NodeLatencyData {
+  nodeId: string
+  range: string
+  points: LatencyPoint[]
 }
 
 export async function fetchSummary(): Promise<SummaryData> {
@@ -56,10 +68,26 @@ export async function fetchSummary(): Promise<SummaryData> {
   return normalizeSummary(await response.json() as ApiSummaryResponse)
 }
 
+export async function fetchNodeLatency(nodeId: string, range = '1h'): Promise<NodeLatencyData> {
+  const response = await fetch(`/api/public/v1/nodes/${encodeURIComponent(nodeId)}/latency?range=${encodeURIComponent(range)}`, { headers: { Accept: 'application/json' } })
+  if (!response.ok) {
+    throw new Error(`latency request failed: ${response.status}`)
+  }
+  return normalizeNodeLatency(await response.json() as ApiLatencyResponse)
+}
+
 export function normalizeSummary(input: ApiSummaryResponse): SummaryData {
   return {
     nodes: input.nodes.map(normalizeNode),
     latencyPoints: input.latency_points.map(normalizeLatencyPoint),
+  }
+}
+
+export function normalizeNodeLatency(input: ApiLatencyResponse): NodeLatencyData {
+  return {
+    nodeId: input.node_id,
+    range: input.range,
+    points: input.points.map(normalizeLatencyPoint),
   }
 }
 

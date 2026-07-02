@@ -4,6 +4,8 @@ import { ResourceBar } from './ResourceBar'
 
 interface ServerCardProps {
   node: HomeCardNode
+  isSelected?: boolean
+  onSelect?: (nodeId: string) => void
 }
 
 const osIcon: Record<HomeCardNode['os'], string> = {
@@ -30,12 +32,12 @@ function percent(used: number | null, total: number | null): number | null {
   return (used / total) * 100
 }
 
-export function ServerCard({ node }: ServerCardProps) {
+export function ServerCard({ node, isSelected = false, onSelect }: ServerCardProps) {
   const monthlyPercent = percent(node.monthlyBillableBytes, node.monthlyQuotaBytes)
   const latency = node.latencySummary
 
   return (
-    <article className={`server-card status-${node.status}`}>
+    <article className={`server-card status-${node.status}${isSelected ? ' is-selected' : ''}`}>
       <header className="server-card__header">
         <div className="server-card__icon" aria-hidden="true">{osIcon[node.os]}</div>
         <div className="server-card__title-block">
@@ -69,6 +71,11 @@ export function ServerCard({ node }: ServerCardProps) {
         <span className={(latency?.lossPercent ?? 0) > 0 ? 'loss is-loss' : 'loss'}>
           loss {formatPercent(latency?.lossPercent)}
         </span>
+        {onSelect && (
+          <button className="detail-button" type="button" aria-pressed={isSelected} onClick={() => onSelect(node.id)}>
+            {isSelected ? '已选中' : '详情'}
+          </button>
+        )}
       </footer>
     </article>
   )

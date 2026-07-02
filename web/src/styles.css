@@ -90,6 +90,12 @@ button { font: inherit; }
   border-radius: 28px;
   background: var(--surface);
   box-shadow: var(--shadow);
+  transition: border-color 160ms ease, transform 160ms ease, box-shadow 160ms ease;
+}
+.server-card.is-selected {
+  border-color: rgba(56, 189, 248, 0.78);
+  box-shadow: 0 18px 54px rgba(56, 189, 248, 0.16), var(--shadow);
+  transform: translateY(-1px);
 }
 
 .server-card__header {
@@ -154,6 +160,39 @@ button { font: inherit; }
 .latency-target { color: var(--text-soft); font-size: 13px; }
 .loss { color: var(--text-soft); font-size: 12px; font-weight: 800; }
 .loss.is-loss { color: var(--danger); }
+.detail-button {
+  border: 1px solid rgba(56, 189, 248, 0.45);
+  border-radius: 999px;
+  padding: 6px 10px;
+  background: rgba(56, 189, 248, 0.1);
+  color: #0284c7;
+  font-size: 12px;
+  font-weight: 800;
+  cursor: pointer;
+}
+.detail-button[aria-pressed="true"] {
+  background: #38bdf8;
+  color: #06121f;
+}
+
+.node-detail-panel {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 18px;
+  margin-top: 22px;
+  padding: 20px 22px;
+  border: 1px solid var(--border);
+  border-radius: 28px;
+  background: var(--surface);
+  box-shadow: var(--shadow);
+}
+.node-detail-panel h2 { margin: 0; font-size: 24px; letter-spacing: -0.03em; }
+.node-detail-panel p { margin: 6px 0 0; color: var(--text-soft); }
+.node-detail-panel__metrics { display: grid; grid-template-columns: repeat(3, minmax(110px, 1fr)); gap: 10px; }
+.node-detail-panel__metrics span { padding: 12px; border: 1px solid var(--border); border-radius: 16px; background: rgba(148,163,184,0.08); }
+.node-detail-panel__metrics strong { display: block; font-size: 14px; }
+.node-detail-panel__metrics em { display: block; margin-top: 4px; color: var(--text-soft); font-size: 11px; font-style: normal; text-transform: uppercase; font-weight: 800; }
 
 .latency-panel {
   margin-top: 22px;
@@ -180,10 +219,10 @@ button { font: inherit; }
 }
 @media (max-width: 767px) {
   .app-shell { width: min(100vw - 24px, 640px); padding-top: 20px; }
-  .hero, .latency-panel__header { align-items: stretch; flex-direction: column; }
+  .hero, .latency-panel__header, .node-detail-panel { align-items: stretch; flex-direction: column; }
   .hero__status { text-align: left; }
   .cards-grid { grid-template-columns: 1fr; }
-  .server-card__traffic { grid-template-columns: 1fr; }
+  .server-card__traffic, .node-detail-panel__metrics { grid-template-columns: 1fr; }
 }
 
 .state-panel {

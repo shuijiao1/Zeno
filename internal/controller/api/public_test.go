@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -92,5 +94,38 @@ func TestNodeLatencyEndpointPreservesLossOnlyPointsAsNullLatency(t *testing.T) {
 	}
 	if !sawLossOnly {
 		t.Fatal("expected at least one telegram-dc1 100% loss point")
+	}
+}
+
+func TestStaticWebFallbackServesIndexForDashboardRoutes(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.Mkdir(filepath.Join(dir, "assets"), 0o755); err != nil {
+		t.Fatalf("mkdir assets: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "index.html"), []byte("<div id=\"root\">JiaoProbe UI</div>"), 0o644); err != nil {
+		t.Fatalf("write index: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "assets", "app.js"), []byte("console.log('asset')"), 0o644); err != nil {
+		t.Fatalf("write asset: %v", err)
+	}
+
+	handler := NewHandler(HandlerOptions{StaticDir: dir})
+
+	assetRecorder := httptest.NewRecorder()
+	handler.ServeHTTP(assetRecorder, httptest.NewRequest(http.MethodGet, "/assets/app.js", nil))
+	if assetRecorder.Code != http.StatusOK {
+		t.Fatalf("asset status = %d, want %d", assetRecorder.Code, http.StatusOK)
+	}
+	if !strings.Contains(assetRecorder.Body.String(), "asset") {
+		t.Fatalf("asset body = %q, want asset content", assetRecorder.Body.String())
+	}
+
+	spaRecorder := httptest.NewRecorder()
+	handler.ServeHTTP(spaRecorder, httptest.NewRequest(http.MethodGet, "/nodes/hytron", nil))
+	if spaRecorder.Code != http.StatusOK {
+		t.Fatalf("spa status = %d, want %d", spaRecorder.Code, http.StatusOK)
+	}
+	if !strings.Contains(spaRecorder.Body.String(), "JiaoProbe UI") {
+		t.Fatalf("spa body = %q, want index.html", spaRecorder.Body.String())
 	}
 }
