@@ -1,5 +1,6 @@
+import type { ReactNode } from 'react'
 import type { HomeCardNode } from '../types'
-import { formatLatency, formatPercent } from '../lib/format'
+import { formatLatency } from '../lib/format'
 
 interface ServerCardProps {
   node: HomeCardNode
@@ -59,7 +60,7 @@ function formatKulinBytes(value: number | null | undefined, options: { compact?:
 
 function formatRate(value: number | null | undefined): string {
   if (value === null || value === undefined) return '--'
-  return `${formatKulinBytes(value)} /s`.replace(' /s', '/s')
+  return `${formatKulinBytes(value)}/s`
 }
 
 function formatCores(value: number | null | undefined): string {
@@ -101,18 +102,19 @@ export function ServerCard({ node }: ServerCardProps) {
         <SpecIcon kind="disk" label={formatKulinBytes(node.diskTotalBytes)} />
       </section>
 
-      <section className="node-bars" aria-label={`${node.displayName} usage`}>
+      <section className="node-usage" aria-label={`${node.displayName} usage`}>
         <UsageBar label="CPU" valueText={`${formatUsage(node.cpuPercent)}%`} percent={node.cpuPercent} />
-        <UsageBar label="内存" valueText={`${formatUsage(memoryPercent)}%`} percent={memoryPercent} />
-        <UsageBar label="存储" valueText={`${formatUsage(diskPercent)}%`} percent={diskPercent} />
-        <UsageBar label="流量" valueText={`${formatKulinBytes(node.monthlyBillableBytes, { compact: true })} / ${formatKulinBytes(node.monthlyQuotaBytes)}`} percent={trafficPercent} />
-      </section>
-
-      <section className="node-footer-grid" aria-label={`${node.displayName} network and latency`}>
-        <Metric label="上传" value={formatRate(node.netOutSpeedBps)} />
-        <Metric label="下载" value={formatRate(node.netInSpeedBps)} />
-        <Metric label="延迟" value={formatLatency(latency?.medianMs)} />
-        <Metric label="丢包率" value={normalizeLoss(latency?.lossPercent)} />
+        <div className="node-usage-rest">
+          <UsageBar label="内存" valueText={`${formatUsage(memoryPercent)}%`} percent={memoryPercent} />
+          <UsageBar label="存储" valueText={`${formatUsage(diskPercent)}%`} percent={diskPercent} />
+          <UsageBar label="流量" valueText={`${formatKulinBytes(node.monthlyBillableBytes, { compact: true })} / ${formatKulinBytes(node.monthlyQuotaBytes, { compact: true })}`} percent={trafficPercent} />
+          <section className="node-footer-grid" aria-label={`${node.displayName} network and latency`}>
+            <Metric tone="up" icon={<UploadIcon />} label="上传" value={formatRate(node.netOutSpeedBps)} />
+            <Metric tone="down" icon={<DownloadIcon />} label="下载" value={formatRate(node.netInSpeedBps)} />
+            <Metric tone="latency" icon={<ActivityIcon />} label="延迟" value={formatLatency(latency?.medianMs)} />
+            <Metric tone="loss" icon={<TriangleAlertIcon />} label="丢包率" value={normalizeLoss(latency?.lossPercent)} />
+          </section>
+        </div>
       </section>
     </article>
   )
@@ -133,10 +135,11 @@ function UsageBar({ label, valueText, percent }: { label: string; valueText: str
   )
 }
 
-function Metric({ label, value }: { label: string; value: string }) {
+function Metric({ tone, icon, label, value }: { tone: 'up' | 'down' | 'latency' | 'loss'; icon: ReactNode; label: string; value: string }) {
   return (
-    <div className="node-metric">
-      <span>{label}</span>
+    <div className={`node-metric metric-${tone}`}>
+      <span className="metric-icon">{icon}</span>
+      <span className="metric-label">{label}</span>
       <strong>{value}</strong>
     </div>
   )
@@ -152,5 +155,43 @@ function SpecIcon({ kind, label }: { kind: 'cpu' | 'memory' | 'disk'; label: str
       </svg>
       <span>{label}</span>
     </div>
+  )
+}
+
+function UploadIcon() {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true">
+      <path d="M12 3v12" />
+      <path d="m17 8-5-5-5 5" />
+      <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+    </svg>
+  )
+}
+
+function DownloadIcon() {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true">
+      <path d="M12 15V3" />
+      <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+      <path d="m7 10 5 5 5-5" />
+    </svg>
+  )
+}
+
+function ActivityIcon() {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true">
+      <path d="M22 12h-2.48a2 2 0 0 0-1.93 1.46l-2.35 8.36a.25.25 0 0 1-.48 0L9.24 2.18a.25.25 0 0 0-.48 0l-2.35 8.36A2 2 0 0 1 4.49 12H2" />
+    </svg>
+  )
+}
+
+function TriangleAlertIcon() {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true">
+      <path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3" />
+      <path d="M12 9v4" />
+      <path d="M12 17h.01" />
+    </svg>
   )
 }
