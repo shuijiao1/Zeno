@@ -23,6 +23,7 @@ const rangeOptions = [
 export function LatencyDetail({ node, points, range, loading = false, error, onBack, onRangeChange }: LatencyDetailProps) {
   const targetSummaries = useMemo(() => summarizeLatencyTargets(points), [points])
   const [activeTargetId, setActiveTargetId] = useState<string | null>(null)
+  const [peakCut, setPeakCut] = useState(false)
   const activeTarget = targetSummaries.find((target) => target.targetId === activeTargetId) ?? targetSummaries[0]
 
   return (
@@ -52,7 +53,7 @@ export function LatencyDetail({ node, points, range, loading = false, error, onB
           </button>
         ))}
         <label className="peak-switch">
-          <input type="checkbox" aria-label="削峰" />
+          <input type="checkbox" aria-label="削峰" checked={peakCut} onChange={(event) => setPeakCut(event.target.checked)} />
           <span />
           <b>削峰</b>
         </label>
@@ -89,8 +90,9 @@ export function LatencyDetail({ node, points, range, loading = false, error, onB
             <LatencyChart
               points={points}
               title={`${activeTarget?.targetName ?? node.displayName} 网络延迟`}
-              eyebrow={`${rangeOptions.find((option) => option.value === range)?.label ?? range} · ${targetSummaries.length} 个监控服务`}
+              eyebrow={`${rangeOptions.find((option) => option.value === range)?.label ?? range} · ${targetSummaries.length} 个监控服务${peakCut ? ' · 削峰' : ''}`}
               compactHeader
+              peakCut={peakCut}
             />
           </>
         )}

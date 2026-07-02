@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { buildLatencySeries, yDomain } from './latencySeries'
+import { buildLatencySeries, peakCutLatencyPoints, yDomain } from './latencySeries'
 
 describe('buildLatencySeries', () => {
   it('keeps each latency target as a separate thin-line series', () => {
@@ -36,5 +36,30 @@ describe('yDomain', () => {
 
     expect(domain.min).toBe(0)
     expect(domain.max).toBe(120)
+  })
+
+  it('can cut one-off spikes from the y-axis while preserving normal samples', () => {
+    const domain = yDomain([
+      { ts: 'a', targetId: 'a', targetName: 'A', medianMs: 20, lossPercent: 0 },
+      { ts: 'b', targetId: 'a', targetName: 'A', medianMs: 22, lossPercent: 0 },
+      { ts: 'c', targetId: 'a', targetName: 'A', medianMs: 19, lossPercent: 0 },
+      { ts: 'd', targetId: 'a', targetName: 'A', medianMs: 1000, lossPercent: 0 },
+    ], { peakCut: true })
+
+    expect(domain.min).toBe(0)
+    expect(domain.max).toBe(27)
+  })
+})
+
+describe('peakCutLatencyPoints', () => {
+  it('caps visible spike values but keeps null loss points untouched', () => {
+    const points = peakCutLatencyPoints([
+      { ts: 'a', targetId: 'a', targetName: 'A', medianMs: 20, lossPercent: 0 },
+      { ts: 'b', targetId: 'a', targetName: 'A', medianMs: null, lossPercent: 100 },
+      { ts: 'c', targetId: 'a', targetName: 'A', medianMs: 1000, lossPercent: 0 },
+    ], { minSamples: 3 })
+
+    expect(points.map((point) => point.medianMs)).toEqual([20, null, 24])
+    expect(points[2].lossPercent).toBe(0)
   })
 })

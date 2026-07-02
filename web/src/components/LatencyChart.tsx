@@ -1,5 +1,5 @@
 import type { LatencyPoint } from '../types'
-import { buildLatencySeries, yDomain } from '../lib/latencySeries'
+import { buildLatencySeries, peakCutLatencyPoints, yDomain } from '../lib/latencySeries'
 import { formatLatency, formatPercent } from '../lib/format'
 
 interface LatencyChartProps {
@@ -7,15 +7,18 @@ interface LatencyChartProps {
   eyebrow?: string
   title?: string
   compactHeader?: boolean
+  peakCut?: boolean
 }
 
 const width = 960
 const height = 320
 const pad = { left: 52, right: 24, top: 24, bottom: 44 }
 
-export function LatencyChart({ points, eyebrow = 'Latency', title = '多目标延迟图', compactHeader = false }: LatencyChartProps) {
-  const series = buildLatencySeries(points)
-  const domain = yDomain(points)
+export function LatencyChart({ points, eyebrow = 'Latency', title = '多目标延迟图', compactHeader = false, peakCut = false }: LatencyChartProps) {
+  const visiblePoints = peakCut ? peakCutLatencyPoints(points) : points
+  const visiblePointByKey = new Map(visiblePoints.map((point) => [`${point.targetId}-${point.ts}`, point]))
+  const series = buildLatencySeries(visiblePoints)
+  const domain = yDomain(points, { peakCut })
   const timestamps = [...new Set(points.map((point) => point.ts))].sort()
   const xStep = timestamps.length > 1 ? (width - pad.left - pad.right) / (timestamps.length - 1) : 0
   const plotHeight = height - pad.top - pad.bottom
@@ -83,17 +86,20 @@ export function LatencyChart({ points, eyebrow = 'Latency', title = '多目标�
           />
         ))}
 
-        {points.filter((point) => point.lossPercent > 0).map((point) => (
-          <circle
-            key={`${point.targetId}-${point.ts}-loss`}
-            cx={x(point.ts)}
-            cy={point.medianMs === null ? pad.top + plotHeight : y(point.medianMs)}
-            r={point.lossPercent >= 100 ? 4 : 3}
-            className="loss-marker"
-          >
-            <title>{`${point.targetName} ${point.ts}: ${formatPercent(point.lossPercent)} loss, ${formatLatency(point.medianMs)}`}</title>
-          </circle>
-        ))}
+        {points.filter((point) => point.lossPercent > 0).map((point) => {
+          const visiblePoint = visiblePointByKey.get(`${point.targetId}-${point.ts}`) ?? point
+          return (
+            <circle
+              key={`${point.targetId}-${point.ts}-loss`}
+              cx={x(point.ts)}
+              cy={visiblePoint.medianMs === null ? pad.top + plotHeight : y(visiblePoint.medianMs)}
+              r={point.lossPercent >= 100 ? 4 : 3}
+              className="loss-marker"
+            >
+              <title>{`${point.targetName} ${point.ts}: ${formatPercent(point.lossPercent)} loss, ${formatLatency(point.medianMs)}`}</title>
+            </circle>
+          )
+        })}
       </svg>
 
       <div className="latency-legend">
