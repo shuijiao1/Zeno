@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { fetchNodeLatency, fetchNodeState, fetchSummary, type NodeLatencyData, type NodeStateData, type SummaryData } from './api/client'
 import { LatencyDetail } from './components/LatencyDetail'
 import { ServerCard } from './components/ServerCard'
+import { startLiveRefresh } from './lib/liveRefresh'
 import { nodePath, parseDashboardRoute, type DashboardRoute } from './lib/route'
 
 type LoadState =
@@ -51,14 +52,22 @@ export function App() {
 
   useEffect(() => {
     let cancelled = false
-    fetchSummary()
-      .then((data) => {
-        if (!cancelled) setState({ kind: 'ready', data })
-      })
-      .catch((error: unknown) => {
-        if (!cancelled) setState({ kind: 'error', message: error instanceof Error ? error.message : 'unknown error' })
-      })
-    return () => { cancelled = true }
+    const loadSummary = () => {
+      fetchSummary()
+        .then((data) => {
+          if (!cancelled) setState({ kind: 'ready', data })
+        })
+        .catch((error: unknown) => {
+          if (!cancelled) setState({ kind: 'error', message: error instanceof Error ? error.message : 'unknown error' })
+        })
+    }
+
+    loadSummary()
+    const stopRefresh = startLiveRefresh(loadSummary)
+    return () => {
+      cancelled = true
+      stopRefresh()
+    }
   }, [])
 
   useEffect(() => {
@@ -74,15 +83,26 @@ export function App() {
     }
 
     let cancelled = false
-    setLatencyState({ kind: 'loading' })
-    fetchNodeLatency(route.nodeId, latencyRange)
-      .then((data) => {
-        if (!cancelled) setLatencyState({ kind: 'ready', data })
-      })
-      .catch((error: unknown) => {
-        if (!cancelled) setLatencyState({ kind: 'error', message: error instanceof Error ? error.message : 'unknown error' })
-      })
-    return () => { cancelled = true }
+    let loadedOnce = false
+    const loadLatency = () => {
+      if (!loadedOnce) setLatencyState({ kind: 'loading' })
+      fetchNodeLatency(route.nodeId, latencyRange)
+        .then((data) => {
+          loadedOnce = true
+          if (!cancelled) setLatencyState({ kind: 'ready', data })
+        })
+        .catch((error: unknown) => {
+          loadedOnce = true
+          if (!cancelled) setLatencyState({ kind: 'error', message: error instanceof Error ? error.message : 'unknown error' })
+        })
+    }
+
+    loadLatency()
+    const stopRefresh = startLiveRefresh(loadLatency)
+    return () => {
+      cancelled = true
+      stopRefresh()
+    }
   }, [route, latencyRange])
 
   useEffect(() => {
@@ -92,15 +112,26 @@ export function App() {
     }
 
     let cancelled = false
-    setStateHistoryState({ kind: 'loading' })
-    fetchNodeState(route.nodeId, latencyRange)
-      .then((data) => {
-        if (!cancelled) setStateHistoryState({ kind: 'ready', data })
-      })
-      .catch((error: unknown) => {
-        if (!cancelled) setStateHistoryState({ kind: 'error', message: error instanceof Error ? error.message : 'unknown error' })
-      })
-    return () => { cancelled = true }
+    let loadedOnce = false
+    const loadStateHistory = () => {
+      if (!loadedOnce) setStateHistoryState({ kind: 'loading' })
+      fetchNodeState(route.nodeId, latencyRange)
+        .then((data) => {
+          loadedOnce = true
+          if (!cancelled) setStateHistoryState({ kind: 'ready', data })
+        })
+        .catch((error: unknown) => {
+          loadedOnce = true
+          if (!cancelled) setStateHistoryState({ kind: 'error', message: error instanceof Error ? error.message : 'unknown error' })
+        })
+    }
+
+    loadStateHistory()
+    const stopRefresh = startLiveRefresh(loadStateHistory)
+    return () => {
+      cancelled = true
+      stopRefresh()
+    }
   }, [route, latencyRange])
 
   const navigateHome = () => {
