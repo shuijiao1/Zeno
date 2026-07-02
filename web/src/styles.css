@@ -438,6 +438,53 @@ svg { display: block; }
 }
 .detail-state.is-error { color: var(--red); }
 
+.state-history-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+  padding: 0 24px 24px;
+}
+.state-history-card {
+  min-width: 0;
+  padding: 14px 14px 10px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--metric-bg) 86%, transparent);
+}
+.state-history-card__meta {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 8px;
+}
+.state-history-card__meta p {
+  margin: 0;
+  color: color-mix(in srgb, var(--foreground) 62%, transparent);
+  font-size: 13px;
+  font-weight: 650;
+}
+.state-history-card__meta strong {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 2px;
+  color: var(--foreground);
+  font-size: 14px;
+  font-weight: 700;
+  line-height: 1.15;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+.state-sparkline { width: 100%; height: auto; overflow: visible; }
+.state-sparkline__baseline { stroke: color-mix(in srgb, var(--foreground) 10%, transparent); stroke-width: 1; }
+.state-sparkline__axis { fill: color-mix(in srgb, var(--foreground) 42%, transparent); font-size: 10px; font-weight: 600; }
+.state-sparkline__line { fill: none; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.state-history-card.tone-green .state-sparkline__line { stroke: #22c55e; }
+.state-history-card.tone-blue .state-sparkline__line { stroke: #2563eb; }
+.state-history-card.tone-purple .state-sparkline__line { stroke: #9333ea; }
+.state-history-card.tone-orange .state-sparkline__line { stroke: #f97316; }
+
 .latency-target-grid {
   display: flex;
   flex-wrap: wrap;
@@ -529,6 +576,10 @@ svg { display: block; }
   .network-speed { gap: 2px 6px; font-size: 10px; }
   .kulin-node-card { min-height: 394px; }
   .monitor-heading { padding: 18px 16px 10px; }
+  .state-history-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; padding: 0 16px 16px; }
+  .state-history-card { padding: 12px 10px 8px; }
+  .state-history-card__meta { flex-direction: column; gap: 4px; }
+  .state-history-card__meta strong { align-items: flex-start; font-size: 13px; }
   .latency-target-grid button {
     min-width: 0;
     min-height: 72px;

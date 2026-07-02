@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { fetchNodeLatency, fetchSummary, type NodeLatencyData, type SummaryData } from './api/client'
+import { fetchNodeLatency, fetchNodeState, fetchSummary, type NodeLatencyData, type NodeStateData, type SummaryData } from './api/client'
 import { LatencyDetail } from './components/LatencyDetail'
 import { ServerCard } from './components/ServerCard'
 import { nodePath, parseDashboardRoute, type DashboardRoute } from './lib/route'
@@ -13,6 +13,12 @@ type LatencyLoadState =
   | { kind: 'idle' }
   | { kind: 'loading' }
   | { kind: 'ready'; data: NodeLatencyData }
+  | { kind: 'error'; message: string }
+
+type StateHistoryLoadState =
+  | { kind: 'idle' }
+  | { kind: 'loading' }
+  | { kind: 'ready'; data: NodeStateData }
   | { kind: 'error'; message: string }
 
 function sum(values: Array<number | null | undefined>): number {
@@ -41,6 +47,7 @@ export function App() {
   const [route, setRoute] = useState<DashboardRoute>(() => parseDashboardRoute(window.location.pathname))
   const [latencyRange, setLatencyRange] = useState('1d')
   const [latencyState, setLatencyState] = useState<LatencyLoadState>({ kind: 'idle' })
+  const [stateHistoryState, setStateHistoryState] = useState<StateHistoryLoadState>({ kind: 'idle' })
 
   useEffect(() => {
     let cancelled = false
@@ -74,6 +81,24 @@ export function App() {
       })
       .catch((error: unknown) => {
         if (!cancelled) setLatencyState({ kind: 'error', message: error instanceof Error ? error.message : 'unknown error' })
+      })
+    return () => { cancelled = true }
+  }, [route, latencyRange])
+
+  useEffect(() => {
+    if (route.kind !== 'node') {
+      setStateHistoryState({ kind: 'idle' })
+      return
+    }
+
+    let cancelled = false
+    setStateHistoryState({ kind: 'loading' })
+    fetchNodeState(route.nodeId, latencyRange)
+      .then((data) => {
+        if (!cancelled) setStateHistoryState({ kind: 'ready', data })
+      })
+      .catch((error: unknown) => {
+        if (!cancelled) setStateHistoryState({ kind: 'error', message: error instanceof Error ? error.message : 'unknown error' })
       })
     return () => { cancelled = true }
   }, [route, latencyRange])
@@ -121,9 +146,12 @@ export function App() {
         <LatencyDetail
           node={selectedNode}
           points={latencyState.kind === 'ready' ? latencyState.data.points : []}
+          statePoints={stateHistoryState.kind === 'ready' ? stateHistoryState.data.points : []}
           range={latencyRange}
           loading={latencyState.kind === 'loading'}
           error={latencyState.kind === 'error' ? latencyState.message : undefined}
+          stateLoading={stateHistoryState.kind === 'loading'}
+          stateError={stateHistoryState.kind === 'error' ? stateHistoryState.message : undefined}
           onBack={navigateHome}
           onRangeChange={setLatencyRange}
         />

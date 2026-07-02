@@ -1,15 +1,19 @@
 import { useMemo, useState } from 'react'
-import type { HomeCardNode, LatencyPoint } from '../types'
+import type { HomeCardNode, LatencyPoint, StatePoint } from '../types'
 import { formatLatency } from '../lib/format'
 import { summarizeLatencyTargets } from '../lib/latencyTargets'
 import { LatencyChart } from './LatencyChart'
+import { StateHistoryPanel } from './StateHistoryPanel'
 
 interface LatencyDetailProps {
   node: HomeCardNode
   points: LatencyPoint[]
+  statePoints?: StatePoint[]
   range: string
   loading?: boolean
   error?: string
+  stateLoading?: boolean
+  stateError?: string
   onBack: () => void
   onRangeChange: (range: string) => void
 }
@@ -20,13 +24,25 @@ const rangeOptions = [
   { value: '30d', label: '30 天' },
 ]
 
-export function LatencyDetail({ node, points, range, loading = false, error, onBack, onRangeChange }: LatencyDetailProps) {
+export function LatencyDetail({
+  node,
+  points,
+  statePoints = [],
+  range,
+  loading = false,
+  error,
+  stateLoading = false,
+  stateError,
+  onBack,
+  onRangeChange,
+}: LatencyDetailProps) {
   const targetSummaries = useMemo(() => summarizeLatencyTargets(points), [points])
   const [activeTargetIds, setActiveTargetIds] = useState<string[]>([])
   const [peakCut, setPeakCut] = useState(false)
   const activeTargetNames = targetSummaries
     .filter((target) => activeTargetIds.includes(target.targetId))
     .map((target) => target.targetName)
+  const rangeLabel = rangeOptions.find((option) => option.value === range)?.label ?? range
   const toggleTarget = (targetId: string) => {
     setActiveTargetIds((current) => (
       current.includes(targetId) ? current.filter((id) => id !== targetId) : [...current, targetId]
@@ -66,6 +82,13 @@ export function LatencyDetail({ node, points, range, loading = false, error, onB
         </label>
       </section>
 
+      <StateHistoryPanel
+        points={statePoints}
+        rangeLabel={rangeLabel}
+        loading={stateLoading}
+        error={stateError}
+      />
+
       <section className="monitor-panel" aria-label={`${node.displayName} network latency`}>
         <header className="monitor-heading">
           <div>
@@ -97,7 +120,7 @@ export function LatencyDetail({ node, points, range, loading = false, error, onB
             <LatencyChart
               points={points}
               title={`${node.displayName} 网络延迟`}
-              eyebrow={`${rangeOptions.find((option) => option.value === range)?.label ?? range} · ${targetSummaries.length} 个监控服务${peakCut ? ' · 削峰' : ''}`}
+              eyebrow={`${rangeLabel} · ${targetSummaries.length} 个监控服务${peakCut ? ' · 削峰' : ''}`}
               compactHeader
               peakCut={peakCut}
               activeTargetNames={activeTargetNames}
