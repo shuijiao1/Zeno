@@ -157,6 +157,72 @@ func TestSQLiteBackedSummaryUsesPersistedNodeAndLatestLatency(t *testing.T) {
 	}
 }
 
+func TestSQLiteBackedSummaryMarksStaleAgentOffline(t *testing.T) {
+	store, err := OpenSQLiteStore(filepath.Join(t.TempDir(), "jiaoprobe.db"))
+	if err != nil {
+		t.Fatalf("open sqlite store: %v", err)
+	}
+	defer store.Close()
+
+	ctx := context.Background()
+	now := time.Now().UTC().Truncate(time.Second)
+	staleSeenAt := now.Add(-10 * time.Minute).Unix()
+	if _, err := store.db.ExecContext(ctx, `
+		INSERT INTO nodes (id, display_name, token_hash, status, country_code, created_at, updated_at, last_seen_at)
+		VALUES ('hytron', 'Hytron', 'hash-for-test', 'online', 'HK', ?, ?, ?);
+	`, now.Unix(), now.Unix(), staleSeenAt); err != nil {
+		t.Fatalf("insert stale node: %v", err)
+	}
+
+	summary, err := store.Summary(ctx)
+	if err != nil {
+		t.Fatalf("summary: %v", err)
+	}
+	if len(summary.Nodes) != 1 {
+		t.Fatalf("nodes len = %d, want 1", len(summary.Nodes))
+	}
+	if summary.Nodes[0].Status != "offline" {
+		t.Fatalf("stale node status = %q, want offline", summary.Nodes[0].Status)
+	}
+}
+
+func TestSeedPreviewDataDoesNotFakeAgentOnlineStatus(t *testing.T) {
+	store, err := OpenSQLiteStore(filepath.Join(t.TempDir(), "jiaoprobe.db"))
+	if err != nil {
+		t.Fatalf("open sqlite store: %v", err)
+	}
+	defer store.Close()
+
+	ctx := context.Background()
+	if err := store.SeedPreviewData(ctx, PreviewSeedOptions{NodeID: "hytron", DisplayName: "Hytron", CountryCode: "HK"}); err != nil {
+		t.Fatalf("seed preview data: %v", err)
+	}
+	summary, err := store.Summary(ctx)
+	if err != nil {
+		t.Fatalf("summary: %v", err)
+	}
+	if len(summary.Nodes) != 1 {
+		t.Fatalf("nodes len = %d, want 1", len(summary.Nodes))
+	}
+	if summary.Nodes[0].Status != "no_data" {
+		t.Fatalf("seed-only node status = %q, want no_data until an agent reports", summary.Nodes[0].Status)
+	}
+
+	if err := store.RecordAgentHeartbeat(ctx, "hytron", time.Now().UTC(), "online", "test-agent"); err != nil {
+		t.Fatalf("record heartbeat: %v", err)
+	}
+	if err := store.SeedPreviewData(ctx, PreviewSeedOptions{NodeID: "hytron", DisplayName: "Hytron", CountryCode: "HK"}); err != nil {
+		t.Fatalf("seed preview data after heartbeat: %v", err)
+	}
+	summary, err = store.Summary(ctx)
+	if err != nil {
+		t.Fatalf("summary after heartbeat: %v", err)
+	}
+	if summary.Nodes[0].Status != "online" {
+		t.Fatalf("node status after heartbeat and reseed = %q, want online", summary.Nodes[0].Status)
+	}
+}
+
 func TestSeedPreviewDataIsIdempotentAndWiresHytronTargets(t *testing.T) {
 	store, err := OpenSQLiteStore(filepath.Join(t.TempDir(), "jiaoprobe.db"))
 	if err != nil {

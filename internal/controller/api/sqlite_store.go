@@ -13,6 +13,8 @@ type SQLiteStore struct {
 	db *sql.DB
 }
 
+const nodeHeartbeatOfflineAfter = 3 * time.Minute
+
 func OpenSQLiteStore(path string) (*SQLiteStore, error) {
 	db, err := sql.Open("sqlite", path)
 	if err != nil {
@@ -193,7 +195,7 @@ func (s *SQLiteStore) NodeLatency(ctx context.Context, nodeID string, window lat
 
 func (s *SQLiteStore) nodes(ctx context.Context) ([]Node, error) {
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT n.id, n.display_name, n.status, n.country_code,
+		SELECT n.id, n.display_name, n.status, n.country_code, n.last_seen_at,
 		       h.os_name, h.cpu_cores, h.memory_total_bytes, h.disk_total_bytes,
 		       ss.cpu_percent, ss.memory_used_bytes, ss.disk_used_bytes,
 		       ss.net_in_speed_bps, ss.net_out_speed_bps, ss.net_in_total_bytes, ss.net_out_total_bytes,
@@ -213,22 +215,20 @@ func (s *SQLiteStore) nodes(ctx context.Context) ([]Node, error) {
 	defer rows.Close()
 
 	var nodes []Node
+	now := time.Now().UTC()
 	for rows.Next() {
 		var id, displayName, status string
 		var countryCode, osName sql.NullString
-		var cpuCores, memoryTotal, diskTotal sql.NullInt64
+		var cpuCores, memoryTotal, diskTotal, lastSeenAt sql.NullInt64
 		var cpuPercent, netInSpeed, netOutSpeed sql.NullFloat64
 		var memoryUsed, diskUsed, netInTotal, netOutTotal, billable, quota sql.NullInt64
-		if err := rows.Scan(&id, &displayName, &status, &countryCode, &osName, &cpuCores, &memoryTotal, &diskTotal, &cpuPercent, &memoryUsed, &diskUsed, &netInSpeed, &netOutSpeed, &netInTotal, &netOutTotal, &billable, &quota); err != nil {
+		if err := rows.Scan(&id, &displayName, &status, &countryCode, &lastSeenAt, &osName, &cpuCores, &memoryTotal, &diskTotal, &cpuPercent, &memoryUsed, &diskUsed, &netInSpeed, &netOutSpeed, &netInTotal, &netOutTotal, &billable, &quota); err != nil {
 			return nil, err
-		}
-		if status == "" {
-			status = "no_data"
 		}
 		node := Node{
 			ID:                   id,
 			DisplayName:          displayName,
-			Status:               status,
+			Status:               publicNodeStatus(status, lastSeenAt, now),
 			OS:                   nullStringOr(osName, "linux"),
 			CountryCode:          nullStringOr(countryCode, ""),
 			CPUCores:             intPtr(cpuCores),
@@ -341,6 +341,16 @@ func preferredSummaryNodeID(nodes []Node) string {
 		}
 	}
 	return nodes[0].ID
+}
+
+func publicNodeStatus(status string, lastSeenAt sql.NullInt64, now time.Time) string {
+	if status == "" {
+		status = "no_data"
+	}
+	if status == "online" && (!lastSeenAt.Valid || now.Sub(time.Unix(lastSeenAt.Int64, 0).UTC()) > nodeHeartbeatOfflineAfter) {
+		return "offline"
+	}
+	return status
 }
 
 func nullStringOr(value sql.NullString, fallback string) string {
