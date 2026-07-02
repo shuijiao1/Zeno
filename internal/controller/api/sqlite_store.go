@@ -193,6 +193,21 @@ func (s *SQLiteStore) NodeLatency(ctx context.Context, nodeID string, window lat
 	return LatencyResponse{NodeID: nodeID, Range: window.Name, Points: points}, nil
 }
 
+func (s *SQLiteStore) NodeState(ctx context.Context, nodeID string, window latencyWindow) (StateResponse, error) {
+	exists, err := s.nodeExists(ctx, nodeID)
+	if err != nil {
+		return StateResponse{}, err
+	}
+	if !exists {
+		return StateResponse{}, errNodeNotFound
+	}
+	points, err := s.statePoints(ctx, nodeID, window)
+	if err != nil {
+		return StateResponse{}, err
+	}
+	return StateResponse{NodeID: nodeID, Range: window.Name, Points: points}, nil
+}
+
 func (s *SQLiteStore) nodes(ctx context.Context) ([]Node, error) {
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT n.id, n.display_name, n.status, n.country_code, n.last_seen_at,
@@ -326,6 +341,50 @@ func (s *SQLiteStore) latencyPoints(ctx context.Context, nodeID string, window l
 			TargetName:  targetName,
 			MedianMS:    floatPtr(median),
 			LossPercent: loss,
+		})
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return points, nil
+}
+
+func (s *SQLiteStore) statePoints(ctx context.Context, nodeID string, window latencyWindow) ([]StatePoint, error) {
+	since := time.Now().UTC().Add(-time.Duration(window.Samples) * window.Step).Unix()
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT ts, cpu_percent, memory_used_bytes, memory_total_bytes,
+		       disk_used_bytes, disk_total_bytes, net_in_total_bytes, net_out_total_bytes,
+		       net_in_speed_bps, net_out_speed_bps, uptime_seconds
+		FROM state_samples
+		WHERE node_id = ?
+		  AND ts >= ?
+		ORDER BY ts ASC, id ASC
+	`, nodeID, since)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var points []StatePoint
+	for rows.Next() {
+		var ts int64
+		var cpuPercent, netInSpeed, netOutSpeed sql.NullFloat64
+		var memoryUsed, memoryTotal, diskUsed, diskTotal, netInTotal, netOutTotal, uptimeSeconds sql.NullInt64
+		if err := rows.Scan(&ts, &cpuPercent, &memoryUsed, &memoryTotal, &diskUsed, &diskTotal, &netInTotal, &netOutTotal, &netInSpeed, &netOutSpeed, &uptimeSeconds); err != nil {
+			return nil, err
+		}
+		points = append(points, StatePoint{
+			TS:               time.Unix(ts, 0).UTC().Format(time.RFC3339),
+			CPUPercent:       floatPtr(cpuPercent),
+			MemoryUsedBytes:  intPtr(memoryUsed),
+			MemoryTotalBytes: intPtr(memoryTotal),
+			DiskUsedBytes:    intPtr(diskUsed),
+			DiskTotalBytes:   intPtr(diskTotal),
+			NetInTotalBytes:  intPtr(netInTotal),
+			NetOutTotalBytes: intPtr(netOutTotal),
+			NetInSpeedBps:    floatPtr(netInSpeed),
+			NetOutSpeedBps:   floatPtr(netOutSpeed),
+			UptimeSeconds:    intPtr(uptimeSeconds),
 		})
 	}
 	if err := rows.Err(); err != nil {

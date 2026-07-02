@@ -11,6 +11,12 @@ type LatencyResponse struct {
 	Points []LatencyPoint `json:"points"`
 }
 
+type StateResponse struct {
+	NodeID string       `json:"node_id"`
+	Range  string       `json:"range"`
+	Points []StatePoint `json:"points"`
+}
+
 type Node struct {
 	ID                   string          `json:"id"`
 	DisplayName          string          `json:"display_name"`
@@ -49,4 +55,18 @@ type LatencyPoint struct {
 	TargetName  string   `json:"target_name"`
 	MedianMS    *float64 `json:"median_ms"`
 	LossPercent float64  `json:"loss_percent"`
+}
+
+type StatePoint struct {
+	TS               string   `json:"ts"`
+	CPUPercent       *float64 `json:"cpu_percent"`
+	MemoryUsedBytes  *float64 `json:"memory_used_bytes"`
+	MemoryTotalBytes *float64 `json:"memory_total_bytes"`
+	DiskUsedBytes    *float64 `json:"disk_used_bytes"`
+	DiskTotalBytes   *float64 `json:"disk_total_bytes"`
+	NetInTotalBytes  *float64 `json:"net_in_total_bytes"`
+	NetOutTotalBytes *float64 `json:"net_out_total_bytes"`
+	NetInSpeedBps    *float64 `json:"net_in_speed_bps"`
+	NetOutSpeedBps   *float64 `json:"net_out_speed_bps"`
+	UptimeSeconds    *float64 `json:"uptime_seconds"`
 }

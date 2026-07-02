@@ -147,3 +147,25 @@ func mockLatencyPoints(nodeID string, rangeNames ...string) []LatencyPoint {
 	}
 	return points
 }
+
+func mockStatePoints(window latencyWindow) []StatePoint {
+	end := time.Date(2026, 7, 2, 13, 30, 0, 0, time.UTC)
+	points := make([]StatePoint, 0, window.Samples)
+	for index := 0; index < window.Samples; index++ {
+		wave := float64(index%8) / 7
+		points = append(points, StatePoint{
+			TS:               end.Add(-time.Duration(window.Samples-1-index) * window.Step).Format(time.RFC3339),
+			CPUPercent:       ptr(8 + wave*18),
+			MemoryUsedBytes:  gb(2.1 + wave*0.4),
+			MemoryTotalBytes: gb(3.83),
+			DiskUsedBytes:    gb(18 + wave*2),
+			DiskTotalBytes:   gb(97.87),
+			NetInTotalBytes:  mb(1500 + float64(index)*5),
+			NetOutTotalBytes: mb(900 + float64(index)*3),
+			NetInSpeedBps:    kb(20 + wave*30),
+			NetOutSpeedBps:   kb(10 + wave*20),
+			UptimeSeconds:    ptr(86400 + float64(index)*float64(window.Step/time.Second)),
+		})
+	}
+	return points
+}

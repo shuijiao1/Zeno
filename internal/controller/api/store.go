@@ -10,6 +10,7 @@ var errNodeNotFound = errors.New("node not found")
 type Store interface {
 	Summary(ctx context.Context) (SummaryResponse, error)
 	NodeLatency(ctx context.Context, nodeID string, window latencyWindow) (LatencyResponse, error)
+	NodeState(ctx context.Context, nodeID string, window latencyWindow) (StateResponse, error)
 }
 
 type mockStore struct{}
@@ -23,6 +24,13 @@ func (mockStore) NodeLatency(ctx context.Context, nodeID string, window latencyW
 		return LatencyResponse{}, errNodeNotFound
 	}
 	return LatencyResponse{NodeID: nodeID, Range: window.Name, Points: mockLatencyPoints(nodeID, window.Name)}, nil
+}
+
+func (mockStore) NodeState(ctx context.Context, nodeID string, window latencyWindow) (StateResponse, error) {
+	if !mockNodeExists(nodeID) {
+		return StateResponse{}, errNodeNotFound
+	}
+	return StateResponse{NodeID: nodeID, Range: window.Name, Points: mockStatePoints(window)}, nil
 }
 
 func mockNodeExists(nodeID string) bool {

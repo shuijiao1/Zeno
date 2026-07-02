@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { normalizeNodeLatency, normalizeSummary } from './client'
+import { normalizeNodeLatency, normalizeNodeState, normalizeSummary } from './client'
 
 describe('normalizeSummary', () => {
   it('maps controller snake_case JSON into frontend camelCase models', () => {
@@ -68,5 +68,36 @@ describe('normalizeNodeLatency', () => {
     expect(data.points[0].targetName).toBe('Telegram DC1')
     expect(data.points[0].medianMs).toBeNull()
     expect(data.points[0].lossPercent).toBe(100)
+  })
+})
+
+describe('normalizeNodeState', () => {
+  it('maps persisted agent state history into frontend camelCase points', () => {
+    const data = normalizeNodeState({
+      node_id: 'hytron',
+      range: '1h',
+      points: [
+        {
+          ts: '2026-07-02T12:00:00Z',
+          cpu_percent: 18.75,
+          memory_used_bytes: 4096,
+          memory_total_bytes: 8192,
+          disk_used_bytes: 1024,
+          disk_total_bytes: 2048,
+          net_in_total_bytes: 1000,
+          net_out_total_bytes: 2000,
+          net_in_speed_bps: 128,
+          net_out_speed_bps: 256,
+          uptime_seconds: 3601,
+        },
+      ],
+    })
+
+    expect(data.nodeId).toBe('hytron')
+    expect(data.range).toBe('1h')
+    expect(data.points[0].cpuPercent).toBe(18.75)
+    expect(data.points[0].memoryUsedBytes).toBe(4096)
+    expect(data.points[0].netOutSpeedBps).toBe(256)
+    expect(data.points[0].uptimeSeconds).toBe(3601)
   })
 })

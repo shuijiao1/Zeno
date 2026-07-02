@@ -32,7 +32,7 @@ func NewHandler(options ...HandlerOptions) http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/health", handleHealth)
 	mux.HandleFunc("/api/public/v1/summary", h.handleSummary)
-	mux.HandleFunc("/api/public/v1/nodes/", h.handleNodeLatency)
+	mux.HandleFunc("/api/public/v1/nodes/", h.handlePublicNodeResource)
 	mux.HandleFunc("/api/agent/v1/probe-targets", h.handleAgentProbeTargets)
 	mux.HandleFunc("/api/agent/v1/probe-results", h.handleAgentProbeResults)
 	mux.HandleFunc("/api/agent/v1/heartbeat", h.handleAgentHeartbeat)
@@ -65,14 +65,14 @@ func (h *handler) handleSummary(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, summary)
 }
 
-func (h *handler) handleNodeLatency(w http.ResponseWriter, r *http.Request) {
+func (h *handler) handlePublicNodeResource(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
 		return
 	}
 	path := strings.TrimPrefix(r.URL.Path, "/api/public/v1/nodes/")
 	parts := strings.Split(strings.Trim(path, "/"), "/")
-	if len(parts) != 2 || parts[1] != "latency" {
+	if len(parts) != 2 {
 		writeError(w, http.StatusNotFound, "not found")
 		return
 	}
@@ -83,12 +83,24 @@ func (h *handler) handleNodeLatency(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "unsupported range")
 		return
 	}
-	response, err := h.store.NodeLatency(r.Context(), nodeID, window)
-	if err != nil {
-		writeStoreError(w, err)
-		return
+	switch parts[1] {
+	case "latency":
+		response, err := h.store.NodeLatency(r.Context(), nodeID, window)
+		if err != nil {
+			writeStoreError(w, err)
+			return
+		}
+		writeJSON(w, http.StatusOK, response)
+	case "state":
+		response, err := h.store.NodeState(r.Context(), nodeID, window)
+		if err != nil {
+			writeStoreError(w, err)
+			return
+		}
+		writeJSON(w, http.StatusOK, response)
+	default:
+		writeError(w, http.StatusNotFound, "not found")
 	}
-	writeJSON(w, http.StatusOK, response)
 }
 
 func handleStatic(staticDir string) http.HandlerFunc {

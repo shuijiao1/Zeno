@@ -147,13 +147,64 @@ X-Agent-Version: <version>
 
 ### GET /api/public/v1/nodes/{node_id}/latency
 
-查询某节点延迟图数据。
+查询某节点延迟图数据。数据来自 Agent 上报的 probe rounds。
 
 参数：
 
 ```text
-range=1h|6h|24h|7d
-targets=target1,target2
+range=1h|1d|7d|30d
+```
+
+响应字段重点：
+
+```json
+{
+  "node_id": "hytron",
+  "range": "1h",
+  "points": [
+    {
+      "ts": "2026-07-03T01:20:00Z",
+      "target_id": "google-dns",
+      "target_name": "Google DNS",
+      "median_ms": 0.8,
+      "loss_percent": 0
+    }
+  ]
+}
+```
+
+### GET /api/public/v1/nodes/{node_id}/state
+
+查询某节点 Agent 状态历史，用于后续资源/网络历史图。数据来自 Agent 上报的 `state_samples`。
+
+参数：
+
+```text
+range=1h|1d|7d|30d
+```
+
+响应字段重点：
+
+```json
+{
+  "node_id": "hytron",
+  "range": "1h",
+  "points": [
+    {
+      "ts": "2026-07-03T01:20:00Z",
+      "cpu_percent": 18.75,
+      "memory_used_bytes": 4294967296,
+      "memory_total_bytes": 8589934592,
+      "disk_used_bytes": 42949672960,
+      "disk_total_bytes": 171798691840,
+      "net_in_total_bytes": 1000000,
+      "net_out_total_bytes": 2000000,
+      "net_in_speed_bps": 2048.5,
+      "net_out_speed_bps": 1024.25,
+      "uptime_seconds": 3601
+    }
+  ]
+}
 ```
 
 ## Admin API

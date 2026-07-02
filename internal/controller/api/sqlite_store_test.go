@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -154,6 +155,78 @@ func TestSQLiteBackedSummaryUsesPersistedNodeAndLatestLatency(t *testing.T) {
 	}
 	if len(summary.LatencyPoints) != 2 {
 		t.Fatalf("summary latency points len = %d, want persisted points", len(summary.LatencyPoints))
+	}
+}
+
+func TestSQLiteBackedHandlerReturnsPersistedStateHistory(t *testing.T) {
+	store, err := OpenSQLiteStore(filepath.Join(t.TempDir(), "jiaoprobe.db"))
+	if err != nil {
+		t.Fatalf("open sqlite store: %v", err)
+	}
+	defer store.Close()
+
+	ctx := context.Background()
+	if err := store.SeedPreviewData(ctx, PreviewSeedOptions{NodeID: "hytron", DisplayName: "Hytron", CountryCode: "HK", AgentToken: "test-agent-token"}); err != nil {
+		t.Fatalf("seed preview data: %v", err)
+	}
+	now := time.Now().UTC().Truncate(time.Second)
+	for offset, cpu := range []float64{12.5, 18.75} {
+		if err := store.InsertAgentState(ctx, "hytron", AgentStateRequest{
+			TS:               now.Add(time.Duration(offset-1) * time.Minute).Unix(),
+			CPUPercent:       cpu,
+			MemoryUsedBytes:  int64(3+offset) * 1024,
+			MemoryTotalBytes: 8 * 1024,
+			DiskUsedBytes:    int64(40+offset) * 1024,
+			DiskTotalBytes:   160 * 1024,
+			NetInTotalBytes:  int64(1_000_000 + offset*1000),
+			NetOutTotalBytes: int64(2_000_000 + offset*2000),
+			NetInSpeedBps:    2048.5 + float64(offset),
+			NetOutSpeedBps:   1024.25 + float64(offset),
+			UptimeSeconds:    int64(3600 + offset),
+		}); err != nil {
+			t.Fatalf("insert agent state %d: %v", offset, err)
+		}
+	}
+
+	recorder := httptest.NewRecorder()
+	NewHandler(HandlerOptions{Store: store}).ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/api/public/v1/nodes/hytron/state?range=1h", nil))
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200; body=%s", recorder.Code, recorder.Body.String())
+	}
+	bodyLower := strings.ToLower(recorder.Body.String())
+	if strings.Contains(bodyLower, "token") || strings.Contains(bodyLower, "secret") {
+		t.Fatalf("public state response leaked sensitive wording: %s", recorder.Body.String())
+	}
+
+	var response struct {
+		NodeID string `json:"node_id"`
+		Range  string `json:"range"`
+		Points []struct {
+			TS               string   `json:"ts"`
+			CPUPercent       *float64 `json:"cpu_percent"`
+			MemoryUsedBytes  *float64 `json:"memory_used_bytes"`
+			MemoryTotalBytes *float64 `json:"memory_total_bytes"`
+			DiskUsedBytes    *float64 `json:"disk_used_bytes"`
+			DiskTotalBytes   *float64 `json:"disk_total_bytes"`
+			NetInTotalBytes  *float64 `json:"net_in_total_bytes"`
+			NetOutTotalBytes *float64 `json:"net_out_total_bytes"`
+			NetInSpeedBps    *float64 `json:"net_in_speed_bps"`
+			NetOutSpeedBps   *float64 `json:"net_out_speed_bps"`
+			UptimeSeconds    *float64 `json:"uptime_seconds"`
+		} `json:"points"`
+	}
+	if err := json.NewDecoder(recorder.Body).Decode(&response); err != nil {
+		t.Fatalf("decode state response: %v", err)
+	}
+	if response.NodeID != "hytron" || response.Range != "1h" {
+		t.Fatalf("state response identity = %q/%q, want hytron/1h", response.NodeID, response.Range)
+	}
+	if len(response.Points) != 2 {
+		t.Fatalf("state points len = %d, want 2", len(response.Points))
+	}
+	latest := response.Points[1]
+	if latest.CPUPercent == nil || *latest.CPUPercent != 18.75 || latest.MemoryUsedBytes == nil || *latest.MemoryUsedBytes != 4*1024 || latest.NetOutSpeedBps == nil || *latest.NetOutSpeedBps != 1025.25 || latest.UptimeSeconds == nil || *latest.UptimeSeconds != 3601 {
+		t.Fatalf("latest state point = %+v, want persisted agent values", latest)
 	}
 }
 

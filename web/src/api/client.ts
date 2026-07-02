@@ -1,4 +1,4 @@
-import type { HomeCardNode, LatencyPoint } from '../types'
+import type { HomeCardNode, LatencyPoint, StatePoint } from '../types'
 
 interface ApiLatencySummary {
   target_id: string
@@ -40,6 +40,20 @@ interface ApiLatencyPoint {
   loss_percent: number
 }
 
+interface ApiStatePoint {
+  ts: string
+  cpu_percent: number | null
+  memory_used_bytes: number | null
+  memory_total_bytes: number | null
+  disk_used_bytes: number | null
+  disk_total_bytes: number | null
+  net_in_total_bytes: number | null
+  net_out_total_bytes: number | null
+  net_in_speed_bps: number | null
+  net_out_speed_bps: number | null
+  uptime_seconds: number | null
+}
+
 export interface ApiSummaryResponse {
   nodes: ApiNode[]
   latency_points: ApiLatencyPoint[]
@@ -51,6 +65,12 @@ export interface ApiLatencyResponse {
   points: ApiLatencyPoint[]
 }
 
+export interface ApiStateResponse {
+  node_id: string
+  range: string
+  points: ApiStatePoint[]
+}
+
 export interface SummaryData {
   nodes: HomeCardNode[]
   latencyPoints: LatencyPoint[]
@@ -60,6 +80,12 @@ export interface NodeLatencyData {
   nodeId: string
   range: string
   points: LatencyPoint[]
+}
+
+export interface NodeStateData {
+  nodeId: string
+  range: string
+  points: StatePoint[]
 }
 
 export async function fetchSummary(): Promise<SummaryData> {
@@ -78,6 +104,14 @@ export async function fetchNodeLatency(nodeId: string, range = '1h'): Promise<No
   return normalizeNodeLatency(await response.json() as ApiLatencyResponse)
 }
 
+export async function fetchNodeState(nodeId: string, range = '1h'): Promise<NodeStateData> {
+  const response = await fetch(`/api/public/v1/nodes/${encodeURIComponent(nodeId)}/state?range=${encodeURIComponent(range)}`, { headers: { Accept: 'application/json' } })
+  if (!response.ok) {
+    throw new Error(`state request failed: ${response.status}`)
+  }
+  return normalizeNodeState(await response.json() as ApiStateResponse)
+}
+
 export function normalizeSummary(input: ApiSummaryResponse): SummaryData {
   return {
     nodes: input.nodes.map(normalizeNode),
@@ -90,6 +124,14 @@ export function normalizeNodeLatency(input: ApiLatencyResponse): NodeLatencyData
     nodeId: input.node_id,
     range: input.range,
     points: input.points.map(normalizeLatencyPoint),
+  }
+}
+
+export function normalizeNodeState(input: ApiStateResponse): NodeStateData {
+  return {
+    nodeId: input.node_id,
+    range: input.range,
+    points: input.points.map(normalizeStatePoint),
   }
 }
 
@@ -132,5 +174,21 @@ function normalizeLatencyPoint(point: ApiLatencyPoint): LatencyPoint {
     targetName: point.target_name,
     medianMs: point.median_ms,
     lossPercent: point.loss_percent,
+  }
+}
+
+function normalizeStatePoint(point: ApiStatePoint): StatePoint {
+  return {
+    ts: point.ts,
+    cpuPercent: point.cpu_percent,
+    memoryUsedBytes: point.memory_used_bytes,
+    memoryTotalBytes: point.memory_total_bytes,
+    diskUsedBytes: point.disk_used_bytes,
+    diskTotalBytes: point.disk_total_bytes,
+    netInTotalBytes: point.net_in_total_bytes,
+    netOutTotalBytes: point.net_out_total_bytes,
+    netInSpeedBps: point.net_in_speed_bps,
+    netOutSpeedBps: point.net_out_speed_bps,
+    uptimeSeconds: point.uptime_seconds,
   }
 }

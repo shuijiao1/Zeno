@@ -40,3 +40,17 @@ export interface LatencyPoint {
   medianMs: number | null
   lossPercent: number
 }
+
+export interface StatePoint {
+  ts: string
+  cpuPercent: number | null
+  memoryUsedBytes: number | null
+  memoryTotalBytes: number | null
+  diskUsedBytes: number | null
+  diskTotalBytes: number | null
+  netInTotalBytes: number | null
+  netOutTotalBytes: number | null
+  netInSpeedBps: number | null
+  netOutSpeedBps: number | null
+  uptimeSeconds: number | null
+}
