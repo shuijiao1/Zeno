@@ -64,13 +64,6 @@ export function LatencyDetail({ node, points, range, loading = false, error, onB
             <h3>{node.displayName}</h3>
             <p>{targetSummaries.length} 个监控服务</p>
           </div>
-          {activeTarget && (
-            <div className="active-target-summary">
-              <span>{activeTarget.targetName}</span>
-              <strong>{formatLatency(activeTarget.avgMs)}</strong>
-              <em>丢包 {formatLossPercent(activeTarget.lossPercent)}</em>
-            </div>
-          )}
         </header>
 
         {loading && <div className="detail-state">正在读取网络延迟…</div>}

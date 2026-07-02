@@ -412,18 +412,6 @@ svg { display: block; }
 }
 .monitor-heading h3 { margin: 0; font-size: 20px; font-weight: 600; }
 .monitor-heading p { margin: 4px 0 0; color: color-mix(in srgb, var(--foreground) 52%, transparent); font-size: 14px; }
-.active-target-summary {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: flex-end;
-  gap: 8px;
-  font-size: 13px;
-}
-.active-target-summary span { color: color-mix(in srgb, var(--foreground) 65%, transparent); }
-.active-target-summary strong { color: var(--green); font-weight: 700; font-variant-numeric: tabular-nums; }
-.active-target-summary em { color: var(--orange); font-style: normal; font-weight: 600; font-variant-numeric: tabular-nums; }
-
 .detail-state {
   margin: 0 24px 24px;
   padding: 18px 20px;
