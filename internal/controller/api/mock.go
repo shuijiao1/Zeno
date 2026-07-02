@@ -68,28 +68,51 @@ func mockNodes() []Node {
 
 func mockLatencyPoints(nodeID string) []LatencyPoint {
 	base := time.Date(2026, 7, 2, 12, 0, 0, 0, time.UTC)
-	points := make([]LatencyPoint, 0, 36*3)
+	targets := []struct {
+		id       string
+		name     string
+		baseMS   float64
+		jitterMS float64
+		loss     float64
+	}{
+		{id: "cq-unicom", name: "重庆联通", baseMS: 34.8, jitterMS: 2.4, loss: 0.18},
+		{id: "cq-mobile", name: "重庆移动", baseMS: 34.3, jitterMS: 2.1, loss: 0.19},
+		{id: "cq-telecom", name: "重庆电信", baseMS: 43.5, jitterMS: 3.2, loss: 0.18},
+		{id: "telegram-dc5", name: "DC5", baseMS: 31.8, jitterMS: 2.6, loss: 0.38},
+		{id: "google", name: "Google", baseMS: 1.4, jitterMS: 0.4, loss: 0},
+		{id: "telegram-dc2", name: "DC2", baseMS: 193.4, jitterMS: 9.2, loss: 0.12},
+		{id: "telegram-dc1", name: "DC1", baseMS: 198.2, jitterMS: 10.5, loss: 1.71},
+		{id: "akari-tw", name: "Akari TW", baseMS: 14.4, jitterMS: 1.4, loss: 0},
+		{id: "akari-jp", name: "Akari JP", baseMS: 50.3, jitterMS: 4.1, loss: 1.02},
+		{id: "akari-hk", name: "Akari HK", baseMS: 1.7, jitterMS: 0.5, loss: 1.22},
+		{id: "hytron", name: "Hytron", baseMS: 1.8, jitterMS: 0.5, loss: 1.29},
+		{id: "hostdzire", name: "HostDZire", baseMS: 152.2, jitterMS: 8.4, loss: 0.19},
+		{id: "bage", name: "BAGE", baseMS: 144.8, jitterMS: 7.5, loss: 0.16},
+	}
+
+	points := make([]LatencyPoint, 0, 36*len(targets))
 	for index := 0; index < 36; index++ {
 		ts := base.Add(time.Duration(index*2) * time.Minute).Format(time.RFC3339)
-		spike := 0.0
-		if index == 18 {
-			spike = 110
+		for targetIndex, target := range targets {
+			wave := float64((index+targetIndex)%6) / 5
+			median := target.baseMS + wave*target.jitterMS
+			if index == 18 && (target.id == "cq-telecom" || target.id == "telegram-dc5") {
+				median += 110
+			}
+
+			loss := target.loss
+			var medianPtr *float64
+			if target.id == "telegram-dc1" && index == 24 {
+				loss = 100
+			} else {
+				if target.id == "telegram-dc1" && index == 12 {
+					loss = 30
+				}
+				medianPtr = ptr(median)
+			}
+
+			points = append(points, LatencyPoint{TS: ts, TargetID: target.id, TargetName: target.name, MedianMS: medianPtr, LossPercent: loss})
 		}
-		loss := 0.0
-		if index == 24 {
-			loss = 100
-		} else if index == 12 {
-			loss = 30
-		}
-		points = append(points,
-			LatencyPoint{TS: ts, TargetID: "google", TargetName: "Google", MedianMS: ptr(0.7 + float64(index%5)*0.08), LossPercent: 0},
-			LatencyPoint{TS: ts, TargetID: "telegram-dc5", TargetName: "Telegram DC5", MedianMS: ptr(31 + float64(index%6)*0.7 + spike), LossPercent: 0},
-		)
-		var dc1Median *float64
-		if loss < 100 {
-			dc1Median = ptr(185 + float64(index%4)*7)
-		}
-		points = append(points, LatencyPoint{TS: ts, TargetID: "telegram-dc1", TargetName: "Telegram DC1", MedianMS: dc1Median, LossPercent: loss})
 	}
 	return points
 }

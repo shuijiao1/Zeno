@@ -73,6 +73,37 @@ func TestSummaryEndpointReturnsMockHomeCardsWithoutSecrets(t *testing.T) {
 	}
 }
 
+func TestNodeLatencyEndpointReturnsKulinStyleMonitorTargets(t *testing.T) {
+	handler := NewHandler()
+	recorder := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodGet, "/api/public/v1/nodes/sharon/latency?range=1d", nil)
+
+	handler.ServeHTTP(recorder, request)
+
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d; body=%s", recorder.Code, http.StatusOK, recorder.Body.String())
+	}
+
+	var response LatencyResponse
+	if err := json.NewDecoder(recorder.Body).Decode(&response); err != nil {
+		t.Fatalf("decode latency response: %v", err)
+	}
+
+	seen := map[string]bool{}
+	for _, point := range response.Points {
+		seen[point.TargetName] = true
+	}
+	wantNames := []string{"重庆联通", "重庆移动", "重庆电信", "DC5", "Google", "DC2", "DC1", "Akari TW", "Akari JP", "Akari HK", "Hytron", "HostDZire", "BAGE"}
+	for _, name := range wantNames {
+		if !seen[name] {
+			t.Fatalf("missing Kulin-style monitor target %q; saw=%v", name, seen)
+		}
+	}
+	if len(seen) != len(wantNames) {
+		t.Fatalf("target count = %d, want %d; saw=%v", len(seen), len(wantNames), seen)
+	}
+}
+
 func TestNodeLatencyEndpointPreservesLossOnlyPointsAsNullLatency(t *testing.T) {
 	handler := NewHandler()
 	recorder := httptest.NewRecorder()
