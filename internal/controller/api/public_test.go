@@ -46,14 +46,20 @@ func TestSummaryEndpointReturnsMockHomeCardsWithoutSecrets(t *testing.T) {
 	if err := json.NewDecoder(strings.NewReader(raw)).Decode(&summary); err != nil {
 		t.Fatalf("decode summary: %v", err)
 	}
-	if len(summary.Nodes) < 3 {
-		t.Fatalf("nodes len = %d, want at least 3", len(summary.Nodes))
+	if len(summary.Nodes) != 11 {
+		t.Fatalf("nodes len = %d, want 11 Kulin-style mock cards", len(summary.Nodes))
 	}
-	if summary.Nodes[0].DisplayName != "Hytron" {
-		t.Fatalf("first node = %q, want Hytron", summary.Nodes[0].DisplayName)
+	if summary.Nodes[0].DisplayName != "Mechrevo" {
+		t.Fatalf("first node = %q, want Mechrevo", summary.Nodes[0].DisplayName)
 	}
-	if summary.Nodes[0].CPUCores == nil || *summary.Nodes[0].CPUCores != 2 {
-		t.Fatalf("first node cpu cores = %v, want 2", summary.Nodes[0].CPUCores)
+	if summary.Nodes[0].OS != "windows" {
+		t.Fatalf("first node os = %q, want windows", summary.Nodes[0].OS)
+	}
+	if summary.Nodes[0].CPUCores == nil || *summary.Nodes[0].CPUCores != 16 {
+		t.Fatalf("first node cpu cores = %v, want 16", summary.Nodes[0].CPUCores)
+	}
+	if summary.Nodes[0].LatencySummary != nil {
+		t.Fatalf("first node should omit latency summary like the reference homepage")
 	}
 	if summary.Nodes[0].ExpiryLabel == "" {
 		t.Fatalf("first node should include a Kulin-style expiry label")

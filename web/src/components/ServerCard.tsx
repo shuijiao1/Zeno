@@ -9,6 +9,7 @@ interface ServerCardProps {
 const osAsset: Record<HomeCardNode['os'], string> = {
   debian: '/assets/logo/os-debian.svg',
   ubuntu: '/assets/logo/os-ubuntu.svg',
+  windows: '/assets/logo/os-windows.svg',
   centos: '/assets/logo/linux.svg',
   alpine: '/assets/logo/linux.svg',
   linux: '/assets/logo/linux.svg',
@@ -53,7 +54,7 @@ function formatKulinBytes(value: number | null | undefined, options: { compact?:
     unit += 1
   }
   const signed = value < 0 ? -size : size
-  const digits = unit === 0 ? 0 : options.compact && signed >= 100 ? 0 : 2
+  const digits = unit === 0 ? 0 : 2
   const joiner = options.compact ? '' : ' '
   return `${signed.toFixed(digits)}${joiner}${units[unit]}`
 }
@@ -111,8 +112,8 @@ export function ServerCard({ node }: ServerCardProps) {
           <section className="node-footer-grid" aria-label={`${node.displayName} network and latency`}>
             <Metric tone="up" icon={<UploadIcon />} label="上传" value={formatRate(node.netOutSpeedBps)} />
             <Metric tone="down" icon={<DownloadIcon />} label="下载" value={formatRate(node.netInSpeedBps)} />
-            <Metric tone="latency" icon={<ActivityIcon />} label="延迟" value={formatLatency(latency?.medianMs)} />
-            <Metric tone="loss" icon={<TriangleAlertIcon />} label="丢包率" value={normalizeLoss(latency?.lossPercent)} />
+            {latency && <Metric tone="latency" icon={<ActivityIcon />} label="延迟" value={formatLatency(latency.medianMs)} />}
+            {latency && <Metric tone="loss" icon={<TriangleAlertIcon />} label="丢包率" value={normalizeLoss(latency.lossPercent)} />}
           </section>
         </div>
       </section>

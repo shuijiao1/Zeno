@@ -14,7 +14,7 @@ export interface HomeCardNode {
   id: string
   displayName: string
   status: NodeStatus
-  os: 'debian' | 'ubuntu' | 'centos' | 'alpine' | 'linux' | 'unknown'
+  os: 'debian' | 'ubuntu' | 'centos' | 'alpine' | 'linux' | 'windows' | 'unknown'
   countryCode?: string
   subtitle?: string
   cpuCores?: number | null
