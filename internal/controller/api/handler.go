@@ -35,6 +35,9 @@ func NewHandler(options ...HandlerOptions) http.Handler {
 	mux.HandleFunc("/api/public/v1/nodes/", h.handleNodeLatency)
 	mux.HandleFunc("/api/agent/v1/probe-targets", h.handleAgentProbeTargets)
 	mux.HandleFunc("/api/agent/v1/probe-results", h.handleAgentProbeResults)
+	mux.HandleFunc("/api/agent/v1/heartbeat", h.handleAgentHeartbeat)
+	mux.HandleFunc("/api/agent/v1/host", h.handleAgentHost)
+	mux.HandleFunc("/api/agent/v1/state", h.handleAgentState)
 	if opts.StaticDir != "" {
 		mux.HandleFunc("/", handleStatic(opts.StaticDir))
 	}

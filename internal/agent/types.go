@@ -1,45 +1,14 @@
-package api
+package agent
 
-type AgentProbeTargetsResponse struct {
-	Targets []AgentProbeTarget `json:"targets"`
-}
+import "time"
 
-type AgentProbeTarget struct {
-	ID          string `json:"id"`
-	Name        string `json:"name"`
-	Type        string `json:"type"`
-	Address     string `json:"address"`
-	Port        *int   `json:"port,omitempty"`
-	Count       int    `json:"count"`
-	TimeoutMS   int    `json:"timeout_ms"`
-	IntervalSec int    `json:"interval_sec"`
-}
-
-type AgentProbeResultsRequest struct {
-	Rounds []AgentProbeRound `json:"rounds"`
-}
-
-type AgentProbeRound struct {
-	TargetID string             `json:"target_id"`
-	TS       int64              `json:"ts"`
-	Type     string             `json:"type"`
-	Samples  []AgentProbeSample `json:"samples"`
-}
-
-type AgentProbeSample struct {
-	Seq       int      `json:"seq"`
-	Success   bool     `json:"success"`
-	LatencyMS *float64 `json:"latency_ms"`
-	Error     string   `json:"error,omitempty"`
-}
-
-type AgentHeartbeatRequest struct {
+type HeartbeatRequest struct {
 	TS           int64  `json:"ts"`
 	Status       string `json:"status"`
 	AgentVersion string `json:"agent_version"`
 }
 
-type AgentHostRequest struct {
+type HostInfo struct {
 	Hostname         string `json:"hostname"`
 	OSName           string `json:"os_name"`
 	OSVersion        string `json:"os_version"`
@@ -54,7 +23,7 @@ type AgentHostRequest struct {
 	AgentVersion     string `json:"agent_version"`
 }
 
-type AgentStateRequest struct {
+type StateSample struct {
 	TS               int64   `json:"ts"`
 	CPUPercent       float64 `json:"cpu_percent"`
 	MemoryUsedBytes  int64   `json:"memory_used_bytes"`
@@ -66,4 +35,44 @@ type AgentStateRequest struct {
 	NetInSpeedBps    float64 `json:"net_in_speed_bps"`
 	NetOutSpeedBps   float64 `json:"net_out_speed_bps"`
 	UptimeSeconds    int64   `json:"uptime_seconds"`
+}
+
+type ProbeTargetsResponse struct {
+	Targets []ProbeTarget `json:"targets"`
+}
+
+type ProbeTarget struct {
+	ID          string `json:"id"`
+	Name        string `json:"name"`
+	Type        string `json:"type"`
+	Address     string `json:"address"`
+	Port        *int   `json:"port,omitempty"`
+	Count       int    `json:"count"`
+	TimeoutMS   int    `json:"timeout_ms"`
+	IntervalSec int    `json:"interval_sec"`
+}
+
+type ProbeResultsRequest struct {
+	Rounds []probeRoundPayload `json:"rounds"`
+}
+
+type ProbeRound struct {
+	TargetID string
+	TS       time.Time
+	Type     string
+	Samples  []ProbeSample
+}
+
+type probeRoundPayload struct {
+	TargetID string        `json:"target_id"`
+	TS       int64         `json:"ts"`
+	Type     string        `json:"type"`
+	Samples  []ProbeSample `json:"samples"`
+}
+
+type ProbeSample struct {
+	Seq       int      `json:"seq"`
+	Success   bool     `json:"success"`
+	LatencyMS *float64 `json:"latency_ms"`
+	Error     string   `json:"error,omitempty"`
 }

@@ -14,6 +14,9 @@ type agentStore interface {
 	AuthorizeAgent(ctx context.Context, nodeID, token string) (bool, error)
 	EnabledProbeTargets(ctx context.Context, nodeID string) ([]ProbeTarget, error)
 	InsertProbeRound(ctx context.Context, nodeID string, target ProbeTarget, ts time.Time, samples []probe.Sample) error
+	RecordAgentHeartbeat(ctx context.Context, nodeID string, ts time.Time, status, agentVersion string) error
+	UpsertAgentHost(ctx context.Context, nodeID string, host AgentHostRequest) error
+	InsertAgentState(ctx context.Context, nodeID string, state AgentStateRequest) error
 }
 
 func (h *handler) handleAgentProbeTargets(w http.ResponseWriter, r *http.Request) {
@@ -122,6 +125,106 @@ func (h *handler) handleAgentProbeResults(w http.ResponseWriter, r *http.Request
 		}
 	}
 	writeJSON(w, http.StatusAccepted, map[string]any{"ok": true, "accepted": len(prepared)})
+}
+
+func (h *handler) handleAgentHeartbeat(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+	store, nodeID, ok := h.authorizeAgentRequest(w, r)
+	if !ok {
+		return
+	}
+	var request AgentHeartbeatRequest
+	if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid json")
+		return
+	}
+	if request.TS <= 0 {
+		writeError(w, http.StatusBadRequest, "invalid timestamp")
+		return
+	}
+	status := strings.TrimSpace(request.Status)
+	if status == "" {
+		status = "online"
+	}
+	if !validAgentStatus(status) {
+		writeError(w, http.StatusBadRequest, "invalid status")
+		return
+	}
+	if err := store.RecordAgentHeartbeat(r.Context(), nodeID, time.Unix(request.TS, 0).UTC(), status, strings.TrimSpace(request.AgentVersion)); err != nil {
+		writeError(w, http.StatusInternalServerError, "internal error")
+		return
+	}
+	writeJSON(w, http.StatusAccepted, map[string]any{"ok": true})
+}
+
+func (h *handler) handleAgentHost(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+	store, nodeID, ok := h.authorizeAgentRequest(w, r)
+	if !ok {
+		return
+	}
+	var request AgentHostRequest
+	if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid json")
+		return
+	}
+	if strings.TrimSpace(request.OSName) == "" || strings.TrimSpace(request.Arch) == "" {
+		writeError(w, http.StatusBadRequest, "host os and arch required")
+		return
+	}
+	if request.CPUCores < 0 || request.MemoryTotalBytes < 0 || request.DiskTotalBytes < 0 || request.BootTime < 0 {
+		writeError(w, http.StatusBadRequest, "invalid host values")
+		return
+	}
+	if err := store.UpsertAgentHost(r.Context(), nodeID, request); err != nil {
+		writeError(w, http.StatusInternalServerError, "internal error")
+		return
+	}
+	writeJSON(w, http.StatusAccepted, map[string]any{"ok": true})
+}
+
+func (h *handler) handleAgentState(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+	store, nodeID, ok := h.authorizeAgentRequest(w, r)
+	if !ok {
+		return
+	}
+	var request AgentStateRequest
+	if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid json")
+		return
+	}
+	if request.TS <= 0 {
+		writeError(w, http.StatusBadRequest, "invalid timestamp")
+		return
+	}
+	if request.CPUPercent < 0 || request.CPUPercent > 100 || request.MemoryUsedBytes < 0 || request.MemoryTotalBytes < 0 || request.DiskUsedBytes < 0 || request.DiskTotalBytes < 0 || request.NetInTotalBytes < 0 || request.NetOutTotalBytes < 0 || request.NetInSpeedBps < 0 || request.NetOutSpeedBps < 0 || request.UptimeSeconds < 0 {
+		writeError(w, http.StatusBadRequest, "invalid state values")
+		return
+	}
+	if err := store.InsertAgentState(r.Context(), nodeID, request); err != nil {
+		writeError(w, http.StatusInternalServerError, "internal error")
+		return
+	}
+	writeJSON(w, http.StatusAccepted, map[string]any{"ok": true})
+}
+
+func validAgentStatus(status string) bool {
+	switch status {
+	case "online", "offline", "warning", "no_data":
+		return true
+	default:
+		return false
+	}
 }
 
 func (h *handler) authorizeAgentRequest(w http.ResponseWriter, r *http.Request) (agentStore, string, bool) {

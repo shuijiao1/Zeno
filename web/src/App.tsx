@@ -135,24 +135,15 @@ export function App() {
 
       {state.kind === 'ready' && route.kind === 'home' && (
         <div className="kulin-container">
-          <section className="server-overview" aria-label="server overview">
-            <OverviewCard tone="blue" label="服务器总数" value={String(totalCount)} />
-            <OverviewCard tone="green" label="在线服务器" value={String(onlineCount)} pulse />
-            <OverviewCard tone="red" label="离线服务器" value={String(offlineCount)} pulse />
-            <article className="overview-card tone-purple">
-              <div className="overview-card__body network-overview">
-                <p>网络</p>
-                <section className="network-total" aria-label="traffic totals">
-                  <strong className="up">↑{compactBytes(totalUp)}</strong>
-                  <strong className="down">↓{compactBytes(totalDown)}</strong>
-                </section>
-                <section className="network-speed" aria-label="traffic speeds">
-                  <span><CircleArrowIcon direction="up" />{compactRate(upSpeed)}</span>
-                  <span><CircleArrowIcon direction="down" />{compactRate(downSpeed)}</span>
-                </section>
-              </div>
-            </article>
-          </section>
+          <HomeOverviewPanel
+            totalCount={totalCount}
+            onlineCount={onlineCount}
+            offlineCount={offlineCount}
+            totalUp={totalUp}
+            totalDown={totalDown}
+            upSpeed={upSpeed}
+            downSpeed={downSpeed}
+          />
 
           <section className="server-card-list" aria-label="server cards">
             {nodes.map((node) => <ServerCard key={node.id} node={node} onOpen={navigateNode} />)}
@@ -163,17 +154,50 @@ export function App() {
   )
 }
 
-function OverviewCard({ label, value, tone, pulse = false }: { label: string; value: string; tone: 'blue' | 'green' | 'red'; pulse?: boolean }) {
+interface HomeOverviewPanelProps {
+  totalCount: number
+  onlineCount: number
+  offlineCount: number
+  totalUp: number
+  totalDown: number
+  upSpeed: number
+  downSpeed: number
+}
+
+export function HomeOverviewPanel({ totalCount, onlineCount, offlineCount, totalUp, totalDown, upSpeed, downSpeed }: HomeOverviewPanelProps) {
   return (
-    <article className={`overview-card tone-${tone}`}>
-      <div className="overview-card__body">
-        <p>{label}</p>
-        <div className="overview-value">
-          <span className="pulse-dot"><i className={pulse ? 'is-pulsing' : ''} /><b /></span>
-          <strong aria-label={value}>{value}</strong>
+    <section className="server-overview" aria-label="server overview">
+      <article className="overview-card overview-card--combined">
+        <div className="overview-card__body overview-combined__body">
+          <OverviewMetric tone="blue" label="服务器总数" value={String(totalCount)} />
+          <OverviewMetric tone="green" label="在线服务器" value={String(onlineCount)} pulse />
+          <OverviewMetric tone="red" label="离线服务器" value={String(offlineCount)} pulse />
+          <div className="overview-metric tone-purple">
+            <p>网络</p>
+            <section className="network-total" aria-label="traffic totals">
+              <strong className="up">↑{compactBytes(totalUp)}</strong>
+              <strong className="down">↓{compactBytes(totalDown)}</strong>
+            </section>
+            <section className="network-speed" aria-label="traffic speeds">
+              <span><CircleArrowIcon direction="up" />{compactRate(upSpeed)}</span>
+              <span><CircleArrowIcon direction="down" />{compactRate(downSpeed)}</span>
+            </section>
+          </div>
         </div>
+      </article>
+    </section>
+  )
+}
+
+function OverviewMetric({ label, value, tone, pulse = false }: { label: string; value: string; tone: 'blue' | 'green' | 'red'; pulse?: boolean }) {
+  return (
+    <div className={`overview-metric tone-${tone}`}>
+      <p>{label}</p>
+      <div className="overview-value">
+        <span className="pulse-dot"><i className={pulse ? 'is-pulsing' : ''} /><b /></span>
+        <strong aria-label={value}>{value}</strong>
       </div>
-    </article>
+    </div>
   )
 }
 
