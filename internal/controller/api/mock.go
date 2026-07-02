@@ -66,34 +66,34 @@ func mockNodes() []Node {
 	}
 }
 
-type mockLatencyWindow struct {
+type latencyWindow struct {
 	Name    string
 	Samples int
 	Step    time.Duration
 }
 
-func resolveMockLatencyWindow(rangeName string) (mockLatencyWindow, bool) {
+func resolveLatencyWindow(rangeName string) (latencyWindow, bool) {
 	switch rangeName {
 	case "", "1h":
-		return mockLatencyWindow{Name: "1h", Samples: 36, Step: 2 * time.Minute}, true
+		return latencyWindow{Name: "1h", Samples: 36, Step: 2 * time.Minute}, true
 	case "1d":
-		return mockLatencyWindow{Name: "1d", Samples: 48, Step: 30 * time.Minute}, true
+		return latencyWindow{Name: "1d", Samples: 48, Step: 30 * time.Minute}, true
 	case "7d":
-		return mockLatencyWindow{Name: "7d", Samples: 56, Step: 3 * time.Hour}, true
+		return latencyWindow{Name: "7d", Samples: 56, Step: 3 * time.Hour}, true
 	case "30d":
-		return mockLatencyWindow{Name: "30d", Samples: 60, Step: 12 * time.Hour}, true
+		return latencyWindow{Name: "30d", Samples: 60, Step: 12 * time.Hour}, true
 	default:
-		return mockLatencyWindow{}, false
+		return latencyWindow{}, false
 	}
 }
 
 func mockLatencyPoints(nodeID string, rangeNames ...string) []LatencyPoint {
-	window, ok := resolveMockLatencyWindow("")
+	window, ok := resolveLatencyWindow("")
 	if len(rangeNames) > 0 {
-		window, ok = resolveMockLatencyWindow(rangeNames[0])
+		window, ok = resolveLatencyWindow(rangeNames[0])
 	}
 	if !ok {
-		window, _ = resolveMockLatencyWindow("")
+		window, _ = resolveLatencyWindow("")
 	}
 	end := time.Date(2026, 7, 2, 13, 30, 0, 0, time.UTC)
 	targets := []struct {

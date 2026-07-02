@@ -2,6 +2,7 @@ package api
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -10,6 +11,11 @@ import (
 
 type HandlerOptions struct {
 	StaticDir string
+	Store     Store
+}
+
+type handler struct {
+	store Store
 }
 
 func NewHandler(options ...HandlerOptions) http.Handler {
@@ -17,11 +23,16 @@ func NewHandler(options ...HandlerOptions) http.Handler {
 	if len(options) > 0 {
 		opts = options[0]
 	}
+	store := opts.Store
+	if store == nil {
+		store = mockStore{}
+	}
+	h := &handler{store: store}
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/health", handleHealth)
-	mux.HandleFunc("/api/public/v1/summary", handleSummary)
-	mux.HandleFunc("/api/public/v1/nodes/", handleNodeLatency)
+	mux.HandleFunc("/api/public/v1/summary", h.handleSummary)
+	mux.HandleFunc("/api/public/v1/nodes/", h.handleNodeLatency)
 	if opts.StaticDir != "" {
 		mux.HandleFunc("/", handleStatic(opts.StaticDir))
 	}
@@ -36,15 +47,20 @@ func handleHealth(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 }
 
-func handleSummary(w http.ResponseWriter, r *http.Request) {
+func (h *handler) handleSummary(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
 		return
 	}
-	writeJSON(w, http.StatusOK, SummaryResponse{Nodes: mockNodes(), LatencyPoints: mockLatencyPoints("hytron", "1h")})
+	summary, err := h.store.Summary(r.Context())
+	if err != nil {
+		writeStoreError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, summary)
 }
 
-func handleNodeLatency(w http.ResponseWriter, r *http.Request) {
+func (h *handler) handleNodeLatency(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
 		return
@@ -56,26 +72,18 @@ func handleNodeLatency(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	nodeID := parts[0]
-	if !mockNodeExists(nodeID) {
-		writeError(w, http.StatusNotFound, "node not found")
-		return
-	}
 	rangeName := r.URL.Query().Get("range")
-	window, ok := resolveMockLatencyWindow(rangeName)
+	window, ok := resolveLatencyWindow(rangeName)
 	if !ok {
 		writeError(w, http.StatusBadRequest, "unsupported range")
 		return
 	}
-	writeJSON(w, http.StatusOK, LatencyResponse{NodeID: nodeID, Range: window.Name, Points: mockLatencyPoints(nodeID, window.Name)})
-}
-
-func mockNodeExists(nodeID string) bool {
-	for _, node := range mockNodes() {
-		if node.ID == nodeID {
-			return true
-		}
+	response, err := h.store.NodeLatency(r.Context(), nodeID, window)
+	if err != nil {
+		writeStoreError(w, err)
+		return
 	}
-	return false
+	writeJSON(w, http.StatusOK, response)
 }
 
 func handleStatic(staticDir string) http.HandlerFunc {
@@ -110,4 +118,12 @@ func writeJSON(w http.ResponseWriter, status int, value any) {
 
 func writeError(w http.ResponseWriter, status int, message string) {
 	writeJSON(w, status, map[string]string{"error": message})
+}
+
+func writeStoreError(w http.ResponseWriter, err error) {
+	if errors.Is(err, errNodeNotFound) {
+		writeError(w, http.StatusNotFound, "node not found")
+		return
+	}
+	writeError(w, http.StatusInternalServerError, "internal error")
 }
