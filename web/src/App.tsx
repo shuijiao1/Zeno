@@ -1,10 +1,18 @@
 import { useEffect, useState } from 'react'
-import { fetchSummary, type SummaryData } from './api/client'
+import { fetchNodeLatency, fetchSummary, type NodeLatencyData, type SummaryData } from './api/client'
+import { LatencyDetail } from './components/LatencyDetail'
 import { ServerCard } from './components/ServerCard'
+import { nodePath, parseDashboardRoute, type DashboardRoute } from './lib/route'
 
 type LoadState =
   | { kind: 'loading' }
   | { kind: 'ready'; data: SummaryData }
+  | { kind: 'error'; message: string }
+
+type LatencyLoadState =
+  | { kind: 'idle' }
+  | { kind: 'loading' }
+  | { kind: 'ready'; data: NodeLatencyData }
   | { kind: 'error'; message: string }
 
 function sum(values: Array<number | null | undefined>): number {
@@ -30,6 +38,9 @@ function compactRate(value: number): string {
 
 export function App() {
   const [state, setState] = useState<LoadState>({ kind: 'loading' })
+  const [route, setRoute] = useState<DashboardRoute>(() => parseDashboardRoute(window.location.pathname))
+  const [latencyRange, setLatencyRange] = useState('1d')
+  const [latencyState, setLatencyState] = useState<LatencyLoadState>({ kind: 'idle' })
 
   useEffect(() => {
     let cancelled = false
@@ -43,7 +54,43 @@ export function App() {
     return () => { cancelled = true }
   }, [])
 
+  useEffect(() => {
+    const handlePopState = () => setRoute(parseDashboardRoute(window.location.pathname))
+    window.addEventListener('popstate', handlePopState)
+    return () => window.removeEventListener('popstate', handlePopState)
+  }, [])
+
+  useEffect(() => {
+    if (route.kind !== 'node') {
+      setLatencyState({ kind: 'idle' })
+      return
+    }
+
+    let cancelled = false
+    setLatencyState({ kind: 'loading' })
+    fetchNodeLatency(route.nodeId, latencyRange)
+      .then((data) => {
+        if (!cancelled) setLatencyState({ kind: 'ready', data })
+      })
+      .catch((error: unknown) => {
+        if (!cancelled) setLatencyState({ kind: 'error', message: error instanceof Error ? error.message : 'unknown error' })
+      })
+    return () => { cancelled = true }
+  }, [route, latencyRange])
+
+  const navigateHome = () => {
+    window.history.pushState(null, '', '/')
+    setRoute({ kind: 'home' })
+  }
+
+  const navigateNode = (nodeId: string) => {
+    window.history.pushState(null, '', nodePath(nodeId))
+    setLatencyRange('1d')
+    setRoute({ kind: 'node', nodeId })
+  }
+
   const nodes = state.kind === 'ready' ? state.data.nodes : []
+  const selectedNode = route.kind === 'node' ? nodes.find((node) => node.id === route.nodeId) : undefined
   const totalCount = nodes.length
   const onlineCount = nodes.filter((node) => node.status === 'online').length
   const offlineCount = nodes.filter((node) => node.status === 'offline').length
@@ -55,10 +102,10 @@ export function App() {
   return (
     <main className="kulin-shell">
       <header className="kulin-nav">
-        <div className="brand">
+        <button className="brand" type="button" onClick={navigateHome}>
           <span className="brand-logo"><img src="/assets/logo/id.png" alt="apple-touch-icon" /></span>
           <span>水饺的探针</span>
-        </div>
+        </button>
         <nav className="nav-actions" aria-label="dashboard actions">
           <a className="login-link" href="/dashboard">登录</a>
           <button className="nav-icon-button is-solid" type="button" aria-label="language"><MapIcon /></button>
@@ -70,7 +117,23 @@ export function App() {
       {state.kind === 'loading' && <section className="state-panel">正在读取 Controller API…</section>}
       {state.kind === 'error' && <section className="state-panel is-error">API 读取失败：{state.message}</section>}
 
-      {state.kind === 'ready' && (
+      {state.kind === 'ready' && route.kind === 'node' && selectedNode && (
+        <LatencyDetail
+          node={selectedNode}
+          points={latencyState.kind === 'ready' ? latencyState.data.points : []}
+          range={latencyRange}
+          loading={latencyState.kind === 'loading'}
+          error={latencyState.kind === 'error' ? latencyState.message : undefined}
+          onBack={navigateHome}
+          onRangeChange={setLatencyRange}
+        />
+      )}
+
+      {state.kind === 'ready' && route.kind === 'node' && !selectedNode && (
+        <section className="state-panel is-error">没有找到这台服务器：{route.nodeId}</section>
+      )}
+
+      {state.kind === 'ready' && route.kind === 'home' && (
         <div className="kulin-container">
           <section className="server-overview" aria-label="server overview">
             <OverviewCard tone="blue" label="服务器总数" value={String(totalCount)} />
@@ -92,7 +155,7 @@ export function App() {
           </section>
 
           <section className="server-card-list" aria-label="server cards">
-            {nodes.map((node) => <ServerCard key={node.id} node={node} />)}
+            {nodes.map((node) => <ServerCard key={node.id} node={node} onOpen={navigateNode} />)}
           </section>
         </div>
       )}

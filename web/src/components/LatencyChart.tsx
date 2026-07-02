@@ -6,13 +6,14 @@ interface LatencyChartProps {
   points: LatencyPoint[]
   eyebrow?: string
   title?: string
+  compactHeader?: boolean
 }
 
 const width = 960
 const height = 320
 const pad = { left: 52, right: 24, top: 24, bottom: 44 }
 
-export function LatencyChart({ points, eyebrow = 'Latency', title = '多目标延迟图' }: LatencyChartProps) {
+export function LatencyChart({ points, eyebrow = 'Latency', title = '多目标延迟图', compactHeader = false }: LatencyChartProps) {
   const series = buildLatencySeries(points)
   const domain = yDomain(points)
   const timestamps = [...new Set(points.map((point) => point.ts))].sort()
@@ -21,27 +22,40 @@ export function LatencyChart({ points, eyebrow = 'Latency', title = '多目标�
 
   const x = (ts: string) => pad.left + timestamps.indexOf(ts) * xStep
   const y = (value: number) => pad.top + (1 - (value - domain.min) / (domain.max - domain.min)) * plotHeight
-  const pathFor = (targetPoints: LatencyPoint[]) => targetPoints
-    .filter((point) => point.medianMs !== null)
-    .map((point, index) => `${index === 0 ? 'M' : 'L'} ${x(point.ts).toFixed(1)} ${y(point.medianMs!).toFixed(1)}`)
-    .join(' ')
+  const pathFor = (targetPoints: LatencyPoint[]) => {
+    let hasOpenSegment = false
+    return targetPoints
+      .map((point) => {
+        if (point.medianMs === null) {
+          hasOpenSegment = false
+          return ''
+        }
+        const command = hasOpenSegment ? 'L' : 'M'
+        hasOpenSegment = true
+        return `${command} ${x(point.ts).toFixed(1)} ${y(point.medianMs).toFixed(1)}`
+      })
+      .filter(Boolean)
+      .join(' ')
+  }
 
   const lastLabel = timestamps.at(-1)?.slice(11, 16) ?? '--:--'
   const firstLabel = timestamps[0]?.slice(11, 16) ?? '--:--'
 
   return (
-    <section className="latency-panel">
+    <section className={`latency-panel${compactHeader ? ' is-compact' : ''}`}>
       <div className="latency-panel__header">
         <div>
           <p className="eyebrow">{eyebrow}</p>
           <h2>{title}</h2>
         </div>
-        <div className="range-tabs" aria-label="range selector mock">
-          <button className="is-active">1h</button>
-          <button>6h</button>
-          <button>24h</button>
-          <button>7d</button>
-        </div>
+        {!compactHeader && (
+          <div className="range-tabs" aria-label="range selector mock">
+            <button className="is-active">1h</button>
+            <button>6h</button>
+            <button>24h</button>
+            <button>7d</button>
+          </div>
+        )}
       </div>
 
       <svg className="latency-chart" viewBox={`0 0 ${width} ${height}`} role="img" aria-label="mock latency chart">

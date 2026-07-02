@@ -4,6 +4,7 @@ import { formatLatency } from '../lib/format'
 
 interface ServerCardProps {
   node: HomeCardNode
+  onOpen?: (nodeId: string) => void
 }
 
 const osAsset: Record<HomeCardNode['os'], string> = {
@@ -79,14 +80,27 @@ function normalizeLoss(value: number | null | undefined): string {
   return `${value.toFixed(2)}%`
 }
 
-export function ServerCard({ node }: ServerCardProps) {
+export function ServerCard({ node, onOpen }: ServerCardProps) {
   const memoryPercent = ratio(node.memoryUsedBytes, node.memoryTotalBytes)
   const diskPercent = ratio(node.diskUsedBytes, node.diskTotalBytes)
   const trafficPercent = ratio(node.monthlyBillableBytes, node.monthlyQuotaBytes)
   const latency = node.latencySummary
+  const open = () => onOpen?.(node.id)
 
   return (
-    <article className="kulin-node-card">
+    <article
+      className="kulin-node-card"
+      role={onOpen ? 'link' : undefined}
+      tabIndex={onOpen ? 0 : undefined}
+      onClick={open}
+      onKeyDown={(event) => {
+        if (!onOpen) return
+        if (event.key === 'Enter' || event.key === ' ') {
+          event.preventDefault()
+          open()
+        }
+      }}
+    >
       <section className="node-head">
         <img alt={node.os} className="node-os" loading="lazy" src={osAsset[node.os]} />
         <div className="node-title-line">
