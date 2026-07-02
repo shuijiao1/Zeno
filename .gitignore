@@ -1,0 +1,13 @@
+# Node/Vite
+web/node_modules/
+web/dist/
+web/.vite/
+web/tsconfig.tsbuildinfo
+
+# Logs
+*.log
+
+# OS/editor
+.DS_Store
+.idea/
+.vscode/
