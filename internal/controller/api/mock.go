@@ -12,25 +12,25 @@ func ptr(v float64) *float64 { return &v }
 func mockNodes() []Node {
 	return []Node{
 		{
-			ID: "hytron", DisplayName: "Hytron", Status: "online", OS: "debian", CountryCode: "HK", Subtitle: "Hong Kong · Controller",
-			CPUPercent: ptr(14.2), MemoryUsedBytes: ptr(940 * 1024 * 1024), MemoryTotalBytes: ptr(2 * gib), DiskUsedBytes: ptr(11.8 * gib), DiskTotalBytes: ptr(40 * gib),
-			NetInSpeedBps: ptr(62 * 1024), NetOutSpeedBps: ptr(41 * 1024), NetInTotalBytes: ptr(1.82 * tib), NetOutTotalBytes: ptr(1.04 * tib), MonthlyBillableBytes: ptr(286 * gib), MonthlyQuotaBytes: ptr(1 * tib),
-			LatencySummary: &LatencySummary{TargetID: "telegram-dc5", TargetName: "Telegram DC5", MedianMS: ptr(31.4), AvgMS: ptr(33.1), LossPercent: ptr(0), UpdatedAt: "2026-07-02T12:10:00Z"},
+			ID: "hytron", DisplayName: "Hytron", Status: "online", OS: "debian", CountryCode: "HK", Subtitle: "Hong Kong · Controller", CPUCores: ptr(2), ExpiryLabel: "永 久",
+			CPUPercent: ptr(55.06), MemoryUsedBytes: ptr(2.59 * gib), MemoryTotalBytes: ptr(3.83 * gib), DiskUsedBytes: ptr(17.8 * gib), DiskTotalBytes: ptr(97.87 * gib),
+			NetInSpeedBps: ptr(18.62 * 1024), NetOutSpeedBps: ptr(197.69 * 1024), NetInTotalBytes: ptr(1.29 * tib), NetOutTotalBytes: ptr(1.01 * tib), MonthlyBillableBytes: ptr(1.30 * 1024 * 1024), MonthlyQuotaBytes: ptr(10 * tib),
+			LatencySummary: &LatencySummary{TargetID: "telegram-dc5", TargetName: "Telegram DC5", MedianMS: ptr(33.1), AvgMS: ptr(33.1), LossPercent: ptr(0.40), UpdatedAt: "2026-07-02T12:10:00Z"},
 		},
 		{
-			ID: "sharon", DisplayName: "Sharon", Status: "online", OS: "ubuntu", CountryCode: "US", Subtitle: "Los Angeles",
+			ID: "sharon", DisplayName: "Sharon", Status: "online", OS: "debian", CountryCode: "HK", Subtitle: "Hong Kong", CPUCores: ptr(2), ExpiryLabel: "余 7 天",
 			CPUPercent: ptr(8.9), MemoryUsedBytes: ptr(512 * 1024 * 1024), MemoryTotalBytes: ptr(1536 * 1024 * 1024), DiskUsedBytes: ptr(8 * gib), DiskTotalBytes: ptr(30 * gib),
 			NetInSpeedBps: ptr(14 * 1024), NetOutSpeedBps: ptr(27 * 1024), NetInTotalBytes: ptr(812 * gib), NetOutTotalBytes: ptr(2.1 * tib), MonthlyBillableBytes: ptr(641 * gib), MonthlyQuotaBytes: ptr(2 * tib),
 			LatencySummary: &LatencySummary{TargetID: "google", TargetName: "Google", MedianMS: ptr(0.8), AvgMS: ptr(1.1), LossPercent: ptr(0), UpdatedAt: "2026-07-02T12:10:00Z"},
 		},
 		{
-			ID: "alibaba", DisplayName: "Alibaba", Status: "warning", OS: "linux", CountryCode: "HK", Subtitle: "Hong Kong · high disk",
+			ID: "alibaba", DisplayName: "Alibaba", Status: "online", OS: "debian", CountryCode: "HK", Subtitle: "Hong Kong", CPUCores: ptr(2), ExpiryLabel: "余 1755 天",
 			CPUPercent: ptr(62.1), MemoryUsedBytes: ptr(1.45 * gib), MemoryTotalBytes: ptr(2 * gib), DiskUsedBytes: ptr(33 * gib), DiskTotalBytes: ptr(40 * gib),
 			NetInSpeedBps: ptr(4 * 1024), NetOutSpeedBps: ptr(7 * 1024), NetInTotalBytes: ptr(512 * gib), NetOutTotalBytes: ptr(420 * gib), MonthlyBillableBytes: ptr(788 * gib), MonthlyQuotaBytes: ptr(1 * tib),
 			LatencySummary: &LatencySummary{TargetID: "telegram-dc1", TargetName: "Telegram DC1", MedianMS: ptr(188.2), AvgMS: ptr(196.4), LossPercent: ptr(2.5), UpdatedAt: "2026-07-02T12:10:00Z"},
 		},
 		{
-			ID: "hostdzire", DisplayName: "HostDZire", Status: "offline", OS: "debian", CountryCode: "US", Subtitle: "No heartbeat for 4m",
+			ID: "hostdzire", DisplayName: "HostDZire", Status: "offline", OS: "debian", CountryCode: "US", Subtitle: "United States", CPUCores: ptr(4), ExpiryLabel: "余 30 天",
 			MonthlyQuotaBytes: ptr(1 * tib),
 			LatencySummary:    &LatencySummary{TargetID: "google", TargetName: "Google", MedianMS: nil, AvgMS: nil, LossPercent: ptr(100), UpdatedAt: "2026-07-02T12:10:00Z"},
 		},

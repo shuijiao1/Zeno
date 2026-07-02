@@ -18,6 +18,8 @@ type Node struct {
 	OS                   string          `json:"os"`
 	CountryCode          string          `json:"country_code,omitempty"`
 	Subtitle             string          `json:"subtitle,omitempty"`
+	CPUCores             *float64        `json:"cpu_cores,omitempty"`
+	ExpiryLabel          string          `json:"expiry_label,omitempty"`
 	CPUPercent           *float64        `json:"cpu_percent"`
 	MemoryUsedBytes      *float64        `json:"memory_used_bytes"`
 	MemoryTotalBytes     *float64        `json:"memory_total_bytes"`

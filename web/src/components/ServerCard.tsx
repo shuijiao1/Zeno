@@ -1,20 +1,17 @@
 import type { HomeCardNode } from '../types'
-import { formatBps, formatBytes, formatLatency, formatPercent } from '../lib/format'
-import { ResourceBar } from './ResourceBar'
+import { formatLatency, formatPercent } from '../lib/format'
 
 interface ServerCardProps {
   node: HomeCardNode
-  isSelected?: boolean
-  onSelect?: (nodeId: string) => void
 }
 
-const osIcon: Record<HomeCardNode['os'], string> = {
-  debian: '◆',
-  ubuntu: '●',
-  centos: '◈',
-  alpine: '▲',
-  linux: '⬢',
-  unknown: '○',
+const osAsset: Record<HomeCardNode['os'], string> = {
+  debian: '/assets/logo/os-debian.svg',
+  ubuntu: '/assets/logo/os-ubuntu.svg',
+  centos: '/assets/logo/linux.svg',
+  alpine: '/assets/logo/linux.svg',
+  linux: '/assets/logo/linux.svg',
+  unknown: '/assets/logo/linux.svg',
 }
 
 function flag(countryCode?: string): string {
@@ -27,56 +24,133 @@ function flag(countryCode?: string): string {
     .join('')
 }
 
-function percent(used: number | null, total: number | null): number | null {
-  if (used === null || total === null || total <= 0) return null
+function ratio(used: number | null | undefined, total: number | null | undefined): number | null {
+  if (used === null || used === undefined || total === null || total === undefined || total <= 0) return null
   return (used / total) * 100
 }
 
-export function ServerCard({ node, isSelected = false, onSelect }: ServerCardProps) {
-  const monthlyPercent = percent(node.monthlyBillableBytes, node.monthlyQuotaBytes)
+function clampPercent(value: number | null | undefined): number {
+  if (value === null || value === undefined || !Number.isFinite(value)) return 0
+  return Math.max(0, Math.min(100, value))
+}
+
+function barTone(value: number | null | undefined): 'good' | 'warning' | 'danger' | 'empty' {
+  if (value === null || value === undefined) return 'empty'
+  if (value > 90) return 'danger'
+  if (value > 60) return 'warning'
+  return 'good'
+}
+
+function formatKulinBytes(value: number | null | undefined, options: { compact?: boolean } = {}): string {
+  if (value === null || value === undefined) return '--'
+  if (value === 0) return '0 B'
+  const units = ['B', 'KB', 'MB', 'GB', 'TB', 'PB']
+  let size = Math.abs(value)
+  let unit = 0
+  while (size >= 1024 && unit < units.length - 1) {
+    size /= 1024
+    unit += 1
+  }
+  const signed = value < 0 ? -size : size
+  const digits = unit === 0 ? 0 : options.compact && signed >= 100 ? 0 : 2
+  const joiner = options.compact ? '' : ' '
+  return `${signed.toFixed(digits)}${joiner}${units[unit]}`
+}
+
+function formatRate(value: number | null | undefined): string {
+  if (value === null || value === undefined) return '--'
+  return `${formatKulinBytes(value)} /s`.replace(' /s', '/s')
+}
+
+function formatCores(value: number | null | undefined): string {
+  if (value === null || value === undefined) return '-- Cores'
+  return `${value.toFixed(value % 1 === 0 ? 0 : 1)} ${value === 1 ? 'Core' : 'Cores'}`
+}
+
+function formatUsage(value: number | null | undefined): string {
+  if (value === null || value === undefined) return '--'
+  return value.toFixed(2)
+}
+
+function normalizeLoss(value: number | null | undefined): string {
+  if (value === null || value === undefined) return '--'
+  return `${value.toFixed(2)}%`
+}
+
+export function ServerCard({ node }: ServerCardProps) {
+  const memoryPercent = ratio(node.memoryUsedBytes, node.memoryTotalBytes)
+  const diskPercent = ratio(node.diskUsedBytes, node.diskTotalBytes)
+  const trafficPercent = ratio(node.monthlyBillableBytes, node.monthlyQuotaBytes)
   const latency = node.latencySummary
 
   return (
-    <article className={`server-card status-${node.status}${isSelected ? ' is-selected' : ''}`}>
-      <header className="server-card__header">
-        <div className="server-card__icon" aria-hidden="true">{osIcon[node.os]}</div>
-        <div className="server-card__title-block">
-          <div className="server-card__title-line">
-            <span className="status-dot" aria-label={node.status} />
-            <span className="flag">{flag(node.countryCode)}</span>
-            <h2>{node.displayName}</h2>
-          </div>
-          <p>{node.subtitle ?? 'No subtitle'}</p>
+    <article className="kulin-node-card">
+      <section className="node-head">
+        <img alt={node.os} className="node-os" loading="lazy" src={osAsset[node.os]} />
+        <div className="node-title-line">
+          <span className={`node-dot status-${node.status}`} />
+          <span className="node-flag">{flag(node.countryCode)}</span>
+          <p>{node.displayName}</p>
         </div>
-        <span className="status-pill">{node.status.replace('_', ' ')}</span>
-      </header>
-
-      <section className="server-card__bars" aria-label={`${node.displayName} resources`}>
-        <ResourceBar label="CPU" percent={node.cpuPercent} valueText={formatPercent(node.cpuPercent)} />
-        <ResourceBar label="内存" percent={percent(node.memoryUsedBytes, node.memoryTotalBytes)} usedBytes={node.memoryUsedBytes} totalBytes={node.memoryTotalBytes} />
-        <ResourceBar label="硬盘" percent={percent(node.diskUsedBytes, node.diskTotalBytes)} usedBytes={node.diskUsedBytes} totalBytes={node.diskTotalBytes} />
-        <ResourceBar label="月流量" percent={monthlyPercent} usedBytes={node.monthlyBillableBytes} totalBytes={node.monthlyQuotaBytes} />
+        <div className="node-expiry">{node.expiryLabel ?? '永 久'}</div>
       </section>
 
-      <section className="server-card__traffic" aria-label={`${node.displayName} traffic`}>
-        <div><span>↓</span><strong>{formatBps(node.netInSpeedBps)}</strong><em>当前下载</em></div>
-        <div><span>↑</span><strong>{formatBps(node.netOutSpeedBps)}</strong><em>当前上传</em></div>
-        <div><span>↙</span><strong>{formatBytes(node.netInTotalBytes)}</strong><em>总接收</em></div>
-        <div><span>↗</span><strong>{formatBytes(node.netOutTotalBytes)}</strong><em>总发送</em></div>
+      <section className="node-specs" aria-label={`${node.displayName} specs`}>
+        <SpecIcon kind="cpu" label={formatCores(node.cpuCores)} />
+        <SpecIcon kind="memory" label={formatKulinBytes(node.memoryTotalBytes)} />
+        <SpecIcon kind="disk" label={formatKulinBytes(node.diskTotalBytes)} />
       </section>
 
-      <footer className="server-card__latency">
-        <span className="latency-target">{latency?.targetName ?? 'No target'}</span>
-        <strong>{formatLatency(latency?.medianMs)}</strong>
-        <span className={(latency?.lossPercent ?? 0) > 0 ? 'loss is-loss' : 'loss'}>
-          loss {formatPercent(latency?.lossPercent)}
-        </span>
-        {onSelect && (
-          <button className="detail-button" type="button" aria-pressed={isSelected} onClick={() => onSelect(node.id)}>
-            {isSelected ? '已选中' : '详情'}
-          </button>
-        )}
-      </footer>
+      <section className="node-bars" aria-label={`${node.displayName} usage`}>
+        <UsageBar label="CPU" valueText={`${formatUsage(node.cpuPercent)}%`} percent={node.cpuPercent} />
+        <UsageBar label="内存" valueText={`${formatUsage(memoryPercent)}%`} percent={memoryPercent} />
+        <UsageBar label="存储" valueText={`${formatUsage(diskPercent)}%`} percent={diskPercent} />
+        <UsageBar label="流量" valueText={`${formatKulinBytes(node.monthlyBillableBytes, { compact: true })} / ${formatKulinBytes(node.monthlyQuotaBytes)}`} percent={trafficPercent} />
+      </section>
+
+      <section className="node-footer-grid" aria-label={`${node.displayName} network and latency`}>
+        <Metric label="上传" value={formatRate(node.netOutSpeedBps)} />
+        <Metric label="下载" value={formatRate(node.netInSpeedBps)} />
+        <Metric label="延迟" value={formatLatency(latency?.medianMs)} />
+        <Metric label="丢包率" value={normalizeLoss(latency?.lossPercent)} />
+      </section>
     </article>
+  )
+}
+
+function UsageBar({ label, valueText, percent }: { label: string; valueText: string; percent: number | null | undefined }) {
+  const value = clampPercent(percent)
+  return (
+    <div className="usage-row">
+      <div className="usage-row__meta">
+        <span>{label}</span>
+        <strong>{valueText}</strong>
+      </div>
+      <div className="usage-track" role="progressbar" aria-label="Server Usage Bar" aria-valuemin={0} aria-valuemax={100} aria-valuenow={value}>
+        <div className={`usage-fill is-${barTone(percent)}`} style={{ transform: `translateX(-${100 - value}%)` }} />
+      </div>
+    </div>
+  )
+}
+
+function Metric({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="node-metric">
+      <span>{label}</span>
+      <strong>{value}</strong>
+    </div>
+  )
+}
+
+function SpecIcon({ kind, label }: { kind: 'cpu' | 'memory' | 'disk'; label: string }) {
+  return (
+    <div className={`node-spec spec-${kind}`}>
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        {kind === 'cpu' && <><rect x="5" y="5" width="14" height="14" rx="2" /><rect x="9" y="9" width="6" height="6" rx="1" /><path d="M9 1v3M15 1v3M9 20v3M15 20v3M1 9h3M1 15h3M20 9h3M20 15h3" /></>}
+        {kind === 'memory' && <><rect x="3" y="7" width="18" height="10" rx="2" /><path d="M7 11v2M11 11v2M15 11v2M19 11v2M5 17v3M9 17v3M15 17v3M19 17v3" /></>}
+        {kind === 'disk' && <><path d="M5 5h14l3 7v5a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2v-5l3-7Z" /><path d="M3 12h18" /><circle cx="7" cy="16" r="1" /><circle cx="11" cy="16" r="1" /></>}
+      </svg>
+      <span>{label}</span>
+    </div>
   )
 }

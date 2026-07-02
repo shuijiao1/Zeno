@@ -12,6 +12,8 @@ describe('normalizeSummary', () => {
           os: 'debian',
           country_code: 'HK',
           subtitle: 'Hong Kong',
+          cpu_cores: 2,
+          expiry_label: '永 久',
           cpu_percent: 12.5,
           memory_used_bytes: 100,
           memory_total_bytes: 200,
@@ -40,6 +42,8 @@ describe('normalizeSummary', () => {
 
     expect(summary.nodes[0].displayName).toBe('Hytron')
     expect(summary.nodes[0].countryCode).toBe('HK')
+    expect(summary.nodes[0].cpuCores).toBe(2)
+    expect(summary.nodes[0].expiryLabel).toBe('永 久')
     expect(summary.nodes[0].monthlyBillableBytes).toBe(1000)
     expect(summary.nodes[0].latencySummary?.targetName).toBe('Google')
     expect(summary.latencyPoints[0].targetId).toBe('google')

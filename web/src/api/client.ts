@@ -16,6 +16,8 @@ interface ApiNode {
   os: HomeCardNode['os']
   country_code?: string
   subtitle?: string
+  cpu_cores?: number | null
+  expiry_label?: string
   cpu_percent: number | null
   memory_used_bytes: number | null
   memory_total_bytes: number | null
@@ -99,6 +101,8 @@ function normalizeNode(node: ApiNode): HomeCardNode {
     os: node.os,
     countryCode: node.country_code,
     subtitle: node.subtitle,
+    cpuCores: node.cpu_cores ?? null,
+    expiryLabel: node.expiry_label,
     cpuPercent: node.cpu_percent,
     memoryUsedBytes: node.memory_used_bytes,
     memoryTotalBytes: node.memory_total_bytes,

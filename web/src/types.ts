@@ -17,6 +17,8 @@ export interface HomeCardNode {
   os: 'debian' | 'ubuntu' | 'centos' | 'alpine' | 'linux' | 'unknown'
   countryCode?: string
   subtitle?: string
+  cpuCores?: number | null
+  expiryLabel?: string
   cpuPercent: number | null
   memoryUsedBytes: number | null
   memoryTotalBytes: number | null

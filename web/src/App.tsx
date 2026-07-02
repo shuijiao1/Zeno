@@ -1,24 +1,35 @@
 import { useEffect, useState } from 'react'
-import { fetchNodeLatency, fetchSummary, type NodeLatencyData, type SummaryData } from './api/client'
-import { LatencyChart } from './components/LatencyChart'
+import { fetchSummary, type SummaryData } from './api/client'
 import { ServerCard } from './components/ServerCard'
 
-// Public API data load for the dashboard shell.
 type LoadState =
   | { kind: 'loading' }
   | { kind: 'ready'; data: SummaryData }
   | { kind: 'error'; message: string }
 
-type NodeLatencyState =
-  | { kind: 'idle' }
-  | { kind: 'loading'; nodeId: string }
-  | { kind: 'ready'; data: NodeLatencyData }
-  | { kind: 'error'; nodeId: string; message: string }
+function sum(values: Array<number | null | undefined>): number {
+  return values.reduce<number>((total, value) => total + (value ?? 0), 0)
+}
+
+function compactBytes(value: number): string {
+  if (!Number.isFinite(value) || value <= 0) return '0 B'
+  const units = ['B', 'KB', 'MB', 'GB', 'TB', 'PB']
+  let size = value
+  let unit = 0
+  while (size >= 1024 && unit < units.length - 1) {
+    size /= 1024
+    unit += 1
+  }
+  const digits = unit === 0 ? 0 : 2
+  return `${size.toFixed(digits)} ${units[unit]}`
+}
+
+function compactRate(value: number): string {
+  return `${compactBytes(value)}/s`
+}
 
 export function App() {
   const [state, setState] = useState<LoadState>({ kind: 'loading' })
-  const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null)
-  const [nodeLatency, setNodeLatency] = useState<NodeLatencyState>({ kind: 'idle' })
 
   useEffect(() => {
     let cancelled = false
@@ -27,98 +38,80 @@ export function App() {
         if (!cancelled) setState({ kind: 'ready', data })
       })
       .catch((error: unknown) => {
-        if (!cancelled) {
-          setState({ kind: 'error', message: error instanceof Error ? error.message : 'unknown error' })
-        }
+        if (!cancelled) setState({ kind: 'error', message: error instanceof Error ? error.message : 'unknown error' })
       })
     return () => { cancelled = true }
   }, [])
 
   const nodes = state.kind === 'ready' ? state.data.nodes : []
-  const latencyPoints = state.kind === 'ready' ? state.data.latencyPoints : []
-  const selectedNode = nodes.find((node) => node.id === selectedNodeId) ?? nodes[0]
-  const effectiveSelectedNodeId = selectedNode?.id ?? null
+  const totalCount = nodes.length
   const onlineCount = nodes.filter((node) => node.status === 'online').length
-
-  useEffect(() => {
-    if (state.kind !== 'ready' || !effectiveSelectedNodeId) return
-
-    let cancelled = false
-    setNodeLatency({ kind: 'loading', nodeId: effectiveSelectedNodeId })
-    fetchNodeLatency(effectiveSelectedNodeId, '1h')
-      .then((data) => {
-        if (!cancelled) setNodeLatency({ kind: 'ready', data })
-      })
-      .catch((error: unknown) => {
-        if (!cancelled) {
-          setNodeLatency({
-            kind: 'error',
-            nodeId: effectiveSelectedNodeId,
-            message: error instanceof Error ? error.message : 'unknown error',
-          })
-        }
-      })
-    return () => { cancelled = true }
-  }, [state.kind, effectiveSelectedNodeId])
-
-  const selectedLatencyPoints = nodeLatency.kind === 'ready' && nodeLatency.data.nodeId === effectiveSelectedNodeId
-    ? nodeLatency.data.points
-    : []
+  const offlineCount = nodes.filter((node) => node.status === 'offline').length
+  const totalUp = sum(nodes.map((node) => node.netOutTotalBytes))
+  const totalDown = sum(nodes.map((node) => node.netInTotalBytes))
+  const upSpeed = sum(nodes.map((node) => node.netOutSpeedBps))
+  const downSpeed = sum(nodes.map((node) => node.netInSpeedBps))
 
   return (
-    <main className="app-shell">
-      <section className="hero">
-        <div>
-          <p className="eyebrow">JiaoProbe / 饺探</p>
-          <h1>水饺服务器状态</h1>
-          <p className="hero__subcopy">Public API mock 部署预览：Go Controller 同时提供 API 和前端静态页面；点击卡片详情会读取 `/api/public/v1/nodes/:id/latency`。</p>
+    <main className="kulin-shell">
+      <header className="kulin-nav">
+        <div className="brand">
+          <img src="/assets/logo/os-debian.svg" alt="apple-touch-icon" />
+          <span>水饺的探针</span>
         </div>
-        <div className="hero__status">
-          <strong>{state.kind === 'ready' ? `${onlineCount}/${nodes.length}` : '--'}</strong>
-          <span>online</span>
-        </div>
-      </section>
+        <nav className="nav-actions" aria-label="dashboard actions">
+          <a href="https://shuijiao.li/" target="_blank" rel="noreferrer">登录</a>
+          <button type="button" aria-label="language">中</button>
+          <button type="button">切换主题</button>
+          <button type="button" aria-label="menu">☰</button>
+        </nav>
+      </header>
 
       {state.kind === 'loading' && <section className="state-panel">正在读取 Controller API…</section>}
       {state.kind === 'error' && <section className="state-panel is-error">API 读取失败：{state.message}</section>}
 
       {state.kind === 'ready' && (
-        <>
-          <section className="cards-grid" aria-label="server cards">
-            {nodes.map((node) => (
-              <ServerCard
-                key={node.id}
-                node={node}
-                isSelected={node.id === effectiveSelectedNodeId}
-                onSelect={setSelectedNodeId}
-              />
-            ))}
+        <div className="kulin-container">
+          <section className="server-overview" aria-label="server overview">
+            <OverviewCard tone="blue" label="服务器总数" value={String(totalCount)} />
+            <OverviewCard tone="green" label="在线服务器" value={String(onlineCount)} pulse />
+            <OverviewCard tone="red" label="离线服务器" value={String(offlineCount)} pulse />
+            <article className="overview-card tone-purple">
+              <div className="overview-card__body network-overview">
+                <p>网络</p>
+                <div className="network-total">
+                  <strong className="up">↑{compactBytes(totalUp)}</strong>
+                  <strong className="down">↓{compactBytes(totalDown)}</strong>
+                </div>
+                <div className="network-speed">
+                  <span>⬆ {compactRate(upSpeed)}</span>
+                  <span>⬇ {compactRate(downSpeed)}</span>
+                </div>
+              </div>
+            </article>
           </section>
 
-          {selectedNode && (
-            <section className="node-detail-panel">
-              <div>
-                <p className="eyebrow">Selected node</p>
-                <h2>{selectedNode.displayName} 详情预览</h2>
-                <p>{selectedNode.subtitle ?? 'No subtitle'} · {selectedNode.status.replace('_', ' ')}</p>
-              </div>
-              <div className="node-detail-panel__metrics">
-                <span><strong>{selectedNode.latencySummary?.targetName ?? '--'}</strong><em>主探测目标</em></span>
-                <span><strong>{selectedNode.latencySummary?.medianMs ?? '--'}ms</strong><em>当前 median</em></span>
-                <span><strong>{selectedNode.latencySummary?.lossPercent ?? 0}%</strong><em>packet loss</em></span>
-              </div>
-            </section>
-          )}
+          <section className="server-controls" aria-hidden="true" />
 
-          {nodeLatency.kind === 'loading' && <section className="state-panel">正在读取 {selectedNode?.displayName ?? effectiveSelectedNodeId} 节点延迟…</section>}
-          {nodeLatency.kind === 'error' && <section className="state-panel is-error">节点延迟读取失败：{nodeLatency.message}</section>}
-          {selectedLatencyPoints.length > 0 && (
-            <LatencyChart eyebrow="Node latency" title={`${selectedNode?.displayName ?? '节点'} · 1h 多目标延迟`} points={selectedLatencyPoints} />
-          )}
-
-          <LatencyChart eyebrow="Overview latency" title="全局多目标延迟图" points={latencyPoints} />
-        </>
+          <section className="server-card-list" aria-label="server cards">
+            {nodes.map((node) => <ServerCard key={node.id} node={node} />)}
+          </section>
+        </div>
       )}
     </main>
+  )
+}
+
+function OverviewCard({ label, value, tone, pulse = false }: { label: string; value: string; tone: 'blue' | 'green' | 'red'; pulse?: boolean }) {
+  return (
+    <article className={`overview-card tone-${tone}`}>
+      <div className="overview-card__body">
+        <p>{label}</p>
+        <div className="overview-value">
+          <span className="pulse-dot"><i className={pulse ? 'is-pulsing' : ''} /><b /></span>
+          <strong>{value}</strong>
+        </div>
+      </div>
+    </article>
   )
 }

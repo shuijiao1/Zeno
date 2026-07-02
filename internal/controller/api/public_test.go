@@ -52,6 +52,12 @@ func TestSummaryEndpointReturnsMockHomeCardsWithoutSecrets(t *testing.T) {
 	if summary.Nodes[0].DisplayName != "Hytron" {
 		t.Fatalf("first node = %q, want Hytron", summary.Nodes[0].DisplayName)
 	}
+	if summary.Nodes[0].CPUCores == nil || *summary.Nodes[0].CPUCores != 2 {
+		t.Fatalf("first node cpu cores = %v, want 2", summary.Nodes[0].CPUCores)
+	}
+	if summary.Nodes[0].ExpiryLabel == "" {
+		t.Fatalf("first node should include a Kulin-style expiry label")
+	}
 	if len(summary.LatencyPoints) == 0 {
 		t.Fatal("summary should include latency points for the mock chart")
 	}
