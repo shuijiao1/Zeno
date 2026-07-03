@@ -38,6 +38,18 @@ export function StateHistoryPanel({ points, rangeLabel, loading = false, error }
   const latestInSpeed = latest(points, (point) => point.netInSpeedBps)
   const latestOutSpeed = latest(points, (point) => point.netOutSpeedBps)
   const latestUptime = latest(points, (point) => point.uptimeSeconds)
+  const latestLoad1 = latest(points, (point) => point.load1)
+  const latestLoad5 = latest(points, (point) => point.load5)
+  const latestLoad15 = latest(points, (point) => point.load15)
+  const latestSwap = latest(points, swapPercent)
+  const latestProcessCount = latest(points, (point) => point.processCount)
+  const latestTcpConnectionCount = latest(points, (point) => point.tcpConnectionCount)
+  const stateFacts = [
+    latestLoad1 !== null && latestLoad5 !== null && latestLoad15 !== null ? `负载 ${formatFixed(latestLoad1, 2)} / ${formatFixed(latestLoad5, 2)} / ${formatFixed(latestLoad15, 2)}` : null,
+    latestSwap !== null ? `Swap ${formatPercent(latestSwap)}` : null,
+    latestProcessCount !== null ? `进程 ${Math.round(latestProcessCount)}` : null,
+    latestTcpConnectionCount !== null ? `TCP ${Math.round(latestTcpConnectionCount)}` : null,
+  ].filter((fact): fact is string => fact !== null)
 
   const metrics: MetricConfig[] = [
     {
@@ -87,7 +99,12 @@ export function StateHistoryPanel({ points, rangeLabel, loading = false, error }
           <h3>系统资源历史</h3>
           <p>{rangeLabel} · {sampleCount} 个状态采样</p>
         </div>
-        {latestUptime !== null && <strong className="state-uptime">运行 {formatUptime(latestUptime)}</strong>}
+        {(latestUptime !== null || stateFacts.length > 0) && (
+          <div className="state-metric-strip">
+            {latestUptime !== null && <strong className="state-uptime">运行 {formatUptime(latestUptime)}</strong>}
+            {stateFacts.map((fact) => <span key={fact} className="state-fact">{fact}</span>)}
+          </div>
+        )}
       </header>
 
       {loading && <div className="detail-state">正在读取系统资源…</div>}
@@ -168,6 +185,10 @@ function memoryPercent(point: StatePoint): number | null {
   return ratioPercent(point.memoryUsedBytes, point.memoryTotalBytes)
 }
 
+function swapPercent(point: StatePoint): number | null {
+  return ratioPercent(point.swapUsedBytes, point.swapTotalBytes)
+}
+
 function diskPercent(point: StatePoint): number | null {
   return ratioPercent(point.diskUsedBytes, point.diskTotalBytes)
 }
@@ -181,6 +202,10 @@ function ratioPercent(used: number | null | undefined, total: number | null | un
 
 function finiteOrNull(value: number | null | undefined): number | null {
   return typeof value === 'number' && Number.isFinite(value) ? value : null
+}
+
+function formatFixed(value: number, digits: number): string {
+  return value.toFixed(digits)
 }
 
 function yDomain(values: Array<number | null>, forcedMax?: number): { min: number; max: number } {

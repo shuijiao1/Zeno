@@ -69,17 +69,26 @@ X-Agent-Version: <version>
 {
   "ts": 1782990000,
   "cpu_percent": 12.3,
+  "load1": 0.42,
+  "load5": 0.35,
+  "load15": 0.28,
   "memory_used_bytes": 751619276,
   "memory_total_bytes": 2147483648,
+  "swap_used_bytes": 268435456,
+  "swap_total_bytes": 1073741824,
   "disk_used_bytes": 8589934592,
   "disk_total_bytes": 42949672960,
   "net_in_total_bytes": 123456789,
   "net_out_total_bytes": 987654321,
   "net_in_speed_bps": 10240,
   "net_out_speed_bps": 20480,
+  "process_count": 88,
+  "tcp_connection_count": 34,
   "uptime_seconds": 86400
 }
 ```
+
+`load1` / `load5` / `load15`、`swap_*`、`process_count`、`tcp_connection_count` 是新 Agent 上报字段；旧 Agent 省略时会按 `null` 存储/展示，不会伪装成 0。`tcp_connection_count` 统计 `/proc/net/tcp*` 的连接表数据行，包含监听等 TCP socket 行。
 
 ### GET /api/agent/v1/probe-targets
 
@@ -193,19 +202,28 @@ range=1h|1d|7d|30d
     {
       "ts": "2026-07-03T01:20:00Z",
       "cpu_percent": 18.75,
+      "load1": 0.42,
+      "load5": 0.35,
+      "load15": 0.28,
       "memory_used_bytes": 4294967296,
       "memory_total_bytes": 8589934592,
+      "swap_used_bytes": 536870912,
+      "swap_total_bytes": 2147483648,
       "disk_used_bytes": 42949672960,
       "disk_total_bytes": 171798691840,
       "net_in_total_bytes": 1000000,
       "net_out_total_bytes": 2000000,
       "net_in_speed_bps": 2048.5,
       "net_out_speed_bps": 1024.25,
+      "process_count": 88,
+      "tcp_connection_count": 34,
       "uptime_seconds": 3601
     }
   ]
 }
 ```
+
+新指标字段可能为 `null`：旧 Agent 或迁移前历史采样没有对应值时，Public API 保持空值，前端不会显示成 0。`tcp_connection_count` 的语义同 Agent 上报字段：统计 `/proc/net/tcp*` 连接表数据行。
 
 ## Admin API
 

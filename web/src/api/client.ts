@@ -48,14 +48,21 @@ interface ApiLatencyPoint {
 interface ApiStatePoint {
   ts: string
   cpu_percent: number | null
+  load1?: number | null
+  load5?: number | null
+  load15?: number | null
   memory_used_bytes: number | null
   memory_total_bytes: number | null
+  swap_used_bytes?: number | null
+  swap_total_bytes?: number | null
   disk_used_bytes: number | null
   disk_total_bytes: number | null
   net_in_total_bytes: number | null
   net_out_total_bytes: number | null
   net_in_speed_bps: number | null
   net_out_speed_bps: number | null
+  process_count?: number | null
+  tcp_connection_count?: number | null
   uptime_seconds: number | null
 }
 
@@ -726,14 +733,21 @@ function normalizeStatePoint(point: ApiStatePoint): StatePoint {
   return {
     ts: point.ts,
     cpuPercent: point.cpu_percent,
+    load1: point.load1 ?? null,
+    load5: point.load5 ?? null,
+    load15: point.load15 ?? null,
     memoryUsedBytes: point.memory_used_bytes,
     memoryTotalBytes: point.memory_total_bytes,
+    swapUsedBytes: point.swap_used_bytes ?? null,
+    swapTotalBytes: point.swap_total_bytes ?? null,
     diskUsedBytes: point.disk_used_bytes,
     diskTotalBytes: point.disk_total_bytes,
     netInTotalBytes: point.net_in_total_bytes,
     netOutTotalBytes: point.net_out_total_bytes,
     netInSpeedBps: point.net_in_speed_bps,
     netOutSpeedBps: point.net_out_speed_bps,
+    processCount: point.process_count ?? null,
+    tcpConnectionCount: point.tcp_connection_count ?? null,
     uptimeSeconds: point.uptime_seconds,
   }
 }

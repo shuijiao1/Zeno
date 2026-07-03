@@ -3,6 +3,7 @@ package api
 import (
 	"bytes"
 	"context"
+	"database/sql"
 	"encoding/json"
 	"io"
 	"math"
@@ -904,17 +905,24 @@ func TestAgentStateSamplesDrivePublicSummaryAndMonthlyTrafficDeltas(t *testing.T
 	postState := func(ts int64, inTotal, outTotal int64, cpu float64) {
 		t.Helper()
 		body := map[string]any{
-			"ts":                  ts,
-			"cpu_percent":         cpu,
-			"memory_used_bytes":   int64(3 * 1024 * 1024 * 1024),
-			"memory_total_bytes":  int64(8 * 1024 * 1024 * 1024),
-			"disk_used_bytes":     int64(40 * 1024 * 1024 * 1024),
-			"disk_total_bytes":    int64(160 * 1024 * 1024 * 1024),
-			"net_in_total_bytes":  inTotal,
-			"net_out_total_bytes": outTotal,
-			"net_in_speed_bps":    2048.5,
-			"net_out_speed_bps":   1024.25,
-			"uptime_seconds":      int64(3600),
+			"ts":                   ts,
+			"cpu_percent":          cpu,
+			"load1":                0.42,
+			"load5":                0.35,
+			"load15":               0.28,
+			"memory_used_bytes":    int64(3 * 1024 * 1024 * 1024),
+			"memory_total_bytes":   int64(8 * 1024 * 1024 * 1024),
+			"swap_used_bytes":      int64(512 * 1024 * 1024),
+			"swap_total_bytes":     int64(2 * 1024 * 1024 * 1024),
+			"disk_used_bytes":      int64(40 * 1024 * 1024 * 1024),
+			"disk_total_bytes":     int64(160 * 1024 * 1024 * 1024),
+			"net_in_total_bytes":   inTotal,
+			"net_out_total_bytes":  outTotal,
+			"net_in_speed_bps":     2048.5,
+			"net_out_speed_bps":    1024.25,
+			"process_count":        88,
+			"tcp_connection_count": 34,
+			"uptime_seconds":       int64(3600),
 		}
 		payload, err := json.Marshal(body)
 		if err != nil {
@@ -949,11 +957,149 @@ func TestAgentStateSamplesDrivePublicSummaryAndMonthlyTrafficDeltas(t *testing.T
 	if node.MonthlyBillableBytes == nil || *node.MonthlyBillableBytes != 1_000_000 {
 		t.Fatalf("monthly billable = %v, want second sample delta in+out = 1000000", node.MonthlyBillableBytes)
 	}
+	state, err := store.NodeState(ctx, "hytron", latencyWindow{Name: "1h", Samples: 36, Step: 2 * time.Minute})
+	if err != nil {
+		t.Fatalf("node state: %v", err)
+	}
+	if len(state.Points) != 2 {
+		t.Fatalf("state points = %d, want 2", len(state.Points))
+	}
+	latest := state.Points[1]
+	if latest.Load1 == nil || *latest.Load1 != 0.42 || latest.Load5 == nil || *latest.Load5 != 0.35 || latest.Load15 == nil || *latest.Load15 != 0.28 {
+		t.Fatalf("load averages = %+v, want persisted load1/load5/load15", latest)
+	}
+	if latest.SwapUsedBytes == nil || *latest.SwapUsedBytes != float64(512*1024*1024) || latest.SwapTotalBytes == nil || *latest.SwapTotalBytes != float64(2*1024*1024*1024) {
+		t.Fatalf("swap fields = %+v, want persisted swap usage", latest)
+	}
+	if latest.ProcessCount == nil || *latest.ProcessCount != 88 || latest.TCPConnectionCount == nil || *latest.TCPConnectionCount != 34 {
+		t.Fatalf("process/tcp counts = %+v, want persisted process and tcp connection counts", latest)
+	}
 	var samples int
 	if err := store.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM state_samples`).Scan(&samples); err != nil {
 		t.Fatalf("count state samples: %v", err)
 	}
 	if samples != 2 {
 		t.Fatalf("state samples = %d, want 2", samples)
+	}
+}
+
+func TestAgentStateLegacyPayloadKeepsExtraMetricsNull(t *testing.T) {
+	store, err := OpenSQLiteStore(filepath.Join(t.TempDir(), "zeno.db"))
+	if err != nil {
+		t.Fatalf("open sqlite store: %v", err)
+	}
+	defer store.Close()
+	ctx := context.Background()
+	if err := store.SeedPreviewData(ctx, PreviewSeedOptions{NodeID: "hytron", DisplayName: "Hytron", CountryCode: "HK", AgentToken: "test-agent-token"}); err != nil {
+		t.Fatalf("seed preview data: %v", err)
+	}
+
+	body := map[string]any{
+		"ts":                  time.Now().UTC().Unix(),
+		"cpu_percent":         18.75,
+		"memory_used_bytes":   int64(3 * 1024 * 1024 * 1024),
+		"memory_total_bytes":  int64(8 * 1024 * 1024 * 1024),
+		"disk_used_bytes":     int64(40 * 1024 * 1024 * 1024),
+		"disk_total_bytes":    int64(160 * 1024 * 1024 * 1024),
+		"net_in_total_bytes":  int64(1_000_000),
+		"net_out_total_bytes": int64(2_000_000),
+		"net_in_speed_bps":    2048.5,
+		"net_out_speed_bps":   1024.25,
+		"uptime_seconds":      int64(3600),
+	}
+	payload, err := json.Marshal(body)
+	if err != nil {
+		t.Fatalf("marshal state body: %v", err)
+	}
+	recorder := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodPost, "/api/agent/v1/state", bytes.NewReader(payload))
+	request.Header.Set("X-Node-ID", "hytron")
+	request.Header.Set("Authorization", "Bearer test-agent-token")
+	request.Header.Set("Content-Type", "application/json")
+	NewHandler(HandlerOptions{Store: store}).ServeHTTP(recorder, request)
+	if recorder.Code != http.StatusAccepted {
+		t.Fatalf("status = %d, want 202 for legacy state payload; body=%s", recorder.Code, recorder.Body.String())
+	}
+
+	state, err := store.NodeState(ctx, "hytron", latencyWindow{Name: "1h", Samples: 36, Step: 2 * time.Minute})
+	if err != nil {
+		t.Fatalf("node state: %v", err)
+	}
+	if len(state.Points) != 1 {
+		t.Fatalf("state points = %d, want 1", len(state.Points))
+	}
+	point := state.Points[0]
+	if point.CPUPercent == nil || *point.CPUPercent != 18.75 {
+		t.Fatalf("cpu percent = %v, want persisted legacy metric", point.CPUPercent)
+	}
+	if point.Load1 != nil || point.Load5 != nil || point.Load15 != nil || point.SwapUsedBytes != nil || point.SwapTotalBytes != nil || point.ProcessCount != nil || point.TCPConnectionCount != nil {
+		t.Fatalf("legacy payload should keep extra metrics null, got %+v", point)
+	}
+}
+
+func TestAgentStateSchemaMigratesExtraMetricColumnsAsNullable(t *testing.T) {
+	dbPath := filepath.Join(t.TempDir(), "zeno.db")
+	legacyDB, err := sql.Open("sqlite", dbPath)
+	if err != nil {
+		t.Fatalf("open legacy sqlite db: %v", err)
+	}
+	if _, err := legacyDB.Exec(`
+		CREATE TABLE state_samples (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			node_id TEXT NOT NULL,
+			ts INTEGER NOT NULL,
+			cpu_percent REAL,
+			memory_used_bytes INTEGER,
+			memory_total_bytes INTEGER,
+			disk_used_bytes INTEGER,
+			disk_total_bytes INTEGER,
+			net_in_total_bytes INTEGER,
+			net_out_total_bytes INTEGER,
+			net_in_speed_bps REAL,
+			net_out_speed_bps REAL,
+			uptime_seconds INTEGER
+		);
+	`); err != nil {
+		_ = legacyDB.Close()
+		t.Fatalf("create legacy state_samples table: %v", err)
+	}
+	if err := legacyDB.Close(); err != nil {
+		t.Fatalf("close legacy db: %v", err)
+	}
+
+	store, err := OpenSQLiteStore(dbPath)
+	if err != nil {
+		t.Fatalf("open migrated sqlite store: %v", err)
+	}
+	defer store.Close()
+	ctx := context.Background()
+	columns := map[string]bool{}
+	rows, err := store.db.QueryContext(ctx, `PRAGMA table_info(state_samples)`)
+	if err != nil {
+		t.Fatalf("query migrated state_samples schema: %v", err)
+	}
+	for rows.Next() {
+		var cid int
+		var name, dataType string
+		var notNull int
+		var defaultValue any
+		var primaryKey int
+		if err := rows.Scan(&cid, &name, &dataType, &notNull, &defaultValue, &primaryKey); err != nil {
+			_ = rows.Close()
+			t.Fatalf("scan schema row: %v", err)
+		}
+		columns[name] = true
+		if (name == "load1" || name == "load5" || name == "load15" || name == "swap_used_bytes" || name == "swap_total_bytes" || name == "process_count" || name == "tcp_connection_count") && notNull != 0 {
+			_ = rows.Close()
+			t.Fatalf("migrated column %s should be nullable", name)
+		}
+	}
+	if err := rows.Close(); err != nil {
+		t.Fatalf("close schema rows: %v", err)
+	}
+	for _, column := range []string{"load1", "load5", "load15", "swap_used_bytes", "swap_total_bytes", "process_count", "tcp_connection_count"} {
+		if !columns[column] {
+			t.Fatalf("migrated state_samples missing column %s", column)
+		}
 	}
 }

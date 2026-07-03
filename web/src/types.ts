@@ -49,14 +49,21 @@ export interface LatencyPoint {
 export interface StatePoint {
   ts: string
   cpuPercent: number | null
+  load1: number | null
+  load5: number | null
+  load15: number | null
   memoryUsedBytes: number | null
   memoryTotalBytes: number | null
+  swapUsedBytes: number | null
+  swapTotalBytes: number | null
   diskUsedBytes: number | null
   diskTotalBytes: number | null
   netInTotalBytes: number | null
   netOutTotalBytes: number | null
   netInSpeedBps: number | null
   netOutSpeedBps: number | null
+  processCount: number | null
+  tcpConnectionCount: number | null
   uptimeSeconds: number | null
 }
 

@@ -46,6 +46,8 @@ func (c *MetricsCollector) CollectHost(version string) HostInfo {
 func (c *MetricsCollector) CollectState(now time.Time) StateSample {
 	cpu := c.cpuPercent()
 	memTotal, memAvailable := readMemoryTotals()
+	swapTotal, swapFree := readSwapTotals()
+	load1, load5, load15 := readLoadAverages()
 	diskUsed, diskTotal := diskUsage("/")
 	netTotals := readNetworkTotals()
 	var inSpeed, outSpeed float64
@@ -61,17 +63,24 @@ func (c *MetricsCollector) CollectState(now time.Time) StateSample {
 	c.hasNet = true
 
 	return StateSample{
-		TS:               now.UTC().Unix(),
-		CPUPercent:       cpu,
-		MemoryUsedBytes:  nonNegativeInt64(memTotal - memAvailable),
-		MemoryTotalBytes: memTotal,
-		DiskUsedBytes:    diskUsed,
-		DiskTotalBytes:   diskTotal,
-		NetInTotalBytes:  netTotals.InBytes,
-		NetOutTotalBytes: netTotals.OutBytes,
-		NetInSpeedBps:    inSpeed,
-		NetOutSpeedBps:   outSpeed,
-		UptimeSeconds:    uptimeSeconds(),
+		TS:                 now.UTC().Unix(),
+		CPUPercent:         cpu,
+		Load1:              load1,
+		Load5:              load5,
+		Load15:             load15,
+		MemoryUsedBytes:    nonNegativeInt64(memTotal - memAvailable),
+		MemoryTotalBytes:   memTotal,
+		SwapUsedBytes:      nonNegativeInt64(swapTotal - swapFree),
+		SwapTotalBytes:     swapTotal,
+		DiskUsedBytes:      diskUsed,
+		DiskTotalBytes:     diskTotal,
+		NetInTotalBytes:    netTotals.InBytes,
+		NetOutTotalBytes:   netTotals.OutBytes,
+		NetInSpeedBps:      inSpeed,
+		NetOutSpeedBps:     outSpeed,
+		ProcessCount:       processCount(),
+		TCPConnectionCount: tcpConnectionCount(),
+		UptimeSeconds:      uptimeSeconds(),
 	}
 }
 
@@ -140,7 +149,29 @@ func readMemoryTotals() (total int64, available int64) {
 	if err != nil {
 		return 0, 0
 	}
-	scanner := bufio.NewScanner(strings.NewReader(string(content)))
+	stats := parseMemoryStats(string(content))
+	return stats.memTotal, stats.memAvailable
+}
+
+type memoryStats struct {
+	memTotal     int64
+	memAvailable int64
+	swapTotal    int64
+	swapFree     int64
+}
+
+func readSwapTotals() (total int64, free int64) {
+	content, err := os.ReadFile("/proc/meminfo")
+	if err != nil {
+		return 0, 0
+	}
+	stats := parseMemoryStats(string(content))
+	return stats.swapTotal, stats.swapFree
+}
+
+func parseMemoryStats(content string) memoryStats {
+	stats := memoryStats{}
+	scanner := bufio.NewScanner(strings.NewReader(content))
 	for scanner.Scan() {
 		fields := strings.Fields(scanner.Text())
 		if len(fields) < 2 {
@@ -152,12 +183,75 @@ func readMemoryTotals() (total int64, available int64) {
 		}
 		switch strings.TrimSuffix(fields[0], ":") {
 		case "MemTotal":
-			total = valueKB * 1024
+			stats.memTotal = valueKB * 1024
 		case "MemAvailable":
-			available = valueKB * 1024
+			stats.memAvailable = valueKB * 1024
+		case "SwapTotal":
+			stats.swapTotal = valueKB * 1024
+		case "SwapFree":
+			stats.swapFree = valueKB * 1024
 		}
 	}
-	return total, available
+	return stats
+}
+
+func readLoadAverages() (load1, load5, load15 float64) {
+	content, err := os.ReadFile("/proc/loadavg")
+	if err != nil {
+		return 0, 0, 0
+	}
+	fields := strings.Fields(string(content))
+	if len(fields) < 3 {
+		return 0, 0, 0
+	}
+	load1, _ = strconv.ParseFloat(fields[0], 64)
+	load5, _ = strconv.ParseFloat(fields[1], 64)
+	load15, _ = strconv.ParseFloat(fields[2], 64)
+	return load1, load5, load15
+}
+
+func processCount() int64 {
+	entries, err := os.ReadDir("/proc")
+	if err != nil {
+		return 0
+	}
+	var count int64
+	for _, entry := range entries {
+		if !entry.IsDir() {
+			continue
+		}
+		name := entry.Name()
+		if name == "" {
+			continue
+		}
+		allDigits := true
+		for _, r := range name {
+			if r < '0' || r > '9' {
+				allDigits = false
+				break
+			}
+		}
+		if allDigits {
+			count++
+		}
+	}
+	return count
+}
+
+func tcpConnectionCount() int64 {
+	return tcpConnectionCountFromFile("/proc/net/tcp") + tcpConnectionCountFromFile("/proc/net/tcp6")
+}
+
+func tcpConnectionCountFromFile(path string) int64 {
+	content, err := os.ReadFile(path)
+	if err != nil {
+		return 0
+	}
+	lines := strings.Split(strings.TrimSpace(string(content)), "\n")
+	if len(lines) <= 1 {
+		return 0
+	}
+	return int64(len(lines) - 1)
 }
 
 func diskUsage(path string) (used int64, total int64) {

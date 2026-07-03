@@ -100,6 +100,49 @@ describe('normalizeNodeState', () => {
         {
           ts: '2026-07-02T12:00:00Z',
           cpu_percent: 18.75,
+          load1: 0.42,
+          load5: 0.35,
+          load15: 0.28,
+          memory_used_bytes: 4096,
+          memory_total_bytes: 8192,
+          swap_used_bytes: 512,
+          swap_total_bytes: 2048,
+          disk_used_bytes: 1024,
+          disk_total_bytes: 2048,
+          net_in_total_bytes: 1000,
+          net_out_total_bytes: 2000,
+          net_in_speed_bps: 128,
+          net_out_speed_bps: 256,
+          process_count: 88,
+          tcp_connection_count: 34,
+          uptime_seconds: 3601,
+        },
+      ],
+    })
+
+    expect(data.nodeId).toBe('hytron')
+    expect(data.range).toBe('1h')
+    expect(data.points[0].cpuPercent).toBe(18.75)
+    expect(data.points[0].load1).toBe(0.42)
+    expect(data.points[0].load5).toBe(0.35)
+    expect(data.points[0].load15).toBe(0.28)
+    expect(data.points[0].memoryUsedBytes).toBe(4096)
+    expect(data.points[0].swapUsedBytes).toBe(512)
+    expect(data.points[0].swapTotalBytes).toBe(2048)
+    expect(data.points[0].netOutSpeedBps).toBe(256)
+    expect(data.points[0].processCount).toBe(88)
+    expect(data.points[0].tcpConnectionCount).toBe(34)
+    expect(data.points[0].uptimeSeconds).toBe(3601)
+  })
+
+  it('normalizes old state payloads without extra metrics to nulls', () => {
+    const data = normalizeNodeState({
+      node_id: 'hytron',
+      range: '1h',
+      points: [
+        {
+          ts: '2026-07-02T12:00:00Z',
+          cpu_percent: 18.75,
           memory_used_bytes: 4096,
           memory_total_bytes: 8192,
           disk_used_bytes: 1024,
@@ -113,12 +156,10 @@ describe('normalizeNodeState', () => {
       ],
     })
 
-    expect(data.nodeId).toBe('hytron')
-    expect(data.range).toBe('1h')
-    expect(data.points[0].cpuPercent).toBe(18.75)
-    expect(data.points[0].memoryUsedBytes).toBe(4096)
-    expect(data.points[0].netOutSpeedBps).toBe(256)
-    expect(data.points[0].uptimeSeconds).toBe(3601)
+    expect(data.points[0].load1).toBeNull()
+    expect(data.points[0].swapUsedBytes).toBeNull()
+    expect(data.points[0].processCount).toBeNull()
+    expect(data.points[0].tcpConnectionCount).toBeNull()
   })
 })
 

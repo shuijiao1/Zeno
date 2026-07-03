@@ -63,15 +63,22 @@ type LatencyPoint struct {
 }
 
 type StatePoint struct {
-	TS               string   `json:"ts"`
-	CPUPercent       *float64 `json:"cpu_percent"`
-	MemoryUsedBytes  *float64 `json:"memory_used_bytes"`
-	MemoryTotalBytes *float64 `json:"memory_total_bytes"`
-	DiskUsedBytes    *float64 `json:"disk_used_bytes"`
-	DiskTotalBytes   *float64 `json:"disk_total_bytes"`
-	NetInTotalBytes  *float64 `json:"net_in_total_bytes"`
-	NetOutTotalBytes *float64 `json:"net_out_total_bytes"`
-	NetInSpeedBps    *float64 `json:"net_in_speed_bps"`
-	NetOutSpeedBps   *float64 `json:"net_out_speed_bps"`
-	UptimeSeconds    *float64 `json:"uptime_seconds"`
+	TS                 string   `json:"ts"`
+	CPUPercent         *float64 `json:"cpu_percent"`
+	Load1              *float64 `json:"load1"`
+	Load5              *float64 `json:"load5"`
+	Load15             *float64 `json:"load15"`
+	MemoryUsedBytes    *float64 `json:"memory_used_bytes"`
+	MemoryTotalBytes   *float64 `json:"memory_total_bytes"`
+	SwapUsedBytes      *float64 `json:"swap_used_bytes"`
+	SwapTotalBytes     *float64 `json:"swap_total_bytes"`
+	DiskUsedBytes      *float64 `json:"disk_used_bytes"`
+	DiskTotalBytes     *float64 `json:"disk_total_bytes"`
+	NetInTotalBytes    *float64 `json:"net_in_total_bytes"`
+	NetOutTotalBytes   *float64 `json:"net_out_total_bytes"`
+	NetInSpeedBps      *float64 `json:"net_in_speed_bps"`
+	NetOutSpeedBps     *float64 `json:"net_out_speed_bps"`
+	ProcessCount       *float64 `json:"process_count"`
+	TCPConnectionCount *float64 `json:"tcp_connection_count"`
+	UptimeSeconds      *float64 `json:"uptime_seconds"`
 }

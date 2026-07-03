@@ -19,8 +19,8 @@ func TestClientAddsAgentAuthHeadersAndPostsState(t *testing.T) {
 		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 			t.Fatalf("decode state body: %v", err)
 		}
-		if body.TS != 1782990000 || body.CPUPercent != 12.5 || body.NetOutSpeedBps != 1024 {
-			t.Fatalf("state body = %+v, want exact sample", body)
+		if body.TS != 1782990000 || body.CPUPercent != 12.5 || body.Load1 != 0.42 || body.Load5 != 0.35 || body.Load15 != 0.28 || body.SwapUsedBytes != 512 || body.SwapTotalBytes != 2048 || body.ProcessCount != 88 || body.TCPConnectionCount != 34 || body.NetOutSpeedBps != 1024 {
+			t.Fatalf("state body = %+v, want exact sample with extra metrics", body)
 		}
 		w.WriteHeader(http.StatusAccepted)
 		_, _ = w.Write([]byte(`{"ok":true}`))
@@ -28,7 +28,19 @@ func TestClientAddsAgentAuthHeadersAndPostsState(t *testing.T) {
 	defer server.Close()
 
 	client := NewClient(server.URL, "hytron", "secret-token")
-	err := client.PostState(context.Background(), StateSample{TS: 1782990000, CPUPercent: 12.5, NetOutSpeedBps: 1024})
+	sample := StateSample{
+		TS:                 1782990000,
+		CPUPercent:         12.5,
+		Load1:              0.42,
+		Load5:              0.35,
+		Load15:             0.28,
+		SwapUsedBytes:      512,
+		SwapTotalBytes:     2048,
+		NetOutSpeedBps:     1024,
+		ProcessCount:       88,
+		TCPConnectionCount: 34,
+	}
+	err := client.PostState(context.Background(), sample)
 	if err != nil {
 		t.Fatalf("post state: %v", err)
 	}

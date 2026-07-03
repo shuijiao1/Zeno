@@ -263,7 +263,7 @@ func (h *handler) handleAgentState(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid timestamp")
 		return
 	}
-	if request.CPUPercent < 0 || request.CPUPercent > 100 || request.MemoryUsedBytes < 0 || request.MemoryTotalBytes < 0 || request.DiskUsedBytes < 0 || request.DiskTotalBytes < 0 || request.NetInTotalBytes < 0 || request.NetOutTotalBytes < 0 || request.NetInSpeedBps < 0 || request.NetOutSpeedBps < 0 || request.UptimeSeconds < 0 {
+	if request.CPUPercent < 0 || request.CPUPercent > 100 || optionalFloatNegative(request.Load1) || optionalFloatNegative(request.Load5) || optionalFloatNegative(request.Load15) || request.MemoryUsedBytes < 0 || request.MemoryTotalBytes < 0 || optionalIntNegative(request.SwapUsedBytes) || optionalIntNegative(request.SwapTotalBytes) || request.DiskUsedBytes < 0 || request.DiskTotalBytes < 0 || request.NetInTotalBytes < 0 || request.NetOutTotalBytes < 0 || request.NetInSpeedBps < 0 || request.NetOutSpeedBps < 0 || optionalIntNegative(request.ProcessCount) || optionalIntNegative(request.TCPConnectionCount) || request.UptimeSeconds < 0 {
 		writeError(w, http.StatusBadRequest, "invalid state values")
 		return
 	}
@@ -281,6 +281,14 @@ func validAgentStatus(status string) bool {
 	default:
 		return false
 	}
+}
+
+func optionalFloatNegative(value *float64) bool {
+	return value != nil && *value < 0
+}
+
+func optionalIntNegative(value *int64) bool {
+	return value != nil && *value < 0
 }
 
 func (h *handler) authorizeAgentRequest(w http.ResponseWriter, r *http.Request) (agentStore, string, bool) {

@@ -74,14 +74,21 @@ func (s *SQLiteStore) ensureSchema(ctx context.Context) error {
 			node_id TEXT NOT NULL REFERENCES nodes(id),
 			ts INTEGER NOT NULL,
 			cpu_percent REAL,
+			load1 REAL,
+			load5 REAL,
+			load15 REAL,
 			memory_used_bytes INTEGER,
 			memory_total_bytes INTEGER,
+			swap_used_bytes INTEGER,
+			swap_total_bytes INTEGER,
 			disk_used_bytes INTEGER,
 			disk_total_bytes INTEGER,
 			net_in_total_bytes INTEGER,
 			net_out_total_bytes INTEGER,
 			net_in_speed_bps REAL,
 			net_out_speed_bps REAL,
+			process_count INTEGER,
+			tcp_connection_count INTEGER,
 			uptime_seconds INTEGER
 		);`,
 		`CREATE INDEX IF NOT EXISTS idx_state_samples_node_ts ON state_samples(node_id, ts);`,
@@ -182,7 +189,63 @@ func (s *SQLiteStore) ensureSchema(ctx context.Context) error {
 			return err
 		}
 	}
+	stateSampleColumns := map[string]string{
+		"load1":                "REAL",
+		"load5":                "REAL",
+		"load15":               "REAL",
+		"swap_used_bytes":      "INTEGER",
+		"swap_total_bytes":     "INTEGER",
+		"process_count":        "INTEGER",
+		"tcp_connection_count": "INTEGER",
+	}
+	for column, columnType := range stateSampleColumns {
+		if err := s.ensureColumn(ctx, "state_samples", column, columnType); err != nil {
+			return err
+		}
+	}
 	return nil
+}
+
+func (s *SQLiteStore) ensureColumn(ctx context.Context, table, column, columnType string) error {
+	if !safeSQLIdentifier(table) || !safeSQLIdentifier(column) || strings.TrimSpace(columnType) == "" {
+		return fmt.Errorf("invalid schema identifier")
+	}
+	rows, err := s.db.QueryContext(ctx, fmt.Sprintf("PRAGMA table_info(%s)", table))
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var cid int
+		var name, dataType string
+		var notNull int
+		var defaultValue any
+		var primaryKey int
+		if err := rows.Scan(&cid, &name, &dataType, &notNull, &defaultValue, &primaryKey); err != nil {
+			return err
+		}
+		if name == column {
+			return nil
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return err
+	}
+	_, err = s.db.ExecContext(ctx, fmt.Sprintf("ALTER TABLE %s ADD COLUMN %s %s", table, column, columnType))
+	return err
+}
+
+func safeSQLIdentifier(value string) bool {
+	if value == "" {
+		return false
+	}
+	for _, r := range value {
+		if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') || r == '_' {
+			continue
+		}
+		return false
+	}
+	return true
 }
 
 func (s *SQLiteStore) Summary(ctx context.Context) (SummaryResponse, error) {
@@ -727,9 +790,10 @@ func (s *SQLiteStore) latencyPoints(ctx context.Context, nodeID string, window l
 func (s *SQLiteStore) statePoints(ctx context.Context, nodeID string, window latencyWindow) ([]StatePoint, error) {
 	since := time.Now().UTC().Add(-time.Duration(window.Samples) * window.Step).Unix()
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT ts, cpu_percent, memory_used_bytes, memory_total_bytes,
+		SELECT ts, cpu_percent, load1, load5, load15,
+		       memory_used_bytes, memory_total_bytes, swap_used_bytes, swap_total_bytes,
 		       disk_used_bytes, disk_total_bytes, net_in_total_bytes, net_out_total_bytes,
-		       net_in_speed_bps, net_out_speed_bps, uptime_seconds
+		       net_in_speed_bps, net_out_speed_bps, process_count, tcp_connection_count, uptime_seconds
 		FROM state_samples
 		WHERE node_id = ?
 		  AND ts >= ?
@@ -743,23 +807,30 @@ func (s *SQLiteStore) statePoints(ctx context.Context, nodeID string, window lat
 	var points []StatePoint
 	for rows.Next() {
 		var ts int64
-		var cpuPercent, netInSpeed, netOutSpeed sql.NullFloat64
-		var memoryUsed, memoryTotal, diskUsed, diskTotal, netInTotal, netOutTotal, uptimeSeconds sql.NullInt64
-		if err := rows.Scan(&ts, &cpuPercent, &memoryUsed, &memoryTotal, &diskUsed, &diskTotal, &netInTotal, &netOutTotal, &netInSpeed, &netOutSpeed, &uptimeSeconds); err != nil {
+		var cpuPercent, load1, load5, load15, netInSpeed, netOutSpeed sql.NullFloat64
+		var memoryUsed, memoryTotal, swapUsed, swapTotal, diskUsed, diskTotal, netInTotal, netOutTotal, processCount, tcpConnectionCount, uptimeSeconds sql.NullInt64
+		if err := rows.Scan(&ts, &cpuPercent, &load1, &load5, &load15, &memoryUsed, &memoryTotal, &swapUsed, &swapTotal, &diskUsed, &diskTotal, &netInTotal, &netOutTotal, &netInSpeed, &netOutSpeed, &processCount, &tcpConnectionCount, &uptimeSeconds); err != nil {
 			return nil, err
 		}
 		points = append(points, StatePoint{
-			TS:               time.Unix(ts, 0).UTC().Format(time.RFC3339),
-			CPUPercent:       floatPtr(cpuPercent),
-			MemoryUsedBytes:  intPtr(memoryUsed),
-			MemoryTotalBytes: intPtr(memoryTotal),
-			DiskUsedBytes:    intPtr(diskUsed),
-			DiskTotalBytes:   intPtr(diskTotal),
-			NetInTotalBytes:  intPtr(netInTotal),
-			NetOutTotalBytes: intPtr(netOutTotal),
-			NetInSpeedBps:    floatPtr(netInSpeed),
-			NetOutSpeedBps:   floatPtr(netOutSpeed),
-			UptimeSeconds:    intPtr(uptimeSeconds),
+			TS:                 time.Unix(ts, 0).UTC().Format(time.RFC3339),
+			CPUPercent:         floatPtr(cpuPercent),
+			Load1:              floatPtr(load1),
+			Load5:              floatPtr(load5),
+			Load15:             floatPtr(load15),
+			MemoryUsedBytes:    intPtr(memoryUsed),
+			MemoryTotalBytes:   intPtr(memoryTotal),
+			SwapUsedBytes:      intPtr(swapUsed),
+			SwapTotalBytes:     intPtr(swapTotal),
+			DiskUsedBytes:      intPtr(diskUsed),
+			DiskTotalBytes:     intPtr(diskTotal),
+			NetInTotalBytes:    intPtr(netInTotal),
+			NetOutTotalBytes:   intPtr(netOutTotal),
+			NetInSpeedBps:      floatPtr(netInSpeed),
+			NetOutSpeedBps:     floatPtr(netOutSpeed),
+			ProcessCount:       intPtr(processCount),
+			TCPConnectionCount: intPtr(tcpConnectionCount),
+			UptimeSeconds:      intPtr(uptimeSeconds),
 		})
 	}
 	if err := rows.Err(); err != nil {
