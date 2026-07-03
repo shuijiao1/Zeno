@@ -47,7 +47,8 @@ func main() {
 func run(ctx context.Context, cfg config) error {
 	client := agent.NewClient(cfg.ControllerURL, cfg.NodeID, cfg.Token)
 	collector := agent.NewMetricsCollector()
-	if err := reportOnce(ctx, client, collector, cfg.Version, true); err != nil {
+	scheduler := agent.NewProbeScheduler()
+	if err := reportOnce(ctx, client, collector, cfg.Version, true, scheduler); err != nil {
 		return err
 	}
 	if cfg.Once {
@@ -63,14 +64,14 @@ func run(ctx context.Context, cfg config) error {
 		case <-ctx.Done():
 			return ctx.Err()
 		case <-ticker.C:
-			if err := reportOnce(ctx, client, collector, cfg.Version, true); err != nil {
+			if err := reportOnce(ctx, client, collector, cfg.Version, true, scheduler); err != nil {
 				log.Printf("report failed: %v", err)
 			}
 		}
 	}
 }
 
-func reportOnce(ctx context.Context, client *agent.Client, collector *agent.MetricsCollector, version string, includeHost bool) error {
+func reportOnce(ctx context.Context, client *agent.Client, collector *agent.MetricsCollector, version string, includeHost bool, scheduler *agent.ProbeScheduler) error {
 	now := time.Now().UTC()
 	if err := client.PostHeartbeat(ctx, "online", version, now); err != nil {
 		return err
@@ -87,13 +88,20 @@ func reportOnce(ctx context.Context, client *agent.Client, collector *agent.Metr
 	if err != nil {
 		return err
 	}
-	if len(targets) > 0 {
-		rounds := agent.ProbeTargets(ctx, targets, now)
+	dueTargets := targets
+	if scheduler != nil {
+		dueTargets = scheduler.Due(targets, now)
+	}
+	if len(dueTargets) > 0 {
+		rounds := agent.ProbeTargets(ctx, dueTargets, now)
 		if err := client.PostProbeResults(ctx, rounds); err != nil {
 			return err
 		}
+		if scheduler != nil {
+			scheduler.MarkCompleted(dueTargets, now)
+		}
 	}
-	log.Printf("reported host/state and %d probe target(s)", len(targets))
+	log.Printf("reported host/state and %d probe target(s)", len(dueTargets))
 	return nil
 }
 
