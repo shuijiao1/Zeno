@@ -151,6 +151,155 @@ func TestAgentProbeResultsAcceptsSamplesAndUpdatesPublicLatency(t *testing.T) {
 	}
 }
 
+func TestAgentProbeResultsMarksNodeWarningAndDispatchesProbeUnhealthy(t *testing.T) {
+	store, err := OpenSQLiteStore(filepath.Join(t.TempDir(), "jiaoprobe.db"))
+	if err != nil {
+		t.Fatalf("open sqlite store: %v", err)
+	}
+	defer store.Close()
+	ctx := context.Background()
+	if err := store.SeedPreviewData(ctx, PreviewSeedOptions{NodeID: "hytron", DisplayName: "Hytron", CountryCode: "HK", AgentToken: "test-agent-token"}); err != nil {
+		t.Fatalf("seed preview data: %v", err)
+	}
+
+	var captureMu sync.Mutex
+	var webhookBodies []string
+	var webhookErrors []error
+	webhook := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, err := io.ReadAll(r.Body)
+		captureMu.Lock()
+		defer captureMu.Unlock()
+		if err != nil {
+			webhookErrors = append(webhookErrors, err)
+			w.WriteHeader(http.StatusInternalServerError)
+			return
+		}
+		webhookBodies = append(webhookBodies, string(body))
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer webhook.Close()
+
+	enabled := true
+	if _, err := store.CreateAdminNotificationChannel(ctx, AdminNotificationChannelCreateRequest{ID: "ops-webhook", Name: "Ops Webhook", Type: "webhook", Destination: webhook.URL, Credential: "dispatch-credential-value", Enabled: &enabled}); err != nil {
+		t.Fatalf("create notification channel: %v", err)
+	}
+	if _, err := store.UpdateAdminNotificationType(ctx, "probe_unhealthy", AdminNotificationTypeUpdateRequest{Enabled: &enabled}); err != nil {
+		t.Fatalf("enable probe_unhealthy notification type: %v", err)
+	}
+
+	handler := NewHandler(HandlerOptions{Store: store})
+	now := time.Now().UTC().Truncate(time.Second)
+	postAgentHeartbeat(t, handler, now.Unix(), "online")
+
+	payload := []byte(`{"rounds":[{"target_id":"google-dns","ts":` + strconv.FormatInt(now.Add(time.Second).Unix(), 10) + `,"type":"tcping","samples":[{"seq":1,"success":false,"error":"timeout"},{"seq":2,"success":false,"error":"timeout"}]}]}`)
+	recorder := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodPost, "/api/agent/v1/probe-results", bytes.NewReader(payload))
+	request.Header.Set("X-Node-ID", "hytron")
+	request.Header.Set("Authorization", "Bearer test-agent-token")
+	request.Header.Set("Content-Type", "application/json")
+	handler.ServeHTTP(recorder, request)
+	if recorder.Code != http.StatusAccepted {
+		t.Fatalf("probe results status = %d, want 202; body=%s", recorder.Code, recorder.Body.String())
+	}
+
+	var status string
+	if err := store.db.QueryRowContext(ctx, `SELECT status FROM nodes WHERE id = 'hytron'`).Scan(&status); err != nil {
+		t.Fatalf("query node status: %v", err)
+	}
+	if status != "warning" {
+		t.Fatalf("node status = %q, want warning after all probe samples fail", status)
+	}
+
+	waitUntil(t, time.Second, func() bool {
+		captureMu.Lock()
+		defer captureMu.Unlock()
+		return len(webhookBodies)+len(webhookErrors) == 1
+	})
+	captureMu.Lock()
+	capturedBodies := append([]string(nil), webhookBodies...)
+	capturedErrors := append([]error(nil), webhookErrors...)
+	captureMu.Unlock()
+	if len(capturedErrors) != 0 {
+		t.Fatalf("webhook handler errors = %+v", capturedErrors)
+	}
+	if len(capturedBodies) != 1 {
+		t.Fatalf("webhook calls = %d, want one probe_unhealthy notification", len(capturedBodies))
+	}
+	var event struct {
+		EventType      string `json:"event_type"`
+		Label          string `json:"label"`
+		PreviousStatus string `json:"previous_status"`
+		Status         string `json:"status"`
+	}
+	if err := json.Unmarshal([]byte(capturedBodies[0]), &event); err != nil {
+		t.Fatalf("decode webhook event: %v", err)
+	}
+	if event.EventType != "probe_unhealthy" || event.Label != "异常" || event.PreviousStatus != "online" || event.Status != "warning" {
+		t.Fatalf("event = %+v, want online -> warning probe_unhealthy payload", event)
+	}
+}
+
+func TestAgentHeartbeatDoesNotClearExistingProbeWarning(t *testing.T) {
+	store, err := OpenSQLiteStore(filepath.Join(t.TempDir(), "jiaoprobe.db"))
+	if err != nil {
+		t.Fatalf("open sqlite store: %v", err)
+	}
+	defer store.Close()
+	ctx := context.Background()
+	if err := store.SeedPreviewData(ctx, PreviewSeedOptions{NodeID: "hytron", DisplayName: "Hytron", CountryCode: "HK", AgentToken: "test-agent-token"}); err != nil {
+		t.Fatalf("seed preview data: %v", err)
+	}
+	freshSeen := time.Now().UTC().Unix()
+	if _, err := store.db.ExecContext(ctx, `UPDATE nodes SET status = 'warning', last_seen_at = ? WHERE id = 'hytron'`, freshSeen); err != nil {
+		t.Fatalf("set warning status: %v", err)
+	}
+
+	postAgentHeartbeat(t, NewHandler(HandlerOptions{Store: store}), freshSeen+1, "online")
+
+	var status string
+	if err := store.db.QueryRowContext(ctx, `SELECT status FROM nodes WHERE id = 'hytron'`).Scan(&status); err != nil {
+		t.Fatalf("query node status: %v", err)
+	}
+	if status != "warning" {
+		t.Fatalf("node status = %q, want heartbeat online to preserve probe warning until a healthy probe clears it", status)
+	}
+}
+
+func TestAgentProbeResultsClearsWarningAfterHealthyProbe(t *testing.T) {
+	store, err := OpenSQLiteStore(filepath.Join(t.TempDir(), "jiaoprobe.db"))
+	if err != nil {
+		t.Fatalf("open sqlite store: %v", err)
+	}
+	defer store.Close()
+	ctx := context.Background()
+	if err := store.SeedPreviewData(ctx, PreviewSeedOptions{NodeID: "hytron", DisplayName: "Hytron", CountryCode: "HK", AgentToken: "test-agent-token"}); err != nil {
+		t.Fatalf("seed preview data: %v", err)
+	}
+	freshSeen := time.Now().UTC().Unix()
+	if _, err := store.db.ExecContext(ctx, `UPDATE nodes SET status = 'warning', last_seen_at = ? WHERE id = 'hytron'`, freshSeen); err != nil {
+		t.Fatalf("set warning status: %v", err)
+	}
+
+	payload := []byte(`{"rounds":[{"target_id":"google-dns","ts":` + strconv.FormatInt(freshSeen+1, 10) + `,"type":"tcping","samples":[{"seq":1,"success":true,"latency_ms":12.5},{"seq":2,"success":true,"latency_ms":13.5}]}]}`)
+	recorder := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodPost, "/api/agent/v1/probe-results", bytes.NewReader(payload))
+	request.Header.Set("X-Node-ID", "hytron")
+	request.Header.Set("Authorization", "Bearer test-agent-token")
+	request.Header.Set("Content-Type", "application/json")
+	NewHandler(HandlerOptions{Store: store}).ServeHTTP(recorder, request)
+	if recorder.Code != http.StatusAccepted {
+		t.Fatalf("probe results status = %d, want 202; body=%s", recorder.Code, recorder.Body.String())
+	}
+
+	var status string
+	if err := store.db.QueryRowContext(ctx, `SELECT status FROM nodes WHERE id = 'hytron'`).Scan(&status); err != nil {
+		t.Fatalf("query node status: %v", err)
+	}
+	if status != "online" {
+		t.Fatalf("node status = %q, want healthy probe to clear warning", status)
+	}
+}
+
 func TestAgentProbeResultsRejectsUnknownTarget(t *testing.T) {
 	store, err := OpenSQLiteStore(filepath.Join(t.TempDir(), "jiaoprobe.db"))
 	if err != nil {

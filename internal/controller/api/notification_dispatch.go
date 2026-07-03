@@ -18,6 +18,10 @@ type heartbeatTransitionStore interface {
 	RecordAgentHeartbeatTransition(ctx context.Context, nodeID string, ts time.Time, status, agentVersion string) (notificationStatusTransition, error)
 }
 
+type probeHealthTransitionStore interface {
+	RecordAgentProbeHealthTransition(ctx context.Context, nodeID string, ts time.Time, status string) (notificationStatusTransition, error)
+}
+
 type notificationEventStore interface {
 	NotificationNode(ctx context.Context, nodeID string) (notificationNodeSnapshot, error)
 	EnabledNotificationChannelsForEvent(ctx context.Context, eventType string) (string, []notificationDispatchChannel, error)

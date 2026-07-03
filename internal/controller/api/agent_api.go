@@ -19,6 +19,12 @@ type agentStore interface {
 	InsertAgentState(ctx context.Context, nodeID string, state AgentStateRequest) error
 }
 
+type preparedAgentProbeRound struct {
+	target  ProbeTarget
+	ts      time.Time
+	samples []probe.Sample
+}
+
 func (h *handler) handleAgentProbeTargets(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
@@ -80,11 +86,7 @@ func (h *handler) handleAgentProbeResults(w http.ResponseWriter, r *http.Request
 		targetsByID[target.ID] = target
 	}
 
-	prepared := make([]struct {
-		target  ProbeTarget
-		ts      time.Time
-		samples []probe.Sample
-	}, 0, len(request.Rounds))
+	prepared := make([]preparedAgentProbeRound, 0, len(request.Rounds))
 	for _, round := range request.Rounds {
 		target, exists := targetsByID[round.TargetID]
 		if !exists {
@@ -111,11 +113,7 @@ func (h *handler) handleAgentProbeResults(w http.ResponseWriter, r *http.Request
 			writeError(w, http.StatusBadRequest, "samples required")
 			return
 		}
-		prepared = append(prepared, struct {
-			target  ProbeTarget
-			ts      time.Time
-			samples []probe.Sample
-		}{target: target, ts: time.Unix(round.TS, 0).UTC(), samples: samples})
+		prepared = append(prepared, preparedAgentProbeRound{target: target, ts: time.Unix(round.TS, 0).UTC(), samples: samples})
 	}
 
 	for _, round := range prepared {
@@ -124,7 +122,43 @@ func (h *handler) handleAgentProbeResults(w http.ResponseWriter, r *http.Request
 			return
 		}
 	}
+	probeStatus := probeHealthStatus(prepared)
+	probeTS := latestPreparedProbeTS(prepared)
+	if transitionStore, ok := store.(probeHealthTransitionStore); ok {
+		transition, err := transitionStore.RecordAgentProbeHealthTransition(r.Context(), nodeID, probeTS, probeStatus)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, "internal error")
+			return
+		}
+		h.dispatchAgentStatusNotification(store, transition, probeTS)
+	}
 	writeJSON(w, http.StatusAccepted, map[string]any{"ok": true, "accepted": len(prepared)})
+}
+
+func probeHealthStatus(rounds []preparedAgentProbeRound) string {
+	for _, round := range rounds {
+		healthy := false
+		for _, sample := range round.samples {
+			if sample.Success {
+				healthy = true
+				break
+			}
+		}
+		if !healthy {
+			return "warning"
+		}
+	}
+	return "online"
+}
+
+func latestPreparedProbeTS(rounds []preparedAgentProbeRound) time.Time {
+	latest := time.Now().UTC()
+	for index, round := range rounds {
+		if index == 0 || round.ts.After(latest) {
+			latest = round.ts
+		}
+	}
+	return latest.UTC()
 }
 
 func (h *handler) handleAgentHeartbeat(w http.ResponseWriter, r *http.Request) {

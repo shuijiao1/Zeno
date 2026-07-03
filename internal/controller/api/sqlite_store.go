@@ -781,7 +781,7 @@ func publicNodeStatus(status string, lastSeenAt sql.NullInt64, now time.Time) st
 	if status == "" {
 		status = "no_data"
 	}
-	if status == "online" && (!lastSeenAt.Valid || now.Sub(time.Unix(lastSeenAt.Int64, 0).UTC()) > nodeHeartbeatOfflineAfter) {
+	if (status == "online" || status == "warning") && (!lastSeenAt.Valid || now.Sub(time.Unix(lastSeenAt.Int64, 0).UTC()) > nodeHeartbeatOfflineAfter) {
 		return "offline"
 	}
 	return status
