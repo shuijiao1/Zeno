@@ -514,7 +514,7 @@ export function AdminDashboard({
                 {adminState.targets.length === 0 && <div className="admin-state-card">还没有探针目标。</div>}
                 {adminState.targets.length > 0 && (
                   <div className="admin-target-grid">
-                    {adminState.targets.map((target) => <AdminTargetCard key={target.id} target={target} onUpdate={onAdminProbeTargetUpdate} />)}
+                    {adminState.targets.map((target) => <AdminTargetCard key={target.id} target={target} nodes={adminState.nodes} onUpdate={onAdminProbeTargetUpdate} />)}
                   </div>
                 )}
               </section>
@@ -693,11 +693,28 @@ function AdminTargetCreateForm({ onCreate }: { onCreate: (input: AdminProbeTarge
   )
 }
 
-function AdminTargetCard({ target, onUpdate }: { target: AdminProbeTarget; onUpdate: (targetId: string, input: AdminProbeTargetUpdateInput) => void }) {
+function AdminTargetCard({ target, nodes, onUpdate }: { target: AdminProbeTarget; nodes: AdminNode[]; onUpdate: (targetId: string, input: AdminProbeTargetUpdateInput) => void }) {
   const endpoint = target.port ? `${target.address}:${target.port}` : target.address
   const assignments = target.assignments.length > 0
     ? target.assignments.map((assignment) => `${assignment.nodeDisplayName || assignment.nodeId}${assignment.enabled ? '' : '（停用）'}`).join('、')
     : '未分配节点'
+  const assignmentByNodeID = new Map(target.assignments.map((assignment) => [assignment.nodeId, assignment]))
+  const nodeAssignmentRows = nodes.map((node) => {
+    const assignment = assignmentByNodeID.get(node.id)
+    return {
+      nodeId: node.id,
+      nodeDisplayName: node.displayName,
+      enabled: assignment?.enabled ?? false,
+    }
+  })
+  const staleAssignmentRows = target.assignments
+    .filter((assignment) => !nodes.some((node) => node.id === assignment.nodeId))
+    .map((assignment) => ({
+      nodeId: assignment.nodeId,
+      nodeDisplayName: assignment.nodeDisplayName || assignment.nodeId,
+      enabled: assignment.enabled,
+    }))
+  const assignmentRows = [...nodeAssignmentRows, ...staleAssignmentRows]
 
   const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
@@ -713,6 +730,12 @@ function AdminTargetCard({ target, onUpdate }: { target: AdminProbeTarget; onUpd
       timeoutMs: parsePositiveInt(String(formData.get('target-timeout-ms') ?? '')) ?? target.timeoutMs,
       intervalSec: parsePositiveInt(String(formData.get('target-interval-sec') ?? '')) ?? target.intervalSec,
       enabled: formData.get('target-enabled') === 'on',
+      assignments: assignmentRows.length > 0
+        ? assignmentRows.map((assignment) => ({
+            nodeId: assignment.nodeId,
+            enabled: formData.get(`target-assignment-${assignment.nodeId}`) === 'on',
+          }))
+        : undefined,
     })
   }
 
@@ -760,6 +783,17 @@ function AdminTargetCard({ target, onUpdate }: { target: AdminProbeTarget; onUpd
           <input name="target-enabled" type="checkbox" defaultChecked={target.enabled} />
           <span>启用目标</span>
         </label>
+        {assignmentRows.length > 0 && (
+          <fieldset className="admin-target-assignment-list">
+            <legend>按节点启用</legend>
+            {assignmentRows.map((assignment) => (
+              <label className="admin-node-toggle admin-target-assignment-toggle" key={assignment.nodeId}>
+                <input name={`target-assignment-${assignment.nodeId}`} type="checkbox" defaultChecked={assignment.enabled} />
+                <span>{assignment.nodeDisplayName || assignment.nodeId}</span>
+              </label>
+            ))}
+          </fieldset>
+        )}
         <button type="submit">保存目标</button>
       </form>
     </article>

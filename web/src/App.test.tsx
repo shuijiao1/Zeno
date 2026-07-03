@@ -263,4 +263,70 @@ describe('AdminDashboard', () => {
     expect(html).toContain('保存目标')
     expect(html).not.toContain('admin-pass')
   })
+
+  it('renders per-node probe target assignment toggles', () => {
+    const html = renderToStaticMarkup(
+      <AdminDashboard
+        onHome={() => {}}
+        hasAdminToken
+        adminState={{
+          kind: 'ready',
+          nodes: [
+            {
+              id: 'hytron',
+              displayName: 'Hytron',
+              status: 'online',
+              disabled: false,
+              billingMode: 'both',
+              monthlyQuotaBytes: null,
+              createdAt: '2026-07-02T00:00:00Z',
+              updatedAt: '2026-07-03T00:00:00Z',
+              cpuCores: null,
+              memoryTotalBytes: null,
+              diskTotalBytes: null,
+            },
+            {
+              id: 'backup',
+              displayName: 'Backup',
+              status: 'no_data',
+              disabled: false,
+              billingMode: 'both',
+              monthlyQuotaBytes: null,
+              createdAt: '2026-07-02T00:00:00Z',
+              updatedAt: '2026-07-03T00:00:00Z',
+              cpuCores: null,
+              memoryTotalBytes: null,
+              diskTotalBytes: null,
+            },
+          ],
+          targets: [
+            {
+              id: 'hytron-local',
+              name: 'Hytron',
+              type: 'tcping',
+              address: '127.0.0.1',
+              port: 18980,
+              count: 3,
+              timeoutMs: 1200,
+              intervalSec: 60,
+              enabled: true,
+              assignments: [
+                { nodeId: 'hytron', nodeDisplayName: 'Hytron', enabled: true },
+                { nodeId: 'backup', nodeDisplayName: 'Backup', enabled: false },
+              ],
+            },
+          ],
+        }}
+        onAdminProbeTargetUpdate={() => {}}
+      />,
+    )
+
+    expect(html).toContain('admin-target-assignment-list')
+    expect(html).toContain('按节点启用')
+    expect(html).toContain('name="target-assignment-hytron"')
+    expect(html).toContain('name="target-assignment-backup"')
+    expect(html).toContain('Hytron')
+    expect(html).toContain('Backup')
+    expect(html).not.toContain('admin-pass')
+  })
 })

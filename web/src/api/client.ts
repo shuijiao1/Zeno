@@ -97,7 +97,7 @@ interface ApiAdminProbeTarget {
   timeout_ms: number
   interval_sec: number
   enabled: boolean
-  assignments: ApiAdminProbeTargetAssignment[]
+  assignments: ApiAdminProbeTargetAssignment[] | null
 }
 
 export interface ApiSummaryResponse {
@@ -201,6 +201,7 @@ export interface AdminProbeTargetUpdateInput {
   timeoutMs?: number
   intervalSec?: number
   enabled?: boolean
+  assignments?: Array<{ nodeId: string; enabled: boolean }>
 }
 
 export async function fetchSummary(): Promise<SummaryData> {
@@ -416,6 +417,12 @@ function serializeAdminProbeTargetUpdate(input: AdminProbeTargetUpdateInput) {
     ...(input.timeoutMs !== undefined ? { timeout_ms: input.timeoutMs } : {}),
     ...(input.intervalSec !== undefined ? { interval_sec: input.intervalSec } : {}),
     ...(input.enabled !== undefined ? { enabled: input.enabled } : {}),
+    ...(input.assignments !== undefined ? {
+      assignments: input.assignments.map((assignment) => ({
+        node_id: assignment.nodeId,
+        enabled: assignment.enabled,
+      })),
+    } : {}),
   }
 }
 
@@ -517,7 +524,7 @@ function normalizeAdminProbeTarget(target: ApiAdminProbeTarget): AdminProbeTarge
     timeoutMs: target.timeout_ms,
     intervalSec: target.interval_sec,
     enabled: target.enabled,
-    assignments: target.assignments.map((assignment) => ({
+    assignments: (target.assignments ?? []).map((assignment) => ({
       nodeId: assignment.node_id,
       nodeDisplayName: assignment.node_display_name,
       enabled: assignment.enabled,

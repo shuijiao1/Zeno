@@ -448,6 +448,48 @@ func TestAdminProbeTargetsListsTargetsAndAssignmentsWithoutSecrets(t *testing.T)
 	}
 }
 
+func TestAdminProbeTargetsReturnsEmptyAssignmentArrayForUnassignedTargets(t *testing.T) {
+	store, err := OpenSQLiteStore(filepath.Join(t.TempDir(), "jiaoprobe.db"))
+	if err != nil {
+		t.Fatalf("open sqlite store: %v", err)
+	}
+	defer store.Close()
+	ctx := context.Background()
+	if err := store.SeedPreviewData(ctx, PreviewSeedOptions{NodeID: "hytron", DisplayName: "Hytron", CountryCode: "HK", AgentToken: "agent-super-secret"}); err != nil {
+		t.Fatalf("seed preview data: %v", err)
+	}
+	if _, err := store.db.ExecContext(ctx, `DELETE FROM node_probe_targets WHERE target_id = 'google-dns'`); err != nil {
+		t.Fatalf("delete google-dns assignments: %v", err)
+	}
+
+	recorder := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodGet, "/api/admin/v1/probe-targets", nil)
+	request.Header.Set("X-Admin-Token", "admin-pass")
+	NewHandler(HandlerOptions{Store: store, AdminTokenHash: HashAdminToken("admin-pass")}).ServeHTTP(recorder, request)
+
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200; body=%s", recorder.Code, recorder.Body.String())
+	}
+	var response struct {
+		Targets []struct {
+			ID          string          `json:"id"`
+			Assignments json.RawMessage `json:"assignments"`
+		} `json:"targets"`
+	}
+	if err := json.NewDecoder(bytes.NewBufferString(recorder.Body.String())).Decode(&response); err != nil {
+		t.Fatalf("decode admin probe targets: %v", err)
+	}
+	for _, target := range response.Targets {
+		if target.ID == "google-dns" {
+			if string(target.Assignments) != "[]" {
+				t.Fatalf("google-dns assignments JSON = %s, want []", string(target.Assignments))
+			}
+			return
+		}
+	}
+	t.Fatalf("google-dns target not found in admin response: %+v", response.Targets)
+}
+
 func TestAdminProbeTargetCreateAddsAssignedTargetWithoutSecrets(t *testing.T) {
 	store, err := OpenSQLiteStore(filepath.Join(t.TempDir(), "jiaoprobe.db"))
 	if err != nil {
@@ -582,6 +624,85 @@ func TestAdminProbeTargetPatchUpdatesEditableFieldsAndAffectsAgentTargets(t *tes
 	}
 }
 
+func TestAdminProbeTargetPatchUpdatesNodeAssignments(t *testing.T) {
+	store, err := OpenSQLiteStore(filepath.Join(t.TempDir(), "jiaoprobe.db"))
+	if err != nil {
+		t.Fatalf("open sqlite store: %v", err)
+	}
+	defer store.Close()
+	ctx := context.Background()
+	if err := store.SeedPreviewData(ctx, PreviewSeedOptions{NodeID: "hytron", DisplayName: "Hytron", CountryCode: "HK", AgentToken: "agent-super-secret"}); err != nil {
+		t.Fatalf("seed preview data: %v", err)
+	}
+	if _, err := store.CreateAdminNode(ctx, AdminNodeCreateRequest{ID: "backup", DisplayName: "Backup", CountryCode: "US"}); err != nil {
+		t.Fatalf("create backup node: %v", err)
+	}
+
+	recorder := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodPatch, "/api/admin/v1/probe-targets/hytron-local", bytes.NewBufferString(`{
+		"assignments": [
+			{"node_id": "hytron", "enabled": false},
+			{"node_id": "backup", "enabled": true}
+		]
+	}`))
+	request.Header.Set("X-Admin-Token", "admin-pass")
+	NewHandler(HandlerOptions{Store: store, AdminTokenHash: HashAdminToken("admin-pass")}).ServeHTTP(recorder, request)
+
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200; body=%s", recorder.Code, recorder.Body.String())
+	}
+	raw := recorder.Body.String()
+	lower := bytes.ToLower([]byte(raw))
+	if bytes.Contains(lower, []byte("token")) || bytes.Contains(lower, []byte("secret")) || bytes.Contains([]byte(raw), []byte("agent-super-secret")) {
+		t.Fatalf("admin probe target assignment response leaked sensitive fields: %s", raw)
+	}
+	var response struct {
+		Target struct {
+			ID          string `json:"id"`
+			Assignments []struct {
+				NodeID  string `json:"node_id"`
+				Enabled bool   `json:"enabled"`
+			} `json:"assignments"`
+		} `json:"target"`
+	}
+	if err := json.NewDecoder(bytes.NewBufferString(raw)).Decode(&response); err != nil {
+		t.Fatalf("decode updated target assignments: %v", err)
+	}
+	if response.Target.ID != "hytron-local" {
+		t.Fatalf("target id = %q, want hytron-local", response.Target.ID)
+	}
+	assignmentEnabled := map[string]bool{}
+	for _, assignment := range response.Target.Assignments {
+		assignmentEnabled[assignment.NodeID] = assignment.Enabled
+	}
+	if assignmentEnabled["hytron"] || !assignmentEnabled["backup"] {
+		t.Fatalf("assignments = %+v, want hytron disabled and backup enabled", response.Target.Assignments)
+	}
+
+	hytronTargets, err := store.EnabledProbeTargets(ctx, "hytron")
+	if err != nil {
+		t.Fatalf("hytron enabled probe targets: %v", err)
+	}
+	for _, target := range hytronTargets {
+		if target.ID == "hytron-local" {
+			t.Fatalf("hytron-local should be removed from hytron agent targets after assignment disable")
+		}
+	}
+	backupTargets, err := store.EnabledProbeTargets(ctx, "backup")
+	if err != nil {
+		t.Fatalf("backup enabled probe targets: %v", err)
+	}
+	backupHasTarget := false
+	for _, target := range backupTargets {
+		if target.ID == "hytron-local" {
+			backupHasTarget = true
+		}
+	}
+	if !backupHasTarget {
+		t.Fatalf("hytron-local should remain enabled for backup agent targets")
+	}
+}
+
 func TestAdminProbeTargetWritesRejectUnauthorizedUnknownAndInvalidRequests(t *testing.T) {
 	store, err := OpenSQLiteStore(filepath.Join(t.TempDir(), "jiaoprobe.db"))
 	if err != nil {
@@ -606,6 +727,7 @@ func TestAdminProbeTargetWritesRejectUnauthorizedUnknownAndInvalidRequests(t *te
 		{name: "create bad port", method: http.MethodPost, path: "/api/admin/v1/probe-targets", body: `{"name":"A","type":"tcping","address":"example.com","port":70000,"count":3,"timeout_ms":1000,"interval_sec":60}`, adminToken: "admin-pass", wantStatus: http.StatusBadRequest},
 		{name: "patch unknown target", method: http.MethodPatch, path: "/api/admin/v1/probe-targets/missing", body: `{"name":"Changed"}`, adminToken: "admin-pass", wantStatus: http.StatusNotFound},
 		{name: "patch negative count", method: http.MethodPatch, path: "/api/admin/v1/probe-targets/hytron-local", body: `{"count":0}`, adminToken: "admin-pass", wantStatus: http.StatusBadRequest},
+		{name: "patch unknown assignment node", method: http.MethodPatch, path: "/api/admin/v1/probe-targets/hytron-local", body: `{"assignments":[{"node_id":"missing","enabled":false}]}`, adminToken: "admin-pass", wantStatus: http.StatusBadRequest},
 	}
 
 	for _, tc := range cases {

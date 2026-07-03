@@ -409,6 +409,24 @@ svg { display: block; }
   min-height: 38px;
 }
 .admin-node-toggle input { width: 16px; height: 16px; accent-color: var(--red); }
+.admin-target-assignment-list {
+  grid-column: 1 / -1;
+  margin: 0;
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+.admin-target-assignment-list legend {
+  padding: 0 5px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 750;
+}
+.admin-target-assignment-toggle { min-height: 28px; }
+.admin-target-assignment-toggle input { accent-color: var(--green); }
 .admin-node-edit-form button { align-self: end; }
 .admin-install-command {
   width: 100%;

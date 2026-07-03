@@ -170,6 +170,27 @@ describe('normalizeAdminProbeTargets', () => {
     expect(data.targets[0].intervalSec).toBe(60)
     expect(data.targets[0].assignments[0].nodeDisplayName).toBe('Hytron')
   })
+
+  it('normalizes null assignment lists to an empty array', () => {
+    const data = normalizeAdminProbeTargets({
+      targets: [
+        {
+          id: 'orphan-target',
+          name: 'Orphan Target',
+          type: 'tcping',
+          address: 'example.com',
+          port: 443,
+          count: 3,
+          timeout_ms: 1200,
+          interval_sec: 60,
+          enabled: true,
+          assignments: null as never,
+        },
+      ],
+    })
+
+    expect(data.targets[0].assignments).toEqual([])
+  })
 })
 
 describe('fetchAdminNodes', () => {
@@ -413,6 +434,10 @@ describe('updateAdminProbeTarget', () => {
       timeoutMs: 900,
       intervalSec: 30,
       enabled: false,
+      assignments: [
+        { nodeId: 'hytron', enabled: false },
+        { nodeId: 'backup', enabled: true },
+      ],
     })
 
     expect(target.name).toBe('Local Controller')
@@ -432,6 +457,10 @@ describe('updateAdminProbeTarget', () => {
         timeout_ms: 900,
         interval_sec: 30,
         enabled: false,
+        assignments: [
+          { node_id: 'hytron', enabled: false },
+          { node_id: 'backup', enabled: true },
+        ],
       }),
     })
   })

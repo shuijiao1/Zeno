@@ -96,14 +96,20 @@ func (request *AdminProbeTargetCreateRequest) normalize() error {
 }
 
 type AdminProbeTargetUpdateRequest struct {
-	Name        *string            `json:"name,omitempty"`
-	Type        *string            `json:"type,omitempty"`
-	Address     *string            `json:"address,omitempty"`
-	Port        adminOptionalInt64 `json:"port,omitempty"`
-	Count       *int               `json:"count,omitempty"`
-	TimeoutMS   *int               `json:"timeout_ms,omitempty"`
-	IntervalSec *int               `json:"interval_sec,omitempty"`
-	Enabled     *bool              `json:"enabled,omitempty"`
+	Name        *string                            `json:"name,omitempty"`
+	Type        *string                            `json:"type,omitempty"`
+	Address     *string                            `json:"address,omitempty"`
+	Port        adminOptionalInt64                 `json:"port,omitempty"`
+	Count       *int                               `json:"count,omitempty"`
+	TimeoutMS   *int                               `json:"timeout_ms,omitempty"`
+	IntervalSec *int                               `json:"interval_sec,omitempty"`
+	Enabled     *bool                              `json:"enabled,omitempty"`
+	Assignments []AdminProbeTargetAssignmentUpdate `json:"assignments,omitempty"`
+}
+
+type AdminProbeTargetAssignmentUpdate struct {
+	NodeID  string `json:"node_id"`
+	Enabled bool   `json:"enabled"`
 }
 
 func (request *AdminProbeTargetUpdateRequest) normalize() error {
@@ -161,6 +167,24 @@ func (request *AdminProbeTargetUpdateRequest) normalize() error {
 	}
 	if request.Enabled != nil {
 		changed = true
+	}
+	if request.Assignments != nil {
+		changed = true
+		if len(request.Assignments) == 0 {
+			return errInvalidAdminTargetWrite
+		}
+		seen := map[string]struct{}{}
+		for index := range request.Assignments {
+			trimmed := strings.TrimSpace(request.Assignments[index].NodeID)
+			if trimmed == "" {
+				return errInvalidAdminTargetWrite
+			}
+			if _, exists := seen[trimmed]; exists {
+				return errInvalidAdminTargetWrite
+			}
+			seen[trimmed] = struct{}{}
+			request.Assignments[index].NodeID = trimmed
+		}
 	}
 	if !changed {
 		return errInvalidAdminTargetWrite

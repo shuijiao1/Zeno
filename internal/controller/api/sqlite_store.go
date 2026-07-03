@@ -312,6 +312,7 @@ func (s *SQLiteStore) AdminProbeTargets(ctx context.Context) ([]AdminProbeTarget
 			target.Port = &converted
 		}
 		target.Enabled = targetEnabled != 0
+		target.Assignments = []AdminProbeTargetAssignment{}
 		if nodeID.Valid {
 			target.Assignments = append(target.Assignments, AdminProbeTargetAssignment{NodeID: nodeID.String, NodeDisplayName: nullStringOr(nodeDisplayName, ""), Enabled: assignmentEnabled.Valid && assignmentEnabled.Int64 != 0})
 		}
@@ -426,14 +427,44 @@ func (s *SQLiteStore) UpdateAdminProbeTarget(ctx context.Context, targetID strin
 			args = append(args, 0)
 		}
 	}
-	if len(sets) == 0 {
-		return AdminProbeTarget{}, errInvalidAdminTargetWrite
-	}
-	sets = append(sets, "updated_at = ?")
-	args = append(args, time.Now().UTC().Unix(), targetID)
-	if _, err := s.db.ExecContext(ctx, "UPDATE probe_targets SET "+strings.Join(sets, ", ")+" WHERE id = ?", args...); err != nil {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
 		return AdminProbeTarget{}, err
 	}
+	defer rollbackUnlessCommitted(tx)
+	if len(sets) > 0 {
+		sets = append(sets, "updated_at = ?")
+		args = append(args, time.Now().UTC().Unix(), targetID)
+		if _, err := tx.ExecContext(ctx, "UPDATE probe_targets SET "+strings.Join(sets, ", ")+" WHERE id = ?", args...); err != nil {
+			return AdminProbeTarget{}, err
+		}
+	}
+	if update.Assignments != nil {
+		for _, assignment := range update.Assignments {
+			var nodeExists int
+			if err := tx.QueryRowContext(ctx, `SELECT 1 FROM nodes WHERE id = ?`, assignment.NodeID).Scan(&nodeExists); err != nil {
+				if err == sql.ErrNoRows {
+					return AdminProbeTarget{}, errInvalidAdminTargetWrite
+				}
+				return AdminProbeTarget{}, err
+			}
+			enabled := 0
+			if assignment.Enabled {
+				enabled = 1
+			}
+			if _, err := tx.ExecContext(ctx, `
+				INSERT INTO node_probe_targets (node_id, target_id, enabled)
+				VALUES (?, ?, ?)
+				ON CONFLICT(node_id, target_id) DO UPDATE SET enabled = excluded.enabled
+			`, assignment.NodeID, targetID, enabled); err != nil {
+				return AdminProbeTarget{}, err
+			}
+		}
+	}
+	if err := tx.Commit(); err != nil {
+		return AdminProbeTarget{}, err
+	}
+	tx = nil
 	return s.adminProbeTargetByID(ctx, targetID)
 }
 
