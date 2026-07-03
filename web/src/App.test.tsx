@@ -65,6 +65,21 @@ const hytronTarget: AdminProbeTarget = {
   ],
 }
 
+const pingTarget: AdminProbeTarget = {
+  id: 'google-icmp',
+  name: 'Example ICMP',
+  type: 'ping',
+  address: '8.8.8.8',
+  port: null,
+  count: 4,
+  timeoutMs: 900,
+  intervalSec: 45,
+  enabled: true,
+  assignments: [
+    { nodeId: 'hytron', nodeDisplayName: 'Hytron', enabled: true },
+  ],
+}
+
 const webhookChannel: AdminNotificationChannel = {
   id: 'zeno-webhook',
   name: 'Zeno Webhook',
@@ -109,7 +124,7 @@ function renderAdmin(section: 'overview' | 'nodes' | 'targets' | 'notifications'
       adminState={{
         kind: 'ready',
         nodes: [hytronNode, backupNode],
-        targets: [hytronTarget],
+        targets: [hytronTarget, pingTarget],
         notificationChannels: [webhookChannel],
         notificationTypes,
         notificationDeliveries,
@@ -257,6 +272,17 @@ describe('AdminDashboard', () => {
     expect(html).not.toContain('name="target-name"')
     expect(html).not.toContain('保存目标')
     expect(html).not.toContain('admin-pass')
+  })
+
+  it('renders ping monitor targets without requiring a port', () => {
+    const html = renderAdmin('targets')
+
+    expect(html).toContain('Example ICMP')
+    expect(html).toContain('ICMP Ping')
+    expect(html).toContain('8.8.8.8')
+    expect(html).toContain('4 次 / 900ms / 45s')
+    expect(html).toContain('1 / 1 节点启用')
+    expect(html).not.toContain('8.8.8.8:')
   })
 
   it('does not render every admin workspace on one page', () => {

@@ -86,17 +86,24 @@ type AdminProbeTargetCreateRequest struct {
 func (request *AdminProbeTargetCreateRequest) normalize() error {
 	request.ID = normalizeAdminNodeID(request.ID)
 	request.Name = strings.TrimSpace(request.Name)
-	request.Type = strings.ToLower(strings.TrimSpace(request.Type))
+	normalizedType, ok := normalizeAdminProbeTargetType(request.Type)
+	request.Type = normalizedType
 	request.Address = strings.TrimSpace(request.Address)
-	if request.Type == "tcp" {
-		request.Type = "tcping"
-	}
-	if request.Name == "" || request.Address == "" || request.Type != "tcping" || request.Count <= 0 || request.TimeoutMS <= 0 || request.IntervalSec <= 0 {
+	if request.Name == "" || request.Address == "" || !ok || request.Count <= 0 || request.TimeoutMS <= 0 || request.IntervalSec <= 0 {
 		return errInvalidAdminTargetWrite
 	}
-	if !request.Port.Set || !request.Port.Valid || !validPort(request.Port.Value) {
+	if request.Type == "tcping" {
+		if !request.Port.Set || !request.Port.Valid || !validPort(request.Port.Value) {
+			return errInvalidAdminTargetWrite
+		}
+		return nil
+	}
+	if request.Port.Set && request.Port.Valid {
 		return errInvalidAdminTargetWrite
 	}
+	request.Port.Set = true
+	request.Port.Valid = false
+	request.Port.Value = 0
 	return nil
 }
 
@@ -129,14 +136,19 @@ func (request *AdminProbeTargetUpdateRequest) normalize() error {
 	}
 	if request.Type != nil {
 		changed = true
-		trimmed := strings.ToLower(strings.TrimSpace(*request.Type))
-		if trimmed == "tcp" {
-			trimmed = "tcping"
-		}
-		if trimmed != "tcping" {
+		normalizedType, ok := normalizeAdminProbeTargetType(*request.Type)
+		if !ok {
 			return errInvalidAdminTargetWrite
 		}
-		request.Type = &trimmed
+		request.Type = &normalizedType
+		if normalizedType == "ping" {
+			if request.Port.Set && request.Port.Valid {
+				return errInvalidAdminTargetWrite
+			}
+			request.Port.Set = true
+			request.Port.Valid = false
+			request.Port.Value = 0
+		}
 	}
 	if request.Address != nil {
 		changed = true
@@ -148,7 +160,7 @@ func (request *AdminProbeTargetUpdateRequest) normalize() error {
 	}
 	if request.Port.Set {
 		changed = true
-		if !request.Port.Valid || !validPort(request.Port.Value) {
+		if request.Port.Valid && !validPort(request.Port.Value) {
 			return errInvalidAdminTargetWrite
 		}
 	}
@@ -195,6 +207,17 @@ func (request *AdminProbeTargetUpdateRequest) normalize() error {
 		return errInvalidAdminTargetWrite
 	}
 	return nil
+}
+
+func normalizeAdminProbeTargetType(value string) (string, bool) {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case "tcp", "tcping":
+		return "tcping", true
+	case "icmp", "ping":
+		return "ping", true
+	default:
+		return "", false
+	}
 }
 
 func validPort(port int64) bool {

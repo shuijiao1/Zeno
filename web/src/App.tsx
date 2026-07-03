@@ -4,7 +4,7 @@ import { LatencyDetail } from './components/LatencyDetail'
 import { ServerCard } from './components/ServerCard'
 import { startLiveRefresh } from './lib/liveRefresh'
 import { nodePath, parseDashboardRoute, type DashboardRoute } from './lib/route'
-import type { AdminNode, AdminNotificationChannel, AdminNotificationDelivery, AdminNotificationType, AdminProbeTarget } from './types'
+import type { AdminNode, AdminNotificationChannel, AdminNotificationDelivery, AdminNotificationType, AdminProbeTarget, ProbeType } from './types'
 
 type LoadState =
   | { kind: 'loading' }
@@ -931,7 +931,7 @@ function AdminTargetList({ targets, onEdit }: { targets: AdminProbeTarget[]; onE
           </div>
           <span className={`admin-node-status status-${target.enabled ? 'online' : 'disabled'}`}>{target.enabled ? 'enabled' : 'disabled'}</span>
           <span>{formatTargetEndpoint(target)}</span>
-          <span>{target.count} 次 / {target.timeoutMs}ms / {target.intervalSec}s</span>
+          <span>{formatTargetTypeLabel(target.type)} · {target.count} 次 / {target.timeoutMs}ms / {target.intervalSec}s</span>
           <span>{formatTargetAssignmentSummary(target)}</span>
           <button className="admin-row-action" type="button" onClick={() => onEdit(target.id)}>编辑目标</button>
         </article>
@@ -941,16 +941,19 @@ function AdminTargetList({ targets, onEdit }: { targets: AdminProbeTarget[]; onE
 }
 
 function AdminTargetCreateModal({ onCreate, onClose }: { onCreate: (input: AdminProbeTargetInput) => void; onClose: () => void }) {
+  const [targetType, setTargetType] = useState<ProbeType>('tcping')
+
   const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
     const formData = new FormData(event.currentTarget)
     const name = String(formData.get('new-target-name') ?? '').trim()
+    const type = normalizeTargetFormType(String(formData.get('new-target-type') ?? 'tcping'))
     const address = String(formData.get('new-target-address') ?? '').trim()
-    const port = parsePositiveInt(String(formData.get('new-target-port') ?? ''))
-    if (name === '' || address === '' || port === null) return
+    const port = type === 'tcping' ? parsePositiveInt(String(formData.get('new-target-port') ?? '')) : null
+    if (name === '' || address === '' || (type === 'tcping' && port === null)) return
     onCreate({
       name,
-      type: 'tcping',
+      type,
       address,
       port,
       count: parsePositiveInt(String(formData.get('new-target-count') ?? '')) ?? 3,
@@ -967,13 +970,22 @@ function AdminTargetCreateModal({ onCreate, onClose }: { onCreate: (input: Admin
           <input name="new-target-name" autoComplete="off" placeholder="Example HTTPS" />
         </label>
         <label>
+          <span>类型</span>
+          <select name="new-target-type" value={targetType} onChange={(event) => setTargetType(normalizeTargetFormType(event.currentTarget.value))}>
+            <option value="tcping">TCP Ping</option>
+            <option value="ping">ICMP Ping</option>
+          </select>
+        </label>
+        <label>
           <span>地址</span>
           <input name="new-target-address" autoComplete="off" placeholder="example.com" />
         </label>
-        <label>
-          <span>端口</span>
-          <input name="new-target-port" type="number" min="1" max="65535" defaultValue="443" />
-        </label>
+        {targetType === 'tcping' && (
+          <label>
+            <span>端口</span>
+            <input name="new-target-port" type="number" min="1" max="65535" defaultValue="443" />
+          </label>
+        )}
         <label>
           <span>次数</span>
           <input name="new-target-count" type="number" min="1" defaultValue="3" />
@@ -993,6 +1005,7 @@ function AdminTargetCreateModal({ onCreate, onClose }: { onCreate: (input: Admin
 }
 
 function AdminTargetEditModal({ target, nodes, onUpdate, onClose }: { target: AdminProbeTarget; nodes: AdminNode[]; onUpdate: (targetId: string, input: AdminProbeTargetUpdateInput) => void; onClose: () => void }) {
+  const [targetType, setTargetType] = useState<ProbeType>(target.type)
   const assignmentByNodeID = new Map(target.assignments.map((assignment) => [assignment.nodeId, assignment]))
   const nodeAssignmentRows = nodes.map((node) => {
     const assignment = assignmentByNodeID.get(node.id)
@@ -1014,11 +1027,12 @@ function AdminTargetEditModal({ target, nodes, onUpdate, onClose }: { target: Ad
   const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
     const formData = new FormData(event.currentTarget)
-    const port = parsePositiveInt(String(formData.get('target-port') ?? ''))
-    if (port === null) return
+    const type = normalizeTargetFormType(String(formData.get('target-type') ?? targetType))
+    const port = type === 'tcping' ? parsePositiveInt(String(formData.get('target-port') ?? '')) : null
+    if (type === 'tcping' && port === null) return
     onUpdate(target.id, {
       name: String(formData.get('target-name') ?? ''),
-      type: 'tcping',
+      type,
       address: String(formData.get('target-address') ?? ''),
       port,
       count: parsePositiveInt(String(formData.get('target-count') ?? '')) ?? target.count,
@@ -1038,6 +1052,7 @@ function AdminTargetEditModal({ target, nodes, onUpdate, onClose }: { target: Ad
     <AdminModal title={`编辑延迟监控 · ${target.name}`} eyebrow={target.id} onClose={onClose}>
       <dl className="admin-modal-summary">
         <div><dt>状态</dt><dd>{target.enabled ? 'enabled' : 'disabled'}</dd></div>
+        <div><dt>类型</dt><dd>{formatTargetTypeLabel(target.type)}</dd></div>
         <div><dt>地址</dt><dd>{formatTargetEndpoint(target)}</dd></div>
         <div><dt>参数</dt><dd>{target.count} 次 / {target.timeoutMs}ms / {target.intervalSec}s</dd></div>
         <div><dt>节点</dt><dd>{formatTargetAssignmentSummary(target)}</dd></div>
@@ -1048,13 +1063,22 @@ function AdminTargetEditModal({ target, nodes, onUpdate, onClose }: { target: Ad
           <input name="target-name" defaultValue={target.name} autoComplete="off" />
         </label>
         <label>
+          <span>类型</span>
+          <select name="target-type" value={targetType} onChange={(event) => setTargetType(normalizeTargetFormType(event.currentTarget.value))}>
+            <option value="tcping">TCP Ping</option>
+            <option value="ping">ICMP Ping</option>
+          </select>
+        </label>
+        <label>
           <span>地址</span>
           <input name="target-address" defaultValue={target.address} autoComplete="off" />
         </label>
-        <label>
-          <span>端口</span>
-          <input name="target-port" type="number" min="1" max="65535" defaultValue={target.port ?? ''} />
-        </label>
+        {targetType === 'tcping' && (
+          <label>
+            <span>端口</span>
+            <input name="target-port" type="number" min="1" max="65535" defaultValue={target.port ?? ''} />
+          </label>
+        )}
         <label>
           <span>次数</span>
           <input name="target-count" type="number" min="1" defaultValue={target.count} />
@@ -1342,6 +1366,14 @@ function AdminModal({ title, eyebrow, onClose, children }: { title: string; eyeb
       </section>
     </div>
   )
+}
+
+function formatTargetTypeLabel(type: ProbeType): string {
+  return type === 'ping' ? 'ICMP Ping' : 'TCP Ping'
+}
+
+function normalizeTargetFormType(value: string): ProbeType {
+  return value === 'ping' || value === 'icmp' ? 'ping' : 'tcping'
 }
 
 function formatTargetEndpoint(target: AdminProbeTarget): string {

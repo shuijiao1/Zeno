@@ -444,7 +444,7 @@ func (s *SQLiteStore) CreateAdminProbeTarget(ctx context.Context, create AdminPr
 	result, err := tx.ExecContext(ctx, `
 		INSERT OR IGNORE INTO probe_targets (id, name, type, address, port, count, timeout_ms, interval_sec, enabled, created_at, updated_at)
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-	`, targetID, create.Name, create.Type, create.Address, create.Port.Value, create.Count, create.TimeoutMS, create.IntervalSec, enabled, now, now)
+	`, targetID, create.Name, create.Type, create.Address, adminOptionalInt64SQLValue(create.Port), create.Count, create.TimeoutMS, create.IntervalSec, enabled, now, now)
 	if err != nil {
 		return AdminProbeTarget{}, err
 	}
@@ -476,12 +476,24 @@ func (s *SQLiteStore) UpdateAdminProbeTarget(ctx context.Context, targetID strin
 	if err := update.normalize(); err != nil {
 		return AdminProbeTarget{}, err
 	}
-	var exists int
-	if err := s.db.QueryRowContext(ctx, `SELECT 1 FROM probe_targets WHERE id = ?`, targetID).Scan(&exists); err != nil {
+	var currentType string
+	var currentPort sql.NullInt64
+	if err := s.db.QueryRowContext(ctx, `SELECT type, port FROM probe_targets WHERE id = ?`, targetID).Scan(&currentType, &currentPort); err != nil {
 		if err == sql.ErrNoRows {
 			return AdminProbeTarget{}, errProbeTargetNotFound
 		}
 		return AdminProbeTarget{}, err
+	}
+	finalType := currentType
+	if update.Type != nil {
+		finalType = *update.Type
+	}
+	finalPort := currentPort
+	if update.Port.Set {
+		finalPort = sql.NullInt64{Valid: update.Port.Valid, Int64: update.Port.Value}
+	}
+	if !validAdminProbeTargetPortForType(finalType, finalPort) {
+		return AdminProbeTarget{}, errInvalidAdminTargetWrite
 	}
 	sets := make([]string, 0, 8)
 	args := make([]any, 0, 9)
@@ -499,7 +511,7 @@ func (s *SQLiteStore) UpdateAdminProbeTarget(ctx context.Context, targetID strin
 	}
 	if update.Port.Set {
 		sets = append(sets, "port = ?")
-		args = append(args, update.Port.Value)
+		args = append(args, adminOptionalInt64SQLValue(update.Port))
 	}
 	if update.Count != nil {
 		sets = append(sets, "count = ?")
@@ -573,6 +585,24 @@ func (s *SQLiteStore) adminProbeTargetByID(ctx context.Context, targetID string)
 		}
 	}
 	return AdminProbeTarget{}, errProbeTargetNotFound
+}
+
+func adminOptionalInt64SQLValue(value adminOptionalInt64) any {
+	if !value.Set || !value.Valid {
+		return nil
+	}
+	return value.Value
+}
+
+func validAdminProbeTargetPortForType(targetType string, port sql.NullInt64) bool {
+	switch targetType {
+	case "tcping":
+		return port.Valid && validPort(port.Int64)
+	case "ping":
+		return !port.Valid
+	default:
+		return false
+	}
 }
 
 func (s *SQLiteStore) UpdateAdminNode(ctx context.Context, nodeID string, update AdminNodeUpdateRequest) (AdminNode, error) {

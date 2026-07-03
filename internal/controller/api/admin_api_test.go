@@ -566,6 +566,125 @@ func TestAdminProbeTargetCreateAddsAssignedTargetWithoutSecrets(t *testing.T) {
 	}
 }
 
+func TestAdminProbeTargetCreateAcceptsPingWithoutPort(t *testing.T) {
+	store, err := OpenSQLiteStore(filepath.Join(t.TempDir(), "zeno.db"))
+	if err != nil {
+		t.Fatalf("open sqlite store: %v", err)
+	}
+	defer store.Close()
+	ctx := context.Background()
+	if err := store.SeedPreviewData(ctx, PreviewSeedOptions{NodeID: "hytron", DisplayName: "Hytron", CountryCode: "HK", AgentToken: "agent-super-secret"}); err != nil {
+		t.Fatalf("seed preview data: %v", err)
+	}
+
+	recorder := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodPost, "/api/admin/v1/probe-targets", bytes.NewBufferString(`{
+		"name": "  Example ICMP  ",
+		"type": "icmp",
+		"address": "  8.8.8.8  ",
+		"count": 4,
+		"timeout_ms": 900,
+		"interval_sec": 45
+	}`))
+	request.Header.Set("X-Admin-Token", "admin-pass")
+	NewHandler(HandlerOptions{Store: store, AdminTokenHash: HashAdminToken("admin-pass")}).ServeHTTP(recorder, request)
+
+	if recorder.Code != http.StatusCreated {
+		t.Fatalf("status = %d, want 201; body=%s", recorder.Code, recorder.Body.String())
+	}
+	assertNoSensitiveAdminProbeTargetLeak(t, recorder.Body.String())
+	var response struct {
+		Target struct {
+			ID          string `json:"id"`
+			Name        string `json:"name"`
+			Type        string `json:"type"`
+			Address     string `json:"address"`
+			Port        *int   `json:"port"`
+			Count       int    `json:"count"`
+			TimeoutMS   int    `json:"timeout_ms"`
+			IntervalSec int    `json:"interval_sec"`
+			Enabled     bool   `json:"enabled"`
+			Assignments []struct {
+				NodeID  string `json:"node_id"`
+				Enabled bool   `json:"enabled"`
+			} `json:"assignments"`
+		} `json:"target"`
+	}
+	if err := json.NewDecoder(bytes.NewBufferString(recorder.Body.String())).Decode(&response); err != nil {
+		t.Fatalf("decode created ping target: %v", err)
+	}
+	if response.Target.ID == "" || response.Target.Name != "Example ICMP" || response.Target.Type != "ping" || response.Target.Address != "8.8.8.8" || response.Target.Port != nil || response.Target.Count != 4 || response.Target.TimeoutMS != 900 || response.Target.IntervalSec != 45 || !response.Target.Enabled {
+		t.Fatalf("created ping target = %+v, want normalized enabled ping target without port", response.Target)
+	}
+	if len(response.Target.Assignments) != 1 || response.Target.Assignments[0].NodeID != "hytron" || !response.Target.Assignments[0].Enabled {
+		t.Fatalf("created ping assignments = %+v, want enabled assignment to existing node", response.Target.Assignments)
+	}
+	targets, err := store.EnabledProbeTargets(ctx, "hytron")
+	if err != nil {
+		t.Fatalf("enabled probe targets: %v", err)
+	}
+	found := false
+	for _, target := range targets {
+		if target.ID == response.Target.ID {
+			found = true
+			if target.Type != "ping" || target.Port != nil {
+				t.Fatalf("agent target = %+v, want ping target without port", target)
+			}
+		}
+	}
+	if !found {
+		t.Fatalf("created ping target %q not assigned to hytron enabled target set", response.Target.ID)
+	}
+}
+
+func TestAdminProbeTargetPatchCanSwitchToPingAndClearPort(t *testing.T) {
+	store, err := OpenSQLiteStore(filepath.Join(t.TempDir(), "zeno.db"))
+	if err != nil {
+		t.Fatalf("open sqlite store: %v", err)
+	}
+	defer store.Close()
+	ctx := context.Background()
+	if err := store.SeedPreviewData(ctx, PreviewSeedOptions{NodeID: "hytron", DisplayName: "Hytron", CountryCode: "HK", AgentToken: "agent-super-secret"}); err != nil {
+		t.Fatalf("seed preview data: %v", err)
+	}
+
+	recorder := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodPatch, "/api/admin/v1/probe-targets/hytron-local", bytes.NewBufferString(`{
+		"type": "icmp",
+		"address": "  1.1.1.1  "
+	}`))
+	request.Header.Set("X-Admin-Token", "admin-pass")
+	NewHandler(HandlerOptions{Store: store, AdminTokenHash: HashAdminToken("admin-pass")}).ServeHTTP(recorder, request)
+
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200; body=%s", recorder.Code, recorder.Body.String())
+	}
+	assertNoSensitiveAdminProbeTargetLeak(t, recorder.Body.String())
+	var response struct {
+		Target struct {
+			ID      string `json:"id"`
+			Type    string `json:"type"`
+			Address string `json:"address"`
+			Port    *int   `json:"port"`
+		} `json:"target"`
+	}
+	if err := json.NewDecoder(bytes.NewBufferString(recorder.Body.String())).Decode(&response); err != nil {
+		t.Fatalf("decode updated ping target: %v", err)
+	}
+	if response.Target.ID != "hytron-local" || response.Target.Type != "ping" || response.Target.Address != "1.1.1.1" || response.Target.Port != nil {
+		t.Fatalf("updated target = %+v, want ping target with cleared port", response.Target)
+	}
+	targets, err := store.EnabledProbeTargets(ctx, "hytron")
+	if err != nil {
+		t.Fatalf("enabled probe targets: %v", err)
+	}
+	for _, target := range targets {
+		if target.ID == "hytron-local" && (target.Type != "ping" || target.Port != nil) {
+			t.Fatalf("agent target = %+v, want ping target without port", target)
+		}
+	}
+}
+
 func TestAdminProbeTargetPatchUpdatesEditableFieldsAndAffectsAgentTargets(t *testing.T) {
 	store, err := OpenSQLiteStore(filepath.Join(t.TempDir(), "zeno.db"))
 	if err != nil {
@@ -1118,6 +1237,14 @@ func TestAdminNotificationTypesRejectUnauthorizedUnknownAndInvalidRequests(t *te
 			}
 			assertNoSensitiveNotificationLeak(t, recorder.Body.String())
 		})
+	}
+}
+
+func assertNoSensitiveAdminProbeTargetLeak(t *testing.T, raw string) {
+	t.Helper()
+	lower := bytes.ToLower([]byte(raw))
+	if bytes.Contains(lower, []byte("token")) || bytes.Contains(lower, []byte("secret")) || bytes.Contains([]byte(raw), []byte("agent-super-secret")) {
+		t.Fatalf("admin probe target response leaked sensitive fields: %s", raw)
 	}
 }
 

@@ -1,4 +1,4 @@
-import type { AdminNode, AdminNodeInstallCommand, AdminNotificationChannel, AdminNotificationDelivery, AdminNotificationType, AdminProbeTarget, HomeCardNode, LatencyPoint, StatePoint } from '../types'
+import type { AdminNode, AdminNodeInstallCommand, AdminNotificationChannel, AdminNotificationDelivery, AdminNotificationType, AdminProbeTarget, HomeCardNode, LatencyPoint, ProbeType, StatePoint } from '../types'
 
 interface ApiLatencySummary {
   target_id: string
@@ -264,9 +264,9 @@ export interface AdminNodeCreateInput {
 export interface AdminProbeTargetInput {
   id?: string
   name: string
-  type: 'tcping'
+  type: ProbeType
   address: string
-  port: number
+  port: number | null
   count: number
   timeoutMs: number
   intervalSec: number
@@ -275,9 +275,9 @@ export interface AdminProbeTargetInput {
 
 export interface AdminProbeTargetUpdateInput {
   name?: string
-  type?: 'tcping'
+  type?: ProbeType
   address?: string
-  port?: number
+  port?: number | null
   count?: number
   timeoutMs?: number
   intervalSec?: number
@@ -633,7 +633,7 @@ function serializeAdminProbeTargetCreate(input: AdminProbeTargetInput) {
     name: input.name,
     type: input.type,
     address: input.address,
-    port: input.port,
+    ...(input.port !== undefined ? { port: input.port } : {}),
     count: input.count,
     timeout_ms: input.timeoutMs,
     interval_sec: input.intervalSec,
