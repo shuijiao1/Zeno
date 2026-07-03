@@ -455,7 +455,7 @@ function DashboardHeader({ onHome, onAdmin, adminLabel = '后台' }: DashboardHe
     <header className="kulin-nav">
       <button className="brand" type="button" onClick={onHome}>
         <span className="brand-logo"><img src="/assets/logo/id.png" alt="apple-touch-icon" /></span>
-        <span>水饺的探针</span>
+        <span>Zeno</span>
       </button>
       <nav className="nav-actions" aria-label="dashboard actions">
         <button className="login-link" type="button" onClick={onAdmin}>{adminLabel}</button>

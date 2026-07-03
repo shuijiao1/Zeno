@@ -141,7 +141,8 @@ describe('HomeTopPanel', () => {
 
     expect(html).toContain('home-top-card')
     expect(html).toContain('dashboard actions')
-    expect(html).toContain('水饺的探针')
+    expect(html).toContain('Zeno')
+    expect(html).not.toContain('水饺的探针')
     expect(html).toContain('home-summary')
     expect(html).toContain('home-summary__compact')
     expect(html).toContain('Zeno Overview')
@@ -153,7 +154,7 @@ describe('HomeTopPanel', () => {
     expect(html).not.toContain('服务器总数')
     expect(html).not.toContain('在线服务器')
     expect(html).not.toContain('离线服务器')
-    expect(html.indexOf('水饺的探针')).toBeLessThan(html.indexOf('服务器运行概览'))
+    expect(html.indexOf('Zeno')).toBeLessThan(html.indexOf('服务器运行概览'))
     expect(html).not.toContain('overview-card--combined')
     expect(html).not.toContain('overview-metric')
   })
