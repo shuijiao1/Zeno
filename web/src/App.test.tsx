@@ -102,18 +102,35 @@ describe('HomeTopPanel', () => {
     expect(html).toContain('dashboard actions')
     expect(html).toContain('水饺的探针')
     expect(html).toContain('home-summary')
+    expect(html).toContain('home-summary__compact')
     expect(html).toContain('JiaoProbe Overview')
     expect(html).toContain('服务器运行概览')
-    expect(html).toContain('服务器总数')
-    expect(html).toContain('在线服务器')
-    expect(html).toContain('离线服务器')
     expect(html).toContain('累计上传')
     expect(html).toContain('累计下载')
     expect(html).toContain('实时上传')
     expect(html).toContain('实时下载')
+    expect(html).not.toContain('服务器总数')
+    expect(html).not.toContain('在线服务器')
+    expect(html).not.toContain('离线服务器')
     expect(html.indexOf('水饺的探针')).toBeLessThan(html.indexOf('服务器运行概览'))
     expect(html).not.toContain('overview-card--combined')
     expect(html).not.toContain('overview-metric')
+  })
+
+  it('treats no-data nodes as not online in the summary copy', () => {
+    const html = renderToStaticMarkup(
+      <HomeTopPanel
+        {...overviewProps}
+        onlineCount={0}
+        offlineCount={0}
+        onHome={() => {}}
+        onAdmin={() => {}}
+      />,
+    )
+
+    expect(html).toContain('/ 11 在线')
+    expect(html).toContain('11 台未在线')
+    expect(html).not.toContain('全部在线')
   })
 })
 

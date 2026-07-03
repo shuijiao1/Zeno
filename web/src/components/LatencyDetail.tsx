@@ -57,16 +57,15 @@ export function LatencyDetail({
             <BackIcon />
             <span>{node.displayName}</span>
           </button>
-          <p>{formatStatusLabel(node.status)} · {formatOSLabel(node)} · {node.arch || '--'}</p>
+          <span className={`detail-status-pill status-${node.status}`}>{formatStatusLabel(node.status)}</span>
         </div>
-        <section className="detail-info-grid" aria-label={`${node.displayName} server facts`}>
-          <InfoCard label="CPU" value={node.cpuModel || '--'} />
-          <InfoCard label="核心 / 虚拟化" value={`${formatCores(node.cpuCores)} · ${node.virtualization || '--'}`} />
-          <InfoCard label="系统" value={formatOSLabel(node)} />
-          <InfoCard label="内核" value={node.kernel || '--'} />
-          <InfoCard label="内存" value={formatBinaryBytes(node.memoryTotalBytes)} />
-          <InfoCard label="磁盘" value={formatBinaryBytes(node.diskTotalBytes)} />
-          <InfoCard label="区域" value={node.countryCode ?? '--'} />
+        <section className="detail-fact-strip" aria-label={`${node.displayName} server facts`}>
+          <InfoFact label="系统" value={`${formatOSLabel(node)} · ${node.arch || '--'}`} />
+          <InfoFact label="CPU" value={node.cpuModel || '--'} wide />
+          <InfoFact label="规格" value={`${formatCores(node.cpuCores)} · ${node.virtualization || '--'}`} />
+          <InfoFact label="内核" value={node.kernel || '--'} />
+          <InfoFact label="内存 / 磁盘" value={`${formatBinaryBytes(node.memoryTotalBytes)} / ${formatBinaryBytes(node.diskTotalBytes)}`} />
+          <InfoFact label="区域" value={node.countryCode ?? '--'} />
         </section>
       </section>
 
@@ -139,9 +138,9 @@ export function LatencyDetail({
   )
 }
 
-function InfoCard({ label, value }: { label: string; value: string }) {
+function InfoFact({ label, value, wide = false }: { label: string; value: string; wide?: boolean }) {
   return (
-    <article className="detail-info-card">
+    <article className={`detail-fact${wide ? ' is-wide' : ''}`} title={`${label}: ${value}`}>
       <p>{label}</p>
       <strong>{value}</strong>
     </article>

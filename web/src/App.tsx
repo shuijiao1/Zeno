@@ -1089,7 +1089,9 @@ function formatAdminDate(value?: string): string {
 
 export function HomeOverviewPanel({ totalCount, onlineCount, offlineCount, totalUp, totalDown, upSpeed, downSpeed }: HomeOverviewPanelProps) {
   const onlineRatio = totalCount > 0 ? Math.round((onlineCount / totalCount) * 100) : 0
-  const healthLabel = totalCount === 0 ? '等待接入' : offlineCount === 0 ? '全部在线' : `${offlineCount} 台离线`
+  const nonOnlineCount = Math.max(totalCount - onlineCount, offlineCount, 0)
+  const healthLabel = totalCount === 0 ? '等待接入' : nonOnlineCount === 0 ? '全部在线' : `${nonOnlineCount} 台未在线`
+  const healthTone = totalCount > 0 && nonOnlineCount === 0 ? 'is-good' : totalCount > 0 ? 'is-warning' : ''
 
   return (
     <section className="home-summary" aria-label="server overview">
@@ -1098,10 +1100,10 @@ export function HomeOverviewPanel({ totalCount, onlineCount, offlineCount, total
           <p className="eyebrow">JiaoProbe Overview</p>
           <h1>服务器运行概览</h1>
         </div>
-        <span className={`home-health-pill ${offlineCount === 0 ? 'is-good' : 'is-warning'}`}>{healthLabel}</span>
+        <span className={`home-health-pill ${healthTone}`}>{healthLabel}</span>
       </div>
 
-      <div className="home-summary__main">
+      <div className="home-summary__compact">
         <div className="home-health-block">
           <div className="home-health-number">
             <strong>{onlineCount}</strong>
@@ -1110,43 +1112,28 @@ export function HomeOverviewPanel({ totalCount, onlineCount, offlineCount, total
           <div className="home-health-bar" aria-label={`在线率 ${onlineRatio}%`}>
             <span style={{ transform: `scaleX(${onlineRatio / 100})` }} />
           </div>
-          <p>离线 {offlineCount} 台 · 在线率 {onlineRatio}%</p>
+          <p>{healthLabel} · 在线率 {onlineRatio}%</p>
         </div>
 
-        <dl className="home-stat-grid">
+        <dl className="home-network-grid" aria-label="traffic totals and speeds">
           <div>
-            <dt>服务器总数</dt>
-            <dd>{totalCount}</dd>
+            <dt>累计上传</dt>
+            <dd>{compactBytes(totalUp)}</dd>
           </div>
           <div>
-            <dt>在线服务器</dt>
-            <dd>{onlineCount}</dd>
+            <dt>累计下载</dt>
+            <dd>{compactBytes(totalDown)}</dd>
           </div>
           <div>
-            <dt>离线服务器</dt>
-            <dd>{offlineCount}</dd>
+            <dt>实时上传</dt>
+            <dd><CircleArrowIcon direction="up" />{compactRate(upSpeed)}</dd>
+          </div>
+          <div>
+            <dt>实时下载</dt>
+            <dd><CircleArrowIcon direction="down" />{compactRate(downSpeed)}</dd>
           </div>
         </dl>
       </div>
-
-      <dl className="home-network-grid" aria-label="traffic totals and speeds">
-        <div>
-          <dt>累计上传</dt>
-          <dd>{compactBytes(totalUp)}</dd>
-        </div>
-        <div>
-          <dt>累计下载</dt>
-          <dd>{compactBytes(totalDown)}</dd>
-        </div>
-        <div>
-          <dt>实时上传</dt>
-          <dd><CircleArrowIcon direction="up" />{compactRate(upSpeed)}</dd>
-        </div>
-        <div>
-          <dt>实时下载</dt>
-          <dd><CircleArrowIcon direction="down" />{compactRate(downSpeed)}</dd>
-        </div>
-      </dl>
     </section>
   )
 }

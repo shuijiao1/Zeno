@@ -22,6 +22,15 @@ describe('homepage and admin shell layout', () => {
     expect(styles).toContain('.home-top-card .server-overview')
   })
 
+  it('uses a compact homepage summary without duplicate server-stat tiles', () => {
+    expect(styles).toContain('.home-summary__compact')
+    expect(styles).toContain('grid-template-columns: minmax(200px, .72fr) minmax(0, 1.28fr)')
+    expect(styles).toContain('.home-network-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); }')
+    expect(styles).toContain('.home-summary__compact { grid-template-columns: minmax(108px, .78fr) minmax(0, 1.22fr); gap: 8px; }')
+    expect(styles).toContain('.home-network-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; }')
+    expect(styles).not.toContain('.home-stat-grid')
+  })
+
   it('styles the backend/admin shell with the same card language as the front page', () => {
     expect(styles).toContain('.admin-panel')
     expect(styles).toContain('.admin-action-card')
@@ -37,6 +46,13 @@ describe('homepage and admin shell layout', () => {
 })
 
 describe('state history layout', () => {
+  it('keeps the detail hero dense with Nezha-like inline facts, not nested metric cards', () => {
+    expect(styles).toContain('.detail-fact-strip')
+    expect(styles).toContain('.detail-status-pill')
+    expect(styles).toContain('.detail-fact.is-wide')
+    expect(styles).not.toContain('.detail-info-card')
+  })
+
   it('renders resource history as separated full-width chart cards on phones too', () => {
     expect(styles).toContain('.state-history-stack')
     expect(styles).toContain('flex-direction: column')
