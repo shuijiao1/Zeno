@@ -2,12 +2,15 @@ package api
 
 import (
 	"context"
+	"encoding/json"
+	"errors"
 	"net/http"
 	"strings"
 )
 
 type adminStore interface {
 	AdminNodes(ctx context.Context) ([]AdminNode, error)
+	UpdateAdminNode(ctx context.Context, nodeID string, update AdminNodeUpdateRequest) (AdminNode, error)
 }
 
 func (h *handler) handleAdminNodes(w http.ResponseWriter, r *http.Request) {
@@ -27,6 +30,35 @@ func (h *handler) handleAdminNodes(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, AdminNodesResponse{Nodes: nodes})
 }
 
+func (h *handler) handleAdminNodeResource(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPatch {
+		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+	store, ok := h.authorizeAdminRequest(w, r)
+	if !ok {
+		return
+	}
+	nodeID := strings.Trim(strings.TrimPrefix(r.URL.Path, "/api/admin/v1/nodes/"), "/")
+	if nodeID == "" || strings.Contains(nodeID, "/") {
+		writeError(w, http.StatusNotFound, "not found")
+		return
+	}
+	var update AdminNodeUpdateRequest
+	decoder := json.NewDecoder(r.Body)
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&update); err != nil {
+		writeError(w, http.StatusBadRequest, "bad request")
+		return
+	}
+	node, err := store.UpdateAdminNode(r.Context(), nodeID, update)
+	if err != nil {
+		writeAdminError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, AdminNodeResponse{Node: node})
+}
+
 func (h *handler) authorizeAdminRequest(w http.ResponseWriter, r *http.Request) (adminStore, bool) {
 	if h.adminTokenHash == "" {
 		writeError(w, http.StatusNotFound, "not found")
@@ -43,4 +75,16 @@ func (h *handler) authorizeAdminRequest(w http.ResponseWriter, r *http.Request) 
 		return nil, false
 	}
 	return store, true
+}
+
+func writeAdminError(w http.ResponseWriter, err error) {
+	if errors.Is(err, errNodeNotFound) {
+		writeError(w, http.StatusNotFound, "node not found")
+		return
+	}
+	if errors.Is(err, errInvalidAdminNodeUpdate) {
+		writeError(w, http.StatusBadRequest, "bad request")
+		return
+	}
+	writeError(w, http.StatusInternalServerError, "internal error")
 }

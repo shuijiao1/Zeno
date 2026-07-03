@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { fetchAdminNodes, normalizeAdminNodes, normalizeNodeLatency, normalizeNodeState, normalizeSummary } from './client'
+import { fetchAdminNodes, normalizeAdminNodes, normalizeNodeLatency, normalizeNodeState, normalizeSummary, updateAdminNode } from './client'
 
 describe('normalizeSummary', () => {
   it('maps controller snake_case JSON into frontend camelCase models', () => {
@@ -163,6 +163,60 @@ describe('fetchAdminNodes', () => {
         Accept: 'application/json',
         'X-Admin-Token': 'admin-pass',
       },
+    })
+  })
+})
+
+describe('updateAdminNode', () => {
+  const originalFetch = globalThis.fetch
+
+  afterEach(() => {
+    globalThis.fetch = originalFetch
+    vi.restoreAllMocks()
+  })
+
+  it('patches editable node fields with the admin token in X-Admin-Token only', async () => {
+    const fetchMock = vi.fn(async () => new Response(JSON.stringify({
+      node: {
+        id: 'hytron',
+        display_name: 'Hytron Edited',
+        status: 'disabled',
+        country_code: 'HK',
+        region: 'Hong Kong',
+        disabled: true,
+        billing_mode: 'both',
+        monthly_quota_bytes: 123456789,
+        created_at: '2026-07-02T00:00:00Z',
+        updated_at: '2026-07-03T00:00:00Z',
+      },
+    }), { status: 200, headers: { 'Content-Type': 'application/json' } }))
+    globalThis.fetch = fetchMock as unknown as typeof fetch
+
+    const node = await updateAdminNode('admin-pass', 'hytron', {
+      displayName: 'Hytron Edited',
+      countryCode: 'HK',
+      region: 'Hong Kong',
+      monthlyQuotaBytes: 123456789,
+      disabled: true,
+    })
+
+    expect(node.displayName).toBe('Hytron Edited')
+    expect(node.disabled).toBe(true)
+    expect(node.monthlyQuotaBytes).toBe(123456789)
+    expect(fetchMock).toHaveBeenCalledWith('/api/admin/v1/nodes/hytron', {
+      method: 'PATCH',
+      headers: {
+        Accept: 'application/json',
+        'Content-Type': 'application/json',
+        'X-Admin-Token': 'admin-pass',
+      },
+      body: JSON.stringify({
+        display_name: 'Hytron Edited',
+        country_code: 'HK',
+        region: 'Hong Kong',
+        monthly_quota_bytes: 123456789,
+        disabled: true,
+      }),
     })
   })
 })

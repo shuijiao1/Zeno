@@ -94,4 +94,46 @@ describe('AdminDashboard', () => {
     expect(html).toContain('debian 13')
     expect(html).not.toContain('admin-pass')
   })
+
+  it('renders inline node edit controls for authenticated node management', () => {
+    const html = renderToStaticMarkup(
+      <AdminDashboard
+        onHome={() => {}}
+        hasAdminToken
+        adminState={{
+          kind: 'ready',
+          nodes: [
+            {
+              id: 'hytron',
+              displayName: 'Hytron',
+              status: 'online',
+              countryCode: 'HK',
+              region: 'Hong Kong',
+              disabled: false,
+              billingMode: 'both',
+              monthlyQuotaBytes: 1099511627776,
+              createdAt: '2026-07-02T00:00:00Z',
+              updatedAt: '2026-07-03T00:00:00Z',
+              cpuCores: 2,
+              memoryTotalBytes: 2147483648,
+              diskTotalBytes: 42949672960,
+            },
+          ],
+        }}
+        onAdminTokenSubmit={() => {}}
+        onAdminTokenClear={() => {}}
+        onAdminRefresh={() => {}}
+        onAdminNodeUpdate={() => {}}
+      />,
+    )
+
+    expect(html).toContain('admin-node-edit-form')
+    expect(html).toContain('name="display-name"')
+    expect(html).toContain('name="country-code"')
+    expect(html).toContain('name="region"')
+    expect(html).toContain('name="monthly-quota-gb"')
+    expect(html).toContain('禁用节点')
+    expect(html).toContain('保存节点')
+    expect(html).not.toContain('admin-pass')
+  })
 })

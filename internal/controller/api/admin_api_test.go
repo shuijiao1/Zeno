@@ -93,3 +93,102 @@ func TestAdminNodesListsEnabledAndDisabledNodesWithoutTokenHashes(t *testing.T) 
 		t.Fatalf("hytron admin node = %+v, want persisted management fields", response.Nodes[1])
 	}
 }
+
+func TestAdminNodePatchUpdatesEditableFieldsAndReturnsSafeDTO(t *testing.T) {
+	store, err := OpenSQLiteStore(filepath.Join(t.TempDir(), "jiaoprobe.db"))
+	if err != nil {
+		t.Fatalf("open sqlite store: %v", err)
+	}
+	defer store.Close()
+	ctx := context.Background()
+	if err := store.SeedPreviewData(ctx, PreviewSeedOptions{NodeID: "hytron", DisplayName: "Hytron", CountryCode: "US", AgentToken: "test-agent-token"}); err != nil {
+		t.Fatalf("seed preview data: %v", err)
+	}
+
+	recorder := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodPatch, "/api/admin/v1/nodes/hytron", bytes.NewBufferString(`{
+		"display_name": "  Hytron Edited  ",
+		"country_code": " hk ",
+		"region": "  Hong Kong  ",
+		"monthly_quota_bytes": 123456789,
+		"disabled": true
+	}`))
+	request.Header.Set("X-Admin-Token", "admin-pass")
+	NewHandler(HandlerOptions{Store: store, AdminTokenHash: HashAdminToken("admin-pass")}).ServeHTTP(recorder, request)
+
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200; body=%s", recorder.Code, recorder.Body.String())
+	}
+	raw := recorder.Body.String()
+	if bytes.Contains(bytes.ToLower([]byte(raw)), []byte("token")) || bytes.Contains(bytes.ToLower([]byte(raw)), []byte("secret")) || bytes.Contains([]byte(raw), []byte("test-agent-token")) {
+		t.Fatalf("admin node update response leaked sensitive fields: %s", raw)
+	}
+	var response struct {
+		Node struct {
+			ID                string `json:"id"`
+			DisplayName       string `json:"display_name"`
+			Status            string `json:"status"`
+			CountryCode       string `json:"country_code"`
+			Region            string `json:"region"`
+			Disabled          bool   `json:"disabled"`
+			MonthlyQuotaBytes int64  `json:"monthly_quota_bytes"`
+		} `json:"node"`
+	}
+	if err := json.NewDecoder(bytes.NewBufferString(raw)).Decode(&response); err != nil {
+		t.Fatalf("decode updated admin node: %v", err)
+	}
+	if response.Node.ID != "hytron" || response.Node.DisplayName != "Hytron Edited" || response.Node.Status != "disabled" || response.Node.CountryCode != "HK" || response.Node.Region != "Hong Kong" || !response.Node.Disabled || response.Node.MonthlyQuotaBytes != 123456789 {
+		t.Fatalf("updated admin node = %+v, want trimmed editable fields and disabled status", response.Node)
+	}
+
+	summary, err := store.Summary(ctx)
+	if err != nil {
+		t.Fatalf("summary after disabling node: %v", err)
+	}
+	if len(summary.Nodes) != 0 {
+		t.Fatalf("public summary should hide disabled node, got %+v", summary.Nodes)
+	}
+}
+
+func TestAdminNodePatchRejectsUnauthorizedUnknownAndInvalidRequests(t *testing.T) {
+	store, err := OpenSQLiteStore(filepath.Join(t.TempDir(), "jiaoprobe.db"))
+	if err != nil {
+		t.Fatalf("open sqlite store: %v", err)
+	}
+	defer store.Close()
+	ctx := context.Background()
+	if err := store.SeedPreviewData(ctx, PreviewSeedOptions{NodeID: "hytron", DisplayName: "Hytron", CountryCode: "HK", AgentToken: "test-agent-token"}); err != nil {
+		t.Fatalf("seed preview data: %v", err)
+	}
+	handler := NewHandler(HandlerOptions{Store: store, AdminTokenHash: HashAdminToken("admin-pass")})
+
+	cases := []struct {
+		name       string
+		nodeID     string
+		body       string
+		adminToken string
+		wantStatus int
+	}{
+		{name: "missing token", nodeID: "hytron", body: `{"display_name":"Changed"}`, wantStatus: http.StatusUnauthorized},
+		{name: "unknown node", nodeID: "missing", body: `{"display_name":"Changed"}`, adminToken: "admin-pass", wantStatus: http.StatusNotFound},
+		{name: "blank display name", nodeID: "hytron", body: `{"display_name":"   "}`, adminToken: "admin-pass", wantStatus: http.StatusBadRequest},
+		{name: "negative monthly quota", nodeID: "hytron", body: `{"monthly_quota_bytes":-1}`, adminToken: "admin-pass", wantStatus: http.StatusBadRequest},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			recorder := httptest.NewRecorder()
+			request := httptest.NewRequest(http.MethodPatch, "/api/admin/v1/nodes/"+tc.nodeID, bytes.NewBufferString(tc.body))
+			if tc.adminToken != "" {
+				request.Header.Set("X-Admin-Token", tc.adminToken)
+			}
+			handler.ServeHTTP(recorder, request)
+			if recorder.Code != tc.wantStatus {
+				t.Fatalf("status = %d, want %d; body=%s", recorder.Code, tc.wantStatus, recorder.Body.String())
+			}
+			if bytes.Contains(bytes.ToLower(recorder.Body.Bytes()), []byte("token")) || bytes.Contains(bytes.ToLower(recorder.Body.Bytes()), []byte("secret")) {
+				t.Fatalf("error body should not leak sensitive wording: %s", recorder.Body.String())
+			}
+		})
+	}
+}

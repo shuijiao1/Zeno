@@ -223,12 +223,48 @@ X-Admin-Token: <admin-token>
 
 ### GET /api/admin/v1/nodes
 
-第一版只读节点管理列表，返回 enabled + disabled 节点、状态、地区、计费模式、配额、last seen、host info 和 agent version。
+节点管理列表，返回 enabled + disabled 节点、状态、地区、计费模式、配额、last seen、host info 和 agent version。
+
+### PATCH /api/admin/v1/nodes/{node_id}
+
+更新节点可编辑管理字段。不会返回 token 原文或 token hash。
+
+请求：
+
+```json
+{
+  "display_name": "Hytron",
+  "country_code": "HK",
+  "region": "Hong Kong",
+  "monthly_quota_bytes": 1099511627776,
+  "disabled": false
+}
+```
+
+字段均可部分提交；`monthly_quota_bytes: null` 表示清空月配额。`display_name` 不能为空。
+
+响应：
+
+```json
+{
+  "node": {
+    "id": "hytron",
+    "display_name": "Hytron",
+    "status": "online",
+    "country_code": "HK",
+    "region": "Hong Kong",
+    "disabled": false,
+    "billing_mode": "both",
+    "monthly_quota_bytes": 1099511627776,
+    "created_at": "2026-07-02T00:00:00Z",
+    "updated_at": "2026-07-03T00:00:00Z"
+  }
+}
+```
 
 ### 后续管理接口草案
 
 - `POST /api/admin/v1/nodes`
-- `PATCH /api/admin/v1/nodes/{node_id}`
 - `POST /api/admin/v1/nodes/{node_id}/rotate-token`
 - `GET /api/admin/v1/probe-targets`
 - `POST /api/admin/v1/probe-targets`

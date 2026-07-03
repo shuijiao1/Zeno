@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"strings"
 	"time"
 
 	_ "modernc.org/sqlite"
@@ -275,6 +276,72 @@ func (s *SQLiteStore) AdminNodes(ctx context.Context) ([]AdminNode, error) {
 	return nodes, nil
 }
 
+func (s *SQLiteStore) UpdateAdminNode(ctx context.Context, nodeID string, update AdminNodeUpdateRequest) (AdminNode, error) {
+	nodeID = strings.TrimSpace(nodeID)
+	if nodeID == "" {
+		return AdminNode{}, errNodeNotFound
+	}
+	if err := update.normalize(); err != nil {
+		return AdminNode{}, err
+	}
+	var exists int
+	if err := s.db.QueryRowContext(ctx, `SELECT 1 FROM nodes WHERE id = ?`, nodeID).Scan(&exists); err != nil {
+		if err == sql.ErrNoRows {
+			return AdminNode{}, errNodeNotFound
+		}
+		return AdminNode{}, err
+	}
+
+	sets := make([]string, 0, 6)
+	args := make([]any, 0, 7)
+	if update.DisplayName != nil {
+		sets = append(sets, "display_name = ?")
+		args = append(args, *update.DisplayName)
+	}
+	if update.CountryCode != nil {
+		sets = append(sets, "country_code = ?")
+		args = append(args, nullIfEmpty(*update.CountryCode))
+	}
+	if update.Region != nil {
+		sets = append(sets, "region = ?")
+		args = append(args, nullIfEmpty(*update.Region))
+	}
+	if update.MonthlyQuotaBytes.Set {
+		sets = append(sets, "monthly_quota_bytes = ?")
+		if update.MonthlyQuotaBytes.Valid {
+			args = append(args, update.MonthlyQuotaBytes.Value)
+		} else {
+			args = append(args, nil)
+		}
+	}
+	if update.Disabled != nil {
+		sets = append(sets, "disabled = ?")
+		if *update.Disabled {
+			args = append(args, 1)
+		} else {
+			args = append(args, 0)
+		}
+	}
+	if len(sets) == 0 {
+		return AdminNode{}, errInvalidAdminNodeUpdate
+	}
+	sets = append(sets, "updated_at = ?")
+	args = append(args, time.Now().UTC().Unix(), nodeID)
+	if _, err := s.db.ExecContext(ctx, "UPDATE nodes SET "+strings.Join(sets, ", ")+" WHERE id = ?", args...); err != nil {
+		return AdminNode{}, err
+	}
+	nodes, err := s.AdminNodes(ctx)
+	if err != nil {
+		return AdminNode{}, err
+	}
+	for _, node := range nodes {
+		if node.ID == nodeID {
+			return node, nil
+		}
+	}
+	return AdminNode{}, errNodeNotFound
+}
+
 func (s *SQLiteStore) nodes(ctx context.Context) ([]Node, error) {
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT n.id, n.display_name, n.status, n.country_code, n.last_seen_at,
@@ -478,6 +545,13 @@ func publicNodeStatus(status string, lastSeenAt sql.NullInt64, now time.Time) st
 		return "offline"
 	}
 	return status
+}
+
+func nullIfEmpty(value string) any {
+	if value == "" {
+		return nil
+	}
+	return value
 }
 
 func nullStringOr(value sql.NullString, fallback string) string {

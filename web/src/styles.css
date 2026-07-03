@@ -287,7 +287,8 @@ svg { display: block; }
   font: inherit;
 }
 .admin-login-card button,
-.admin-section-actions button {
+.admin-section-actions button,
+.admin-node-edit-form button {
   height: 38px;
   padding: 0 14px;
   border: 1px solid var(--border);
@@ -357,6 +358,43 @@ svg { display: block; }
 .admin-node-meta div { min-width: 0; }
 .admin-node-meta dt { margin: 0 0 3px; color: var(--muted); font-size: 12px; font-weight: 650; }
 .admin-node-meta dd { margin: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; font-weight: 700; font-variant-numeric: tabular-nums; }
+.admin-node-edit-form {
+  margin-top: 14px;
+  padding-top: 14px;
+  border-top: 1px solid var(--border);
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+.admin-node-edit-form label {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 650;
+}
+.admin-node-edit-form input:not([type="checkbox"]) {
+  width: 100%;
+  min-width: 0;
+  height: 34px;
+  padding: 0 10px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--background) 70%, transparent);
+  color: var(--foreground);
+  font: inherit;
+  font-size: 13px;
+}
+.admin-node-toggle {
+  flex-direction: row !important;
+  align-items: center;
+  justify-content: flex-start;
+  min-height: 38px;
+}
+.admin-node-toggle input { width: 16px; height: 16px; accent-color: var(--red); }
+.admin-node-edit-form button { align-self: end; }
 .admin-state-card {
   padding: 18px;
   border: 1px solid var(--border);
@@ -759,6 +797,7 @@ svg { display: block; }
   .admin-action-grid { grid-template-columns: 1fr; }
   .admin-login-card { grid-template-columns: 1fr; align-items: stretch; }
   .admin-node-grid { grid-template-columns: 1fr; }
+  .admin-node-edit-form { grid-template-columns: 1fr; }
   .admin-section-heading { flex-direction: column; }
   .admin-hero h2 { font-size: 24px; }
   .overview-metric { min-height: 70px; padding: 10px 12px; }

@@ -1,5 +1,5 @@
 import { type FormEvent, useEffect, useState } from 'react'
-import { fetchAdminNodes, fetchNodeLatency, fetchNodeState, fetchSummary, type NodeLatencyData, type NodeStateData, type SummaryData } from './api/client'
+import { fetchAdminNodes, fetchNodeLatency, fetchNodeState, fetchSummary, updateAdminNode, type AdminNodeUpdateInput, type NodeLatencyData, type NodeStateData, type SummaryData } from './api/client'
 import { LatencyDetail } from './components/LatencyDetail'
 import { ServerCard } from './components/ServerCard'
 import { startLiveRefresh } from './lib/liveRefresh'
@@ -194,6 +194,20 @@ export function App() {
       .catch((error: unknown) => setAdminState({ kind: 'error', message: error instanceof Error ? error.message : 'unknown error' }))
   }
 
+  const updateAdminNodeDetails = (nodeId: string, input: AdminNodeUpdateInput) => {
+    if (adminToken === '') return
+    updateAdminNode(adminToken, nodeId, input)
+      .then((updatedNode) => {
+        setAdminState((current) => {
+          if (current.kind === 'ready') {
+            return { kind: 'ready', nodes: current.nodes.map((node) => node.id === updatedNode.id ? updatedNode : node) }
+          }
+          return { kind: 'ready', nodes: [updatedNode] }
+        })
+      })
+      .catch((error: unknown) => setAdminState({ kind: 'error', message: error instanceof Error ? error.message : 'unknown error' }))
+  }
+
   const navigateHome = () => {
     window.history.pushState(null, '', '/')
     setRoute({ kind: 'home' })
@@ -232,6 +246,7 @@ export function App() {
           onAdminTokenSubmit={submitAdminToken}
           onAdminTokenClear={clearAdminToken}
           onAdminRefresh={refreshAdminNodes}
+          onAdminNodeUpdate={updateAdminNodeDetails}
         />
       )}
 
@@ -334,6 +349,7 @@ interface AdminDashboardProps {
   onAdminTokenSubmit?: (token: string) => void
   onAdminTokenClear?: () => void
   onAdminRefresh?: () => void
+  onAdminNodeUpdate?: (nodeId: string, input: AdminNodeUpdateInput) => void
 }
 
 export function AdminDashboard({
@@ -343,6 +359,7 @@ export function AdminDashboard({
   onAdminTokenSubmit = () => {},
   onAdminTokenClear = () => {},
   onAdminRefresh = () => {},
+  onAdminNodeUpdate = () => {},
 }: AdminDashboardProps) {
   const handleTokenSubmit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
@@ -407,7 +424,7 @@ export function AdminDashboard({
             {adminState.kind === 'ready' && adminState.nodes.length === 0 && <div className="admin-state-card">还没有节点。</div>}
             {adminState.kind === 'ready' && adminState.nodes.length > 0 && (
               <div className="admin-node-grid">
-                {adminState.nodes.map((node) => <AdminNodeCard key={node.id} node={node} />)}
+                {adminState.nodes.map((node) => <AdminNodeCard key={node.id} node={node} onUpdate={onAdminNodeUpdate} />)}
               </div>
             )}
           </section>
@@ -417,7 +434,19 @@ export function AdminDashboard({
   )
 }
 
-function AdminNodeCard({ node }: { node: AdminNode }) {
+function AdminNodeCard({ node, onUpdate }: { node: AdminNode; onUpdate: (nodeId: string, input: AdminNodeUpdateInput) => void }) {
+  const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    const formData = new FormData(event.currentTarget)
+    onUpdate(node.id, {
+      displayName: String(formData.get('display-name') ?? ''),
+      countryCode: String(formData.get('country-code') ?? ''),
+      region: String(formData.get('region') ?? ''),
+      monthlyQuotaBytes: parseQuotaGigabytes(String(formData.get('monthly-quota-gb') ?? '')),
+      disabled: formData.get('disabled') === 'on',
+    })
+  }
+
   return (
     <article className="admin-node-card">
       <header>
@@ -435,8 +464,45 @@ function AdminNodeCard({ node }: { node: AdminNode }) {
         <div><dt>月配额</dt><dd>{node.monthlyQuotaBytes ? compactBytes(node.monthlyQuotaBytes) : '—'}</dd></div>
         <div><dt>资源</dt><dd>{formatAdminResources(node)}</dd></div>
       </dl>
+      <form className="admin-node-edit-form" aria-label={`${node.displayName} 节点编辑`} onSubmit={handleSubmit}>
+        <label>
+          <span>显示名</span>
+          <input name="display-name" defaultValue={node.displayName} autoComplete="off" />
+        </label>
+        <label>
+          <span>国家</span>
+          <input name="country-code" defaultValue={node.countryCode ?? ''} autoComplete="off" />
+        </label>
+        <label>
+          <span>地区</span>
+          <input name="region" defaultValue={node.region ?? ''} autoComplete="off" />
+        </label>
+        <label>
+          <span>月配额 GB</span>
+          <input name="monthly-quota-gb" type="number" min="0" step="0.01" defaultValue={formatQuotaGigabytes(node.monthlyQuotaBytes)} />
+        </label>
+        <label className="admin-node-toggle">
+          <input name="disabled" type="checkbox" defaultChecked={node.disabled} />
+          <span>禁用节点</span>
+        </label>
+        <button type="submit">保存节点</button>
+      </form>
     </article>
   )
+}
+
+function formatQuotaGigabytes(value: number | null): string {
+  if (!value || value <= 0) return ''
+  const gigabytes = value / (1024 ** 3)
+  return String(Math.round(gigabytes * 100) / 100)
+}
+
+function parseQuotaGigabytes(value: string): number | null {
+  const trimmed = value.trim()
+  if (trimmed === '') return null
+  const parsed = Number(trimmed)
+  if (!Number.isFinite(parsed) || parsed < 0) return null
+  return Math.round(parsed * (1024 ** 3))
 }
 
 function formatAdminSystem(node: AdminNode): string {

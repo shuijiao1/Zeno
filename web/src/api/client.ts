@@ -102,6 +102,10 @@ export interface ApiAdminNodesResponse {
   nodes: ApiAdminNode[]
 }
 
+export interface ApiAdminNodeResponse {
+  node: ApiAdminNode
+}
+
 export interface SummaryData {
   nodes: HomeCardNode[]
   latencyPoints: LatencyPoint[]
@@ -121,6 +125,14 @@ export interface NodeStateData {
 
 export interface AdminNodesData {
   nodes: AdminNode[]
+}
+
+export interface AdminNodeUpdateInput {
+  displayName?: string
+  countryCode?: string
+  region?: string
+  monthlyQuotaBytes?: number | null
+  disabled?: boolean
 }
 
 export async function fetchSummary(): Promise<SummaryData> {
@@ -160,6 +172,23 @@ export async function fetchAdminNodes(adminToken: string): Promise<AdminNodesDat
   return normalizeAdminNodes(await response.json() as ApiAdminNodesResponse)
 }
 
+export async function updateAdminNode(adminToken: string, nodeId: string, input: AdminNodeUpdateInput): Promise<AdminNode> {
+  const response = await fetch(`/api/admin/v1/nodes/${encodeURIComponent(nodeId)}`, {
+    method: 'PATCH',
+    headers: {
+      Accept: 'application/json',
+      'Content-Type': 'application/json',
+      'X-Admin-Token': adminToken,
+    },
+    body: JSON.stringify(serializeAdminNodeUpdate(input)),
+  })
+  if (!response.ok) {
+    throw new Error(`admin node update failed: ${response.status}`)
+  }
+  const data = await response.json() as ApiAdminNodeResponse
+  return normalizeAdminNode(data.node)
+}
+
 export function normalizeSummary(input: ApiSummaryResponse): SummaryData {
   return {
     nodes: input.nodes.map(normalizeNode),
@@ -186,6 +215,16 @@ export function normalizeNodeState(input: ApiStateResponse): NodeStateData {
 export function normalizeAdminNodes(input: ApiAdminNodesResponse): AdminNodesData {
   return {
     nodes: input.nodes.map(normalizeAdminNode),
+  }
+}
+
+function serializeAdminNodeUpdate(input: AdminNodeUpdateInput) {
+  return {
+    ...(input.displayName !== undefined ? { display_name: input.displayName } : {}),
+    ...(input.countryCode !== undefined ? { country_code: input.countryCode } : {}),
+    ...(input.region !== undefined ? { region: input.region } : {}),
+    ...(input.monthlyQuotaBytes !== undefined ? { monthly_quota_bytes: input.monthlyQuotaBytes } : {}),
+    ...(input.disabled !== undefined ? { disabled: input.disabled } : {}),
   }
 }
 
