@@ -21,4 +21,9 @@ describe('state history layout', () => {
     expect(styles).toContain('grid-template-columns: repeat(4, minmax(0, 1fr))')
     expect(styles).toContain('grid-template-columns: repeat(2, minmax(0, 1fr))')
   })
+
+  it('keeps uptime as a compact header badge', () => {
+    expect(styles).toContain('.state-uptime')
+    expect(styles).toContain('border-radius: 999px')
+  })
 })

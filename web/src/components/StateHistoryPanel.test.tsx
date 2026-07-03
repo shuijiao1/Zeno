@@ -40,6 +40,7 @@ describe('StateHistoryPanel', () => {
 
     expect(html).toContain('系统资源历史')
     expect(html).toContain('1 天 · 2 个状态采样')
+    expect(html).toContain('运行 1 小时 1 分钟')
     expect(html).toContain('CPU')
     expect(html).toContain('18.8%')
     expect(html).toContain('内存')

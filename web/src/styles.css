@@ -438,6 +438,23 @@ svg { display: block; }
 }
 .detail-state.is-error { color: var(--red); }
 
+.state-uptime {
+  align-self: center;
+  display: inline-flex;
+  align-items: center;
+  max-width: 100%;
+  padding: 6px 10px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--metric-bg) 86%, transparent);
+  color: color-mix(in srgb, var(--foreground) 74%, transparent);
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
 .state-history-grid {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));

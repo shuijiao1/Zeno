@@ -29,6 +29,7 @@ export function StateHistoryPanel({ points, rangeLabel, loading = false, error }
   const latestDisk = latest(points, diskPercent)
   const latestInSpeed = latest(points, (point) => point.netInSpeedBps)
   const latestOutSpeed = latest(points, (point) => point.netOutSpeedBps)
+  const latestUptime = latest(points, (point) => point.uptimeSeconds)
 
   const metrics: MetricConfig[] = [
     {
@@ -72,6 +73,7 @@ export function StateHistoryPanel({ points, rangeLabel, loading = false, error }
           <h3>系统资源历史</h3>
           <p>{rangeLabel} · {sampleCount} 个状态采样</p>
         </div>
+        {latestUptime !== null && <strong className="state-uptime">运行 {formatUptime(latestUptime)}</strong>}
       </header>
 
       {loading && <div className="detail-state">正在读取系统资源…</div>}
@@ -112,6 +114,17 @@ function latest(points: StatePoint[], read: (point: StatePoint) => number | null
     if (value !== null) return value
   }
   return null
+}
+
+function formatUptime(seconds: number): string {
+  const safeSeconds = Math.max(0, Math.floor(seconds))
+  const days = Math.floor(safeSeconds / 86_400)
+  const hours = Math.floor((safeSeconds % 86_400) / 3_600)
+  const minutes = Math.floor((safeSeconds % 3_600) / 60)
+
+  if (days > 0) return `${days} 天 ${hours} 小时`
+  if (hours > 0) return `${hours} 小时 ${minutes} 分钟`
+  return `${Math.max(1, minutes)} 分钟`
 }
 
 function memoryPercent(point: StatePoint): number | null {
