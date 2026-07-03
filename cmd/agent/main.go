@@ -8,7 +8,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/shuijiao1/jiaoprobe/internal/agent"
+	"github.com/shuijiao1/zeno/internal/agent"
 )
 
 const defaultVersion = "zeno-agent-dev"

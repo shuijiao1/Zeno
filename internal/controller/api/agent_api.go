@@ -7,7 +7,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/shuijiao1/jiaoprobe/internal/shared/probe"
+	"github.com/shuijiao1/zeno/internal/shared/probe"
 )
 
 type agentStore interface {

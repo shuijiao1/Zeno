@@ -10,7 +10,7 @@ import (
 )
 
 func TestBuildHandlerUsesSQLiteStoreWhenDBPathProvided(t *testing.T) {
-	handler, cleanup, err := buildHandler(handlerConfig{DBPath: filepath.Join(t.TempDir(), "jiaoprobe.db")})
+	handler, cleanup, err := buildHandler(handlerConfig{DBPath: filepath.Join(t.TempDir(), "zeno.db")})
 	if err != nil {
 		t.Fatalf("build handler: %v", err)
 	}
@@ -35,7 +35,7 @@ func TestBuildHandlerUsesSQLiteStoreWhenDBPathProvided(t *testing.T) {
 
 func TestBuildHandlerEnablesAdminAPIWithAdminToken(t *testing.T) {
 	handler, cleanup, err := buildHandler(handlerConfig{
-		DBPath:      filepath.Join(t.TempDir(), "jiaoprobe.db"),
+		DBPath:      filepath.Join(t.TempDir(), "zeno.db"),
 		SeedPreview: true,
 		NodeID:      "hytron",
 		AgentToken:  "agent-token",
@@ -57,11 +57,11 @@ func TestBuildHandlerEnablesAdminAPIWithAdminToken(t *testing.T) {
 
 func TestBuildHandlerServesConfiguredAgentBinary(t *testing.T) {
 	tmp := t.TempDir()
-	binaryPath := filepath.Join(tmp, "jiaoprobe-agent")
+	binaryPath := filepath.Join(tmp, "zeno-agent")
 	if err := os.WriteFile(binaryPath, []byte("agent-binary"), 0o755); err != nil {
 		t.Fatalf("write agent binary: %v", err)
 	}
-	handler, cleanup, err := buildHandler(handlerConfig{DBPath: filepath.Join(tmp, "jiaoprobe.db"), AgentBinaryPath: binaryPath, AgentVersion: "abc1234"})
+	handler, cleanup, err := buildHandler(handlerConfig{DBPath: filepath.Join(tmp, "zeno.db"), AgentBinaryPath: binaryPath, AgentVersion: "abc1234"})
 	if err != nil {
 		t.Fatalf("build handler: %v", err)
 	}

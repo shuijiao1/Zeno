@@ -13,7 +13,7 @@ import (
 )
 
 func TestAdminNodesRequiresAdminToken(t *testing.T) {
-	store, err := OpenSQLiteStore(filepath.Join(t.TempDir(), "jiaoprobe.db"))
+	store, err := OpenSQLiteStore(filepath.Join(t.TempDir(), "zeno.db"))
 	if err != nil {
 		t.Fatalf("open sqlite store: %v", err)
 	}
@@ -37,7 +37,7 @@ func TestAdminNodesRequiresAdminToken(t *testing.T) {
 }
 
 func TestAdminNodesListsEnabledAndDisabledNodesWithoutTokenHashes(t *testing.T) {
-	store, err := OpenSQLiteStore(filepath.Join(t.TempDir(), "jiaoprobe.db"))
+	store, err := OpenSQLiteStore(filepath.Join(t.TempDir(), "zeno.db"))
 	if err != nil {
 		t.Fatalf("open sqlite store: %v", err)
 	}
@@ -96,7 +96,7 @@ func TestAdminNodesListsEnabledAndDisabledNodesWithoutTokenHashes(t *testing.T) 
 }
 
 func TestAdminNodePatchUpdatesEditableFieldsAndReturnsSafeDTO(t *testing.T) {
-	store, err := OpenSQLiteStore(filepath.Join(t.TempDir(), "jiaoprobe.db"))
+	store, err := OpenSQLiteStore(filepath.Join(t.TempDir(), "zeno.db"))
 	if err != nil {
 		t.Fatalf("open sqlite store: %v", err)
 	}
@@ -152,7 +152,7 @@ func TestAdminNodePatchUpdatesEditableFieldsAndReturnsSafeDTO(t *testing.T) {
 }
 
 func TestAdminNodePatchRejectsUnauthorizedUnknownAndInvalidRequests(t *testing.T) {
-	store, err := OpenSQLiteStore(filepath.Join(t.TempDir(), "jiaoprobe.db"))
+	store, err := OpenSQLiteStore(filepath.Join(t.TempDir(), "zeno.db"))
 	if err != nil {
 		t.Fatalf("open sqlite store: %v", err)
 	}
@@ -195,7 +195,7 @@ func TestAdminNodePatchRejectsUnauthorizedUnknownAndInvalidRequests(t *testing.T
 }
 
 func TestAdminNodeCreateAddsEditableNodeWithoutReturningSecrets(t *testing.T) {
-	store, err := OpenSQLiteStore(filepath.Join(t.TempDir(), "jiaoprobe.db"))
+	store, err := OpenSQLiteStore(filepath.Join(t.TempDir(), "zeno.db"))
 	if err != nil {
 		t.Fatalf("open sqlite store: %v", err)
 	}
@@ -251,7 +251,7 @@ func TestAdminNodeCreateAddsEditableNodeWithoutReturningSecrets(t *testing.T) {
 }
 
 func TestAdminNodeInstallCommandRotatesAgentCredentialAndUsesRequestHost(t *testing.T) {
-	store, err := OpenSQLiteStore(filepath.Join(t.TempDir(), "jiaoprobe.db"))
+	store, err := OpenSQLiteStore(filepath.Join(t.TempDir(), "zeno.db"))
 	if err != nil {
 		t.Fatalf("open sqlite store: %v", err)
 	}
@@ -266,7 +266,7 @@ func TestAdminNodeInstallCommandRotatesAgentCredentialAndUsesRequestHost(t *test
 	request.Host = "probe.example.com"
 	request.Header.Set("X-Forwarded-Proto", "https")
 	request.Header.Set("X-Admin-Token", "admin-pass")
-	NewHandler(HandlerOptions{Store: store, AdminTokenHash: HashAdminToken("admin-pass"), AgentBinaryPath: "/opt/jiaoprobe/current/bin/zeno-agent", AgentVersion: "testsha"}).ServeHTTP(recorder, request)
+	NewHandler(HandlerOptions{Store: store, AdminTokenHash: HashAdminToken("admin-pass"), AgentBinaryPath: "/opt/zeno/current/bin/zeno-agent", AgentVersion: "testsha"}).ServeHTTP(recorder, request)
 
 	if recorder.Code != http.StatusOK {
 		t.Fatalf("status = %d, want 200; body=%s", recorder.Code, recorder.Body.String())
@@ -284,7 +284,7 @@ func TestAdminNodeInstallCommandRotatesAgentCredentialAndUsesRequestHost(t *test
 	if !strings.Contains(response.Command, "https://probe.example.com") || !strings.Contains(response.Command, "/api/public/v1/agent/linux-amd64") || !strings.Contains(response.Command, "-node-id 'hytron'") || !strings.Contains(response.Command, "-version 'testsha'") {
 		t.Fatalf("install command missing controller URL, binary endpoint, node id, or version: %s", response.Command)
 	}
-	if !strings.Contains(response.Command, "/usr/local/bin/zeno-agent") || !strings.Contains(response.Command, "/etc/zeno/agent-token") || !strings.Contains(response.Command, "zeno-agent.service") || strings.Contains(response.Command, "jiaoprobe-agent") {
+	if !strings.Contains(response.Command, "/usr/local/bin/zeno-agent") || !strings.Contains(response.Command, "/etc/zeno/agent-token") || !strings.Contains(response.Command, "zeno-agent.service") {
 		t.Fatalf("install command should use Zeno agent names and paths: %s", response.Command)
 	}
 	credential := extractQuotedInstallCredential(t, response.Command)
@@ -316,7 +316,7 @@ func extractQuotedInstallCredential(t *testing.T, command string) string {
 }
 
 func TestAdminNodeInstallCommandRequiresAdminTokenAndKnownNode(t *testing.T) {
-	store, err := OpenSQLiteStore(filepath.Join(t.TempDir(), "jiaoprobe.db"))
+	store, err := OpenSQLiteStore(filepath.Join(t.TempDir(), "zeno.db"))
 	if err != nil {
 		t.Fatalf("open sqlite store: %v", err)
 	}
@@ -324,7 +324,7 @@ func TestAdminNodeInstallCommandRequiresAdminTokenAndKnownNode(t *testing.T) {
 	if err := store.SeedPreviewData(context.Background(), PreviewSeedOptions{NodeID: "hytron", DisplayName: "Hytron", CountryCode: "HK", AgentToken: "test-agent-token"}); err != nil {
 		t.Fatalf("seed preview data: %v", err)
 	}
-	handler := NewHandler(HandlerOptions{Store: store, AdminTokenHash: HashAdminToken("admin-pass"), AgentBinaryPath: "/opt/jiaoprobe/current/bin/zeno-agent"})
+	handler := NewHandler(HandlerOptions{Store: store, AdminTokenHash: HashAdminToken("admin-pass"), AgentBinaryPath: "/opt/zeno/current/bin/zeno-agent"})
 
 	cases := []struct {
 		name       string
@@ -351,7 +351,7 @@ func TestAdminNodeInstallCommandRequiresAdminTokenAndKnownNode(t *testing.T) {
 }
 
 func TestAdminProbeTargetsListsTargetsAndAssignmentsWithoutSecrets(t *testing.T) {
-	store, err := OpenSQLiteStore(filepath.Join(t.TempDir(), "jiaoprobe.db"))
+	store, err := OpenSQLiteStore(filepath.Join(t.TempDir(), "zeno.db"))
 	if err != nil {
 		t.Fatalf("open sqlite store: %v", err)
 	}
@@ -452,7 +452,7 @@ func TestAdminProbeTargetsListsTargetsAndAssignmentsWithoutSecrets(t *testing.T)
 }
 
 func TestAdminProbeTargetsReturnsEmptyAssignmentArrayForUnassignedTargets(t *testing.T) {
-	store, err := OpenSQLiteStore(filepath.Join(t.TempDir(), "jiaoprobe.db"))
+	store, err := OpenSQLiteStore(filepath.Join(t.TempDir(), "zeno.db"))
 	if err != nil {
 		t.Fatalf("open sqlite store: %v", err)
 	}
@@ -494,7 +494,7 @@ func TestAdminProbeTargetsReturnsEmptyAssignmentArrayForUnassignedTargets(t *tes
 }
 
 func TestAdminProbeTargetCreateAddsAssignedTargetWithoutSecrets(t *testing.T) {
-	store, err := OpenSQLiteStore(filepath.Join(t.TempDir(), "jiaoprobe.db"))
+	store, err := OpenSQLiteStore(filepath.Join(t.TempDir(), "zeno.db"))
 	if err != nil {
 		t.Fatalf("open sqlite store: %v", err)
 	}
@@ -567,7 +567,7 @@ func TestAdminProbeTargetCreateAddsAssignedTargetWithoutSecrets(t *testing.T) {
 }
 
 func TestAdminProbeTargetPatchUpdatesEditableFieldsAndAffectsAgentTargets(t *testing.T) {
-	store, err := OpenSQLiteStore(filepath.Join(t.TempDir(), "jiaoprobe.db"))
+	store, err := OpenSQLiteStore(filepath.Join(t.TempDir(), "zeno.db"))
 	if err != nil {
 		t.Fatalf("open sqlite store: %v", err)
 	}
@@ -628,7 +628,7 @@ func TestAdminProbeTargetPatchUpdatesEditableFieldsAndAffectsAgentTargets(t *tes
 }
 
 func TestAdminProbeTargetPatchUpdatesNodeAssignments(t *testing.T) {
-	store, err := OpenSQLiteStore(filepath.Join(t.TempDir(), "jiaoprobe.db"))
+	store, err := OpenSQLiteStore(filepath.Join(t.TempDir(), "zeno.db"))
 	if err != nil {
 		t.Fatalf("open sqlite store: %v", err)
 	}
@@ -707,7 +707,7 @@ func TestAdminProbeTargetPatchUpdatesNodeAssignments(t *testing.T) {
 }
 
 func TestAdminProbeTargetWritesRejectUnauthorizedUnknownAndInvalidRequests(t *testing.T) {
-	store, err := OpenSQLiteStore(filepath.Join(t.TempDir(), "jiaoprobe.db"))
+	store, err := OpenSQLiteStore(filepath.Join(t.TempDir(), "zeno.db"))
 	if err != nil {
 		t.Fatalf("open sqlite store: %v", err)
 	}
@@ -752,7 +752,7 @@ func TestAdminProbeTargetWritesRejectUnauthorizedUnknownAndInvalidRequests(t *te
 }
 
 func TestAdminProbeTargetsRequiresAdminToken(t *testing.T) {
-	store, err := OpenSQLiteStore(filepath.Join(t.TempDir(), "jiaoprobe.db"))
+	store, err := OpenSQLiteStore(filepath.Join(t.TempDir(), "zeno.db"))
 	if err != nil {
 		t.Fatalf("open sqlite store: %v", err)
 	}
@@ -774,7 +774,7 @@ func TestAdminProbeTargetsRequiresAdminToken(t *testing.T) {
 }
 
 func TestAdminNotificationChannelsCreateListAndPatchWithoutCredentialLeak(t *testing.T) {
-	store, err := OpenSQLiteStore(filepath.Join(t.TempDir(), "jiaoprobe.db"))
+	store, err := OpenSQLiteStore(filepath.Join(t.TempDir(), "zeno.db"))
 	if err != nil {
 		t.Fatalf("open sqlite store: %v", err)
 	}
@@ -866,7 +866,7 @@ func TestAdminNotificationChannelsCreateListAndPatchWithoutCredentialLeak(t *tes
 }
 
 func TestAdminNotificationChannelTestSendsWebhookAndRecordsSanitizedDelivery(t *testing.T) {
-	store, err := OpenSQLiteStore(filepath.Join(t.TempDir(), "jiaoprobe.db"))
+	store, err := OpenSQLiteStore(filepath.Join(t.TempDir(), "zeno.db"))
 	if err != nil {
 		t.Fatalf("open sqlite store: %v", err)
 	}
@@ -942,7 +942,7 @@ func TestAdminNotificationChannelTestSendsWebhookAndRecordsSanitizedDelivery(t *
 }
 
 func TestAdminNotificationChannelDeleteRemovesChannelWithoutCredentialLeak(t *testing.T) {
-	store, err := OpenSQLiteStore(filepath.Join(t.TempDir(), "jiaoprobe.db"))
+	store, err := OpenSQLiteStore(filepath.Join(t.TempDir(), "zeno.db"))
 	if err != nil {
 		t.Fatalf("open sqlite store: %v", err)
 	}
@@ -990,7 +990,7 @@ func TestAdminNotificationChannelDeleteRemovesChannelWithoutCredentialLeak(t *te
 }
 
 func TestAdminNotificationChannelsRejectUnauthorizedUnknownAndInvalidRequests(t *testing.T) {
-	store, err := OpenSQLiteStore(filepath.Join(t.TempDir(), "jiaoprobe.db"))
+	store, err := OpenSQLiteStore(filepath.Join(t.TempDir(), "zeno.db"))
 	if err != nil {
 		t.Fatalf("open sqlite store: %v", err)
 	}
@@ -1034,7 +1034,7 @@ func TestAdminNotificationChannelsRejectUnauthorizedUnknownAndInvalidRequests(t 
 }
 
 func TestAdminNotificationTypesListAndPatch(t *testing.T) {
-	store, err := OpenSQLiteStore(filepath.Join(t.TempDir(), "jiaoprobe.db"))
+	store, err := OpenSQLiteStore(filepath.Join(t.TempDir(), "zeno.db"))
 	if err != nil {
 		t.Fatalf("open sqlite store: %v", err)
 	}
@@ -1085,7 +1085,7 @@ func TestAdminNotificationTypesListAndPatch(t *testing.T) {
 }
 
 func TestAdminNotificationTypesRejectUnauthorizedUnknownAndInvalidRequests(t *testing.T) {
-	store, err := OpenSQLiteStore(filepath.Join(t.TempDir(), "jiaoprobe.db"))
+	store, err := OpenSQLiteStore(filepath.Join(t.TempDir(), "zeno.db"))
 	if err != nil {
 		t.Fatalf("open sqlite store: %v", err)
 	}

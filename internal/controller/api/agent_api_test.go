@@ -17,7 +17,7 @@ import (
 )
 
 func TestAgentProbeTargetsRequiresBearerToken(t *testing.T) {
-	store, err := OpenSQLiteStore(filepath.Join(t.TempDir(), "jiaoprobe.db"))
+	store, err := OpenSQLiteStore(filepath.Join(t.TempDir(), "zeno.db"))
 	if err != nil {
 		t.Fatalf("open sqlite store: %v", err)
 	}
@@ -43,7 +43,7 @@ func TestAgentProbeTargetsRequiresBearerToken(t *testing.T) {
 }
 
 func TestAgentProbeTargetsReturnsEnabledTargetsAfterAuth(t *testing.T) {
-	store, err := OpenSQLiteStore(filepath.Join(t.TempDir(), "jiaoprobe.db"))
+	store, err := OpenSQLiteStore(filepath.Join(t.TempDir(), "zeno.db"))
 	if err != nil {
 		t.Fatalf("open sqlite store: %v", err)
 	}
@@ -79,7 +79,7 @@ func TestAgentProbeTargetsReturnsEnabledTargetsAfterAuth(t *testing.T) {
 }
 
 func TestAgentProbeResultsAcceptsSamplesAndUpdatesPublicLatency(t *testing.T) {
-	store, err := OpenSQLiteStore(filepath.Join(t.TempDir(), "jiaoprobe.db"))
+	store, err := OpenSQLiteStore(filepath.Join(t.TempDir(), "zeno.db"))
 	if err != nil {
 		t.Fatalf("open sqlite store: %v", err)
 	}
@@ -152,7 +152,7 @@ func TestAgentProbeResultsAcceptsSamplesAndUpdatesPublicLatency(t *testing.T) {
 }
 
 func TestAgentProbeResultsMarksNodeWarningAndDispatchesProbeUnhealthy(t *testing.T) {
-	store, err := OpenSQLiteStore(filepath.Join(t.TempDir(), "jiaoprobe.db"))
+	store, err := OpenSQLiteStore(filepath.Join(t.TempDir(), "zeno.db"))
 	if err != nil {
 		t.Fatalf("open sqlite store: %v", err)
 	}
@@ -240,7 +240,7 @@ func TestAgentProbeResultsMarksNodeWarningAndDispatchesProbeUnhealthy(t *testing
 }
 
 func TestAgentHeartbeatDoesNotClearExistingProbeWarning(t *testing.T) {
-	store, err := OpenSQLiteStore(filepath.Join(t.TempDir(), "jiaoprobe.db"))
+	store, err := OpenSQLiteStore(filepath.Join(t.TempDir(), "zeno.db"))
 	if err != nil {
 		t.Fatalf("open sqlite store: %v", err)
 	}
@@ -266,7 +266,7 @@ func TestAgentHeartbeatDoesNotClearExistingProbeWarning(t *testing.T) {
 }
 
 func TestAgentProbeResultsClearsWarningAfterHealthyProbe(t *testing.T) {
-	store, err := OpenSQLiteStore(filepath.Join(t.TempDir(), "jiaoprobe.db"))
+	store, err := OpenSQLiteStore(filepath.Join(t.TempDir(), "zeno.db"))
 	if err != nil {
 		t.Fatalf("open sqlite store: %v", err)
 	}
@@ -301,7 +301,7 @@ func TestAgentProbeResultsClearsWarningAfterHealthyProbe(t *testing.T) {
 }
 
 func TestAgentProbeResultsRejectsUnknownTarget(t *testing.T) {
-	store, err := OpenSQLiteStore(filepath.Join(t.TempDir(), "jiaoprobe.db"))
+	store, err := OpenSQLiteStore(filepath.Join(t.TempDir(), "zeno.db"))
 	if err != nil {
 		t.Fatalf("open sqlite store: %v", err)
 	}
@@ -332,7 +332,7 @@ func TestAgentProbeResultsRejectsUnknownTarget(t *testing.T) {
 }
 
 func TestAgentHeartbeatUpdatesNodeStatusAndLastSeen(t *testing.T) {
-	store, err := OpenSQLiteStore(filepath.Join(t.TempDir(), "jiaoprobe.db"))
+	store, err := OpenSQLiteStore(filepath.Join(t.TempDir(), "zeno.db"))
 	if err != nil {
 		t.Fatalf("open sqlite store: %v", err)
 	}
@@ -369,7 +369,7 @@ func TestAgentHeartbeatUpdatesNodeStatusAndLastSeen(t *testing.T) {
 }
 
 func TestAgentHeartbeatDispatchesEnabledWebhookOnNodeOnlineTransition(t *testing.T) {
-	store, err := OpenSQLiteStore(filepath.Join(t.TempDir(), "jiaoprobe.db"))
+	store, err := OpenSQLiteStore(filepath.Join(t.TempDir(), "zeno.db"))
 	if err != nil {
 		t.Fatalf("open sqlite store: %v", err)
 	}
@@ -462,7 +462,7 @@ func TestAgentHeartbeatDispatchesEnabledWebhookOnNodeOnlineTransition(t *testing
 }
 
 func TestAgentHeartbeatDispatchesEnabledTelegramChannel(t *testing.T) {
-	store, err := OpenSQLiteStore(filepath.Join(t.TempDir(), "jiaoprobe.db"))
+	store, err := OpenSQLiteStore(filepath.Join(t.TempDir(), "zeno.db"))
 	if err != nil {
 		t.Fatalf("open sqlite store: %v", err)
 	}
@@ -535,7 +535,7 @@ func TestAgentHeartbeatDispatchesEnabledTelegramChannel(t *testing.T) {
 }
 
 func TestAgentHeartbeatNotificationDeliveryDoesNotBlockResponse(t *testing.T) {
-	store, err := OpenSQLiteStore(filepath.Join(t.TempDir(), "jiaoprobe.db"))
+	store, err := OpenSQLiteStore(filepath.Join(t.TempDir(), "zeno.db"))
 	if err != nil {
 		t.Fatalf("open sqlite store: %v", err)
 	}
@@ -576,7 +576,7 @@ func TestAgentHeartbeatNotificationDeliveryDoesNotBlockResponse(t *testing.T) {
 }
 
 func TestAgentHeartbeatDispatchesOnlineAfterStaleHeartbeatOffline(t *testing.T) {
-	store, err := OpenSQLiteStore(filepath.Join(t.TempDir(), "jiaoprobe.db"))
+	store, err := OpenSQLiteStore(filepath.Join(t.TempDir(), "zeno.db"))
 	if err != nil {
 		t.Fatalf("open sqlite store: %v", err)
 	}
@@ -641,7 +641,7 @@ func TestAgentHeartbeatDispatchesOnlineAfterStaleHeartbeatOffline(t *testing.T) 
 }
 
 func TestAgentHeartbeatTransitionDoesNotDispatchOnlineWhenOutOfOrderHeartbeatStaysPubliclyOffline(t *testing.T) {
-	store, err := OpenSQLiteStore(filepath.Join(t.TempDir(), "jiaoprobe.db"))
+	store, err := OpenSQLiteStore(filepath.Join(t.TempDir(), "zeno.db"))
 	if err != nil {
 		t.Fatalf("open sqlite store: %v", err)
 	}
@@ -668,7 +668,7 @@ func TestAgentHeartbeatTransitionDoesNotDispatchOnlineWhenOutOfOrderHeartbeatSta
 }
 
 func TestAgentHeartbeatTransitionDispatchesOfflineWhenOutOfOrderOnlineMakesNodePubliclyOffline(t *testing.T) {
-	store, err := OpenSQLiteStore(filepath.Join(t.TempDir(), "jiaoprobe.db"))
+	store, err := OpenSQLiteStore(filepath.Join(t.TempDir(), "zeno.db"))
 	if err != nil {
 		t.Fatalf("open sqlite store: %v", err)
 	}
@@ -697,7 +697,7 @@ func TestAgentHeartbeatTransitionDispatchesOfflineWhenOutOfOrderOnlineMakesNodeP
 }
 
 func TestAgentHeartbeatNotificationFailureDoesNotRejectHeartbeat(t *testing.T) {
-	store, err := OpenSQLiteStore(filepath.Join(t.TempDir(), "jiaoprobe.db"))
+	store, err := OpenSQLiteStore(filepath.Join(t.TempDir(), "zeno.db"))
 	if err != nil {
 		t.Fatalf("open sqlite store: %v", err)
 	}
@@ -739,7 +739,7 @@ func TestAgentHeartbeatNotificationFailureDoesNotRejectHeartbeat(t *testing.T) {
 }
 
 func TestAgentHeartbeatRecordsNotificationDeliveryHistoryWithoutCredentialLeak(t *testing.T) {
-	store, err := OpenSQLiteStore(filepath.Join(t.TempDir(), "jiaoprobe.db"))
+	store, err := OpenSQLiteStore(filepath.Join(t.TempDir(), "zeno.db"))
 	if err != nil {
 		t.Fatalf("open sqlite store: %v", err)
 	}
@@ -839,7 +839,7 @@ func waitUntil(t *testing.T, timeout time.Duration, condition func() bool) {
 }
 
 func TestAgentHostUpsertUpdatesPublicSummaryTotals(t *testing.T) {
-	store, err := OpenSQLiteStore(filepath.Join(t.TempDir(), "jiaoprobe.db"))
+	store, err := OpenSQLiteStore(filepath.Join(t.TempDir(), "zeno.db"))
 	if err != nil {
 		t.Fatalf("open sqlite store: %v", err)
 	}
@@ -891,7 +891,7 @@ func TestAgentHostUpsertUpdatesPublicSummaryTotals(t *testing.T) {
 }
 
 func TestAgentStateSamplesDrivePublicSummaryAndMonthlyTrafficDeltas(t *testing.T) {
-	store, err := OpenSQLiteStore(filepath.Join(t.TempDir(), "jiaoprobe.db"))
+	store, err := OpenSQLiteStore(filepath.Join(t.TempDir(), "zeno.db"))
 	if err != nil {
 		t.Fatalf("open sqlite store: %v", err)
 	}

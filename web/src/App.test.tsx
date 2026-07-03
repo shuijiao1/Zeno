@@ -142,7 +142,6 @@ describe('HomeTopPanel', () => {
     expect(html).toContain('home-top-card')
     expect(html).toContain('dashboard actions')
     expect(html).toContain('Zeno')
-    expect(html).not.toContain('水饺的探针')
     expect(html).toContain('home-summary')
     expect(html).toContain('home-summary__compact')
     expect(html).toContain('Zeno Overview')

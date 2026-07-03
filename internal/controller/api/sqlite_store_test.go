@@ -11,13 +11,13 @@ import (
 	"testing"
 	"time"
 
-	"github.com/shuijiao1/jiaoprobe/internal/shared/probe"
+	"github.com/shuijiao1/zeno/internal/shared/probe"
 )
 
 func testF64(v float64) *float64 { return &v }
 
 func TestSQLiteBackedHandlerReturnsPersistedLatencyInsteadOfMock(t *testing.T) {
-	store, err := OpenSQLiteStore(filepath.Join(t.TempDir(), "jiaoprobe.db"))
+	store, err := OpenSQLiteStore(filepath.Join(t.TempDir(), "zeno.db"))
 	if err != nil {
 		t.Fatalf("open sqlite store: %v", err)
 	}
@@ -90,7 +90,7 @@ func TestSQLiteBackedHandlerReturnsPersistedLatencyInsteadOfMock(t *testing.T) {
 }
 
 func TestSQLiteBackedSummaryUsesPersistedNodeAndLatestLatency(t *testing.T) {
-	store, err := OpenSQLiteStore(filepath.Join(t.TempDir(), "jiaoprobe.db"))
+	store, err := OpenSQLiteStore(filepath.Join(t.TempDir(), "zeno.db"))
 	if err != nil {
 		t.Fatalf("open sqlite store: %v", err)
 	}
@@ -171,7 +171,7 @@ func TestSQLiteBackedSummaryUsesPersistedNodeAndLatestLatency(t *testing.T) {
 }
 
 func TestSQLiteBackedHandlerReturnsPersistedStateHistory(t *testing.T) {
-	store, err := OpenSQLiteStore(filepath.Join(t.TempDir(), "jiaoprobe.db"))
+	store, err := OpenSQLiteStore(filepath.Join(t.TempDir(), "zeno.db"))
 	if err != nil {
 		t.Fatalf("open sqlite store: %v", err)
 	}
@@ -243,7 +243,7 @@ func TestSQLiteBackedHandlerReturnsPersistedStateHistory(t *testing.T) {
 }
 
 func TestSQLiteBackedSummaryMarksStaleAgentOffline(t *testing.T) {
-	store, err := OpenSQLiteStore(filepath.Join(t.TempDir(), "jiaoprobe.db"))
+	store, err := OpenSQLiteStore(filepath.Join(t.TempDir(), "zeno.db"))
 	if err != nil {
 		t.Fatalf("open sqlite store: %v", err)
 	}
@@ -272,7 +272,7 @@ func TestSQLiteBackedSummaryMarksStaleAgentOffline(t *testing.T) {
 }
 
 func TestSeedPreviewDataDoesNotFakeAgentOnlineStatus(t *testing.T) {
-	store, err := OpenSQLiteStore(filepath.Join(t.TempDir(), "jiaoprobe.db"))
+	store, err := OpenSQLiteStore(filepath.Join(t.TempDir(), "zeno.db"))
 	if err != nil {
 		t.Fatalf("open sqlite store: %v", err)
 	}
@@ -309,7 +309,7 @@ func TestSeedPreviewDataDoesNotFakeAgentOnlineStatus(t *testing.T) {
 }
 
 func TestSeedPreviewDataIsIdempotentAndWiresHytronTargets(t *testing.T) {
-	store, err := OpenSQLiteStore(filepath.Join(t.TempDir(), "jiaoprobe.db"))
+	store, err := OpenSQLiteStore(filepath.Join(t.TempDir(), "zeno.db"))
 	if err != nil {
 		t.Fatalf("open sqlite store: %v", err)
 	}
@@ -364,7 +364,7 @@ func TestSeedPreviewDataIsIdempotentAndWiresHytronTargets(t *testing.T) {
 }
 
 func TestLocalProbeCollectorCollectOnceWritesRealRoundShape(t *testing.T) {
-	store, err := OpenSQLiteStore(filepath.Join(t.TempDir(), "jiaoprobe.db"))
+	store, err := OpenSQLiteStore(filepath.Join(t.TempDir(), "zeno.db"))
 	if err != nil {
 		t.Fatalf("open sqlite store: %v", err)
 	}

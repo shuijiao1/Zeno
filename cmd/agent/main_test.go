@@ -7,7 +7,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/shuijiao1/jiaoprobe/internal/agent"
+	"github.com/shuijiao1/zeno/internal/agent"
 )
 
 func TestReportOnceSkipsProbeResultsWhenNoTargetsAreDue(t *testing.T) {

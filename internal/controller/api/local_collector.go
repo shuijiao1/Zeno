@@ -9,7 +9,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/shuijiao1/jiaoprobe/internal/shared/probe"
+	"github.com/shuijiao1/zeno/internal/shared/probe"
 )
 
 type ProbeRunner func(ctx context.Context, target ProbeTarget) ([]probe.Sample, error)

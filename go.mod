@@ -1,4 +1,4 @@
-module github.com/shuijiao1/jiaoprobe
+module github.com/shuijiao1/zeno
 
 go 1.24.0
 
