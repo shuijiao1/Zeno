@@ -11,7 +11,7 @@ import (
 	"github.com/shuijiao1/jiaoprobe/internal/agent"
 )
 
-const defaultVersion = "jiaoprobe-agent-dev"
+const defaultVersion = "zeno-agent-dev"
 
 type config struct {
 	ControllerURL string
@@ -25,7 +25,7 @@ type config struct {
 
 func main() {
 	cfg := config{}
-	flag.StringVar(&cfg.ControllerURL, "controller-url", "http://127.0.0.1:18980", "JiaoProbe controller base URL")
+	flag.StringVar(&cfg.ControllerURL, "controller-url", "http://127.0.0.1:18980", "Zeno controller base URL")
 	flag.StringVar(&cfg.NodeID, "node-id", "hytron", "agent node id")
 	flag.StringVar(&cfg.Token, "token", "", "agent bearer token; prefer -token-file")
 	flag.StringVar(&cfg.TokenFile, "token-file", "", "file containing the agent bearer token")

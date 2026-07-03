@@ -220,7 +220,7 @@ func TestStaticWebFallbackServesIndexForDashboardRoutes(t *testing.T) {
 	if err := os.Mkdir(filepath.Join(dir, "assets"), 0o755); err != nil {
 		t.Fatalf("mkdir assets: %v", err)
 	}
-	if err := os.WriteFile(filepath.Join(dir, "index.html"), []byte("<div id=\"root\">JiaoProbe UI</div>"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, "index.html"), []byte("<div id=\"root\">Zeno UI</div>"), 0o644); err != nil {
 		t.Fatalf("write index: %v", err)
 	}
 	if err := os.WriteFile(filepath.Join(dir, "assets", "app.js"), []byte("console.log('asset')"), 0o644); err != nil {
@@ -243,7 +243,7 @@ func TestStaticWebFallbackServesIndexForDashboardRoutes(t *testing.T) {
 	if spaRecorder.Code != http.StatusOK {
 		t.Fatalf("spa status = %d, want %d", spaRecorder.Code, http.StatusOK)
 	}
-	if !strings.Contains(spaRecorder.Body.String(), "JiaoProbe UI") {
+	if !strings.Contains(spaRecorder.Body.String(), "Zeno UI") {
 		t.Fatalf("spa body = %q, want index.html", spaRecorder.Body.String())
 	}
 }

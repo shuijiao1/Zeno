@@ -1,4 +1,4 @@
-# JiaoProbe Non-Goals / 明确不做
+# Zeno Non-Goals / 明确不做
 
 本项目是全新的轻量探针系统，不是旧系统重构，也不是兼容层。
 

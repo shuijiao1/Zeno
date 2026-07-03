@@ -10,18 +10,21 @@ import (
 )
 
 type HandlerOptions struct {
-	StaticDir       string
-	Store           Store
-	AdminTokenHash  string
-	AgentBinaryPath string
-	AgentVersion    string
+	StaticDir          string
+	Store              Store
+	AdminTokenHash     string
+	AgentBinaryPath    string
+	AgentVersion       string
+	NotificationClient *http.Client
+	TelegramAPIBaseURL string
 }
 
 type handler struct {
-	store           Store
-	adminTokenHash  string
-	agentBinaryPath string
-	agentVersion    string
+	store              Store
+	adminTokenHash     string
+	agentBinaryPath    string
+	agentVersion       string
+	notificationSender notificationSender
 }
 
 func NewHandler(options ...HandlerOptions) http.Handler {
@@ -33,7 +36,13 @@ func NewHandler(options ...HandlerOptions) http.Handler {
 	if store == nil {
 		store = mockStore{}
 	}
-	h := &handler{store: store, adminTokenHash: opts.AdminTokenHash, agentBinaryPath: opts.AgentBinaryPath, agentVersion: opts.AgentVersion}
+	h := &handler{
+		store:              store,
+		adminTokenHash:     opts.AdminTokenHash,
+		agentBinaryPath:    opts.AgentBinaryPath,
+		agentVersion:       opts.AgentVersion,
+		notificationSender: newHTTPNotificationSender(opts.NotificationClient, opts.TelegramAPIBaseURL),
+	}
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/health", handleHealth)
@@ -81,7 +90,7 @@ func (h *handler) handleAgentBinary(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.Header().Set("Content-Type", "application/octet-stream")
-	w.Header().Set("Content-Disposition", `attachment; filename="jiaoprobe-agent-linux-amd64"`)
+	w.Header().Set("Content-Disposition", `attachment; filename="zeno-agent-linux-amd64"`)
 	http.ServeFile(w, r, h.agentBinaryPath)
 }
 

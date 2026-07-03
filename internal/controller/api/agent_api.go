@@ -153,10 +153,32 @@ func (h *handler) handleAgentHeartbeat(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid status")
 		return
 	}
-	if err := store.RecordAgentHeartbeat(r.Context(), nodeID, time.Unix(request.TS, 0).UTC(), status, strings.TrimSpace(request.AgentVersion)); err != nil {
-		writeError(w, http.StatusInternalServerError, "internal error")
-		return
+	var transition notificationStatusTransition
+	heartbeatTS := time.Unix(request.TS, 0).UTC()
+	if transitionStore, ok := store.(heartbeatTransitionStore); ok {
+		var err error
+		transition, err = transitionStore.RecordAgentHeartbeatTransition(r.Context(), nodeID, heartbeatTS, status, strings.TrimSpace(request.AgentVersion))
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, "internal error")
+			return
+		}
+	} else {
+		if notificationStore, ok := store.(notificationEventStore); ok {
+			if snapshot, err := notificationStore.NotificationNode(r.Context(), nodeID); err == nil {
+				transition.Previous = snapshot
+			}
+		}
+		if err := store.RecordAgentHeartbeat(r.Context(), nodeID, heartbeatTS, status, strings.TrimSpace(request.AgentVersion)); err != nil {
+			writeError(w, http.StatusInternalServerError, "internal error")
+			return
+		}
+		if notificationStore, ok := store.(notificationEventStore); ok {
+			if snapshot, err := notificationStore.NotificationNode(r.Context(), nodeID); err == nil {
+				transition.Current = snapshot
+			}
+		}
 	}
+	h.dispatchAgentStatusNotification(store, transition, heartbeatTS)
 	writeJSON(w, http.StatusAccepted, map[string]any{"ok": true})
 }
 

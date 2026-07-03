@@ -172,26 +172,26 @@ func buildAgentInstallCommand(controllerURL, nodeID, credential, agentVersion st
 		versionArg = " -version " + shellSingleQuote(strings.TrimSpace(agentVersion))
 	}
 	binaryURL := controllerURL + "/api/public/v1/agent/linux-amd64"
-	return fmt.Sprintf(`curl -fsSL %s -o /tmp/jiaoprobe-agent && \
-sudo install -m 755 /tmp/jiaoprobe-agent /usr/local/bin/jiaoprobe-agent && \
-sudo install -d -m 700 /etc/jiaoprobe && \
-printf '%%s\n' %s | sudo tee /etc/jiaoprobe/agent-token >/dev/null && \
-sudo tee /etc/systemd/system/jiaoprobe-agent.service >/dev/null <<'JIAOPROBE_SERVICE'
+	return fmt.Sprintf(`curl -fsSL %s -o /tmp/zeno-agent && \
+sudo install -m 755 /tmp/zeno-agent /usr/local/bin/zeno-agent && \
+sudo install -d -m 700 /etc/zeno && \
+printf '%%s\n' %s | sudo tee /etc/zeno/agent-token >/dev/null && \
+sudo tee /etc/systemd/system/zeno-agent.service >/dev/null <<'ZENO_SERVICE'
 [Unit]
-Description=JiaoProbe Agent
+Description=Zeno Agent
 After=network-online.target
 Wants=network-online.target
 
 [Service]
 Type=simple
-ExecStart=/usr/local/bin/jiaoprobe-agent -controller-url %s -node-id %s -token-file /etc/jiaoprobe/agent-token -interval 60s%s
+ExecStart=/usr/local/bin/zeno-agent -controller-url %s -node-id %s -token-file /etc/zeno/agent-token -interval 60s%s
 Restart=always
 RestartSec=5s
 
 [Install]
 WantedBy=multi-user.target
-JIAOPROBE_SERVICE
-sudo systemctl daemon-reload && sudo systemctl enable --now jiaoprobe-agent`, shellSingleQuote(binaryURL), shellSingleQuote(credential), shellSingleQuote(controllerURL), shellSingleQuote(nodeID), versionArg)
+ZENO_SERVICE
+sudo systemctl daemon-reload && sudo systemctl enable --now zeno-agent`, shellSingleQuote(binaryURL), shellSingleQuote(credential), shellSingleQuote(controllerURL), shellSingleQuote(nodeID), versionArg)
 }
 
 func shellSingleQuote(value string) string {

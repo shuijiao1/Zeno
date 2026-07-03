@@ -58,7 +58,7 @@ export function App() {
   const [latencyRange, setLatencyRange] = useState('1d')
   const [latencyState, setLatencyState] = useState<LatencyLoadState>({ kind: 'idle' })
   const [stateHistoryState, setStateHistoryState] = useState<StateHistoryLoadState>({ kind: 'idle' })
-  const [adminToken, setAdminToken] = useState(() => window.sessionStorage.getItem('jiaoprobe_admin_token') ?? '')
+  const [adminToken, setAdminToken] = useState(() => window.sessionStorage.getItem('zeno_admin_token') ?? '')
   const [adminState, setAdminState] = useState<AdminLoadState>({ kind: 'idle' })
 
   useEffect(() => {
@@ -178,12 +178,12 @@ export function App() {
   const submitAdminToken = (token: string) => {
     const trimmed = token.trim()
     if (trimmed === '') return
-    window.sessionStorage.setItem('jiaoprobe_admin_token', trimmed)
+    window.sessionStorage.setItem('zeno_admin_token', trimmed)
     setAdminToken(trimmed)
   }
 
   const clearAdminToken = () => {
-    window.sessionStorage.removeItem('jiaoprobe_admin_token')
+    window.sessionStorage.removeItem('zeno_admin_token')
     setAdminToken('')
     setAdminState({ kind: 'idle' })
   }
@@ -447,7 +447,7 @@ export function AdminDashboard({
       <section className="home-top-card admin-panel" aria-label="admin dashboard">
         <DashboardHeader onHome={onHome} onAdmin={onHome} adminLabel="前台" />
         <div className="admin-hero">
-          <p className="eyebrow">JiaoProbe 后台</p>
+          <p className="eyebrow">Zeno 后台</p>
           <h2>控制台</h2>
           <p>服务器、延迟监控和通知拆成独立导航；列表只保留关键字段，编辑放进弹窗里处理。</p>
         </div>
@@ -1097,7 +1097,7 @@ export function HomeOverviewPanel({ totalCount, onlineCount, offlineCount, total
     <section className="home-summary" aria-label="server overview">
       <div className="home-summary__intro">
         <div>
-          <p className="eyebrow">JiaoProbe Overview</p>
+          <p className="eyebrow">Zeno Overview</p>
           <h1>服务器运行概览</h1>
         </div>
         <span className={`home-health-pill ${healthTone}`}>{healthLabel}</span>

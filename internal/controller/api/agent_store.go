@@ -8,21 +8,44 @@ import (
 )
 
 func (s *SQLiteStore) RecordAgentHeartbeat(ctx context.Context, nodeID string, ts time.Time, status, agentVersion string) error {
-	now := time.Now().UTC().Unix()
+	_, err := s.RecordAgentHeartbeatTransition(ctx, nodeID, ts, status, agentVersion)
+	return err
+}
+
+func (s *SQLiteStore) RecordAgentHeartbeatTransition(ctx context.Context, nodeID string, ts time.Time, status, agentVersion string) (notificationStatusTransition, error) {
+	now := time.Now().UTC()
+	nowUnix := now.Unix()
 	seenAt := ts.UTC().Unix()
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
-		return err
+		return notificationStatusTransition{}, err
 	}
 	defer rollbackUnlessCommitted(tx)
+
+	var previous notificationNodeSnapshot
+	var storedStatus string
+	var lastSeenAt sql.NullInt64
+	if err := tx.QueryRowContext(ctx, `
+		SELECT id, display_name, status, last_seen_at
+		FROM nodes
+		WHERE id = ? AND disabled = 0
+	`, nodeID).Scan(&previous.ID, &previous.DisplayName, &storedStatus, &lastSeenAt); err != nil {
+		if err == sql.ErrNoRows {
+			return notificationStatusTransition{}, errNodeNotFound
+		}
+		return notificationStatusTransition{}, err
+	}
+	previous.Status = publicNodeStatus(storedStatus, lastSeenAt, now)
+	current := notificationNodeSnapshot{ID: previous.ID, DisplayName: previous.DisplayName}
 
 	if _, err := tx.ExecContext(ctx, `
 		UPDATE nodes
 		SET status = ?, last_seen_at = ?, updated_at = ?
 		WHERE id = ? AND disabled = 0
-	`, status, seenAt, now, nodeID); err != nil {
-		return err
+	`, status, seenAt, nowUnix, nodeID); err != nil {
+		return notificationStatusTransition{}, err
 	}
+	current.Status = publicNodeStatus(status, sql.NullInt64{Int64: seenAt, Valid: true}, now)
 	if agentVersion != "" {
 		if _, err := tx.ExecContext(ctx, `
 			INSERT INTO host_info (node_id, agent_version, updated_at)
@@ -30,16 +53,16 @@ func (s *SQLiteStore) RecordAgentHeartbeat(ctx context.Context, nodeID string, t
 			ON CONFLICT(node_id) DO UPDATE SET
 				agent_version = excluded.agent_version,
 				updated_at = excluded.updated_at
-		`, nodeID, agentVersion, now); err != nil {
-			return err
+		`, nodeID, agentVersion, nowUnix); err != nil {
+			return notificationStatusTransition{}, err
 		}
 	}
 
 	if err := tx.Commit(); err != nil {
-		return err
+		return notificationStatusTransition{}, err
 	}
 	tx = nil
-	return nil
+	return notificationStatusTransition{Previous: previous, Current: current}, nil
 }
 
 func (s *SQLiteStore) UpsertAgentHost(ctx context.Context, nodeID string, host AgentHostRequest) error {

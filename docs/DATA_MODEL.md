@@ -1,6 +1,6 @@
 # Data Model / 第一版 SQLite 数据模型
 
-JiaoProbe 第一版使用 SQLite。schema 不兼容任何旧系统。
+Zeno 第一版使用 SQLite。schema 不兼容任何旧系统。
 
 ## nodes
 

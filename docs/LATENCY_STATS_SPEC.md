@@ -1,6 +1,6 @@
 # Latency Stats Spec / 延迟统计口径
 
-延迟统计是硬约束。JiaoProbe 必须保留 raw samples，不能只存 avg。
+延迟统计是硬约束。Zeno 必须保留 raw samples，不能只存 avg。
 
 ## Probe round
 

@@ -28,7 +28,7 @@ type Stats struct {
 	StddevMS    *float64
 }
 
-// ComputeStats calculates JiaoProbe's locked latency statistics.
+// ComputeStats calculates Zeno's locked latency statistics.
 func ComputeStats(samples []Sample) (Stats, error) {
 	if len(samples) == 0 {
 		return Stats{}, errors.New("probe round must contain at least one sample")

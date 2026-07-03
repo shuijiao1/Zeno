@@ -88,7 +88,7 @@ func main() {
 	agentTokenFile := flag.String("agent-token-file", "", "file containing the agent API bearer token for seeded preview node")
 	adminToken := flag.String("admin-token", "", "admin API token; prefer -admin-token-file in deployments")
 	adminTokenFile := flag.String("admin-token-file", "", "file containing the admin API token")
-	agentBinaryPath := flag.String("agent-binary", "", "optional jiaoprobe-agent linux/amd64 binary path served for dashboard install commands")
+	agentBinaryPath := flag.String("agent-binary", "", "optional Zeno agent linux/amd64 binary path served for dashboard install commands")
 	agentVersion := flag.String("agent-version", "", "optional version string inserted into generated agent install commands")
 	probeInterval := flag.Duration("probe-interval", time.Minute, "controller-local probe collection interval")
 	flag.Parse()
@@ -126,7 +126,7 @@ func main() {
 		log.Printf("controller-local probe collector enabled for node %s every %s", *nodeID, probeInterval.String())
 	}
 
-	log.Printf("jiaoprobe controller listening on %s", *addr)
+	log.Printf("zeno controller listening on %s", *addr)
 	if *webDir != "" {
 		log.Printf("serving dashboard from %s", *webDir)
 	}

@@ -1,6 +1,6 @@
 # API 草案
 
-JiaoProbe API 全新设计，不兼容旧系统。
+Zeno API 全新设计，不兼容旧系统。
 
 ## 认证约定
 
@@ -227,7 +227,7 @@ X-Admin-Token: <admin-token>
 
 ### POST /api/admin/v1/nodes
 
-新增服务器。JiaoProbe 的服务器接入流程是先在后台添加服务器并编辑名称/地区/配额等管理字段，然后在该服务器编辑区获取 Agent 安装命令。
+新增服务器。Zeno 的服务器接入流程是先在后台添加服务器并编辑名称/地区/配额等管理字段，然后在该服务器编辑区获取 Agent 安装命令。
 
 请求：
 
@@ -359,7 +359,7 @@ X-Admin-Token: <admin-token>
 
 ### GET /api/admin/v1/notification-types
 
-通知类型配置列表。当前保留三类中性事件：上线、离线、异常；默认关闭，后续通知发送逻辑会读取这里的启用状态。
+通知类型配置列表。当前保留三类中性事件：上线、离线、异常；默认关闭，通知发送逻辑会读取这里的启用状态。
 
 ```json
 {
@@ -380,5 +380,23 @@ X-Admin-Token: <admin-token>
   "enabled": true
 }
 ```
+
+## 通知发送
+
+当前发送逻辑挂在 Agent 心跳状态变化上：
+
+- `no_data` / `offline` / `warning` → `online`：触发 `node_online`。
+- 非 `offline` → `offline`：触发 `node_offline`。
+- 非 `warning` → `warning`：触发 `probe_unhealthy`。
+- 状态未变化时不重复发送。
+
+发送前同时要求：对应 `notification_types.enabled = 1`，且至少一个 `notification_channels.enabled = 1`。
+
+渠道语义：
+
+- `telegram`：`destination` 是 chat id，`credential` 是 Bot 凭据；发送 `sendMessage`。
+- webhook：优先把 destination 当 Webhook URL；credential 作为 Authorization 请求头的 Bearer 值发送。若 destination 不是 URL 且 credential 是 URL，则把 credential 当 Webhook URL 使用。
+
+通知发送失败不会阻塞 Agent 心跳/状态写入；凭据不会出现在 JSON 响应或通知 payload body 中。
 
 Admin API 返回中必须隐藏 token 原文、token hash、通知渠道凭据原文和 secret 字段。

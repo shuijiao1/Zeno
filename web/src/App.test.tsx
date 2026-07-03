@@ -103,7 +103,7 @@ describe('HomeTopPanel', () => {
     expect(html).toContain('水饺的探针')
     expect(html).toContain('home-summary')
     expect(html).toContain('home-summary__compact')
-    expect(html).toContain('JiaoProbe Overview')
+    expect(html).toContain('Zeno Overview')
     expect(html).toContain('服务器运行概览')
     expect(html).toContain('累计上传')
     expect(html).toContain('累计下载')
@@ -140,7 +140,7 @@ describe('AdminDashboard', () => {
 
     expect(html).toContain('home-top-card')
     expect(html).toContain('admin-panel')
-    expect(html).toContain('JiaoProbe 后台')
+    expect(html).toContain('Zeno 后台')
     expect(html).toContain('列表只保留关键字段')
     expect(html).toContain('admin-section-nav')
     expect(html).toContain('后台导航')
