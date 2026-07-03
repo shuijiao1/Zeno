@@ -123,6 +123,22 @@ export interface AdminNotificationChannel {
   updatedAt: string
 }
 
+export interface AdminNotificationDelivery {
+  id: number
+  eventType: string
+  label: string
+  nodeId: string
+  nodeName: string
+  previousStatus: string
+  status: string
+  channelId: string
+  channelName: string
+  channelType: AdminNotificationChannelType
+  success: boolean
+  error?: string
+  createdAt: string
+}
+
 export interface AdminNotificationType {
   eventType: string
   label: string

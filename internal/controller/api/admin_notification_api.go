@@ -3,6 +3,7 @@ package api
 import (
 	"encoding/json"
 	"net/http"
+	"strconv"
 	"strings"
 )
 
@@ -91,6 +92,32 @@ func (h *handler) handleAdminNotificationTypes(w http.ResponseWriter, r *http.Re
 		return
 	}
 	writeJSON(w, http.StatusOK, AdminNotificationTypesResponse{Types: types})
+}
+
+func (h *handler) handleAdminNotificationDeliveries(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+	store, ok := h.authorizeAdminRequest(w, r)
+	if !ok {
+		return
+	}
+	limit := 50
+	if rawLimit := strings.TrimSpace(r.URL.Query().Get("limit")); rawLimit != "" {
+		parsed, err := strconv.Atoi(rawLimit)
+		if err != nil || parsed <= 0 {
+			writeError(w, http.StatusBadRequest, "bad request")
+			return
+		}
+		limit = parsed
+	}
+	deliveries, err := store.AdminNotificationDeliveries(r.Context(), limit)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "internal error")
+		return
+	}
+	writeJSON(w, http.StatusOK, AdminNotificationDeliveriesResponse{Deliveries: deliveries})
 }
 
 func (h *handler) handleAdminNotificationTypeResource(w http.ResponseWriter, r *http.Request) {

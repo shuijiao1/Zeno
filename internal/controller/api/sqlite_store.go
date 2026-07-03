@@ -155,6 +155,22 @@ func (s *SQLiteStore) ensureSchema(ctx context.Context) error {
 			enabled INTEGER NOT NULL DEFAULT 0,
 			updated_at INTEGER NOT NULL
 		);`,
+		`CREATE TABLE IF NOT EXISTS notification_deliveries (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			event_type TEXT NOT NULL,
+			label TEXT NOT NULL,
+			node_id TEXT NOT NULL,
+			node_name TEXT NOT NULL,
+			previous_status TEXT NOT NULL,
+			status TEXT NOT NULL,
+			channel_id TEXT NOT NULL,
+			channel_name TEXT NOT NULL,
+			channel_type TEXT NOT NULL,
+			success INTEGER NOT NULL,
+			error TEXT NOT NULL DEFAULT '',
+			created_at INTEGER NOT NULL
+		);`,
+		`CREATE INDEX IF NOT EXISTS idx_notification_deliveries_created_at ON notification_deliveries(created_at DESC, id DESC);`,
 		`CREATE TABLE IF NOT EXISTS settings (
 			key TEXT PRIMARY KEY,
 			value TEXT NOT NULL,

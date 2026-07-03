@@ -13,6 +13,7 @@ type adminStore interface {
 	AdminProbeTargets(ctx context.Context) ([]AdminProbeTarget, error)
 	AdminNotificationChannels(ctx context.Context) ([]AdminNotificationChannel, error)
 	AdminNotificationTypes(ctx context.Context) ([]AdminNotificationType, error)
+	AdminNotificationDeliveries(ctx context.Context, limit int) ([]AdminNotificationDelivery, error)
 	CreateAdminNode(ctx context.Context, create AdminNodeCreateRequest) (AdminNode, error)
 	UpdateAdminNode(ctx context.Context, nodeID string, update AdminNodeUpdateRequest) (AdminNode, error)
 	AdminNodeInstallCommand(ctx context.Context, nodeID, controllerURL, agentVersion string) (string, error)

@@ -1,10 +1,10 @@
 import { type FormEvent, type ReactNode, useEffect, useState } from 'react'
-import { createAdminNode, createAdminNotificationChannel, createAdminProbeTarget, deleteAdminNotificationChannel, fetchAdminNodes, fetchAdminNotificationChannels, fetchAdminNotificationTypes, fetchAdminProbeTargets, fetchNodeLatency, fetchNodeState, fetchSummary, requestAdminNodeInstallCommand, updateAdminNode, updateAdminNotificationChannel, updateAdminNotificationType, updateAdminProbeTarget, type AdminNodeCreateInput, type AdminNodeUpdateInput, type AdminNotificationChannelCreateInput, type AdminNotificationChannelUpdateInput, type AdminProbeTargetInput, type AdminProbeTargetUpdateInput, type NodeLatencyData, type NodeStateData, type SummaryData } from './api/client'
+import { createAdminNode, createAdminNotificationChannel, createAdminProbeTarget, deleteAdminNotificationChannel, fetchAdminNodes, fetchAdminNotificationChannels, fetchAdminNotificationDeliveries, fetchAdminNotificationTypes, fetchAdminProbeTargets, fetchNodeLatency, fetchNodeState, fetchSummary, requestAdminNodeInstallCommand, updateAdminNode, updateAdminNotificationChannel, updateAdminNotificationType, updateAdminProbeTarget, type AdminNodeCreateInput, type AdminNodeUpdateInput, type AdminNotificationChannelCreateInput, type AdminNotificationChannelUpdateInput, type AdminProbeTargetInput, type AdminProbeTargetUpdateInput, type NodeLatencyData, type NodeStateData, type SummaryData } from './api/client'
 import { LatencyDetail } from './components/LatencyDetail'
 import { ServerCard } from './components/ServerCard'
 import { startLiveRefresh } from './lib/liveRefresh'
 import { nodePath, parseDashboardRoute, type DashboardRoute } from './lib/route'
-import type { AdminNode, AdminNotificationChannel, AdminNotificationType, AdminProbeTarget } from './types'
+import type { AdminNode, AdminNotificationChannel, AdminNotificationDelivery, AdminNotificationType, AdminProbeTarget } from './types'
 
 type LoadState =
   | { kind: 'loading' }
@@ -26,7 +26,7 @@ type StateHistoryLoadState =
 type AdminLoadState =
   | { kind: 'idle' }
   | { kind: 'loading' }
-  | { kind: 'ready'; nodes: AdminNode[]; targets: AdminProbeTarget[]; notificationChannels: AdminNotificationChannel[]; notificationTypes: AdminNotificationType[] }
+  | { kind: 'ready'; nodes: AdminNode[]; targets: AdminProbeTarget[]; notificationChannels: AdminNotificationChannel[]; notificationTypes: AdminNotificationType[]; notificationDeliveries: AdminNotificationDelivery[] }
   | { kind: 'error'; message: string }
 
 type AdminSection = 'overview' | 'nodes' | 'targets' | 'notifications'
@@ -156,10 +156,10 @@ export function App() {
     let loadedOnce = false
     const loadAdminNodes = () => {
       if (!loadedOnce) setAdminState({ kind: 'loading' })
-      Promise.all([fetchAdminNodes(adminToken), fetchAdminProbeTargets(adminToken), fetchAdminNotificationChannels(adminToken), fetchAdminNotificationTypes(adminToken)])
-        .then(([nodesData, targetsData, channelsData, typesData]) => {
+      Promise.all([fetchAdminNodes(adminToken), fetchAdminProbeTargets(adminToken), fetchAdminNotificationChannels(adminToken), fetchAdminNotificationTypes(adminToken), fetchAdminNotificationDeliveries(adminToken)])
+        .then(([nodesData, targetsData, channelsData, typesData, deliveriesData]) => {
           loadedOnce = true
-          if (!cancelled) setAdminState({ kind: 'ready', nodes: nodesData.nodes, targets: targetsData.targets, notificationChannels: channelsData.channels, notificationTypes: typesData.types })
+          if (!cancelled) setAdminState({ kind: 'ready', nodes: nodesData.nodes, targets: targetsData.targets, notificationChannels: channelsData.channels, notificationTypes: typesData.types, notificationDeliveries: deliveriesData.deliveries })
         })
         .catch((error: unknown) => {
           loadedOnce = true
@@ -191,8 +191,8 @@ export function App() {
   const refreshAdminNodes = () => {
     if (adminToken === '') return
     setAdminState({ kind: 'loading' })
-    Promise.all([fetchAdminNodes(adminToken), fetchAdminProbeTargets(adminToken), fetchAdminNotificationChannels(adminToken), fetchAdminNotificationTypes(adminToken)])
-      .then(([nodesData, targetsData, channelsData, typesData]) => setAdminState({ kind: 'ready', nodes: nodesData.nodes, targets: targetsData.targets, notificationChannels: channelsData.channels, notificationTypes: typesData.types }))
+    Promise.all([fetchAdminNodes(adminToken), fetchAdminProbeTargets(adminToken), fetchAdminNotificationChannels(adminToken), fetchAdminNotificationTypes(adminToken), fetchAdminNotificationDeliveries(adminToken)])
+      .then(([nodesData, targetsData, channelsData, typesData, deliveriesData]) => setAdminState({ kind: 'ready', nodes: nodesData.nodes, targets: targetsData.targets, notificationChannels: channelsData.channels, notificationTypes: typesData.types, notificationDeliveries: deliveriesData.deliveries }))
       .catch((error: unknown) => setAdminState({ kind: 'error', message: error instanceof Error ? error.message : 'unknown error' }))
   }
 
@@ -202,9 +202,9 @@ export function App() {
       .then((createdNode) => {
         setAdminState((current) => {
           if (current.kind === 'ready') {
-            return { kind: 'ready', nodes: [...current.nodes, createdNode], targets: current.targets, notificationChannels: current.notificationChannels, notificationTypes: current.notificationTypes }
+            return { kind: 'ready', nodes: [...current.nodes, createdNode], targets: current.targets, notificationChannels: current.notificationChannels, notificationTypes: current.notificationTypes, notificationDeliveries: current.notificationDeliveries }
           }
-          return { kind: 'ready', nodes: [createdNode], targets: [], notificationChannels: [], notificationTypes: [] }
+          return { kind: 'ready', nodes: [createdNode], targets: [], notificationChannels: [], notificationTypes: [], notificationDeliveries: [] }
         })
       })
       .catch((error: unknown) => setAdminState({ kind: 'error', message: error instanceof Error ? error.message : 'unknown error' }))
@@ -221,9 +221,9 @@ export function App() {
       .then((updatedNode) => {
         setAdminState((current) => {
           if (current.kind === 'ready') {
-            return { kind: 'ready', nodes: current.nodes.map((node) => node.id === updatedNode.id ? updatedNode : node), targets: current.targets, notificationChannels: current.notificationChannels, notificationTypes: current.notificationTypes }
+            return { kind: 'ready', nodes: current.nodes.map((node) => node.id === updatedNode.id ? updatedNode : node), targets: current.targets, notificationChannels: current.notificationChannels, notificationTypes: current.notificationTypes, notificationDeliveries: current.notificationDeliveries }
           }
-          return { kind: 'ready', nodes: [updatedNode], targets: [], notificationChannels: [], notificationTypes: [] }
+          return { kind: 'ready', nodes: [updatedNode], targets: [], notificationChannels: [], notificationTypes: [], notificationDeliveries: [] }
         })
       })
       .catch((error: unknown) => setAdminState({ kind: 'error', message: error instanceof Error ? error.message : 'unknown error' }))
@@ -235,9 +235,9 @@ export function App() {
       .then((createdTarget) => {
         setAdminState((current) => {
           if (current.kind === 'ready') {
-            return { kind: 'ready', nodes: current.nodes, targets: [...current.targets, createdTarget], notificationChannels: current.notificationChannels, notificationTypes: current.notificationTypes }
+            return { kind: 'ready', nodes: current.nodes, targets: [...current.targets, createdTarget], notificationChannels: current.notificationChannels, notificationTypes: current.notificationTypes, notificationDeliveries: current.notificationDeliveries }
           }
-          return { kind: 'ready', nodes: [], targets: [createdTarget], notificationChannels: [], notificationTypes: [] }
+          return { kind: 'ready', nodes: [], targets: [createdTarget], notificationChannels: [], notificationTypes: [], notificationDeliveries: [] }
         })
       })
       .catch((error: unknown) => setAdminState({ kind: 'error', message: error instanceof Error ? error.message : 'unknown error' }))
@@ -249,9 +249,9 @@ export function App() {
       .then((updatedTarget) => {
         setAdminState((current) => {
           if (current.kind === 'ready') {
-            return { kind: 'ready', nodes: current.nodes, targets: current.targets.map((target) => target.id === updatedTarget.id ? updatedTarget : target), notificationChannels: current.notificationChannels, notificationTypes: current.notificationTypes }
+            return { kind: 'ready', nodes: current.nodes, targets: current.targets.map((target) => target.id === updatedTarget.id ? updatedTarget : target), notificationChannels: current.notificationChannels, notificationTypes: current.notificationTypes, notificationDeliveries: current.notificationDeliveries }
           }
-          return { kind: 'ready', nodes: [], targets: [updatedTarget], notificationChannels: [], notificationTypes: [] }
+          return { kind: 'ready', nodes: [], targets: [updatedTarget], notificationChannels: [], notificationTypes: [], notificationDeliveries: [] }
         })
       })
       .catch((error: unknown) => setAdminState({ kind: 'error', message: error instanceof Error ? error.message : 'unknown error' }))
@@ -264,9 +264,9 @@ export function App() {
       .then((createdChannel) => {
         setAdminState((current) => {
           if (current.kind === 'ready') {
-            return { kind: 'ready', nodes: current.nodes, targets: current.targets, notificationChannels: [...current.notificationChannels, createdChannel], notificationTypes: current.notificationTypes }
+            return { kind: 'ready', nodes: current.nodes, targets: current.targets, notificationChannels: [...current.notificationChannels, createdChannel], notificationTypes: current.notificationTypes, notificationDeliveries: current.notificationDeliveries }
           }
-          return { kind: 'ready', nodes: [], targets: [], notificationChannels: [createdChannel], notificationTypes: [] }
+          return { kind: 'ready', nodes: [], targets: [], notificationChannels: [createdChannel], notificationTypes: [], notificationDeliveries: [] }
         })
       })
       .catch((error: unknown) => setAdminState({ kind: 'error', message: error instanceof Error ? error.message : 'unknown error' }))
@@ -278,9 +278,9 @@ export function App() {
       .then((updatedChannel) => {
         setAdminState((current) => {
           if (current.kind === 'ready') {
-            return { kind: 'ready', nodes: current.nodes, targets: current.targets, notificationChannels: current.notificationChannels.map((channel) => channel.id === updatedChannel.id ? updatedChannel : channel), notificationTypes: current.notificationTypes }
+            return { kind: 'ready', nodes: current.nodes, targets: current.targets, notificationChannels: current.notificationChannels.map((channel) => channel.id === updatedChannel.id ? updatedChannel : channel), notificationTypes: current.notificationTypes, notificationDeliveries: current.notificationDeliveries }
           }
-          return { kind: 'ready', nodes: [], targets: [], notificationChannels: [updatedChannel], notificationTypes: [] }
+          return { kind: 'ready', nodes: [], targets: [], notificationChannels: [updatedChannel], notificationTypes: [], notificationDeliveries: [] }
         })
       })
       .catch((error: unknown) => setAdminState({ kind: 'error', message: error instanceof Error ? error.message : 'unknown error' }))
@@ -304,9 +304,9 @@ export function App() {
       .then((updatedType) => {
         setAdminState((current) => {
           if (current.kind === 'ready') {
-            return { kind: 'ready', nodes: current.nodes, targets: current.targets, notificationChannels: current.notificationChannels, notificationTypes: current.notificationTypes.map((notificationType) => notificationType.eventType === updatedType.eventType ? updatedType : notificationType) }
+            return { kind: 'ready', nodes: current.nodes, targets: current.targets, notificationChannels: current.notificationChannels, notificationTypes: current.notificationTypes.map((notificationType) => notificationType.eventType === updatedType.eventType ? updatedType : notificationType), notificationDeliveries: current.notificationDeliveries }
           }
-          return { kind: 'ready', nodes: [], targets: [], notificationChannels: [], notificationTypes: [updatedType] }
+          return { kind: 'ready', nodes: [], targets: [], notificationChannels: [], notificationTypes: [updatedType], notificationDeliveries: [] }
         })
       })
       .catch((error: unknown) => setAdminState({ kind: 'error', message: error instanceof Error ? error.message : 'unknown error' }))
@@ -606,6 +606,7 @@ export function AdminDashboard({
               <AdminNotificationsSection
                 channels={adminState.notificationChannels}
                 types={adminState.notificationTypes}
+                deliveries={adminState.notificationDeliveries}
                 onChannelCreate={onAdminNotificationChannelCreate}
                 onChannelUpdate={onAdminNotificationChannelUpdate}
                 onChannelDelete={onAdminNotificationChannelDelete}
@@ -1073,7 +1074,7 @@ function AdminTargetEditModal({ target, nodes, onUpdate, onClose }: { target: Ad
   )
 }
 
-function AdminNotificationsSection({ channels, types, onChannelCreate, onChannelUpdate, onChannelDelete, onTypeUpdate }: { channels: AdminNotificationChannel[]; types: AdminNotificationType[]; onChannelCreate: (input: AdminNotificationChannelCreateInput) => void; onChannelUpdate: (channelId: string, input: AdminNotificationChannelUpdateInput) => void; onChannelDelete: (channelId: string) => void; onTypeUpdate: (eventType: string, enabled: boolean) => void }) {
+function AdminNotificationsSection({ channels, types, deliveries, onChannelCreate, onChannelUpdate, onChannelDelete, onTypeUpdate }: { channels: AdminNotificationChannel[]; types: AdminNotificationType[]; deliveries: AdminNotificationDelivery[]; onChannelCreate: (input: AdminNotificationChannelCreateInput) => void; onChannelUpdate: (channelId: string, input: AdminNotificationChannelUpdateInput) => void; onChannelDelete: (channelId: string) => void; onTypeUpdate: (eventType: string, enabled: boolean) => void }) {
   const [creatingChannel, setCreatingChannel] = useState(false)
 
   return (
@@ -1108,6 +1109,12 @@ function AdminNotificationsSection({ channels, types, onChannelCreate, onChannel
         </div>
       </section>
 
+      <section className="admin-notification-block" aria-label="最近发送">
+        <h4>最近发送</h4>
+        {deliveries.length === 0 && <div className="admin-state-card">还没有通知发送记录。</div>}
+        {deliveries.length > 0 && <AdminNotificationDeliveryList deliveries={deliveries} />}
+      </section>
+
       {creatingChannel && (
         <AdminNotificationChannelCreateModal
           onClose={() => setCreatingChannel(false)}
@@ -1118,6 +1125,34 @@ function AdminNotificationsSection({ channels, types, onChannelCreate, onChannel
         />
       )}
     </section>
+  )
+}
+
+function AdminNotificationDeliveryList({ deliveries }: { deliveries: AdminNotificationDelivery[] }) {
+  return (
+    <div className="admin-list admin-notification-delivery-list" role="list" aria-label="通知发送记录">
+      <div className="admin-list-head" aria-hidden="true">
+        <span>事件</span>
+        <span>节点</span>
+        <span>渠道</span>
+        <span>状态</span>
+        <span>时间</span>
+        <span>结果</span>
+      </div>
+      {deliveries.map((delivery) => (
+        <article className="admin-list-row" role="listitem" key={delivery.id}>
+          <div className="admin-list-main">
+            <strong>{delivery.label}</strong>
+            <small>{delivery.eventType}</small>
+          </div>
+          <span>{delivery.nodeName || delivery.nodeId}</span>
+          <span>{delivery.channelName || delivery.channelId} · {formatNotificationChannelType(delivery.channelType)}</span>
+          <span>{delivery.previousStatus} → {delivery.status}</span>
+          <span>{formatAdminDate(delivery.createdAt)}</span>
+          <span className={`admin-node-status status-${delivery.success ? 'online' : 'disabled'}`}>{delivery.success ? '发送成功' : '发送失败'}{delivery.error ? ` · ${delivery.error}` : ''}</span>
+        </article>
+      ))}
+    </div>
   )
 }
 

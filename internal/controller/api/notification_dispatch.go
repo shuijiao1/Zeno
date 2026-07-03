@@ -23,6 +23,10 @@ type notificationEventStore interface {
 	EnabledNotificationChannelsForEvent(ctx context.Context, eventType string) (string, []notificationDispatchChannel, error)
 }
 
+type notificationDeliveryStore interface {
+	RecordNotificationDelivery(ctx context.Context, event notificationEvent, channel notificationDispatchChannel, success bool, deliveryError string) error
+}
+
 type notificationNodeSnapshot struct {
 	ID          string
 	DisplayName string
@@ -201,9 +205,36 @@ func (h *handler) dispatchAgentStatusNotification(store agentStore, transition n
 		go func() {
 			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 			defer cancel()
-			_ = h.notificationSender.Send(ctx, channel, event)
+			err := h.notificationSender.Send(ctx, channel, event)
+			if deliveryStore, ok := store.(notificationDeliveryStore); ok {
+				_ = deliveryStore.RecordNotificationDelivery(context.Background(), event, channel, err == nil, sanitizeNotificationDeliveryError(err))
+			}
 		}()
 	}
+}
+
+func sanitizeNotificationDeliveryError(err error) string {
+	if err == nil {
+		return ""
+	}
+	message := strings.TrimSpace(err.Error())
+	if message == "" {
+		return "delivery failed"
+	}
+	lower := strings.ToLower(message)
+	if strings.Contains(lower, "timeout") || strings.Contains(lower, "deadline exceeded") {
+		return "delivery timed out"
+	}
+	if strings.Contains(lower, "connection refused") || strings.Contains(lower, "no such host") || strings.Contains(lower, "network is unreachable") {
+		return "delivery connection failed"
+	}
+	if strings.Contains(lower, "http://") || strings.Contains(lower, "https://") || strings.Contains(lower, "bearer ") || strings.Contains(lower, "token") || strings.Contains(lower, "secret") || strings.Contains(lower, "credential") || strings.Contains(lower, "/bot") {
+		return "delivery failed"
+	}
+	if len(message) > 200 {
+		message = message[:200]
+	}
+	return message
 }
 
 func notificationEventTypeForStatusChange(previousStatus, currentStatus string) (string, bool) {

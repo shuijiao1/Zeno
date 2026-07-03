@@ -236,6 +236,10 @@ type AdminNotificationTypeResponse struct {
 	Type AdminNotificationType `json:"type"`
 }
 
+type AdminNotificationDeliveriesResponse struct {
+	Deliveries []AdminNotificationDelivery `json:"deliveries"`
+}
+
 type AdminNotificationChannelCreateRequest struct {
 	ID          string `json:"id,omitempty"`
 	Name        string `json:"name"`
@@ -344,6 +348,22 @@ type AdminNotificationType struct {
 	Label     string `json:"label"`
 	Enabled   bool   `json:"enabled"`
 	UpdatedAt string `json:"updated_at,omitempty"`
+}
+
+type AdminNotificationDelivery struct {
+	ID             int64  `json:"id"`
+	EventType      string `json:"event_type"`
+	Label          string `json:"label"`
+	NodeID         string `json:"node_id"`
+	NodeName       string `json:"node_name"`
+	PreviousStatus string `json:"previous_status"`
+	Status         string `json:"status"`
+	ChannelID      string `json:"channel_id"`
+	ChannelName    string `json:"channel_name"`
+	ChannelType    string `json:"channel_type"`
+	Success        bool   `json:"success"`
+	Error          string `json:"error,omitempty"`
+	CreatedAt      string `json:"created_at"`
 }
 
 type AdminNodeUpdateRequest struct {

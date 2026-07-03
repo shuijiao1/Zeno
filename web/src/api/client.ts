@@ -1,4 +1,4 @@
-import type { AdminNode, AdminNodeInstallCommand, AdminNotificationChannel, AdminNotificationType, AdminProbeTarget, HomeCardNode, LatencyPoint, StatePoint } from '../types'
+import type { AdminNode, AdminNodeInstallCommand, AdminNotificationChannel, AdminNotificationDelivery, AdminNotificationType, AdminProbeTarget, HomeCardNode, LatencyPoint, StatePoint } from '../types'
 
 interface ApiLatencySummary {
   target_id: string
@@ -122,6 +122,22 @@ interface ApiAdminNotificationType {
   updated_at?: string
 }
 
+interface ApiAdminNotificationDelivery {
+  id: number
+  event_type: string
+  label: string
+  node_id: string
+  node_name: string
+  previous_status: string
+  status: string
+  channel_id: string
+  channel_name: string
+  channel_type: 'telegram' | 'webhook'
+  success: boolean
+  error?: string
+  created_at: string
+}
+
 export interface ApiSummaryResponse {
   nodes: ApiNode[] | null
   latency_points: ApiLatencyPoint[] | null
@@ -172,6 +188,10 @@ export interface ApiAdminNotificationTypesResponse {
   types: ApiAdminNotificationType[]
 }
 
+export interface ApiAdminNotificationDeliveriesResponse {
+  deliveries: ApiAdminNotificationDelivery[]
+}
+
 export interface ApiAdminNotificationTypeResponse {
   type: ApiAdminNotificationType
 }
@@ -207,6 +227,10 @@ export interface AdminNotificationChannelsData {
 
 export interface AdminNotificationTypesData {
   types: AdminNotificationType[]
+}
+
+export interface AdminNotificationDeliveriesData {
+  deliveries: AdminNotificationDelivery[]
 }
 
 export interface AdminNodeUpdateInput {
@@ -341,6 +365,19 @@ export async function fetchAdminNotificationTypes(adminToken: string): Promise<A
     throw new Error(`admin notification types request failed: ${response.status}`)
   }
   return normalizeAdminNotificationTypes(await response.json() as ApiAdminNotificationTypesResponse)
+}
+
+export async function fetchAdminNotificationDeliveries(adminToken: string): Promise<AdminNotificationDeliveriesData> {
+  const response = await fetch('/api/admin/v1/notification-deliveries', {
+    headers: {
+      Accept: 'application/json',
+      'X-Admin-Token': adminToken,
+    },
+  })
+  if (!response.ok) {
+    throw new Error(`admin notification deliveries request failed: ${response.status}`)
+  }
+  return normalizeAdminNotificationDeliveries(await response.json() as ApiAdminNotificationDeliveriesResponse)
 }
 
 export async function createAdminNode(adminToken: string, input: AdminNodeCreateInput): Promise<AdminNode> {
@@ -534,6 +571,12 @@ export function normalizeAdminNotificationChannels(input: ApiAdminNotificationCh
 export function normalizeAdminNotificationTypes(input: ApiAdminNotificationTypesResponse): AdminNotificationTypesData {
   return {
     types: input.types.map(normalizeAdminNotificationType),
+  }
+}
+
+export function normalizeAdminNotificationDeliveries(input: ApiAdminNotificationDeliveriesResponse): AdminNotificationDeliveriesData {
+  return {
+    deliveries: (input.deliveries ?? []).map(normalizeAdminNotificationDelivery),
   }
 }
 
@@ -741,5 +784,23 @@ function normalizeAdminNotificationType(notificationType: ApiAdminNotificationTy
     label: notificationType.label,
     enabled: notificationType.enabled,
     updatedAt: notificationType.updated_at,
+  }
+}
+
+function normalizeAdminNotificationDelivery(delivery: ApiAdminNotificationDelivery): AdminNotificationDelivery {
+  return {
+    id: delivery.id,
+    eventType: delivery.event_type,
+    label: delivery.label,
+    nodeId: delivery.node_id,
+    nodeName: delivery.node_name,
+    previousStatus: delivery.previous_status,
+    status: delivery.status,
+    channelId: delivery.channel_id,
+    channelName: delivery.channel_name,
+    channelType: delivery.channel_type,
+    success: delivery.success,
+    error: delivery.error,
+    createdAt: delivery.created_at,
   }
 }

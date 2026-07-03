@@ -1,7 +1,7 @@
 import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it } from 'vitest'
 import { AdminDashboard, HomeTopPanel } from './App'
-import type { AdminNode, AdminNotificationChannel, AdminNotificationType, AdminProbeTarget } from './types'
+import type { AdminNode, AdminNotificationChannel, AdminNotificationDelivery, AdminNotificationType, AdminProbeTarget } from './types'
 
 const overviewProps = {
   totalCount: 11,
@@ -82,6 +82,24 @@ const notificationTypes: AdminNotificationType[] = [
   { eventType: 'probe_unhealthy', label: '异常', enabled: false },
 ]
 
+const notificationDeliveries: AdminNotificationDelivery[] = [
+  {
+    id: 7,
+    eventType: 'node_online',
+    label: '上线',
+    nodeId: 'hytron',
+    nodeName: 'Hytron',
+    previousStatus: 'no_data',
+    status: 'online',
+    channelId: 'zeno-webhook',
+    channelName: 'Zeno Webhook',
+    channelType: 'webhook',
+    success: false,
+    error: 'webhook returned status 500',
+    createdAt: '2026-07-03T00:05:00Z',
+  },
+]
+
 function renderAdmin(section: 'overview' | 'nodes' | 'targets' | 'notifications' = 'overview') {
   return renderToStaticMarkup(
     <AdminDashboard
@@ -94,6 +112,7 @@ function renderAdmin(section: 'overview' | 'nodes' | 'targets' | 'notifications'
         targets: [hytronTarget],
         notificationChannels: [webhookChannel],
         notificationTypes,
+        notificationDeliveries,
       }}
       onAdminTokenSubmit={() => {}}
       onAdminTokenClear={() => {}}
@@ -185,6 +204,10 @@ describe('AdminDashboard', () => {
     expect(html).toContain('启用中')
     expect(html).toContain('添加通知渠道')
     expect(html).toContain('删除渠道')
+    expect(html).toContain('最近发送')
+    expect(html).toContain('Hytron')
+    expect(html).toContain('发送失败')
+    expect(html).toContain('webhook returned status 500')
     expect(html).not.toContain('后续再接入')
     expect(html).not.toContain('webhook-secret')
     expect(html).not.toContain('告警')

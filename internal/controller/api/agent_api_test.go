@@ -589,6 +589,71 @@ func TestAgentHeartbeatNotificationFailureDoesNotRejectHeartbeat(t *testing.T) {
 	}
 }
 
+func TestAgentHeartbeatRecordsNotificationDeliveryHistoryWithoutCredentialLeak(t *testing.T) {
+	store, err := OpenSQLiteStore(filepath.Join(t.TempDir(), "jiaoprobe.db"))
+	if err != nil {
+		t.Fatalf("open sqlite store: %v", err)
+	}
+	defer store.Close()
+	ctx := context.Background()
+	if err := store.SeedPreviewData(ctx, PreviewSeedOptions{NodeID: "hytron", DisplayName: "Hytron", CountryCode: "HK", AgentToken: "test-agent-token"}); err != nil {
+		t.Fatalf("seed preview data: %v", err)
+	}
+
+	webhook := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+	}))
+	defer webhook.Close()
+	enabled := true
+	if _, err := store.CreateAdminNotificationChannel(ctx, AdminNotificationChannelCreateRequest{
+		ID:          "ops-webhook",
+		Name:        "Ops Webhook",
+		Type:        "webhook",
+		Destination: webhook.URL,
+		Credential:  "dispatch-credential-value",
+		Enabled:     &enabled,
+	}); err != nil {
+		t.Fatalf("create notification channel: %v", err)
+	}
+	if _, err := store.UpdateAdminNotificationType(ctx, "node_online", AdminNotificationTypeUpdateRequest{Enabled: &enabled}); err != nil {
+		t.Fatalf("enable notification type: %v", err)
+	}
+
+	postAgentHeartbeat(t, NewHandler(HandlerOptions{Store: store}), time.Now().UTC().Unix(), "online")
+	waitUntil(t, time.Second, func() bool {
+		deliveries, err := store.AdminNotificationDeliveries(ctx, 20)
+		return err == nil && len(deliveries) == 1
+	})
+	deliveries, err := store.AdminNotificationDeliveries(ctx, 20)
+	if err != nil {
+		t.Fatalf("list notification deliveries: %v", err)
+	}
+	if len(deliveries) != 1 {
+		t.Fatalf("deliveries len = %d, want one recorded dispatch", len(deliveries))
+	}
+	delivery := deliveries[0]
+	if delivery.EventType != "node_online" || delivery.Label != "上线" || delivery.ChannelID != "ops-webhook" || delivery.ChannelName != "Ops Webhook" || delivery.ChannelType != "webhook" || delivery.NodeID != "hytron" || delivery.NodeName != "Hytron" || delivery.PreviousStatus != "no_data" || delivery.Status != "online" || delivery.Success {
+		t.Fatalf("delivery = %+v, want failed node_online webhook delivery metadata", delivery)
+	}
+	if delivery.Error == "" || strings.Contains(delivery.Error, "dispatch-credential-value") || strings.Contains(delivery.Error, webhook.URL) {
+		t.Fatalf("delivery error should be sanitized and useful, got %q", delivery.Error)
+	}
+
+	handler := NewHandler(HandlerOptions{Store: store, AdminTokenHash: HashAdminToken("admin-pass")})
+	recorder := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodGet, "/api/admin/v1/notification-deliveries", nil)
+	request.Header.Set("X-Admin-Token", "admin-pass")
+	handler.ServeHTTP(recorder, request)
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("history status = %d, want 200; body=%s", recorder.Code, recorder.Body.String())
+	}
+	raw := recorder.Body.String()
+	lower := bytes.ToLower([]byte(raw))
+	if bytes.Contains(lower, []byte("token")) || bytes.Contains(lower, []byte("secret")) || bytes.Contains(lower, []byte("hash")) || strings.Contains(raw, "dispatch-credential-value") || strings.Contains(raw, webhook.URL) {
+		t.Fatalf("notification delivery history leaked sensitive data: %s", raw)
+	}
+}
+
 func postAgentHeartbeat(t *testing.T, handler http.Handler, ts int64, status string) *httptest.ResponseRecorder {
 	t.Helper()
 	payload := []byte(`{"ts":` + strconv.FormatInt(ts, 10) + `,"status":"` + status + `","agent_version":"agent-test"}`)

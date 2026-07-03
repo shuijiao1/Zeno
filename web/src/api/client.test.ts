@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { createAdminNode, createAdminNotificationChannel, createAdminProbeTarget, deleteAdminNotificationChannel, fetchAdminNodes, fetchAdminNotificationChannels, fetchAdminNotificationTypes, fetchAdminProbeTargets, normalizeAdminNodes, normalizeAdminNotificationChannels, normalizeAdminNotificationTypes, normalizeAdminProbeTargets, normalizeNodeLatency, normalizeNodeState, normalizeSummary, requestAdminNodeInstallCommand, updateAdminNode, updateAdminNotificationChannel, updateAdminNotificationType, updateAdminProbeTarget } from './client'
+import { createAdminNode, createAdminNotificationChannel, createAdminProbeTarget, deleteAdminNotificationChannel, fetchAdminNodes, fetchAdminNotificationChannels, fetchAdminNotificationDeliveries, fetchAdminNotificationTypes, fetchAdminProbeTargets, normalizeAdminNodes, normalizeAdminNotificationChannels, normalizeAdminNotificationDeliveries, normalizeAdminNotificationTypes, normalizeAdminProbeTargets, normalizeNodeLatency, normalizeNodeState, normalizeSummary, requestAdminNodeInstallCommand, updateAdminNode, updateAdminNotificationChannel, updateAdminNotificationType, updateAdminProbeTarget } from './client'
 
 describe('normalizeSummary', () => {
   it('maps controller snake_case JSON into frontend camelCase models', () => {
@@ -546,6 +546,53 @@ describe('updateAdminProbeTarget', () => {
           { node_id: 'backup', enabled: true },
         ],
       }),
+    })
+  })
+})
+
+describe('admin notification deliveries', () => {
+  const originalFetch = globalThis.fetch
+
+  afterEach(() => {
+    globalThis.fetch = originalFetch
+    vi.restoreAllMocks()
+  })
+
+  it('normalizes delivery history and fetches it with X-Admin-Token only', async () => {
+    const apiPayload = {
+      deliveries: [
+        {
+          id: 7,
+          event_type: 'node_online',
+          label: '上线',
+          node_id: 'hytron',
+          node_name: 'Hytron',
+          previous_status: 'no_data',
+          status: 'online',
+          channel_id: 'zeno-webhook',
+          channel_name: 'Zeno Webhook',
+          channel_type: 'webhook' as const,
+          success: false,
+          error: 'webhook returned status 500',
+          created_at: '2026-07-03T00:05:00Z',
+        },
+      ],
+    }
+    const normalized = normalizeAdminNotificationDeliveries(apiPayload)
+    expect(normalized.deliveries[0].nodeName).toBe('Hytron')
+    expect(normalized.deliveries[0].success).toBe(false)
+    expect(normalized.deliveries[0].error).toBe('webhook returned status 500')
+
+    const fetchMock = vi.fn(async () => new Response(JSON.stringify(apiPayload), { status: 200, headers: { 'Content-Type': 'application/json' } }))
+    globalThis.fetch = fetchMock as unknown as typeof fetch
+
+    const fetched = await fetchAdminNotificationDeliveries('admin-pass')
+    expect(fetched.deliveries[0].channelName).toBe('Zeno Webhook')
+    expect(fetchMock).toHaveBeenCalledWith('/api/admin/v1/notification-deliveries', {
+      headers: {
+        Accept: 'application/json',
+        'X-Admin-Token': 'admin-pass',
+      },
     })
   })
 })
