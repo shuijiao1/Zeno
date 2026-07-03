@@ -14,6 +14,7 @@ type adminStore interface {
 	AdminNotificationChannels(ctx context.Context) ([]AdminNotificationChannel, error)
 	AdminNotificationTypes(ctx context.Context) ([]AdminNotificationType, error)
 	AdminNotificationDeliveries(ctx context.Context, limit int) ([]AdminNotificationDelivery, error)
+	AdminAlertRules(ctx context.Context) ([]AdminAlertRule, error)
 	AdminNotificationDispatchChannel(ctx context.Context, channelID string) (notificationDispatchChannel, error)
 	RecordNotificationDelivery(ctx context.Context, event notificationEvent, channel notificationDispatchChannel, success bool, deliveryError string) (AdminNotificationDelivery, error)
 	CreateAdminNode(ctx context.Context, create AdminNodeCreateRequest) (AdminNode, error)
@@ -26,6 +27,7 @@ type adminStore interface {
 	UpdateAdminNotificationChannel(ctx context.Context, channelID string, update AdminNotificationChannelUpdateRequest) (AdminNotificationChannel, error)
 	DeleteAdminNotificationChannel(ctx context.Context, channelID string) error
 	UpdateAdminNotificationType(ctx context.Context, eventType string, update AdminNotificationTypeUpdateRequest) (AdminNotificationType, error)
+	UpdateAdminAlertRule(ctx context.Context, ruleID string, update AdminAlertRuleUpdateRequest) (AdminAlertRule, error)
 }
 
 func (h *handler) handleAdminProbeTargets(w http.ResponseWriter, r *http.Request) {
@@ -201,11 +203,11 @@ func (h *handler) authorizeAdminRequest(w http.ResponseWriter, r *http.Request) 
 }
 
 func writeAdminError(w http.ResponseWriter, err error) {
-	if errors.Is(err, errNodeNotFound) || errors.Is(err, errProbeTargetNotFound) || errors.Is(err, errNotificationChannelNotFound) || errors.Is(err, errNotificationTypeNotFound) {
+	if errors.Is(err, errNodeNotFound) || errors.Is(err, errProbeTargetNotFound) || errors.Is(err, errNotificationChannelNotFound) || errors.Is(err, errNotificationTypeNotFound) || errors.Is(err, errAlertRuleNotFound) {
 		writeError(w, http.StatusNotFound, "not found")
 		return
 	}
-	if errors.Is(err, errInvalidAdminNodeUpdate) || errors.Is(err, errInvalidAdminNodeCreate) || errors.Is(err, errInvalidAdminTargetWrite) || errors.Is(err, errInvalidAdminNotificationChannelWrite) || errors.Is(err, errInvalidAdminNotificationTypeWrite) {
+	if errors.Is(err, errInvalidAdminNodeUpdate) || errors.Is(err, errInvalidAdminNodeCreate) || errors.Is(err, errInvalidAdminTargetWrite) || errors.Is(err, errInvalidAdminNotificationChannelWrite) || errors.Is(err, errInvalidAdminNotificationTypeWrite) || errors.Is(err, errInvalidAdminAlertRuleUpdate) {
 		writeError(w, http.StatusBadRequest, "bad request")
 		return
 	}

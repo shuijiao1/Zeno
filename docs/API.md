@@ -385,6 +385,90 @@ HTTP GET 示例：
 
 删除探针目标。成功返回 `204 No Content`；不存在返回 `404`。删除会同时清理该目标的节点分配和历史 probe round/sample 记录。响应不会返回 Agent token、token hash、secret 或任何凭据字段。
 
+### GET /api/admin/v1/alert-rules
+
+状态规则/通知规则库存。Controller 启动或迁移时会 seed 一组默认规则，后台可查看每条规则映射到哪个通知事件类型。响应只包含规则配置和通知事件标签，不返回 admin token、Agent token、token hash、通知渠道凭据、secret 或 credential 原文。
+
+默认规则覆盖：CPU、内存、磁盘、探测延迟、探测丢包、离线判定、恢复判定。资源/探测类规则映射到 `probe_unhealthy` / 异常；离线规则映射到 `node_offline` / 离线；恢复规则映射到 `node_online` / 上线。
+
+```json
+{
+  "rules": [
+    {
+      "id": "cpu_high",
+      "name": "CPU 使用率",
+      "category": "resource",
+      "metric": "cpu_percent",
+      "comparator": ">=",
+      "threshold": 90,
+      "threshold_unit": "%",
+      "duration_sec": 300,
+      "enabled": true,
+      "notification_event_type": "probe_unhealthy",
+      "notification_label": "异常",
+      "description": "CPU 使用率连续高于阈值时标记为异常。",
+      "created_at": "2026-07-03T00:00:00Z",
+      "updated_at": "2026-07-03T00:00:00Z"
+    },
+    {
+      "id": "node_offline",
+      "name": "离线判定",
+      "category": "liveness",
+      "metric": "heartbeat_age_sec",
+      "comparator": ">=",
+      "threshold": 180,
+      "threshold_unit": "s",
+      "duration_sec": 0,
+      "enabled": true,
+      "notification_event_type": "node_offline",
+      "notification_label": "离线",
+      "description": "Agent 心跳超过阈值未更新时标记为离线。",
+      "created_at": "2026-07-03T00:00:00Z",
+      "updated_at": "2026-07-03T00:00:00Z"
+    }
+  ]
+}
+```
+
+### PATCH /api/admin/v1/alert-rules/{rule_id}
+
+部分更新状态规则的安全可调字段。当前只允许调整启用状态、阈值和持续时间；规则 id、名称、指标、比较符、通知事件类型等结构性字段由 seed/代码控制。
+
+请求：
+
+```json
+{
+  "enabled": true,
+  "threshold": 85,
+  "duration_sec": 180
+}
+```
+
+字段均可部分提交；`threshold` 和 `duration_sec` 必须是非负数。成功响应返回更新后的单条规则：
+
+```json
+{
+  "rule": {
+    "id": "cpu_high",
+    "name": "CPU 使用率",
+    "category": "resource",
+    "metric": "cpu_percent",
+    "comparator": ">=",
+    "threshold": 85,
+    "threshold_unit": "%",
+    "duration_sec": 180,
+    "enabled": true,
+    "notification_event_type": "probe_unhealthy",
+    "notification_label": "异常",
+    "description": "CPU 使用率连续高于阈值时标记为异常。",
+    "created_at": "2026-07-03T00:00:00Z",
+    "updated_at": "2026-07-03T00:05:00Z"
+  }
+}
+```
+
+关系说明：状态规则决定“什么时候形成某类状态事件”；`notification_types` 决定该事件类型是否允许发送；`notification_channels` 决定发送到哪些启用渠道；`notification_deliveries` 只记录脱敏后的发送结果。
+
 ### GET /api/admin/v1/notification-channels
 
 通知渠道管理列表。渠道凭据只在写入时提交，响应只返回 `credential_set` 标记，不返回凭据原文。

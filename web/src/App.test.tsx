@@ -1,7 +1,7 @@
 import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it } from 'vitest'
 import { AdminDashboard, HomeTopPanel } from './App'
-import type { AdminNode, AdminNotificationChannel, AdminNotificationDelivery, AdminNotificationType, AdminProbeTarget } from './types'
+import type { AdminAlertRule, AdminNode, AdminNotificationChannel, AdminNotificationDelivery, AdminNotificationType, AdminProbeTarget } from './types'
 
 const overviewProps = {
   totalCount: 11,
@@ -112,6 +112,41 @@ const notificationTypes: AdminNotificationType[] = [
   { eventType: 'probe_unhealthy', label: '异常', enabled: false },
 ]
 
+const alertRules: AdminAlertRule[] = [
+  {
+    id: 'cpu_high',
+    name: 'CPU 使用率',
+    category: 'resource',
+    metric: 'cpu_percent',
+    comparator: '>=',
+    threshold: 90,
+    thresholdUnit: '%',
+    durationSec: 300,
+    enabled: true,
+    notificationEventType: 'probe_unhealthy',
+    notificationLabel: '异常',
+    description: 'CPU 使用率持续超过阈值时进入异常通知类型。',
+    createdAt: '2026-07-03T00:00:00Z',
+    updatedAt: '2026-07-03T00:00:00Z',
+  },
+  {
+    id: 'node_offline',
+    name: '离线判定',
+    category: 'liveness',
+    metric: 'heartbeat_age_sec',
+    comparator: '>=',
+    threshold: 180,
+    thresholdUnit: 's',
+    durationSec: 180,
+    enabled: true,
+    notificationEventType: 'node_offline',
+    notificationLabel: '离线',
+    description: 'Agent 心跳超过离线窗口后映射为离线通知类型。',
+    createdAt: '2026-07-03T00:00:00Z',
+    updatedAt: '2026-07-03T00:00:00Z',
+  },
+]
+
 const notificationDeliveries: AdminNotificationDelivery[] = [
   {
     id: 7,
@@ -130,7 +165,7 @@ const notificationDeliveries: AdminNotificationDelivery[] = [
   },
 ]
 
-function renderAdmin(section: 'overview' | 'nodes' | 'targets' | 'notifications' = 'overview') {
+function renderAdmin(section: 'overview' | 'nodes' | 'targets' | 'notifications' | 'rules' = 'overview') {
   return renderToStaticMarkup(
     <AdminDashboard
       onHome={() => {}}
@@ -143,6 +178,7 @@ function renderAdmin(section: 'overview' | 'nodes' | 'targets' | 'notifications'
         notificationChannels: [webhookChannel],
         notificationTypes,
         notificationDeliveries,
+        alertRules,
       }}
       onAdminTokenSubmit={() => {}}
       onAdminTokenClear={() => {}}
@@ -155,6 +191,7 @@ function renderAdmin(section: 'overview' | 'nodes' | 'targets' | 'notifications'
       onAdminNotificationChannelCreate={() => {}}
       onAdminNotificationChannelUpdate={() => {}}
       onAdminNotificationTypeUpdate={() => {}}
+      onAdminAlertRuleUpdate={() => {}}
     />,
   )
 }
@@ -218,6 +255,7 @@ describe('AdminDashboard', () => {
     expect(html).toContain('概览')
     expect(html).toContain('服务器')
     expect(html).toContain('延迟监控')
+    expect(html).toContain('状态规则')
     expect(html).toContain('通知')
   })
 
@@ -243,6 +281,24 @@ describe('AdminDashboard', () => {
     expect(html).not.toContain('后续再接入')
     expect(html).not.toContain('webhook-secret')
     expect(html).not.toContain('告警')
+  })
+
+  it('renders status rules as their own notification-rule management page', () => {
+    const html = renderAdmin('rules')
+
+    expect(html).toContain('状态规则')
+    expect(html).toContain('通知规则')
+    expect(html).toContain('CPU 使用率')
+    expect(html).toContain('cpu_percent')
+    expect(html).toContain('&gt;= 90%')
+    expect(html).toContain('持续 300s')
+    expect(html).toContain('通知：异常')
+    expect(html).toContain('离线判定')
+    expect(html).toContain('node_offline')
+    expect(html).toContain('编辑规则')
+    expect(html).toContain('停用规则')
+    expect(html).not.toContain('告警')
+    expect(html).not.toContain('webhook-secret')
   })
 
   it('renders a unified username and password login screen when unauthenticated', () => {

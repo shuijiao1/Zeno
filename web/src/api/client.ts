@@ -1,4 +1,4 @@
-import type { AdminNode, AdminNodeInstallCommand, AdminNotificationChannel, AdminNotificationDelivery, AdminNotificationType, AdminProbeTarget, HomeCardNode, LatencyPoint, ProbeType, StatePoint } from '../types'
+import type { AdminAlertRule, AdminNode, AdminNodeInstallCommand, AdminNotificationChannel, AdminNotificationDelivery, AdminNotificationType, AdminProbeTarget, HomeCardNode, LatencyPoint, ProbeType, StatePoint } from '../types'
 
 interface ApiLatencySummary {
   target_id: string
@@ -145,6 +145,23 @@ interface ApiAdminNotificationDelivery {
   created_at: string
 }
 
+interface ApiAdminAlertRule {
+  id: string
+  name: string
+  category: string
+  metric: string
+  comparator: string
+  threshold: number
+  threshold_unit: string
+  duration_sec: number
+  enabled: boolean
+  notification_event_type: string
+  notification_label: string
+  description: string
+  created_at: string
+  updated_at: string
+}
+
 export interface ApiSummaryResponse {
   nodes: ApiNode[] | null
   latency_points: ApiLatencyPoint[] | null
@@ -207,6 +224,14 @@ export interface ApiAdminNotificationTypeResponse {
   type: ApiAdminNotificationType
 }
 
+export interface ApiAdminAlertRulesResponse {
+  rules: ApiAdminAlertRule[]
+}
+
+export interface ApiAdminAlertRuleResponse {
+  rule: ApiAdminAlertRule
+}
+
 export interface SummaryData {
   nodes: HomeCardNode[]
   latencyPoints: LatencyPoint[]
@@ -242,6 +267,10 @@ export interface AdminNotificationTypesData {
 
 export interface AdminNotificationDeliveriesData {
   deliveries: AdminNotificationDelivery[]
+}
+
+export interface AdminAlertRulesData {
+  rules: AdminAlertRule[]
 }
 
 export interface AdminNodeUpdateInput {
@@ -300,6 +329,12 @@ export interface AdminNotificationChannelUpdateInput {
   destination?: string
   credential?: string
   enabled?: boolean
+}
+
+export interface AdminAlertRuleUpdateInput {
+  enabled?: boolean
+  threshold?: number
+  durationSec?: number
 }
 
 export async function fetchSummary(): Promise<SummaryData> {
@@ -389,6 +424,19 @@ export async function fetchAdminNotificationDeliveries(adminToken: string): Prom
     throw new Error(`admin notification deliveries request failed: ${response.status}`)
   }
   return normalizeAdminNotificationDeliveries(await response.json() as ApiAdminNotificationDeliveriesResponse)
+}
+
+export async function fetchAdminAlertRules(adminToken: string): Promise<AdminAlertRulesData> {
+  const response = await fetch('/api/admin/v1/alert-rules', {
+    headers: {
+      Accept: 'application/json',
+      'X-Admin-Token': adminToken,
+    },
+  })
+  if (!response.ok) {
+    throw new Error(`admin alert rules request failed: ${response.status}`)
+  }
+  return normalizeAdminAlertRules(await response.json() as ApiAdminAlertRulesResponse)
 }
 
 export async function createAdminNode(adminToken: string, input: AdminNodeCreateInput): Promise<AdminNode> {
@@ -534,6 +582,23 @@ export async function updateAdminNotificationType(adminToken: string, eventType:
   return normalizeAdminNotificationType(data.type)
 }
 
+export async function updateAdminAlertRule(adminToken: string, ruleId: string, input: AdminAlertRuleUpdateInput): Promise<AdminAlertRule> {
+  const response = await fetch(`/api/admin/v1/alert-rules/${encodeURIComponent(ruleId)}`, {
+    method: 'PATCH',
+    headers: {
+      Accept: 'application/json',
+      'Content-Type': 'application/json',
+      'X-Admin-Token': adminToken,
+    },
+    body: JSON.stringify(serializeAdminAlertRuleUpdate(input)),
+  })
+  if (!response.ok) {
+    throw new Error(`admin alert rule update failed: ${response.status}`)
+  }
+  const data = await response.json() as ApiAdminAlertRuleResponse
+  return normalizeAdminAlertRule(data.rule)
+}
+
 export async function requestAdminNodeInstallCommand(adminToken: string, nodeId: string): Promise<AdminNodeInstallCommand> {
   const response = await fetch(`/api/admin/v1/nodes/${encodeURIComponent(nodeId)}/install-command`, {
     method: 'POST',
@@ -619,6 +684,12 @@ export function normalizeAdminNotificationDeliveries(input: ApiAdminNotification
   }
 }
 
+export function normalizeAdminAlertRules(input: ApiAdminAlertRulesResponse): AdminAlertRulesData {
+  return {
+    rules: (input.rules ?? []).map(normalizeAdminAlertRule),
+  }
+}
+
 function serializeAdminNodeUpdate(input: AdminNodeUpdateInput) {
   return {
     ...(input.displayName !== undefined ? { display_name: input.displayName } : {}),
@@ -692,6 +763,14 @@ function serializeAdminNotificationChannelUpdate(input: AdminNotificationChannel
     ...(input.destination !== undefined ? { destination: input.destination } : {}),
     ...(trimmedCredential !== undefined && trimmedCredential !== '' ? { credential: trimmedCredential } : {}),
     ...(input.enabled !== undefined ? { enabled: input.enabled } : {}),
+  }
+}
+
+function serializeAdminAlertRuleUpdate(input: AdminAlertRuleUpdateInput) {
+  return {
+    ...(input.enabled !== undefined ? { enabled: input.enabled } : {}),
+    ...(input.threshold !== undefined ? { threshold: input.threshold } : {}),
+    ...(input.durationSec !== undefined ? { duration_sec: input.durationSec } : {}),
   }
 }
 
@@ -849,5 +928,24 @@ function normalizeAdminNotificationDelivery(delivery: ApiAdminNotificationDelive
     success: delivery.success,
     error: delivery.error,
     createdAt: delivery.created_at,
+  }
+}
+
+function normalizeAdminAlertRule(rule: ApiAdminAlertRule): AdminAlertRule {
+  return {
+    id: rule.id,
+    name: rule.name,
+    category: rule.category,
+    metric: rule.metric,
+    comparator: rule.comparator,
+    threshold: rule.threshold,
+    thresholdUnit: rule.threshold_unit,
+    durationSec: rule.duration_sec,
+    enabled: rule.enabled,
+    notificationEventType: rule.notification_event_type,
+    notificationLabel: rule.notification_label,
+    description: rule.description,
+    createdAt: rule.created_at,
+    updatedAt: rule.updated_at,
   }
 }

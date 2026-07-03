@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
+	"math"
 	"net/url"
 	"strings"
 )
@@ -20,6 +21,8 @@ var (
 	errNotificationChannelAlreadyExists     = errors.New("notification channel already exists")
 	errInvalidAdminNotificationTypeWrite    = errors.New("invalid admin notification type write")
 	errNotificationTypeNotFound             = errors.New("notification type not found")
+	errInvalidAdminAlertRuleUpdate          = errors.New("invalid admin alert rule update")
+	errAlertRuleNotFound                    = errors.New("alert rule not found")
 )
 
 // AdminNodesResponse is the authenticated management view for node inventory.
@@ -277,6 +280,14 @@ type AdminNotificationDeliveriesResponse struct {
 	Deliveries []AdminNotificationDelivery `json:"deliveries"`
 }
 
+type AdminAlertRulesResponse struct {
+	Rules []AdminAlertRule `json:"rules"`
+}
+
+type AdminAlertRuleResponse struct {
+	Rule AdminAlertRule `json:"rule"`
+}
+
 type AdminNotificationTestResponse struct {
 	Delivery AdminNotificationDelivery `json:"delivery"`
 }
@@ -371,6 +382,52 @@ func (request AdminNotificationTypeUpdateRequest) normalize() error {
 		return errInvalidAdminNotificationTypeWrite
 	}
 	return nil
+}
+
+type AdminAlertRuleUpdateRequest struct {
+	Enabled     *bool    `json:"enabled,omitempty"`
+	Threshold   *float64 `json:"threshold,omitempty"`
+	DurationSec *int     `json:"duration_sec,omitempty"`
+}
+
+func (request AdminAlertRuleUpdateRequest) normalize() error {
+	changed := false
+	if request.Enabled != nil {
+		changed = true
+	}
+	if request.Threshold != nil {
+		changed = true
+		if math.IsNaN(*request.Threshold) || math.IsInf(*request.Threshold, 0) || *request.Threshold < 0 {
+			return errInvalidAdminAlertRuleUpdate
+		}
+	}
+	if request.DurationSec != nil {
+		changed = true
+		if *request.DurationSec < 0 {
+			return errInvalidAdminAlertRuleUpdate
+		}
+	}
+	if !changed {
+		return errInvalidAdminAlertRuleUpdate
+	}
+	return nil
+}
+
+type AdminAlertRule struct {
+	ID                    string  `json:"id"`
+	Name                  string  `json:"name"`
+	Category              string  `json:"category"`
+	Metric                string  `json:"metric"`
+	Comparator            string  `json:"comparator"`
+	Threshold             float64 `json:"threshold"`
+	ThresholdUnit         string  `json:"threshold_unit"`
+	DurationSec           int     `json:"duration_sec"`
+	Enabled               bool    `json:"enabled"`
+	NotificationEventType string  `json:"notification_event_type"`
+	NotificationLabel     string  `json:"notification_label"`
+	Description           string  `json:"description"`
+	CreatedAt             string  `json:"created_at"`
+	UpdatedAt             string  `json:"updated_at"`
 }
 
 type AdminNotificationChannel struct {

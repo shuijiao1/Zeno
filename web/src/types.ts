@@ -152,3 +152,20 @@ export interface AdminNotificationType {
   enabled: boolean
   updatedAt?: string
 }
+
+export interface AdminAlertRule {
+  id: string
+  name: string
+  category: string
+  metric: string
+  comparator: string
+  threshold: number
+  thresholdUnit: string
+  durationSec: number
+  enabled: boolean
+  notificationEventType: string
+  notificationLabel: string
+  description: string
+  createdAt: string
+  updatedAt: string
+}

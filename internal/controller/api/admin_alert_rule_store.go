@@ -1,0 +1,240 @@
+package api
+
+import (
+	"context"
+	"database/sql"
+	"strings"
+	"time"
+)
+
+var defaultAdminAlertRules = []AdminAlertRule{
+	{
+		ID:                    "cpu_high",
+		Name:                  "CPU 使用率",
+		Category:              "resource",
+		Metric:                "cpu_percent",
+		Comparator:            ">=",
+		Threshold:             90,
+		ThresholdUnit:         "%",
+		DurationSec:           300,
+		Enabled:               true,
+		NotificationEventType: "probe_unhealthy",
+		Description:           "CPU 使用率持续超过阈值时进入异常通知类型。",
+	},
+	{
+		ID:                    "memory_high",
+		Name:                  "内存使用率",
+		Category:              "resource",
+		Metric:                "memory_percent",
+		Comparator:            ">=",
+		Threshold:             90,
+		ThresholdUnit:         "%",
+		DurationSec:           300,
+		Enabled:               true,
+		NotificationEventType: "probe_unhealthy",
+		Description:           "内存使用率持续超过阈值时进入异常通知类型。",
+	},
+	{
+		ID:                    "disk_high",
+		Name:                  "磁盘使用率",
+		Category:              "resource",
+		Metric:                "disk_percent",
+		Comparator:            ">=",
+		Threshold:             90,
+		ThresholdUnit:         "%",
+		DurationSec:           600,
+		Enabled:               true,
+		NotificationEventType: "probe_unhealthy",
+		Description:           "磁盘使用率持续超过阈值时进入异常通知类型。",
+	},
+	{
+		ID:                    "probe_latency_high",
+		Name:                  "探测延迟",
+		Category:              "probe",
+		Metric:                "probe_median_ms",
+		Comparator:            ">=",
+		Threshold:             800,
+		ThresholdUnit:         "ms",
+		DurationSec:           180,
+		Enabled:               true,
+		NotificationEventType: "probe_unhealthy",
+		Description:           "探测中位延迟持续超过阈值时进入异常通知类型。",
+	},
+	{
+		ID:                    "probe_loss_high",
+		Name:                  "探测丢包",
+		Category:              "probe",
+		Metric:                "probe_loss_percent",
+		Comparator:            ">=",
+		Threshold:             50,
+		ThresholdUnit:         "%",
+		DurationSec:           180,
+		Enabled:               true,
+		NotificationEventType: "probe_unhealthy",
+		Description:           "探测丢包持续超过阈值时进入异常通知类型。",
+	},
+	{
+		ID:                    "node_offline",
+		Name:                  "离线判定",
+		Category:              "liveness",
+		Metric:                "heartbeat_age_sec",
+		Comparator:            ">=",
+		Threshold:             180,
+		ThresholdUnit:         "s",
+		DurationSec:           180,
+		Enabled:               true,
+		NotificationEventType: "node_offline",
+		Description:           "Agent 心跳超过离线窗口后映射为离线通知类型。",
+	},
+	{
+		ID:                    "node_recovered",
+		Name:                  "恢复判定",
+		Category:              "liveness",
+		Metric:                "public_status",
+		Comparator:            "transition_to_online",
+		Threshold:             0,
+		ThresholdUnit:         "status",
+		DurationSec:           0,
+		Enabled:               true,
+		NotificationEventType: "node_online",
+		Description:           "离线或异常恢复到在线时映射为上线通知类型。",
+	},
+}
+
+func (s *SQLiteStore) ensureDefaultAlertRules(ctx context.Context) error {
+	now := time.Now().UTC().Unix()
+	for sortOrder, rule := range defaultAdminAlertRules {
+		enabled := 0
+		if rule.Enabled {
+			enabled = 1
+		}
+		if _, err := s.db.ExecContext(ctx, `
+			INSERT OR IGNORE INTO alert_rules (
+				id, name, category, metric, comparator, threshold, threshold_unit,
+				duration_sec, enabled, notification_event_type, description, sort_order,
+				created_at, updated_at
+			)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		`, rule.ID, rule.Name, rule.Category, rule.Metric, rule.Comparator, rule.Threshold, rule.ThresholdUnit, rule.DurationSec, enabled, rule.NotificationEventType, rule.Description, sortOrder, now, now); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (s *SQLiteStore) AdminAlertRules(ctx context.Context) ([]AdminAlertRule, error) {
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT id, name, category, metric, comparator, threshold, threshold_unit, duration_sec,
+		       enabled, notification_event_type, description, created_at, updated_at
+		FROM alert_rules
+		ORDER BY sort_order ASC, id ASC
+	`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	rules := make([]AdminAlertRule, 0)
+	for rows.Next() {
+		rule, err := scanAdminAlertRule(rows)
+		if err != nil {
+			return nil, err
+		}
+		rules = append(rules, rule)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return rules, nil
+}
+
+func (s *SQLiteStore) UpdateAdminAlertRule(ctx context.Context, ruleID string, update AdminAlertRuleUpdateRequest) (AdminAlertRule, error) {
+	ruleID = strings.TrimSpace(ruleID)
+	if ruleID == "" {
+		return AdminAlertRule{}, errAlertRuleNotFound
+	}
+	if err := update.normalize(); err != nil {
+		return AdminAlertRule{}, err
+	}
+	var exists int
+	if err := s.db.QueryRowContext(ctx, `SELECT 1 FROM alert_rules WHERE id = ?`, ruleID).Scan(&exists); err != nil {
+		if err == sql.ErrNoRows {
+			return AdminAlertRule{}, errAlertRuleNotFound
+		}
+		return AdminAlertRule{}, err
+	}
+	sets := make([]string, 0, 4)
+	args := make([]any, 0, 5)
+	if update.Enabled != nil {
+		sets = append(sets, "enabled = ?")
+		if *update.Enabled {
+			args = append(args, 1)
+		} else {
+			args = append(args, 0)
+		}
+	}
+	if update.Threshold != nil {
+		sets = append(sets, "threshold = ?")
+		args = append(args, *update.Threshold)
+	}
+	if update.DurationSec != nil {
+		sets = append(sets, "duration_sec = ?")
+		args = append(args, *update.DurationSec)
+	}
+	if len(sets) == 0 {
+		return AdminAlertRule{}, errInvalidAdminAlertRuleUpdate
+	}
+	sets = append(sets, "updated_at = ?")
+	args = append(args, time.Now().UTC().Unix(), ruleID)
+	if _, err := s.db.ExecContext(ctx, "UPDATE alert_rules SET "+strings.Join(sets, ", ")+" WHERE id = ?", args...); err != nil {
+		return AdminAlertRule{}, err
+	}
+	return s.adminAlertRuleByID(ctx, ruleID)
+}
+
+func (s *SQLiteStore) adminAlertRuleByID(ctx context.Context, ruleID string) (AdminAlertRule, error) {
+	row := s.db.QueryRowContext(ctx, `
+		SELECT id, name, category, metric, comparator, threshold, threshold_unit, duration_sec,
+		       enabled, notification_event_type, description, created_at, updated_at
+		FROM alert_rules
+		WHERE id = ?
+	`, ruleID)
+	return scanAdminAlertRule(row)
+}
+
+type adminAlertRuleScanner interface {
+	Scan(dest ...any) error
+}
+
+func scanAdminAlertRule(scanner adminAlertRuleScanner) (AdminAlertRule, error) {
+	var rule AdminAlertRule
+	var enabled int
+	var createdAt, updatedAt sql.NullInt64
+	if err := scanner.Scan(
+		&rule.ID,
+		&rule.Name,
+		&rule.Category,
+		&rule.Metric,
+		&rule.Comparator,
+		&rule.Threshold,
+		&rule.ThresholdUnit,
+		&rule.DurationSec,
+		&enabled,
+		&rule.NotificationEventType,
+		&rule.Description,
+		&createdAt,
+		&updatedAt,
+	); err != nil {
+		if err == sql.ErrNoRows {
+			return AdminAlertRule{}, errAlertRuleNotFound
+		}
+		return AdminAlertRule{}, err
+	}
+	rule.Enabled = enabled != 0
+	if label, ok := adminNotificationTypeLabel(rule.NotificationEventType); ok {
+		rule.NotificationLabel = label
+	}
+	rule.CreatedAt = unixStringOr(createdAt, time.Now().UTC())
+	rule.UpdatedAt = unixStringOr(updatedAt, time.Now().UTC())
+	return rule, nil
+}

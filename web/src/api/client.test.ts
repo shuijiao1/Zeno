@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { createAdminNode, createAdminNotificationChannel, createAdminProbeTarget, deleteAdminNotificationChannel, deleteAdminProbeTarget, fetchAdminNodes, fetchAdminNotificationChannels, fetchAdminNotificationDeliveries, fetchAdminNotificationTypes, fetchAdminProbeTargets, normalizeAdminNodes, normalizeAdminNotificationChannels, normalizeAdminNotificationDeliveries, normalizeAdminNotificationTypes, normalizeAdminProbeTargets, normalizeNodeLatency, normalizeNodeState, normalizeSummary, requestAdminNodeInstallCommand, testAdminNotificationChannel, updateAdminNode, updateAdminNotificationChannel, updateAdminNotificationType, updateAdminProbeTarget } from './client'
+import { createAdminNode, createAdminNotificationChannel, createAdminProbeTarget, deleteAdminNotificationChannel, deleteAdminProbeTarget, fetchAdminAlertRules, fetchAdminNodes, fetchAdminNotificationChannels, fetchAdminNotificationDeliveries, fetchAdminNotificationTypes, fetchAdminProbeTargets, normalizeAdminAlertRules, normalizeAdminNodes, normalizeAdminNotificationChannels, normalizeAdminNotificationDeliveries, normalizeAdminNotificationTypes, normalizeAdminProbeTargets, normalizeNodeLatency, normalizeNodeState, normalizeSummary, requestAdminNodeInstallCommand, testAdminNotificationChannel, updateAdminAlertRule, updateAdminNode, updateAdminNotificationChannel, updateAdminNotificationType, updateAdminProbeTarget } from './client'
 
 describe('normalizeSummary', () => {
   it('maps controller snake_case JSON into frontend camelCase models', () => {
@@ -735,6 +735,94 @@ describe('deleteAdminProbeTarget', () => {
   })
 })
 
+describe('admin alert rules', () => {
+  const originalFetch = globalThis.fetch
+
+  afterEach(() => {
+    globalThis.fetch = originalFetch
+    vi.restoreAllMocks()
+  })
+
+  it('normalizes status rules and fetches them with X-Admin-Token only', async () => {
+    const apiPayload = {
+      rules: [
+        {
+          id: 'cpu_high',
+          name: 'CPU 使用率',
+          category: 'resource',
+          metric: 'cpu_percent',
+          comparator: '>=',
+          threshold: 90,
+          threshold_unit: '%',
+          duration_sec: 300,
+          enabled: true,
+          notification_event_type: 'probe_unhealthy',
+          notification_label: '异常',
+          description: 'CPU 使用率持续超过阈值时进入异常通知类型。',
+          created_at: '2026-07-03T00:00:00Z',
+          updated_at: '2026-07-03T00:00:00Z',
+        },
+      ],
+    }
+    const normalized = normalizeAdminAlertRules(apiPayload)
+    expect(normalized.rules[0].thresholdUnit).toBe('%')
+    expect(normalized.rules[0].durationSec).toBe(300)
+    expect(normalized.rules[0].notificationLabel).toBe('异常')
+
+    const fetchMock = vi.fn(async () => new Response(JSON.stringify(apiPayload), { status: 200, headers: { 'Content-Type': 'application/json' } }))
+    globalThis.fetch = fetchMock as unknown as typeof fetch
+
+    const fetched = await fetchAdminAlertRules('admin-pass')
+    expect(fetched.rules[0].metric).toBe('cpu_percent')
+    expect(fetchMock).toHaveBeenCalledWith('/api/admin/v1/alert-rules', {
+      headers: {
+        Accept: 'application/json',
+        'X-Admin-Token': 'admin-pass',
+      },
+    })
+  })
+
+  it('updates status rule enablement threshold and duration without putting admin token in the URL', async () => {
+    const fetchMock = vi.fn(async (_input: RequestInfo | URL, _init?: RequestInit) => new Response(JSON.stringify({
+      rule: {
+        id: 'cpu_high',
+        name: 'CPU 使用率',
+        category: 'resource',
+        metric: 'cpu_percent',
+        comparator: '>=',
+        threshold: 95.5,
+        threshold_unit: '%',
+        duration_sec: 600,
+        enabled: false,
+        notification_event_type: 'probe_unhealthy',
+        notification_label: '异常',
+        description: 'CPU 使用率持续超过阈值时进入异常通知类型。',
+        created_at: '2026-07-03T00:00:00Z',
+        updated_at: '2026-07-03T00:10:00Z',
+      },
+    }), { status: 200, headers: { 'Content-Type': 'application/json' } }))
+    globalThis.fetch = fetchMock as unknown as typeof fetch
+
+    const rule = await updateAdminAlertRule('admin-pass', 'cpu_high', { enabled: false, threshold: 95.5, durationSec: 600 })
+
+    expect(rule.enabled).toBe(false)
+    expect(rule.threshold).toBe(95.5)
+    expect(rule.durationSec).toBe(600)
+    expect(fetchMock).toHaveBeenCalledWith('/api/admin/v1/alert-rules/cpu_high', {
+      method: 'PATCH',
+      headers: {
+        Accept: 'application/json',
+        'Content-Type': 'application/json',
+        'X-Admin-Token': 'admin-pass',
+      },
+      body: JSON.stringify({ enabled: false, threshold: 95.5, duration_sec: 600 }),
+    })
+    const calls = fetchMock.mock.calls as Array<[RequestInfo | URL, RequestInit?]>
+    expect(String(calls[0]?.[0])).not.toContain('admin-pass')
+  })
+})
+
+
 describe('admin notification deliveries', () => {
   const originalFetch = globalThis.fetch
 
@@ -871,7 +959,8 @@ describe('notification writes', () => {
       },
       body: JSON.stringify({ enabled: true }),
     })
-    expect(String(fetchMock.mock.calls[0][0])).not.toContain('webhook-secret')
+    const calls = fetchMock.mock.calls as Array<[RequestInfo | URL, RequestInit?]>
+    expect(String(calls[0]?.[0])).not.toContain('webhook-secret')
   })
 
   it('tests a notification channel with the admin token and returns a sanitized delivery', async () => {

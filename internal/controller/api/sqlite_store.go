@@ -178,6 +178,23 @@ func (s *SQLiteStore) ensureSchema(ctx context.Context) error {
 			created_at INTEGER NOT NULL
 		);`,
 		`CREATE INDEX IF NOT EXISTS idx_notification_deliveries_created_at ON notification_deliveries(created_at DESC, id DESC);`,
+		`CREATE TABLE IF NOT EXISTS alert_rules (
+			id TEXT PRIMARY KEY,
+			name TEXT NOT NULL,
+			category TEXT NOT NULL,
+			metric TEXT NOT NULL,
+			comparator TEXT NOT NULL,
+			threshold REAL NOT NULL,
+			threshold_unit TEXT NOT NULL,
+			duration_sec INTEGER NOT NULL,
+			enabled INTEGER NOT NULL DEFAULT 1,
+			notification_event_type TEXT NOT NULL,
+			description TEXT NOT NULL DEFAULT '',
+			sort_order INTEGER NOT NULL DEFAULT 0,
+			created_at INTEGER NOT NULL,
+			updated_at INTEGER NOT NULL
+		);`,
+		`CREATE INDEX IF NOT EXISTS idx_alert_rules_sort_order ON alert_rules(sort_order ASC, id ASC);`,
 		`CREATE TABLE IF NOT EXISTS settings (
 			key TEXT PRIMARY KEY,
 			value TEXT NOT NULL,
@@ -202,6 +219,9 @@ func (s *SQLiteStore) ensureSchema(ctx context.Context) error {
 		if err := s.ensureColumn(ctx, "state_samples", column, columnType); err != nil {
 			return err
 		}
+	}
+	if err := s.ensureDefaultAlertRules(ctx); err != nil {
+		return err
 	}
 	return nil
 }
