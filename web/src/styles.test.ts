@@ -65,3 +65,19 @@ describe('state history layout', () => {
     expect(styles).toContain('border-radius: 999px')
   })
 })
+
+describe('visual weight polish', () => {
+  it('avoids heavy UI font weights in the Nezha-like shell', () => {
+    expect(styles).not.toContain('font-weight: 700')
+    expect(styles).not.toContain('font-weight: 750')
+    expect(styles).not.toContain('font-weight: 760')
+    expect(styles).not.toContain('font-weight: 780')
+  })
+
+  it('keeps custom icon strokes and resource curves lighter than the default heavy Lucide stroke', () => {
+    expect(styles).toContain('stroke-width: 1.75')
+    expect(styles).toContain('.detail-title-button svg')
+    expect(styles).toContain('stroke-width: 1.6')
+    expect(styles).toContain('.state-sparkline__line { fill: none; stroke-width: 1.35')
+  })
+})
