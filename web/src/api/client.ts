@@ -101,7 +101,7 @@ interface ApiAdminProbeTargetAssignment {
 interface ApiAdminProbeTarget {
   id: string
   name: string
-  type: 'ping' | 'tcping'
+  type: ProbeType
   address: string
   port: number | null
   count: number

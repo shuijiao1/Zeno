@@ -1,5 +1,5 @@
 export type NodeStatus = 'online' | 'warning' | 'offline' | 'no_data'
-export type ProbeType = 'ping' | 'tcping'
+export type ProbeType = 'ping' | 'tcping' | 'http_get'
 
 export interface LatencySummary {
   targetId: string

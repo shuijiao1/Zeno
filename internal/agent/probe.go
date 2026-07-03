@@ -5,7 +5,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"net"
+	"net/http"
+	"net/url"
 	"os/exec"
 	"regexp"
 	"strconv"
@@ -100,6 +103,69 @@ func RunPingProbe(ctx context.Context, target ProbeTarget) []ProbeSample {
 	return samples
 }
 
+func RunHTTPProbe(ctx context.Context, target ProbeTarget) []ProbeSample {
+	count := target.Count
+	if count <= 0 {
+		count = 1
+	}
+	timeout := time.Duration(target.TimeoutMS) * time.Millisecond
+	if timeout <= 0 {
+		timeout = time.Second
+	}
+	address := strings.TrimSpace(target.Address)
+	if !validHTTPProbeURL(address) {
+		return failedProbeSamples(count, "invalid_url")
+	}
+
+	client := &http.Client{Timeout: timeout}
+	samples := make([]ProbeSample, 0, count)
+	for seq := 1; seq <= count; seq++ {
+		select {
+		case <-ctx.Done():
+			for failedSeq := seq; failedSeq <= count; failedSeq++ {
+				samples = append(samples, ProbeSample{Seq: failedSeq, Success: false, Error: "cancelled"})
+			}
+			return samples
+		default:
+		}
+
+		attemptCtx, cancel := context.WithTimeout(ctx, timeout)
+		request, err := http.NewRequestWithContext(attemptCtx, http.MethodGet, address, nil)
+		if err != nil {
+			cancel()
+			samples = append(samples, ProbeSample{Seq: seq, Success: false, Error: "invalid_url"})
+			continue
+		}
+		request.Header.Set("User-Agent", "Zeno-Agent")
+		start := time.Now()
+		response, err := client.Do(request)
+		elapsedMS := float64(time.Since(start).Microseconds()) / 1000
+		ctxErr := attemptCtx.Err()
+		cancel()
+		if err != nil {
+			samples = append(samples, ProbeSample{Seq: seq, Success: false, Error: classifyHTTPProbeError(err, ctxErr)})
+			continue
+		}
+		_, _ = io.Copy(io.Discard, io.LimitReader(response.Body, 1024))
+		_ = response.Body.Close()
+		if response.StatusCode < 200 || response.StatusCode >= 400 {
+			samples = append(samples, ProbeSample{Seq: seq, Success: false, Error: fmt.Sprintf("http_status_%d", response.StatusCode)})
+			continue
+		}
+		latency := elapsedMS
+		samples = append(samples, ProbeSample{Seq: seq, Success: true, LatencyMS: &latency})
+	}
+	return samples
+}
+
+func validHTTPProbeURL(address string) bool {
+	parsed, err := url.ParseRequestURI(address)
+	if err != nil || parsed.Host == "" {
+		return false
+	}
+	return parsed.Scheme == "http" || parsed.Scheme == "https"
+}
+
 func pingTimeoutSeconds(timeout time.Duration) int {
 	seconds := int((timeout + time.Second - 1) / time.Second)
 	if seconds < 1 {
@@ -138,6 +204,23 @@ func classifyPingError(err error, output string, ctxErr error) string {
 		return "timeout"
 	}
 	return "ping_error"
+}
+
+func classifyHTTPProbeError(err error, ctxErr error) string {
+	if ctxErr != nil || errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) {
+		return "timeout"
+	}
+	message := strings.ToLower(err.Error())
+	if strings.Contains(message, "no such host") {
+		return "dns_error"
+	}
+	if strings.Contains(message, "certificate") || strings.Contains(message, "tls") {
+		return "tls_error"
+	}
+	if strings.Contains(message, "timeout") || strings.Contains(message, "deadline") || strings.Contains(message, "i/o timeout") {
+		return "timeout"
+	}
+	return "http_error"
 }
 
 func failedProbeSamples(count int, errText string) []ProbeSample {
@@ -179,6 +262,8 @@ func ProbeTargets(ctx context.Context, targets []ProbeTarget, ts time.Time) []Pr
 			rounds = append(rounds, ProbeRound{TargetID: target.ID, TS: ts, Type: target.Type, Samples: RunTCPProbe(ctx, target)})
 		case "ping", "icmp":
 			rounds = append(rounds, ProbeRound{TargetID: target.ID, TS: ts, Type: target.Type, Samples: RunPingProbe(ctx, target)})
+		case "http_get", "http", "https":
+			rounds = append(rounds, ProbeRound{TargetID: target.ID, TS: ts, Type: target.Type, Samples: RunHTTPProbe(ctx, target)})
 		default:
 			rounds = append(rounds, ProbeRound{TargetID: target.ID, TS: ts, Type: target.Type, Samples: failedProbeSamples(target.Count, fmt.Sprintf("unsupported_%s", target.Type))})
 		}

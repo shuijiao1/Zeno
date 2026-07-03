@@ -476,9 +476,9 @@ func (s *SQLiteStore) UpdateAdminProbeTarget(ctx context.Context, targetID strin
 	if err := update.normalize(); err != nil {
 		return AdminProbeTarget{}, err
 	}
-	var currentType string
+	var currentType, currentAddress string
 	var currentPort sql.NullInt64
-	if err := s.db.QueryRowContext(ctx, `SELECT type, port FROM probe_targets WHERE id = ?`, targetID).Scan(&currentType, &currentPort); err != nil {
+	if err := s.db.QueryRowContext(ctx, `SELECT type, address, port FROM probe_targets WHERE id = ?`, targetID).Scan(&currentType, &currentAddress, &currentPort); err != nil {
 		if err == sql.ErrNoRows {
 			return AdminProbeTarget{}, errProbeTargetNotFound
 		}
@@ -488,11 +488,15 @@ func (s *SQLiteStore) UpdateAdminProbeTarget(ctx context.Context, targetID strin
 	if update.Type != nil {
 		finalType = *update.Type
 	}
+	finalAddress := currentAddress
+	if update.Address != nil {
+		finalAddress = *update.Address
+	}
 	finalPort := currentPort
 	if update.Port.Set {
 		finalPort = sql.NullInt64{Valid: update.Port.Valid, Int64: update.Port.Value}
 	}
-	if !validAdminProbeTargetPortForType(finalType, finalPort) {
+	if !validAdminProbeTargetForType(finalType, finalAddress, finalPort) {
 		return AdminProbeTarget{}, errInvalidAdminTargetWrite
 	}
 	sets := make([]string, 0, 8)
@@ -594,12 +598,14 @@ func adminOptionalInt64SQLValue(value adminOptionalInt64) any {
 	return value.Value
 }
 
-func validAdminProbeTargetPortForType(targetType string, port sql.NullInt64) bool {
+func validAdminProbeTargetForType(targetType string, address string, port sql.NullInt64) bool {
 	switch targetType {
 	case "tcping":
 		return port.Valid && validPort(port.Int64)
 	case "ping":
 		return !port.Valid
+	case "http_get":
+		return !port.Valid && validHTTPGetTargetAddress(address)
 	default:
 		return false
 	}

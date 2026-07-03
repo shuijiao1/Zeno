@@ -230,6 +230,29 @@ describe('normalizeAdminProbeTargets', () => {
     expect(data.targets[0].assignments[0].nodeDisplayName).toBe('Hytron')
   })
 
+  it('normalizes HTTP GET targets without a port', () => {
+    const data = normalizeAdminProbeTargets({
+      targets: [
+        {
+          id: 'zeno-health-http',
+          name: 'Zeno Health HTTP',
+          type: 'http_get',
+          address: 'https://example.com/health',
+          port: null,
+          count: 2,
+          timeout_ms: 1500,
+          interval_sec: 60,
+          enabled: true,
+          assignments: [],
+        },
+      ],
+    })
+
+    expect(data.targets[0].type).toBe('http_get')
+    expect(data.targets[0].port).toBeNull()
+    expect(data.targets[0].address).toBe('https://example.com/health')
+  })
+
   it('normalizes null assignment lists to an empty array', () => {
     const data = normalizeAdminProbeTargets({
       targets: [
@@ -251,7 +274,6 @@ describe('normalizeAdminProbeTargets', () => {
     expect(data.targets[0].assignments).toEqual([])
   })
 })
-
 
 describe('normalizeAdminNotifications', () => {
   it('maps channels and types without credential values', () => {
@@ -524,6 +546,54 @@ describe('createAdminProbeTarget', () => {
       }),
     })
   })
+
+  it('creates an HTTP GET probe target without a separate port', async () => {
+    const fetchMock = vi.fn(async () => new Response(JSON.stringify({
+      target: {
+        id: 'zeno-health-http',
+        name: 'Zeno Health HTTP',
+        type: 'http_get',
+        address: 'https://example.com/health',
+        port: null,
+        count: 2,
+        timeout_ms: 1500,
+        interval_sec: 60,
+        enabled: true,
+        assignments: [],
+      },
+    }), { status: 201, headers: { 'Content-Type': 'application/json' } }))
+    globalThis.fetch = fetchMock as unknown as typeof fetch
+
+    const target = await createAdminProbeTarget('admin-pass', {
+      name: 'Zeno Health HTTP',
+      type: 'http_get',
+      address: 'https://example.com/health',
+      port: null,
+      count: 2,
+      timeoutMs: 1500,
+      intervalSec: 60,
+    })
+
+    expect(target.type).toBe('http_get')
+    expect(target.port).toBeNull()
+    expect(fetchMock).toHaveBeenCalledWith('/api/admin/v1/probe-targets', {
+      method: 'POST',
+      headers: {
+        Accept: 'application/json',
+        'Content-Type': 'application/json',
+        'X-Admin-Token': 'admin-pass',
+      },
+      body: JSON.stringify({
+        name: 'Zeno Health HTTP',
+        type: 'http_get',
+        address: 'https://example.com/health',
+        port: null,
+        count: 2,
+        timeout_ms: 1500,
+        interval_sec: 60,
+      }),
+    })
+  })
 })
 
 describe('updateAdminProbeTarget', () => {
@@ -586,6 +656,56 @@ describe('updateAdminProbeTarget', () => {
           { node_id: 'hytron', enabled: false },
           { node_id: 'backup', enabled: true },
         ],
+      }),
+    })
+  })
+
+  it('patches HTTP GET probe targets with a null port to clear TCP state', async () => {
+    const fetchMock = vi.fn(async () => new Response(JSON.stringify({
+      target: {
+        id: 'hytron-local',
+        name: 'Zeno Health HTTP',
+        type: 'http_get',
+        address: 'https://example.com/health',
+        port: null,
+        count: 2,
+        timeout_ms: 1500,
+        interval_sec: 60,
+        enabled: true,
+        assignments: [{ node_id: 'hytron', node_display_name: 'Hytron', enabled: true }],
+      },
+    }), { status: 200, headers: { 'Content-Type': 'application/json' } }))
+    globalThis.fetch = fetchMock as unknown as typeof fetch
+
+    const target = await updateAdminProbeTarget('admin-pass', 'hytron-local', {
+      name: 'Zeno Health HTTP',
+      type: 'http_get',
+      address: 'https://example.com/health',
+      port: null,
+      count: 2,
+      timeoutMs: 1500,
+      intervalSec: 60,
+      enabled: true,
+    })
+
+    expect(target.type).toBe('http_get')
+    expect(target.port).toBeNull()
+    expect(fetchMock).toHaveBeenCalledWith('/api/admin/v1/probe-targets/hytron-local', {
+      method: 'PATCH',
+      headers: {
+        Accept: 'application/json',
+        'Content-Type': 'application/json',
+        'X-Admin-Token': 'admin-pass',
+      },
+      body: JSON.stringify({
+        name: 'Zeno Health HTTP',
+        type: 'http_get',
+        address: 'https://example.com/health',
+        port: null,
+        count: 2,
+        timeout_ms: 1500,
+        interval_sec: 60,
+        enabled: true,
       }),
     })
   })

@@ -80,6 +80,21 @@ const pingTarget: AdminProbeTarget = {
   ],
 }
 
+const httpTarget: AdminProbeTarget = {
+  id: 'zeno-health-http',
+  name: 'Zeno Health HTTP',
+  type: 'http_get',
+  address: 'https://example.com/health',
+  port: null,
+  count: 2,
+  timeoutMs: 1500,
+  intervalSec: 60,
+  enabled: true,
+  assignments: [
+    { nodeId: 'hytron', nodeDisplayName: 'Hytron', enabled: true },
+  ],
+}
+
 const webhookChannel: AdminNotificationChannel = {
   id: 'zeno-webhook',
   name: 'Zeno Webhook',
@@ -124,7 +139,7 @@ function renderAdmin(section: 'overview' | 'nodes' | 'targets' | 'notifications'
       adminState={{
         kind: 'ready',
         nodes: [hytronNode, backupNode],
-        targets: [hytronTarget, pingTarget],
+        targets: [hytronTarget, pingTarget, httpTarget],
         notificationChannels: [webhookChannel],
         notificationTypes,
         notificationDeliveries,
@@ -283,6 +298,17 @@ describe('AdminDashboard', () => {
     expect(html).toContain('4 次 / 900ms / 45s')
     expect(html).toContain('1 / 1 节点启用')
     expect(html).not.toContain('8.8.8.8:')
+  })
+
+  it('renders HTTP GET monitor targets without requiring a port', () => {
+    const html = renderAdmin('targets')
+
+    expect(html).toContain('Zeno Health HTTP')
+    expect(html).toContain('HTTP GET')
+    expect(html).toContain('https://example.com/health')
+    expect(html).toContain('2 次 / 1500ms / 60s')
+    expect(html).toContain('1 / 1 节点启用')
+    expect(html).not.toContain('https://example.com/health:')
   })
 
   it('does not render every admin workspace on one page', () => {

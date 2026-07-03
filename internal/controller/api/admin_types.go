@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
+	"net/url"
 	"strings"
 )
 
@@ -98,6 +99,9 @@ func (request *AdminProbeTargetCreateRequest) normalize() error {
 		}
 		return nil
 	}
+	if request.Type == "http_get" && !validHTTPGetTargetAddress(request.Address) {
+		return errInvalidAdminTargetWrite
+	}
 	if request.Port.Set && request.Port.Valid {
 		return errInvalidAdminTargetWrite
 	}
@@ -141,7 +145,7 @@ func (request *AdminProbeTargetUpdateRequest) normalize() error {
 			return errInvalidAdminTargetWrite
 		}
 		request.Type = &normalizedType
-		if normalizedType == "ping" {
+		if normalizedType == "ping" || normalizedType == "http_get" {
 			if request.Port.Set && request.Port.Valid {
 				return errInvalidAdminTargetWrite
 			}
@@ -215,9 +219,19 @@ func normalizeAdminProbeTargetType(value string) (string, bool) {
 		return "tcping", true
 	case "icmp", "ping":
 		return "ping", true
+	case "http", "https", "http_get", "http-get":
+		return "http_get", true
 	default:
 		return "", false
 	}
+}
+
+func validHTTPGetTargetAddress(address string) bool {
+	parsed, err := url.ParseRequestURI(strings.TrimSpace(address))
+	if err != nil || parsed.Host == "" {
+		return false
+	}
+	return parsed.Scheme == "http" || parsed.Scheme == "https"
 }
 
 func validPort(port int64) bool {

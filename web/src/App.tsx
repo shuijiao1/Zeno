@@ -974,6 +974,7 @@ function AdminTargetCreateModal({ onCreate, onClose }: { onCreate: (input: Admin
           <select name="new-target-type" value={targetType} onChange={(event) => setTargetType(normalizeTargetFormType(event.currentTarget.value))}>
             <option value="tcping">TCP Ping</option>
             <option value="ping">ICMP Ping</option>
+            <option value="http_get">HTTP GET</option>
           </select>
         </label>
         <label>
@@ -1067,6 +1068,7 @@ function AdminTargetEditModal({ target, nodes, onUpdate, onClose }: { target: Ad
           <select name="target-type" value={targetType} onChange={(event) => setTargetType(normalizeTargetFormType(event.currentTarget.value))}>
             <option value="tcping">TCP Ping</option>
             <option value="ping">ICMP Ping</option>
+            <option value="http_get">HTTP GET</option>
           </select>
         </label>
         <label>
@@ -1369,11 +1371,15 @@ function AdminModal({ title, eyebrow, onClose, children }: { title: string; eyeb
 }
 
 function formatTargetTypeLabel(type: ProbeType): string {
-  return type === 'ping' ? 'ICMP Ping' : 'TCP Ping'
+  if (type === 'ping') return 'ICMP Ping'
+  if (type === 'http_get') return 'HTTP GET'
+  return 'TCP Ping'
 }
 
 function normalizeTargetFormType(value: string): ProbeType {
-  return value === 'ping' || value === 'icmp' ? 'ping' : 'tcping'
+  if (value === 'ping' || value === 'icmp') return 'ping'
+  if (value === 'http_get' || value === 'http' || value === 'https') return 'http_get'
+  return 'tcping'
 }
 
 function formatTargetEndpoint(target: AdminProbeTarget): string {

@@ -637,6 +637,77 @@ func TestAdminProbeTargetCreateAcceptsPingWithoutPort(t *testing.T) {
 	}
 }
 
+func TestAdminProbeTargetCreateAcceptsHTTPGETWithoutPort(t *testing.T) {
+	store, err := OpenSQLiteStore(filepath.Join(t.TempDir(), "zeno.db"))
+	if err != nil {
+		t.Fatalf("open sqlite store: %v", err)
+	}
+	defer store.Close()
+	ctx := context.Background()
+	if err := store.SeedPreviewData(ctx, PreviewSeedOptions{NodeID: "hytron", DisplayName: "Hytron", CountryCode: "HK", AgentToken: "agent-super-secret"}); err != nil {
+		t.Fatalf("seed preview data: %v", err)
+	}
+
+	recorder := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodPost, "/api/admin/v1/probe-targets", bytes.NewBufferString(`{
+		"name": "  Zeno Health  ",
+		"type": "http_get",
+		"address": "  https://example.com/health  ",
+		"count": 2,
+		"timeout_ms": 1500,
+		"interval_sec": 60
+	}`))
+	request.Header.Set("X-Admin-Token", "admin-pass")
+	NewHandler(HandlerOptions{Store: store, AdminTokenHash: HashAdminToken("admin-pass")}).ServeHTTP(recorder, request)
+
+	if recorder.Code != http.StatusCreated {
+		t.Fatalf("status = %d, want 201; body=%s", recorder.Code, recorder.Body.String())
+	}
+	assertNoSensitiveAdminProbeTargetLeak(t, recorder.Body.String())
+	var response struct {
+		Target struct {
+			ID          string `json:"id"`
+			Name        string `json:"name"`
+			Type        string `json:"type"`
+			Address     string `json:"address"`
+			Port        *int   `json:"port"`
+			Count       int    `json:"count"`
+			TimeoutMS   int    `json:"timeout_ms"`
+			IntervalSec int    `json:"interval_sec"`
+			Enabled     bool   `json:"enabled"`
+			Assignments []struct {
+				NodeID  string `json:"node_id"`
+				Enabled bool   `json:"enabled"`
+			} `json:"assignments"`
+		} `json:"target"`
+	}
+	if err := json.NewDecoder(bytes.NewBufferString(recorder.Body.String())).Decode(&response); err != nil {
+		t.Fatalf("decode created http_get target: %v", err)
+	}
+	if response.Target.ID == "" || response.Target.Name != "Zeno Health" || response.Target.Type != "http_get" || response.Target.Address != "https://example.com/health" || response.Target.Port != nil || response.Target.Count != 2 || response.Target.TimeoutMS != 1500 || response.Target.IntervalSec != 60 || !response.Target.Enabled {
+		t.Fatalf("created http_get target = %+v, want normalized enabled HTTP GET target without port", response.Target)
+	}
+	if len(response.Target.Assignments) != 1 || response.Target.Assignments[0].NodeID != "hytron" || !response.Target.Assignments[0].Enabled {
+		t.Fatalf("created http_get assignments = %+v, want enabled assignment to existing node", response.Target.Assignments)
+	}
+	targets, err := store.EnabledProbeTargets(ctx, "hytron")
+	if err != nil {
+		t.Fatalf("enabled probe targets: %v", err)
+	}
+	found := false
+	for _, target := range targets {
+		if target.ID == response.Target.ID {
+			found = true
+			if target.Type != "http_get" || target.Port != nil {
+				t.Fatalf("agent target = %+v, want http_get target without port", target)
+			}
+		}
+	}
+	if !found {
+		t.Fatalf("created http_get target %q not assigned to hytron enabled target set", response.Target.ID)
+	}
+}
+
 func TestAdminProbeTargetPatchCanSwitchToPingAndClearPort(t *testing.T) {
 	store, err := OpenSQLiteStore(filepath.Join(t.TempDir(), "zeno.db"))
 	if err != nil {
@@ -682,6 +753,76 @@ func TestAdminProbeTargetPatchCanSwitchToPingAndClearPort(t *testing.T) {
 		if target.ID == "hytron-local" && (target.Type != "ping" || target.Port != nil) {
 			t.Fatalf("agent target = %+v, want ping target without port", target)
 		}
+	}
+}
+
+func TestAdminProbeTargetPatchCanSwitchToHTTPGETAndClearPort(t *testing.T) {
+	store, err := OpenSQLiteStore(filepath.Join(t.TempDir(), "zeno.db"))
+	if err != nil {
+		t.Fatalf("open sqlite store: %v", err)
+	}
+	defer store.Close()
+	ctx := context.Background()
+	if err := store.SeedPreviewData(ctx, PreviewSeedOptions{NodeID: "hytron", DisplayName: "Hytron", CountryCode: "HK", AgentToken: "agent-super-secret"}); err != nil {
+		t.Fatalf("seed preview data: %v", err)
+	}
+
+	recorder := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodPatch, "/api/admin/v1/probe-targets/hytron-local", bytes.NewBufferString(`{
+		"type": "http_get",
+		"address": "  https://example.com/health  "
+	}`))
+	request.Header.Set("X-Admin-Token", "admin-pass")
+	NewHandler(HandlerOptions{Store: store, AdminTokenHash: HashAdminToken("admin-pass")}).ServeHTTP(recorder, request)
+
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200; body=%s", recorder.Code, recorder.Body.String())
+	}
+	assertNoSensitiveAdminProbeTargetLeak(t, recorder.Body.String())
+	var response struct {
+		Target struct {
+			ID      string `json:"id"`
+			Type    string `json:"type"`
+			Address string `json:"address"`
+			Port    *int   `json:"port"`
+		} `json:"target"`
+	}
+	if err := json.NewDecoder(bytes.NewBufferString(recorder.Body.String())).Decode(&response); err != nil {
+		t.Fatalf("decode updated http_get target: %v", err)
+	}
+	if response.Target.ID != "hytron-local" || response.Target.Type != "http_get" || response.Target.Address != "https://example.com/health" || response.Target.Port != nil {
+		t.Fatalf("updated target = %+v, want http_get target with cleared port", response.Target)
+	}
+	targets, err := store.EnabledProbeTargets(ctx, "hytron")
+	if err != nil {
+		t.Fatalf("enabled probe targets: %v", err)
+	}
+	for _, target := range targets {
+		if target.ID == "hytron-local" && (target.Type != "http_get" || target.Port != nil) {
+			t.Fatalf("agent target = %+v, want http_get target without port", target)
+		}
+	}
+}
+
+func TestAdminProbeTargetPatchRejectsHTTPGETWithoutFullURL(t *testing.T) {
+	store, err := OpenSQLiteStore(filepath.Join(t.TempDir(), "zeno.db"))
+	if err != nil {
+		t.Fatalf("open sqlite store: %v", err)
+	}
+	defer store.Close()
+	if err := store.SeedPreviewData(context.Background(), PreviewSeedOptions{NodeID: "hytron", DisplayName: "Hytron", CountryCode: "HK", AgentToken: "agent-super-secret"}); err != nil {
+		t.Fatalf("seed preview data: %v", err)
+	}
+
+	recorder := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodPatch, "/api/admin/v1/probe-targets/hytron-local", bytes.NewBufferString(`{
+		"type": "http_get"
+	}`))
+	request.Header.Set("X-Admin-Token", "admin-pass")
+	NewHandler(HandlerOptions{Store: store, AdminTokenHash: HashAdminToken("admin-pass")}).ServeHTTP(recorder, request)
+
+	if recorder.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400 for http_get target without full URL; body=%s", recorder.Code, recorder.Body.String())
 	}
 }
 

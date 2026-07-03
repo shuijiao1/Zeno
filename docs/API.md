@@ -115,10 +115,25 @@ X-Agent-Version: <version>
       "count": 10,
       "timeout_ms": 1000,
       "interval_sec": 60
+    },
+    {
+      "id": "zeno-health",
+      "name": "Zeno Health",
+      "type": "http_get",
+      "address": "https://example.com/health",
+      "count": 2,
+      "timeout_ms": 1500,
+      "interval_sec": 60
     }
   ]
 }
 ```
+
+探针目标类型：
+
+- `tcping`：TCP 连接探测，必须带 `port`。
+- `ping`：ICMP ping，不带 `port`。
+- `http_get`：HTTP/HTTPS GET 探测，`address` 必须是完整 `http://` 或 `https://` URL，不带 `port` 字段；2xx/3xx 算成功，4xx/5xx 作为失败样本记录 `http_status_<code>`。
 
 ### POST /api/agent/v1/probe-results
 
@@ -323,18 +338,48 @@ X-Admin-Token: <admin-token>
           "enabled": true
         }
       ]
+    },
+    {
+      "id": "zeno-health",
+      "name": "Zeno Health",
+      "type": "http_get",
+      "address": "https://example.com/health",
+      "port": null,
+      "count": 2,
+      "timeout_ms": 1500,
+      "interval_sec": 60,
+      "enabled": true,
+      "assignments": []
     }
   ]
 }
 ```
 
+目标类型规则：`tcping` 必须提交有效 `port`；`ping`/`icmp` 会归一成 `ping` 且 `port` 为 `null`；`http`/`https`/`http_get` 会归一成 `http_get`，`address` 必须是完整 URL，`port` 为 `null`。
+
 ### POST /api/admin/v1/probe-targets
 
 新增探针目标。新目标默认分配到现有节点；响应仍不包含 Agent 凭据。
 
+HTTP GET 示例：
+
+```json
+{
+  "name": "Zeno Health",
+  "type": "http_get",
+  "address": "https://example.com/health",
+  "port": null,
+  "count": 2,
+  "timeout_ms": 1500,
+  "interval_sec": 60
+}
+```
+
 ### PATCH /api/admin/v1/probe-targets/{target_id}
 
 更新探针目标配置或节点分配。`assignments` 省略表示不改变分配；传入时按 `node_id` 更新启用状态。
+
+切换到 `http_get` 时必须同时保证最终 `address` 是完整 URL；Controller 会清空旧 TCP `port` 并以 `null` 返回。切回 `tcping` 时必须提交有效 `port`。
 
 ### GET /api/admin/v1/notification-channels
 
