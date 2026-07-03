@@ -46,6 +46,14 @@ describe('AdminDashboard', () => {
     expect(html).toContain('dashboard actions')
   })
 
+  it('names notifications as channels and types instead of alerts', () => {
+    const html = renderToStaticMarkup(<AdminDashboard onHome={() => {}} />)
+
+    expect(html).toContain('通知渠道')
+    expect(html).toContain('通知类型')
+    expect(html).not.toContain('告警')
+  })
+
   it('renders a unified username and password login screen when unauthenticated', () => {
     const html = renderToStaticMarkup(<AdminDashboard onHome={() => {}} />)
 

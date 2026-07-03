@@ -453,8 +453,12 @@ export function AdminDashboard({
             <strong>{hasAdminToken ? `${targetCount} 个目标` : 'Agent 与目标'}</strong>
           </article>
           <article className="admin-action-card">
-            <p>告警策略</p>
-            <strong>规则与通知</strong>
+            <p>通知渠道</p>
+            <strong>Telegram / Webhook</strong>
+          </article>
+          <article className="admin-action-card">
+            <p>通知类型</p>
+            <strong>上线 / 离线 / 异常</strong>
           </article>
         </div>
 
