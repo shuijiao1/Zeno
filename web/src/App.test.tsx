@@ -46,6 +46,17 @@ describe('AdminDashboard', () => {
     expect(html).toContain('dashboard actions')
   })
 
+  it('renders a unified username and password login screen when unauthenticated', () => {
+    const html = renderToStaticMarkup(<AdminDashboard onHome={() => {}} />)
+
+    expect(html).toContain('admin-login-card')
+    expect(html).toContain('name="admin-username"')
+    expect(html).toContain('name="admin-password"')
+    expect(html).toContain('placeholder="admin"')
+    expect(html).toContain('默认账号：admin / admin')
+    expect(html).not.toContain('Admin Token')
+  })
+
   it('renders authenticated admin nodes without rendering the admin token', () => {
     const html = renderToStaticMarkup(
       <AdminDashboard
@@ -212,6 +223,44 @@ describe('AdminDashboard', () => {
     expect(html).toContain('127.0.0.1:18980')
     expect(html).toContain('3 次 / 1200ms / 60s')
     expect(html).toContain('Hytron')
+    expect(html).not.toContain('admin-pass')
+  })
+
+  it('renders probe target create and edit controls without leaking admin token', () => {
+    const html = renderToStaticMarkup(
+      <AdminDashboard
+        onHome={() => {}}
+        hasAdminToken
+        adminState={{
+          kind: 'ready',
+          nodes: [],
+          targets: [
+            {
+              id: 'hytron-local',
+              name: 'Hytron',
+              type: 'tcping',
+              address: '127.0.0.1',
+              port: 18980,
+              count: 3,
+              timeoutMs: 1200,
+              intervalSec: 60,
+              enabled: true,
+              assignments: [],
+            },
+          ],
+        }}
+        onAdminProbeTargetCreate={() => {}}
+        onAdminProbeTargetUpdate={() => {}}
+      />,
+    )
+
+    expect(html).toContain('admin-target-create-form')
+    expect(html).toContain('添加目标')
+    expect(html).toContain('admin-target-edit-form')
+    expect(html).toContain('name="target-name"')
+    expect(html).toContain('name="target-address"')
+    expect(html).toContain('name="target-port"')
+    expect(html).toContain('保存目标')
     expect(html).not.toContain('admin-pass')
   })
 })

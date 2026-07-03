@@ -324,6 +324,132 @@ func (s *SQLiteStore) AdminProbeTargets(ctx context.Context) ([]AdminProbeTarget
 	return targets, nil
 }
 
+func (s *SQLiteStore) CreateAdminProbeTarget(ctx context.Context, create AdminProbeTargetCreateRequest) (AdminProbeTarget, error) {
+	if err := create.normalize(); err != nil {
+		return AdminProbeTarget{}, err
+	}
+	targetID := create.ID
+	if targetID == "" {
+		generated, err := generatedAdminNodeID(create.Name)
+		if err != nil {
+			return AdminProbeTarget{}, err
+		}
+		targetID = generated
+	}
+	enabled := 1
+	if create.Enabled != nil && !*create.Enabled {
+		enabled = 0
+	}
+	now := time.Now().UTC().Unix()
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return AdminProbeTarget{}, err
+	}
+	defer rollbackUnlessCommitted(tx)
+	result, err := tx.ExecContext(ctx, `
+		INSERT OR IGNORE INTO probe_targets (id, name, type, address, port, count, timeout_ms, interval_sec, enabled, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+	`, targetID, create.Name, create.Type, create.Address, create.Port.Value, create.Count, create.TimeoutMS, create.IntervalSec, enabled, now, now)
+	if err != nil {
+		return AdminProbeTarget{}, err
+	}
+	affected, err := result.RowsAffected()
+	if err != nil {
+		return AdminProbeTarget{}, err
+	}
+	if affected == 0 {
+		return AdminProbeTarget{}, errProbeTargetAlreadyExists
+	}
+	if _, err := tx.ExecContext(ctx, `
+		INSERT OR IGNORE INTO node_probe_targets (node_id, target_id, enabled)
+		SELECT id, ?, 1 FROM nodes
+	`, targetID); err != nil {
+		return AdminProbeTarget{}, err
+	}
+	if err := tx.Commit(); err != nil {
+		return AdminProbeTarget{}, err
+	}
+	tx = nil
+	return s.adminProbeTargetByID(ctx, targetID)
+}
+
+func (s *SQLiteStore) UpdateAdminProbeTarget(ctx context.Context, targetID string, update AdminProbeTargetUpdateRequest) (AdminProbeTarget, error) {
+	targetID = strings.TrimSpace(targetID)
+	if targetID == "" {
+		return AdminProbeTarget{}, errProbeTargetNotFound
+	}
+	if err := update.normalize(); err != nil {
+		return AdminProbeTarget{}, err
+	}
+	var exists int
+	if err := s.db.QueryRowContext(ctx, `SELECT 1 FROM probe_targets WHERE id = ?`, targetID).Scan(&exists); err != nil {
+		if err == sql.ErrNoRows {
+			return AdminProbeTarget{}, errProbeTargetNotFound
+		}
+		return AdminProbeTarget{}, err
+	}
+	sets := make([]string, 0, 8)
+	args := make([]any, 0, 9)
+	if update.Name != nil {
+		sets = append(sets, "name = ?")
+		args = append(args, *update.Name)
+	}
+	if update.Type != nil {
+		sets = append(sets, "type = ?")
+		args = append(args, *update.Type)
+	}
+	if update.Address != nil {
+		sets = append(sets, "address = ?")
+		args = append(args, *update.Address)
+	}
+	if update.Port.Set {
+		sets = append(sets, "port = ?")
+		args = append(args, update.Port.Value)
+	}
+	if update.Count != nil {
+		sets = append(sets, "count = ?")
+		args = append(args, *update.Count)
+	}
+	if update.TimeoutMS != nil {
+		sets = append(sets, "timeout_ms = ?")
+		args = append(args, *update.TimeoutMS)
+	}
+	if update.IntervalSec != nil {
+		sets = append(sets, "interval_sec = ?")
+		args = append(args, *update.IntervalSec)
+	}
+	if update.Enabled != nil {
+		sets = append(sets, "enabled = ?")
+		if *update.Enabled {
+			args = append(args, 1)
+		} else {
+			args = append(args, 0)
+		}
+	}
+	if len(sets) == 0 {
+		return AdminProbeTarget{}, errInvalidAdminTargetWrite
+	}
+	sets = append(sets, "updated_at = ?")
+	args = append(args, time.Now().UTC().Unix(), targetID)
+	if _, err := s.db.ExecContext(ctx, "UPDATE probe_targets SET "+strings.Join(sets, ", ")+" WHERE id = ?", args...); err != nil {
+		return AdminProbeTarget{}, err
+	}
+	return s.adminProbeTargetByID(ctx, targetID)
+}
+
+func (s *SQLiteStore) adminProbeTargetByID(ctx context.Context, targetID string) (AdminProbeTarget, error) {
+	targets, err := s.AdminProbeTargets(ctx)
+	if err != nil {
+		return AdminProbeTarget{}, err
+	}
+	for _, target := range targets {
+		if target.ID == targetID {
+			return target, nil
+		}
+	}
+	return AdminProbeTarget{}, errProbeTargetNotFound
+}
+
 func (s *SQLiteStore) UpdateAdminNode(ctx context.Context, nodeID string, update AdminNodeUpdateRequest) (AdminNode, error) {
 	nodeID = strings.TrimSpace(nodeID)
 	if nodeID == "" {

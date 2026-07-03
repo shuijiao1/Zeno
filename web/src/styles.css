@@ -265,8 +265,8 @@ svg { display: block; }
 .admin-login-card {
   margin-top: 16px;
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(180px, 280px) auto;
-  align-items: center;
+  grid-template-columns: minmax(0, 1fr) minmax(140px, 220px) minmax(140px, 220px) auto;
+  align-items: end;
   gap: 12px;
   padding: 16px;
   border: 1px solid var(--border);
@@ -275,6 +275,7 @@ svg { display: block; }
 }
 .admin-login-card p { margin: 0 0 4px; color: var(--muted); font-size: 13px; font-weight: 650; }
 .admin-login-card strong { font-size: 15px; font-weight: 700; }
+.admin-login-card label { display: flex; flex-direction: column; gap: 5px; color: var(--muted); font-size: 12px; font-weight: 650; }
 .admin-login-card input {
   width: 100%;
   min-width: 0;
@@ -372,7 +373,8 @@ svg { display: block; }
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 10px;
 }
-.admin-node-create-form {
+.admin-node-create-form,
+.admin-target-create-form {
   margin: 0 0 14px;
   padding: 14px;
   border: 1px solid var(--border);
@@ -660,6 +662,14 @@ svg { display: block; }
 }
 .monitor-heading h3 { margin: 0; font-size: 20px; font-weight: 600; }
 .monitor-heading p { margin: 4px 0 0; color: color-mix(in srgb, var(--foreground) 52%, transparent); font-size: 14px; }
+.monitor-heading-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-left: auto;
+}
+.monitor-heading-actions .detail-range-row { margin: 0; }
+.monitor-heading-actions .peak-switch { margin-left: 0; }
 .detail-state {
   margin: 0 24px 24px;
   padding: 18px 20px;
@@ -798,6 +808,9 @@ svg { display: block; }
 .grid-line { stroke: color-mix(in srgb, var(--foreground) 12%, transparent); stroke-width: 1; }
 .axis-label { fill: color-mix(in srgb, var(--foreground) 48%, transparent); font-size: 12px; font-variant-numeric: tabular-nums; }
 .loss-marker { fill: var(--orange); stroke: var(--background); stroke-width: 1.5; }
+.packet-loss-area { pointer-events: none; }
+.latency-hover-point { fill: transparent; stroke: transparent; pointer-events: all; }
+.latency-hover-point:hover { fill: color-mix(in srgb, var(--foreground) 12%, transparent); stroke: color-mix(in srgb, var(--foreground) 30%, transparent); }
 .latency-legend {
   display: flex;
   flex-wrap: wrap;
@@ -833,7 +846,9 @@ svg { display: block; }
   .network-total { flex-direction: column; gap: 1px; font-size: 10px; }
   .network-speed { gap: 2px 6px; font-size: 10px; }
   .kulin-node-card { min-height: 394px; }
-  .monitor-heading { padding: 18px 16px 10px; }
+  .monitor-heading { padding: 18px 16px 10px; flex-direction: column; }
+  .monitor-heading-actions { width: 100%; flex-wrap: wrap; align-items: flex-start; margin-left: 0; }
+  .monitor-heading-actions .detail-range-row { flex-wrap: wrap; }
   .state-history-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; padding: 0 16px 16px; }
   .state-history-card { padding: 12px 10px 8px; }
   .state-history-card__meta { flex-direction: column; gap: 4px; }

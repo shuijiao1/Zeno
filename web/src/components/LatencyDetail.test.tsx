@@ -61,4 +61,21 @@ describe('LatencyDetail', () => {
     expect(html).toContain('Hytron 网络延迟')
     expect(html).toContain('monitor services')
   })
+
+  it('includes range controls with the latency chart actions', () => {
+    const html = renderToStaticMarkup(
+      <LatencyDetail
+        node={node}
+        points={[]}
+        range="1d"
+        onBack={vi.fn()}
+        onRangeChange={vi.fn()}
+      />,
+    )
+
+    expect(html).toContain('monitor-heading-actions')
+    expect(html).toContain('1 天')
+    expect(html).toContain('7 天')
+    expect(html).toContain('削峰')
+  })
 })

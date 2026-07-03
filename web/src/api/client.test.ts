@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { fetchAdminNodes, fetchAdminProbeTargets, normalizeAdminNodes, normalizeAdminProbeTargets, normalizeNodeLatency, normalizeNodeState, normalizeSummary, createAdminNode, requestAdminNodeInstallCommand, updateAdminNode } from './client'
+import { fetchAdminNodes, fetchAdminProbeTargets, normalizeAdminNodes, normalizeAdminProbeTargets, normalizeNodeLatency, normalizeNodeState, normalizeSummary, createAdminNode, createAdminProbeTarget, requestAdminNodeInstallCommand, updateAdminNode, updateAdminProbeTarget } from './client'
 
 describe('normalizeSummary', () => {
   it('maps controller snake_case JSON into frontend camelCase models', () => {
@@ -318,6 +318,120 @@ describe('createAdminNode', () => {
         country_code: 'US',
         region: 'Los Angeles',
         monthly_quota_bytes: 1099511627776,
+      }),
+    })
+  })
+})
+
+describe('createAdminProbeTarget', () => {
+  const originalFetch = globalThis.fetch
+
+  afterEach(() => {
+    globalThis.fetch = originalFetch
+    vi.restoreAllMocks()
+  })
+
+  it('creates a probe target with the admin token in X-Admin-Token only', async () => {
+    const fetchMock = vi.fn(async () => new Response(JSON.stringify({
+      target: {
+        id: 'example-https-a1b2c3d4',
+        name: 'Example HTTPS',
+        type: 'tcping',
+        address: 'example.com',
+        port: 443,
+        count: 5,
+        timeout_ms: 1500,
+        interval_sec: 90,
+        enabled: true,
+        assignments: [{ node_id: 'hytron', node_display_name: 'Hytron', enabled: true }],
+      },
+    }), { status: 201, headers: { 'Content-Type': 'application/json' } }))
+    globalThis.fetch = fetchMock as unknown as typeof fetch
+
+    const target = await createAdminProbeTarget('admin-pass', {
+      name: 'Example HTTPS',
+      type: 'tcping',
+      address: 'example.com',
+      port: 443,
+      count: 5,
+      timeoutMs: 1500,
+      intervalSec: 90,
+    })
+
+    expect(target.id).toBe('example-https-a1b2c3d4')
+    expect(target.assignments[0].nodeId).toBe('hytron')
+    expect(fetchMock).toHaveBeenCalledWith('/api/admin/v1/probe-targets', {
+      method: 'POST',
+      headers: {
+        Accept: 'application/json',
+        'Content-Type': 'application/json',
+        'X-Admin-Token': 'admin-pass',
+      },
+      body: JSON.stringify({
+        name: 'Example HTTPS',
+        type: 'tcping',
+        address: 'example.com',
+        port: 443,
+        count: 5,
+        timeout_ms: 1500,
+        interval_sec: 90,
+      }),
+    })
+  })
+})
+
+describe('updateAdminProbeTarget', () => {
+  const originalFetch = globalThis.fetch
+
+  afterEach(() => {
+    globalThis.fetch = originalFetch
+    vi.restoreAllMocks()
+  })
+
+  it('patches editable probe target fields with the admin token in X-Admin-Token only', async () => {
+    const fetchMock = vi.fn(async () => new Response(JSON.stringify({
+      target: {
+        id: 'hytron-local',
+        name: 'Local Controller',
+        type: 'tcping',
+        address: '127.0.0.1',
+        port: 18981,
+        count: 4,
+        timeout_ms: 900,
+        interval_sec: 30,
+        enabled: false,
+        assignments: [{ node_id: 'hytron', node_display_name: 'Hytron', enabled: true }],
+      },
+    }), { status: 200, headers: { 'Content-Type': 'application/json' } }))
+    globalThis.fetch = fetchMock as unknown as typeof fetch
+
+    const target = await updateAdminProbeTarget('admin-pass', 'hytron-local', {
+      name: 'Local Controller',
+      address: '127.0.0.1',
+      port: 18981,
+      count: 4,
+      timeoutMs: 900,
+      intervalSec: 30,
+      enabled: false,
+    })
+
+    expect(target.name).toBe('Local Controller')
+    expect(target.enabled).toBe(false)
+    expect(fetchMock).toHaveBeenCalledWith('/api/admin/v1/probe-targets/hytron-local', {
+      method: 'PATCH',
+      headers: {
+        Accept: 'application/json',
+        'Content-Type': 'application/json',
+        'X-Admin-Token': 'admin-pass',
+      },
+      body: JSON.stringify({
+        name: 'Local Controller',
+        address: '127.0.0.1',
+        port: 18981,
+        count: 4,
+        timeout_ms: 900,
+        interval_sec: 30,
+        enabled: false,
       }),
     })
   })

@@ -38,7 +38,13 @@ export function LatencyChart({
   const xStep = timestamps.length > 1 ? (width - pad.left - pad.right) / (timestamps.length - 1) : 0
   const plotHeight = height - pad.top - pad.bottom
   const domain = yDomainForRows(rows, baseView.lineKeys)
-  const selectedSeries = baseView.showPacketLossArea ? series.find((item) => item.targetName === activeTargetNames[0]) : undefined
+  const packetLossSeries = baseView.showPacketLossArea
+    ? series.find((item) => item.targetName === activeTargetNames[0])
+    : series[0]
+  const lossRows = baseView.showPacketLossArea
+    ? rows
+    : (packetLossSeries?.points.map((point) => ({ created_at: point.created_at, packet_loss: point.packet_loss })) ?? [])
+  const selectedSeries = packetLossSeries
   const visibleLineKeys = baseView.lineKeys
 
   const x = (createdAt: number) => pad.left + Math.max(0, timestamps.indexOf(createdAt)) * xStep
@@ -79,9 +85,10 @@ export function LatencyChart({
         <text x={pad.left} y={height - 12} className="axis-label">{firstLabel}</text>
         <text x={width - pad.right - 40} y={height - 12} className="axis-label">{lastLabel}</text>
 
-        {baseView.showPacketLossArea && (
+        {lossRows.length > 0 && (
           <path
-            d={packetLossAreaPath(rows, x, yLoss)}
+            className="packet-loss-area"
+            d={packetLossAreaPath(lossRows, x, yLoss)}
             fill="hsl(45, 100%, 60%)"
             fillOpacity={0.3}
             stroke="none"
@@ -101,6 +108,18 @@ export function LatencyChart({
             />
           )
         })}
+
+        {visibleLineKeys.flatMap((key) => hoverPointsForKey(rows, key, activeTargetNames).map((point) => (
+          <circle
+            key={`${key}-${point.createdAt}`}
+            className="latency-hover-point"
+            cx={x(point.createdAt)}
+            cy={yDelay(point.delay)}
+            r={8}
+          >
+            <title>{tooltipTitle(point)}</title>
+          </circle>
+        )))}
       </svg>
 
       <div className="latency-legend">
@@ -108,7 +127,7 @@ export function LatencyChart({
           <span key={item.targetId}><i style={{ background: palette[(series.findIndex((seriesItem) => seriesItem.targetId === item.targetId) >= 0 ? series.findIndex((seriesItem) => seriesItem.targetId === item.targetId) : index) % palette.length] }} />{item.targetName}</span>
         ))}
         {selectedSeries && (
-          <span><i style={{ background: 'hsl(45, 100%, 60%)' }} />丢包 {formatPercent(avgPacketLoss(rows))}</span>
+          <span><i style={{ background: 'hsl(45, 100%, 60%)' }} />{selectedSeries.targetName} 丢包 {formatPercent(avgPacketLoss(lossRows))}</span>
         )}
       </div>
     </section>
@@ -157,6 +176,37 @@ function yDomainForRows(rows: KulinChartRow[], keys: string[]): { min: number; m
 function rowNumber(row: KulinChartRow, key: string): number | null {
   const value = row[key]
   return typeof value === 'number' && Number.isFinite(value) ? value : null
+}
+
+function hoverPointsForKey(rows: KulinChartRow[], key: string, activeTargetNames: string[]): Array<{ createdAt: number; label: string; delay: number; packetLoss: number }> {
+  const label = key === 'avg_delay' ? (activeTargetNames[0] ?? '延迟') : key
+  const packetLossKey = key === 'avg_delay' ? 'packet_loss' : `${key}_packet_loss`
+  return rows
+    .map((row) => {
+      const delay = rowNumber(row, key)
+      if (delay === null) return null
+      return {
+        createdAt: row.created_at,
+        label,
+        delay,
+        packetLoss: rowNumber(row, packetLossKey) ?? 0,
+      }
+    })
+    .filter((point): point is { createdAt: number; label: string; delay: number; packetLoss: number } => point !== null)
+}
+
+function formatLatencyValue(value: number): string {
+  return `${Number.isInteger(value) ? value.toFixed(0) : value.toFixed(2)}ms`
+}
+
+function tooltipTitle(point: { createdAt: number; label: string; delay: number; packetLoss: number }): string {
+  return `${point.label} · ${formatLatencyValue(point.delay)} · 丢包 ${point.packetLoss.toFixed(2)}% · ${formatTooltipTime(point.createdAt)}`
+}
+
+function formatTooltipTime(createdAt: number): string {
+  const date = new Date(createdAt)
+  if (Number.isNaN(date.getTime())) return '--:--'
+  return date.toLocaleString('zh-CN', { hour12: false })
 }
 
 function avgPacketLoss(rows: KulinChartRow[]): number {

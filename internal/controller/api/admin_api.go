@@ -14,10 +14,50 @@ type adminStore interface {
 	CreateAdminNode(ctx context.Context, create AdminNodeCreateRequest) (AdminNode, error)
 	UpdateAdminNode(ctx context.Context, nodeID string, update AdminNodeUpdateRequest) (AdminNode, error)
 	AdminNodeInstallCommand(ctx context.Context, nodeID, controllerURL, agentVersion string) (string, error)
+	CreateAdminProbeTarget(ctx context.Context, create AdminProbeTargetCreateRequest) (AdminProbeTarget, error)
+	UpdateAdminProbeTarget(ctx context.Context, targetID string, update AdminProbeTargetUpdateRequest) (AdminProbeTarget, error)
 }
 
 func (h *handler) handleAdminProbeTargets(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet {
+	store, ok := h.authorizeAdminRequest(w, r)
+	if !ok {
+		return
+	}
+	switch r.Method {
+	case http.MethodGet:
+		targets, err := store.AdminProbeTargets(r.Context())
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, "internal error")
+			return
+		}
+		writeJSON(w, http.StatusOK, AdminProbeTargetsResponse{Targets: targets})
+	case http.MethodPost:
+		var create AdminProbeTargetCreateRequest
+		decoder := json.NewDecoder(r.Body)
+		decoder.DisallowUnknownFields()
+		if err := decoder.Decode(&create); err != nil {
+			writeError(w, http.StatusBadRequest, "bad request")
+			return
+		}
+		target, err := store.CreateAdminProbeTarget(r.Context(), create)
+		if err != nil {
+			writeAdminError(w, err)
+			return
+		}
+		writeJSON(w, http.StatusCreated, AdminProbeTargetResponse{Target: target})
+	default:
+		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+	}
+}
+
+func (h *handler) handleAdminProbeTargetResource(w http.ResponseWriter, r *http.Request) {
+	path := strings.Trim(strings.TrimPrefix(r.URL.Path, "/api/admin/v1/probe-targets/"), "/")
+	parts := strings.Split(path, "/")
+	if len(parts) != 1 || parts[0] == "" {
+		writeError(w, http.StatusNotFound, "not found")
+		return
+	}
+	if r.Method != http.MethodPatch {
 		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
 		return
 	}
@@ -25,12 +65,19 @@ func (h *handler) handleAdminProbeTargets(w http.ResponseWriter, r *http.Request
 	if !ok {
 		return
 	}
-	targets, err := store.AdminProbeTargets(r.Context())
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, "internal error")
+	var update AdminProbeTargetUpdateRequest
+	decoder := json.NewDecoder(r.Body)
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&update); err != nil {
+		writeError(w, http.StatusBadRequest, "bad request")
 		return
 	}
-	writeJSON(w, http.StatusOK, AdminProbeTargetsResponse{Targets: targets})
+	target, err := store.UpdateAdminProbeTarget(r.Context(), parts[0], update)
+	if err != nil {
+		writeAdminError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, AdminProbeTargetResponse{Target: target})
 }
 
 func (h *handler) handleAdminNodes(w http.ResponseWriter, r *http.Request) {
@@ -136,16 +183,16 @@ func (h *handler) authorizeAdminRequest(w http.ResponseWriter, r *http.Request) 
 }
 
 func writeAdminError(w http.ResponseWriter, err error) {
-	if errors.Is(err, errNodeNotFound) {
-		writeError(w, http.StatusNotFound, "node not found")
+	if errors.Is(err, errNodeNotFound) || errors.Is(err, errProbeTargetNotFound) {
+		writeError(w, http.StatusNotFound, "not found")
 		return
 	}
-	if errors.Is(err, errInvalidAdminNodeUpdate) || errors.Is(err, errInvalidAdminNodeCreate) {
+	if errors.Is(err, errInvalidAdminNodeUpdate) || errors.Is(err, errInvalidAdminNodeCreate) || errors.Is(err, errInvalidAdminTargetWrite) {
 		writeError(w, http.StatusBadRequest, "bad request")
 		return
 	}
-	if errors.Is(err, errNodeAlreadyExists) {
-		writeError(w, http.StatusConflict, "node already exists")
+	if errors.Is(err, errNodeAlreadyExists) || errors.Is(err, errProbeTargetAlreadyExists) {
+		writeError(w, http.StatusConflict, "already exists")
 		return
 	}
 	writeError(w, http.StatusInternalServerError, "internal error")

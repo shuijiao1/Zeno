@@ -8,9 +8,12 @@ import (
 )
 
 var (
-	errInvalidAdminNodeUpdate = errors.New("invalid admin node update")
-	errInvalidAdminNodeCreate = errors.New("invalid admin node create")
-	errNodeAlreadyExists      = errors.New("node already exists")
+	errInvalidAdminNodeUpdate   = errors.New("invalid admin node update")
+	errInvalidAdminNodeCreate   = errors.New("invalid admin node create")
+	errNodeAlreadyExists        = errors.New("node already exists")
+	errInvalidAdminTargetWrite  = errors.New("invalid admin probe target write")
+	errProbeTargetNotFound      = errors.New("probe target not found")
+	errProbeTargetAlreadyExists = errors.New("probe target already exists")
 )
 
 // AdminNodesResponse is the authenticated management view for node inventory.
@@ -57,6 +60,116 @@ func (request *AdminNodeCreateRequest) normalize() error {
 
 type AdminProbeTargetsResponse struct {
 	Targets []AdminProbeTarget `json:"targets"`
+}
+
+type AdminProbeTargetResponse struct {
+	Target AdminProbeTarget `json:"target"`
+}
+
+type AdminProbeTargetCreateRequest struct {
+	ID          string             `json:"id,omitempty"`
+	Name        string             `json:"name"`
+	Type        string             `json:"type"`
+	Address     string             `json:"address"`
+	Port        adminOptionalInt64 `json:"port,omitempty"`
+	Count       int                `json:"count"`
+	TimeoutMS   int                `json:"timeout_ms"`
+	IntervalSec int                `json:"interval_sec"`
+	Enabled     *bool              `json:"enabled,omitempty"`
+}
+
+func (request *AdminProbeTargetCreateRequest) normalize() error {
+	request.ID = normalizeAdminNodeID(request.ID)
+	request.Name = strings.TrimSpace(request.Name)
+	request.Type = strings.ToLower(strings.TrimSpace(request.Type))
+	request.Address = strings.TrimSpace(request.Address)
+	if request.Type == "tcp" {
+		request.Type = "tcping"
+	}
+	if request.Name == "" || request.Address == "" || request.Type != "tcping" || request.Count <= 0 || request.TimeoutMS <= 0 || request.IntervalSec <= 0 {
+		return errInvalidAdminTargetWrite
+	}
+	if !request.Port.Set || !request.Port.Valid || !validPort(request.Port.Value) {
+		return errInvalidAdminTargetWrite
+	}
+	return nil
+}
+
+type AdminProbeTargetUpdateRequest struct {
+	Name        *string            `json:"name,omitempty"`
+	Type        *string            `json:"type,omitempty"`
+	Address     *string            `json:"address,omitempty"`
+	Port        adminOptionalInt64 `json:"port,omitempty"`
+	Count       *int               `json:"count,omitempty"`
+	TimeoutMS   *int               `json:"timeout_ms,omitempty"`
+	IntervalSec *int               `json:"interval_sec,omitempty"`
+	Enabled     *bool              `json:"enabled,omitempty"`
+}
+
+func (request *AdminProbeTargetUpdateRequest) normalize() error {
+	changed := false
+	if request.Name != nil {
+		changed = true
+		trimmed := strings.TrimSpace(*request.Name)
+		if trimmed == "" {
+			return errInvalidAdminTargetWrite
+		}
+		request.Name = &trimmed
+	}
+	if request.Type != nil {
+		changed = true
+		trimmed := strings.ToLower(strings.TrimSpace(*request.Type))
+		if trimmed == "tcp" {
+			trimmed = "tcping"
+		}
+		if trimmed != "tcping" {
+			return errInvalidAdminTargetWrite
+		}
+		request.Type = &trimmed
+	}
+	if request.Address != nil {
+		changed = true
+		trimmed := strings.TrimSpace(*request.Address)
+		if trimmed == "" {
+			return errInvalidAdminTargetWrite
+		}
+		request.Address = &trimmed
+	}
+	if request.Port.Set {
+		changed = true
+		if !request.Port.Valid || !validPort(request.Port.Value) {
+			return errInvalidAdminTargetWrite
+		}
+	}
+	if request.Count != nil {
+		changed = true
+		if *request.Count <= 0 {
+			return errInvalidAdminTargetWrite
+		}
+	}
+	if request.TimeoutMS != nil {
+		changed = true
+		if *request.TimeoutMS <= 0 {
+			return errInvalidAdminTargetWrite
+		}
+	}
+	if request.IntervalSec != nil {
+		changed = true
+		if *request.IntervalSec <= 0 {
+			return errInvalidAdminTargetWrite
+		}
+	}
+	if request.Enabled != nil {
+		changed = true
+	}
+	if !changed {
+		return errInvalidAdminTargetWrite
+	}
+	return nil
+}
+
+func validPort(port int64) bool {
+	return port > 0 && port <= 65535
 }
 
 type AdminProbeTarget struct {

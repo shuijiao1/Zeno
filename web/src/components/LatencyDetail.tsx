@@ -64,24 +64,6 @@ export function LatencyDetail({
         <InfoCard label="区域" value={node.countryCode ?? '--'} />
       </section>
 
-      <section className="detail-range-row" aria-label="latency range selector">
-        {rangeOptions.map((option) => (
-          <button
-            key={option.value}
-            type="button"
-            className={range === option.value ? 'is-active' : ''}
-            onClick={() => onRangeChange(option.value)}
-          >
-            {option.label}
-          </button>
-        ))}
-        <label className="peak-switch">
-          <input type="checkbox" aria-label="削峰" checked={peakCut} onChange={(event) => setPeakCut(event.target.checked)} />
-          <span />
-          <b>削峰</b>
-        </label>
-      </section>
-
       <StateHistoryPanel
         points={statePoints}
         rangeLabel={rangeLabel}
@@ -94,6 +76,25 @@ export function LatencyDetail({
           <div>
             <h3>{node.displayName}</h3>
             <p>{targetSummaries.length} 个监控服务</p>
+          </div>
+          <div className="monitor-heading-actions">
+            <div className="detail-range-row" aria-label="latency range selector">
+              {rangeOptions.map((option) => (
+                <button
+                  key={option.value}
+                  type="button"
+                  className={range === option.value ? 'is-active' : ''}
+                  onClick={() => onRangeChange(option.value)}
+                >
+                  {option.label}
+                </button>
+              ))}
+            </div>
+            <label className="peak-switch">
+              <input type="checkbox" aria-label="削峰" checked={peakCut} onChange={(event) => setPeakCut(event.target.checked)} />
+              <span />
+              <b>削峰</b>
+            </label>
           </div>
         </header>
 

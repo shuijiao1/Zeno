@@ -1,5 +1,5 @@
 import { type FormEvent, useEffect, useState } from 'react'
-import { createAdminNode, fetchAdminNodes, fetchAdminProbeTargets, fetchNodeLatency, fetchNodeState, fetchSummary, requestAdminNodeInstallCommand, updateAdminNode, type AdminNodeCreateInput, type AdminNodeUpdateInput, type NodeLatencyData, type NodeStateData, type SummaryData } from './api/client'
+import { createAdminNode, createAdminProbeTarget, fetchAdminNodes, fetchAdminProbeTargets, fetchNodeLatency, fetchNodeState, fetchSummary, requestAdminNodeInstallCommand, updateAdminNode, updateAdminProbeTarget, type AdminNodeCreateInput, type AdminNodeUpdateInput, type AdminProbeTargetInput, type AdminProbeTargetUpdateInput, type NodeLatencyData, type NodeStateData, type SummaryData } from './api/client'
 import { LatencyDetail } from './components/LatencyDetail'
 import { ServerCard } from './components/ServerCard'
 import { startLiveRefresh } from './lib/liveRefresh'
@@ -227,6 +227,34 @@ export function App() {
       .catch((error: unknown) => setAdminState({ kind: 'error', message: error instanceof Error ? error.message : 'unknown error' }))
   }
 
+  const createAdminProbeTargetDetails = (input: AdminProbeTargetInput) => {
+    if (adminToken === '') return
+    createAdminProbeTarget(adminToken, input)
+      .then((createdTarget) => {
+        setAdminState((current) => {
+          if (current.kind === 'ready') {
+            return { kind: 'ready', nodes: current.nodes, targets: [...current.targets, createdTarget] }
+          }
+          return { kind: 'ready', nodes: [], targets: [createdTarget] }
+        })
+      })
+      .catch((error: unknown) => setAdminState({ kind: 'error', message: error instanceof Error ? error.message : 'unknown error' }))
+  }
+
+  const updateAdminProbeTargetDetails = (targetId: string, input: AdminProbeTargetUpdateInput) => {
+    if (adminToken === '') return
+    updateAdminProbeTarget(adminToken, targetId, input)
+      .then((updatedTarget) => {
+        setAdminState((current) => {
+          if (current.kind === 'ready') {
+            return { kind: 'ready', nodes: current.nodes, targets: current.targets.map((target) => target.id === updatedTarget.id ? updatedTarget : target) }
+          }
+          return { kind: 'ready', nodes: [], targets: [updatedTarget] }
+        })
+      })
+      .catch((error: unknown) => setAdminState({ kind: 'error', message: error instanceof Error ? error.message : 'unknown error' }))
+  }
+
   const navigateHome = () => {
     window.history.pushState(null, '', '/')
     setRoute({ kind: 'home' })
@@ -268,6 +296,8 @@ export function App() {
           onAdminNodeCreate={createAdminNodeDetails}
           onAdminNodeUpdate={updateAdminNodeDetails}
           onAdminInstallCommand={requestAdminInstallCommand}
+          onAdminProbeTargetCreate={createAdminProbeTargetDetails}
+          onAdminProbeTargetUpdate={updateAdminProbeTargetDetails}
         />
       )}
 
@@ -373,6 +403,8 @@ interface AdminDashboardProps {
   onAdminNodeCreate?: (input: AdminNodeCreateInput) => void
   onAdminNodeUpdate?: (nodeId: string, input: AdminNodeUpdateInput) => void
   onAdminInstallCommand?: (nodeId: string) => Promise<string>
+  onAdminProbeTargetCreate?: (input: AdminProbeTargetInput) => void
+  onAdminProbeTargetUpdate?: (targetId: string, input: AdminProbeTargetUpdateInput) => void
 }
 
 export function AdminDashboard({
@@ -385,12 +417,17 @@ export function AdminDashboard({
   onAdminNodeCreate = () => {},
   onAdminNodeUpdate = () => {},
   onAdminInstallCommand = () => Promise.reject(new Error('install command unavailable')),
+  onAdminProbeTargetCreate = () => {},
+  onAdminProbeTargetUpdate = () => {},
 }: AdminDashboardProps) {
   const handleTokenSubmit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
     const form = event.currentTarget
-    const token = String(new FormData(form).get('admin-token') ?? '')
-    onAdminTokenSubmit(token)
+    const formData = new FormData(form)
+    const username = String(formData.get('admin-username') ?? '').trim()
+    const password = String(formData.get('admin-password') ?? '').trim()
+    if (username !== 'admin' || password === '') return
+    onAdminTokenSubmit(password)
     form.reset()
   }
 
@@ -422,13 +459,20 @@ export function AdminDashboard({
         </div>
 
         {!hasAdminToken && (
-          <form className="admin-login-card" aria-label="admin token form" onSubmit={handleTokenSubmit}>
+          <form className="admin-login-card" aria-label="admin login form" onSubmit={handleTokenSubmit}>
             <div>
-              <p>后台认证</p>
-              <strong>输入 Admin Token 后读取节点管理数据</strong>
+              <p>后台登录</p>
+              <strong>默认账号：admin / admin</strong>
             </div>
-            <input name="admin-token" type="password" autoComplete="current-password" placeholder="Admin Token" aria-label="Admin Token" />
-            <button type="submit">进入后台</button>
+            <label>
+              <span>账号</span>
+              <input name="admin-username" autoComplete="username" placeholder="admin" aria-label="后台账号" />
+            </label>
+            <label>
+              <span>密码</span>
+              <input name="admin-password" type="password" autoComplete="current-password" placeholder="admin" aria-label="后台密码" />
+            </label>
+            <button type="submit">登录后台</button>
           </form>
         )}
 
@@ -466,10 +510,11 @@ export function AdminDashboard({
                     <h3>探针目标</h3>
                   </div>
                 </header>
+                <AdminTargetCreateForm onCreate={onAdminProbeTargetCreate} />
                 {adminState.targets.length === 0 && <div className="admin-state-card">还没有探针目标。</div>}
                 {adminState.targets.length > 0 && (
                   <div className="admin-target-grid">
-                    {adminState.targets.map((target) => <AdminTargetCard key={target.id} target={target} />)}
+                    {adminState.targets.map((target) => <AdminTargetCard key={target.id} target={target} onUpdate={onAdminProbeTargetUpdate} />)}
                   </div>
                 )}
               </section>
@@ -596,11 +641,80 @@ function AdminNodeCard({ node, onUpdate, onInstallCommand }: { node: AdminNode; 
   )
 }
 
-function AdminTargetCard({ target }: { target: AdminProbeTarget }) {
+function AdminTargetCreateForm({ onCreate }: { onCreate: (input: AdminProbeTargetInput) => void }) {
+  const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    const form = event.currentTarget
+    const formData = new FormData(form)
+    const name = String(formData.get('new-target-name') ?? '').trim()
+    const address = String(formData.get('new-target-address') ?? '').trim()
+    const port = parsePositiveInt(String(formData.get('new-target-port') ?? ''))
+    if (name === '' || address === '' || port === null) return
+    onCreate({
+      name,
+      type: 'tcping',
+      address,
+      port,
+      count: parsePositiveInt(String(formData.get('new-target-count') ?? '')) ?? 3,
+      timeoutMs: parsePositiveInt(String(formData.get('new-target-timeout-ms') ?? '')) ?? 1200,
+      intervalSec: parsePositiveInt(String(formData.get('new-target-interval-sec') ?? '')) ?? 60,
+    })
+    form.reset()
+  }
+
+  return (
+    <form className="admin-target-create-form admin-node-edit-form" aria-label="添加探针目标" onSubmit={handleSubmit}>
+      <label>
+        <span>目标名称</span>
+        <input name="new-target-name" autoComplete="off" placeholder="Example HTTPS" />
+      </label>
+      <label>
+        <span>地址</span>
+        <input name="new-target-address" autoComplete="off" placeholder="example.com" />
+      </label>
+      <label>
+        <span>端口</span>
+        <input name="new-target-port" type="number" min="1" max="65535" defaultValue="443" />
+      </label>
+      <label>
+        <span>次数</span>
+        <input name="new-target-count" type="number" min="1" defaultValue="3" />
+      </label>
+      <label>
+        <span>超时 ms</span>
+        <input name="new-target-timeout-ms" type="number" min="1" defaultValue="1200" />
+      </label>
+      <label>
+        <span>间隔 s</span>
+        <input name="new-target-interval-sec" type="number" min="1" defaultValue="60" />
+      </label>
+      <button type="submit">添加目标</button>
+    </form>
+  )
+}
+
+function AdminTargetCard({ target, onUpdate }: { target: AdminProbeTarget; onUpdate: (targetId: string, input: AdminProbeTargetUpdateInput) => void }) {
   const endpoint = target.port ? `${target.address}:${target.port}` : target.address
   const assignments = target.assignments.length > 0
     ? target.assignments.map((assignment) => `${assignment.nodeDisplayName || assignment.nodeId}${assignment.enabled ? '' : '（停用）'}`).join('、')
     : '未分配节点'
+
+  const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    const formData = new FormData(event.currentTarget)
+    const port = parsePositiveInt(String(formData.get('target-port') ?? ''))
+    if (port === null) return
+    onUpdate(target.id, {
+      name: String(formData.get('target-name') ?? ''),
+      type: 'tcping',
+      address: String(formData.get('target-address') ?? ''),
+      port,
+      count: parsePositiveInt(String(formData.get('target-count') ?? '')) ?? target.count,
+      timeoutMs: parsePositiveInt(String(formData.get('target-timeout-ms') ?? '')) ?? target.timeoutMs,
+      intervalSec: parsePositiveInt(String(formData.get('target-interval-sec') ?? '')) ?? target.intervalSec,
+      enabled: formData.get('target-enabled') === 'on',
+    })
+  }
 
   return (
     <article className="admin-target-card">
@@ -617,8 +731,45 @@ function AdminTargetCard({ target }: { target: AdminProbeTarget }) {
         <div><dt>参数</dt><dd>{target.count} 次 / {target.timeoutMs}ms / {target.intervalSec}s</dd></div>
         <div><dt>节点</dt><dd>{assignments}</dd></div>
       </dl>
+      <form className="admin-target-edit-form admin-node-edit-form" aria-label={`${target.name} 探针目标编辑`} onSubmit={handleSubmit}>
+        <label>
+          <span>目标名</span>
+          <input name="target-name" defaultValue={target.name} autoComplete="off" />
+        </label>
+        <label>
+          <span>地址</span>
+          <input name="target-address" defaultValue={target.address} autoComplete="off" />
+        </label>
+        <label>
+          <span>端口</span>
+          <input name="target-port" type="number" min="1" max="65535" defaultValue={target.port ?? ''} />
+        </label>
+        <label>
+          <span>次数</span>
+          <input name="target-count" type="number" min="1" defaultValue={target.count} />
+        </label>
+        <label>
+          <span>超时 ms</span>
+          <input name="target-timeout-ms" type="number" min="1" defaultValue={target.timeoutMs} />
+        </label>
+        <label>
+          <span>间隔 s</span>
+          <input name="target-interval-sec" type="number" min="1" defaultValue={target.intervalSec} />
+        </label>
+        <label className="admin-node-toggle">
+          <input name="target-enabled" type="checkbox" defaultChecked={target.enabled} />
+          <span>启用目标</span>
+        </label>
+        <button type="submit">保存目标</button>
+      </form>
     </article>
   )
+}
+
+function parsePositiveInt(value: string): number | null {
+  const parsed = Number(value.trim())
+  if (!Number.isInteger(parsed) || parsed <= 0) return null
+  return parsed
 }
 
 function formatQuotaGigabytes(value: number | null): string {

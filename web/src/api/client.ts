@@ -134,6 +134,10 @@ export interface ApiAdminProbeTargetsResponse {
   targets: ApiAdminProbeTarget[]
 }
 
+export interface ApiAdminProbeTargetResponse {
+  target: ApiAdminProbeTarget
+}
+
 export interface SummaryData {
   nodes: HomeCardNode[]
   latencyPoints: LatencyPoint[]
@@ -174,6 +178,29 @@ export interface AdminNodeCreateInput {
   region?: string
   monthlyQuotaBytes?: number | null
   disabled?: boolean
+}
+
+export interface AdminProbeTargetInput {
+  id?: string
+  name: string
+  type: 'tcping'
+  address: string
+  port: number
+  count: number
+  timeoutMs: number
+  intervalSec: number
+  enabled?: boolean
+}
+
+export interface AdminProbeTargetUpdateInput {
+  name?: string
+  type?: 'tcping'
+  address?: string
+  port?: number
+  count?: number
+  timeoutMs?: number
+  intervalSec?: number
+  enabled?: boolean
 }
 
 export async function fetchSummary(): Promise<SummaryData> {
@@ -241,6 +268,40 @@ export async function createAdminNode(adminToken: string, input: AdminNodeCreate
   }
   const data = await response.json() as ApiAdminNodeResponse
   return normalizeAdminNode(data.node)
+}
+
+export async function createAdminProbeTarget(adminToken: string, input: AdminProbeTargetInput): Promise<AdminProbeTarget> {
+  const response = await fetch('/api/admin/v1/probe-targets', {
+    method: 'POST',
+    headers: {
+      Accept: 'application/json',
+      'Content-Type': 'application/json',
+      'X-Admin-Token': adminToken,
+    },
+    body: JSON.stringify(serializeAdminProbeTargetCreate(input)),
+  })
+  if (!response.ok) {
+    throw new Error(`admin probe target create failed: ${response.status}`)
+  }
+  const data = await response.json() as ApiAdminProbeTargetResponse
+  return normalizeAdminProbeTarget(data.target)
+}
+
+export async function updateAdminProbeTarget(adminToken: string, targetId: string, input: AdminProbeTargetUpdateInput): Promise<AdminProbeTarget> {
+  const response = await fetch(`/api/admin/v1/probe-targets/${encodeURIComponent(targetId)}`, {
+    method: 'PATCH',
+    headers: {
+      Accept: 'application/json',
+      'Content-Type': 'application/json',
+      'X-Admin-Token': adminToken,
+    },
+    body: JSON.stringify(serializeAdminProbeTargetUpdate(input)),
+  })
+  if (!response.ok) {
+    throw new Error(`admin probe target update failed: ${response.status}`)
+  }
+  const data = await response.json() as ApiAdminProbeTargetResponse
+  return normalizeAdminProbeTarget(data.target)
 }
 
 export async function requestAdminNodeInstallCommand(adminToken: string, nodeId: string): Promise<AdminNodeInstallCommand> {
@@ -328,6 +389,33 @@ function serializeAdminNodeCreate(input: AdminNodeCreateInput) {
     ...(input.region !== undefined ? { region: input.region } : {}),
     ...(input.monthlyQuotaBytes !== undefined ? { monthly_quota_bytes: input.monthlyQuotaBytes } : {}),
     ...(input.disabled !== undefined ? { disabled: input.disabled } : {}),
+  }
+}
+
+function serializeAdminProbeTargetCreate(input: AdminProbeTargetInput) {
+  return {
+    ...(input.id !== undefined && input.id.trim() !== '' ? { id: input.id } : {}),
+    name: input.name,
+    type: input.type,
+    address: input.address,
+    port: input.port,
+    count: input.count,
+    timeout_ms: input.timeoutMs,
+    interval_sec: input.intervalSec,
+    ...(input.enabled !== undefined ? { enabled: input.enabled } : {}),
+  }
+}
+
+function serializeAdminProbeTargetUpdate(input: AdminProbeTargetUpdateInput) {
+  return {
+    ...(input.name !== undefined ? { name: input.name } : {}),
+    ...(input.type !== undefined ? { type: input.type } : {}),
+    ...(input.address !== undefined ? { address: input.address } : {}),
+    ...(input.port !== undefined ? { port: input.port } : {}),
+    ...(input.count !== undefined ? { count: input.count } : {}),
+    ...(input.timeoutMs !== undefined ? { timeout_ms: input.timeoutMs } : {}),
+    ...(input.intervalSec !== undefined ? { interval_sec: input.intervalSec } : {}),
+    ...(input.enabled !== undefined ? { enabled: input.enabled } : {}),
   }
 }
 
