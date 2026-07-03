@@ -105,8 +105,8 @@ func TestSQLiteBackedSummaryUsesPersistedNodeAndLatestLatency(t *testing.T) {
 		t.Fatalf("insert node: %v", err)
 	}
 	if _, err := store.db.ExecContext(ctx, `
-		INSERT INTO host_info (node_id, os_name, cpu_cores, memory_total_bytes, disk_total_bytes, updated_at)
-		VALUES ('hytron', 'debian', 2, 4096, 8192, ?);
+		INSERT INTO host_info (node_id, os_name, arch, cpu_cores, memory_total_bytes, disk_total_bytes, updated_at)
+		VALUES ('hytron', 'debian', 'aarch64', 2, 4096, 8192, ?);
 	`, now.Unix()); err != nil {
 		t.Fatalf("insert host info: %v", err)
 	}
@@ -139,9 +139,18 @@ func TestSQLiteBackedSummaryUsesPersistedNodeAndLatestLatency(t *testing.T) {
 		t.Fatalf("status = %d, want %d; body=%s", recorder.Code, http.StatusOK, recorder.Body.String())
 	}
 
+	raw := recorder.Body.String()
 	var summary SummaryResponse
-	if err := json.NewDecoder(recorder.Body).Decode(&summary); err != nil {
+	if err := json.NewDecoder(strings.NewReader(raw)).Decode(&summary); err != nil {
 		t.Fatalf("decode summary: %v", err)
+	}
+	var publicShape struct {
+		Nodes []struct {
+			Arch string `json:"arch"`
+		} `json:"nodes"`
+	}
+	if err := json.NewDecoder(strings.NewReader(raw)).Decode(&publicShape); err != nil {
+		t.Fatalf("decode public shape: %v", err)
 	}
 	if len(summary.Nodes) != 1 {
 		t.Fatalf("nodes len = %d, want 1", len(summary.Nodes))
@@ -149,6 +158,9 @@ func TestSQLiteBackedSummaryUsesPersistedNodeAndLatestLatency(t *testing.T) {
 	node := summary.Nodes[0]
 	if node.DisplayName != "Hytron" || node.OS != "debian" || node.CountryCode != "HK" {
 		t.Fatalf("node = %+v, want persisted Hytron card", node)
+	}
+	if publicShape.Nodes[0].Arch != "aarch64" {
+		t.Fatalf("node arch = %q, want persisted host architecture", publicShape.Nodes[0].Arch)
 	}
 	if node.LatencySummary == nil || node.LatencySummary.MedianMS == nil || *node.LatencySummary.MedianMS != 8.8 {
 		t.Fatalf("latency summary = %+v, want latest median 8.8", node.LatencySummary)

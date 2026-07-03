@@ -22,6 +22,7 @@ type Node struct {
 	DisplayName          string          `json:"display_name"`
 	Status               string          `json:"status"`
 	OS                   string          `json:"os"`
+	Arch                 string          `json:"arch,omitempty"`
 	CountryCode          string          `json:"country_code,omitempty"`
 	Subtitle             string          `json:"subtitle,omitempty"`
 	CPUCores             *float64        `json:"cpu_cores,omitempty"`

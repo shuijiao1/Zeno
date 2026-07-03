@@ -32,6 +32,7 @@ func mockNode(id, name, osName, countryCode string, cores float64, expiry string
 		DisplayName:          name,
 		Status:               "online",
 		OS:                   osName,
+		Arch:                 "x86_64",
 		CountryCode:          countryCode,
 		CPUCores:             ptr(cores),
 		ExpiryLabel:          expiry,

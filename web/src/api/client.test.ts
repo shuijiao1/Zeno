@@ -10,6 +10,7 @@ describe('normalizeSummary', () => {
           display_name: 'Hytron',
           status: 'online',
           os: 'debian',
+          arch: 'aarch64',
           country_code: 'HK',
           subtitle: 'Hong Kong',
           cpu_cores: 2,
@@ -41,6 +42,7 @@ describe('normalizeSummary', () => {
     })
 
     expect(summary.nodes[0].displayName).toBe('Hytron')
+    expect(summary.nodes[0].arch).toBe('aarch64')
     expect(summary.nodes[0].countryCode).toBe('HK')
     expect(summary.nodes[0].cpuCores).toBe(2)
     expect(summary.nodes[0].expiryLabel).toBe('永 久')

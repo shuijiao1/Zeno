@@ -211,7 +211,7 @@ func (s *SQLiteStore) NodeState(ctx context.Context, nodeID string, window laten
 func (s *SQLiteStore) nodes(ctx context.Context) ([]Node, error) {
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT n.id, n.display_name, n.status, n.country_code, n.last_seen_at,
-		       h.os_name, h.cpu_cores, h.memory_total_bytes, h.disk_total_bytes,
+		       h.os_name, h.arch, h.cpu_cores, h.memory_total_bytes, h.disk_total_bytes,
 		       ss.cpu_percent, ss.memory_used_bytes, ss.disk_used_bytes,
 		       ss.net_in_speed_bps, ss.net_out_speed_bps, ss.net_in_total_bytes, ss.net_out_total_bytes,
 		       tm.billable_bytes, n.monthly_quota_bytes
@@ -233,11 +233,11 @@ func (s *SQLiteStore) nodes(ctx context.Context) ([]Node, error) {
 	now := time.Now().UTC()
 	for rows.Next() {
 		var id, displayName, status string
-		var countryCode, osName sql.NullString
+		var countryCode, osName, arch sql.NullString
 		var cpuCores, memoryTotal, diskTotal, lastSeenAt sql.NullInt64
 		var cpuPercent, netInSpeed, netOutSpeed sql.NullFloat64
 		var memoryUsed, diskUsed, netInTotal, netOutTotal, billable, quota sql.NullInt64
-		if err := rows.Scan(&id, &displayName, &status, &countryCode, &lastSeenAt, &osName, &cpuCores, &memoryTotal, &diskTotal, &cpuPercent, &memoryUsed, &diskUsed, &netInSpeed, &netOutSpeed, &netInTotal, &netOutTotal, &billable, &quota); err != nil {
+		if err := rows.Scan(&id, &displayName, &status, &countryCode, &lastSeenAt, &osName, &arch, &cpuCores, &memoryTotal, &diskTotal, &cpuPercent, &memoryUsed, &diskUsed, &netInSpeed, &netOutSpeed, &netInTotal, &netOutTotal, &billable, &quota); err != nil {
 			return nil, err
 		}
 		node := Node{
@@ -245,6 +245,7 @@ func (s *SQLiteStore) nodes(ctx context.Context) ([]Node, error) {
 			DisplayName:          displayName,
 			Status:               publicNodeStatus(status, lastSeenAt, now),
 			OS:                   nullStringOr(osName, "linux"),
+			Arch:                 nullStringOr(arch, ""),
 			CountryCode:          nullStringOr(countryCode, ""),
 			CPUCores:             intPtr(cpuCores),
 			CPUPercent:           floatPtr(cpuPercent),

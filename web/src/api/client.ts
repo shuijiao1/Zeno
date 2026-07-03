@@ -14,6 +14,7 @@ interface ApiNode {
   display_name: string
   status: HomeCardNode['status']
   os: HomeCardNode['os']
+  arch?: string
   country_code?: string
   subtitle?: string
   cpu_cores?: number | null
@@ -141,6 +142,7 @@ function normalizeNode(node: ApiNode): HomeCardNode {
     displayName: node.display_name,
     status: node.status,
     os: node.os,
+    arch: node.arch,
     countryCode: node.country_code,
     subtitle: node.subtitle,
     cpuCores: node.cpu_cores ?? null,

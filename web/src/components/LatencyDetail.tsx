@@ -58,7 +58,7 @@ export function LatencyDetail({
 
       <section className="detail-info-grid" aria-label={`${node.displayName} server facts`}>
         <InfoCard label="状态" value={node.status === 'online' ? '在线' : node.status} />
-        <InfoCard label="架构" value="x86_64" />
+        <InfoCard label="架构" value={node.arch || '--'} />
         <InfoCard label="内存" value={formatBinaryBytes(node.memoryTotalBytes)} />
         <InfoCard label="磁盘" value={formatBinaryBytes(node.diskTotalBytes)} />
         <InfoCard label="区域" value={node.countryCode ?? '--'} />
