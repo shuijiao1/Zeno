@@ -1,4 +1,4 @@
-import type { AdminNode, AdminNodeInstallCommand, AdminProbeTarget, HomeCardNode, LatencyPoint, StatePoint } from '../types'
+import type { AdminNode, AdminNodeInstallCommand, AdminNotificationChannel, AdminNotificationType, AdminProbeTarget, HomeCardNode, LatencyPoint, StatePoint } from '../types'
 
 interface ApiLatencySummary {
   target_id: string
@@ -104,6 +104,24 @@ interface ApiAdminProbeTarget {
   assignments: ApiAdminProbeTargetAssignment[] | null
 }
 
+interface ApiAdminNotificationChannel {
+  id: string
+  name: string
+  type: 'telegram' | 'webhook'
+  destination: string
+  credential_set: boolean
+  enabled: boolean
+  created_at: string
+  updated_at: string
+}
+
+interface ApiAdminNotificationType {
+  event_type: string
+  label: string
+  enabled: boolean
+  updated_at?: string
+}
+
 export interface ApiSummaryResponse {
   nodes: ApiNode[] | null
   latency_points: ApiLatencyPoint[] | null
@@ -142,6 +160,22 @@ export interface ApiAdminProbeTargetResponse {
   target: ApiAdminProbeTarget
 }
 
+export interface ApiAdminNotificationChannelsResponse {
+  channels: ApiAdminNotificationChannel[]
+}
+
+export interface ApiAdminNotificationChannelResponse {
+  channel: ApiAdminNotificationChannel
+}
+
+export interface ApiAdminNotificationTypesResponse {
+  types: ApiAdminNotificationType[]
+}
+
+export interface ApiAdminNotificationTypeResponse {
+  type: ApiAdminNotificationType
+}
+
 export interface SummaryData {
   nodes: HomeCardNode[]
   latencyPoints: LatencyPoint[]
@@ -165,6 +199,14 @@ export interface AdminNodesData {
 
 export interface AdminProbeTargetsData {
   targets: AdminProbeTarget[]
+}
+
+export interface AdminNotificationChannelsData {
+  channels: AdminNotificationChannel[]
+}
+
+export interface AdminNotificationTypesData {
+  types: AdminNotificationType[]
 }
 
 export interface AdminNodeUpdateInput {
@@ -206,6 +248,23 @@ export interface AdminProbeTargetUpdateInput {
   intervalSec?: number
   enabled?: boolean
   assignments?: Array<{ nodeId: string; enabled: boolean }>
+}
+
+export interface AdminNotificationChannelCreateInput {
+  id?: string
+  name: string
+  type: 'telegram' | 'webhook'
+  destination: string
+  credential: string
+  enabled?: boolean
+}
+
+export interface AdminNotificationChannelUpdateInput {
+  name?: string
+  type?: 'telegram' | 'webhook'
+  destination?: string
+  credential?: string
+  enabled?: boolean
 }
 
 export async function fetchSummary(): Promise<SummaryData> {
@@ -258,6 +317,32 @@ export async function fetchAdminProbeTargets(adminToken: string): Promise<AdminP
   return normalizeAdminProbeTargets(await response.json() as ApiAdminProbeTargetsResponse)
 }
 
+export async function fetchAdminNotificationChannels(adminToken: string): Promise<AdminNotificationChannelsData> {
+  const response = await fetch('/api/admin/v1/notification-channels', {
+    headers: {
+      Accept: 'application/json',
+      'X-Admin-Token': adminToken,
+    },
+  })
+  if (!response.ok) {
+    throw new Error(`admin notification channels request failed: ${response.status}`)
+  }
+  return normalizeAdminNotificationChannels(await response.json() as ApiAdminNotificationChannelsResponse)
+}
+
+export async function fetchAdminNotificationTypes(adminToken: string): Promise<AdminNotificationTypesData> {
+  const response = await fetch('/api/admin/v1/notification-types', {
+    headers: {
+      Accept: 'application/json',
+      'X-Admin-Token': adminToken,
+    },
+  })
+  if (!response.ok) {
+    throw new Error(`admin notification types request failed: ${response.status}`)
+  }
+  return normalizeAdminNotificationTypes(await response.json() as ApiAdminNotificationTypesResponse)
+}
+
 export async function createAdminNode(adminToken: string, input: AdminNodeCreateInput): Promise<AdminNode> {
   const response = await fetch('/api/admin/v1/nodes', {
     method: 'POST',
@@ -307,6 +392,57 @@ export async function updateAdminProbeTarget(adminToken: string, targetId: strin
   }
   const data = await response.json() as ApiAdminProbeTargetResponse
   return normalizeAdminProbeTarget(data.target)
+}
+
+export async function createAdminNotificationChannel(adminToken: string, input: AdminNotificationChannelCreateInput): Promise<AdminNotificationChannel> {
+  const response = await fetch('/api/admin/v1/notification-channels', {
+    method: 'POST',
+    headers: {
+      Accept: 'application/json',
+      'Content-Type': 'application/json',
+      'X-Admin-Token': adminToken,
+    },
+    body: JSON.stringify(serializeAdminNotificationChannelCreate(input)),
+  })
+  if (!response.ok) {
+    throw new Error(`admin notification channel create failed: ${response.status}`)
+  }
+  const data = await response.json() as ApiAdminNotificationChannelResponse
+  return normalizeAdminNotificationChannel(data.channel)
+}
+
+export async function updateAdminNotificationChannel(adminToken: string, channelId: string, input: AdminNotificationChannelUpdateInput): Promise<AdminNotificationChannel> {
+  const response = await fetch(`/api/admin/v1/notification-channels/${encodeURIComponent(channelId)}`, {
+    method: 'PATCH',
+    headers: {
+      Accept: 'application/json',
+      'Content-Type': 'application/json',
+      'X-Admin-Token': adminToken,
+    },
+    body: JSON.stringify(serializeAdminNotificationChannelUpdate(input)),
+  })
+  if (!response.ok) {
+    throw new Error(`admin notification channel update failed: ${response.status}`)
+  }
+  const data = await response.json() as ApiAdminNotificationChannelResponse
+  return normalizeAdminNotificationChannel(data.channel)
+}
+
+export async function updateAdminNotificationType(adminToken: string, eventType: string, enabled: boolean): Promise<AdminNotificationType> {
+  const response = await fetch(`/api/admin/v1/notification-types/${encodeURIComponent(eventType)}`, {
+    method: 'PATCH',
+    headers: {
+      Accept: 'application/json',
+      'Content-Type': 'application/json',
+      'X-Admin-Token': adminToken,
+    },
+    body: JSON.stringify({ enabled }),
+  })
+  if (!response.ok) {
+    throw new Error(`admin notification type update failed: ${response.status}`)
+  }
+  const data = await response.json() as ApiAdminNotificationTypeResponse
+  return normalizeAdminNotificationType(data.type)
 }
 
 export async function requestAdminNodeInstallCommand(adminToken: string, nodeId: string): Promise<AdminNodeInstallCommand> {
@@ -376,6 +512,18 @@ export function normalizeAdminProbeTargets(input: ApiAdminProbeTargetsResponse):
   }
 }
 
+export function normalizeAdminNotificationChannels(input: ApiAdminNotificationChannelsResponse): AdminNotificationChannelsData {
+  return {
+    channels: input.channels.map(normalizeAdminNotificationChannel),
+  }
+}
+
+export function normalizeAdminNotificationTypes(input: ApiAdminNotificationTypesResponse): AdminNotificationTypesData {
+  return {
+    types: input.types.map(normalizeAdminNotificationType),
+  }
+}
+
 function serializeAdminNodeUpdate(input: AdminNodeUpdateInput) {
   return {
     ...(input.displayName !== undefined ? { display_name: input.displayName } : {}),
@@ -427,6 +575,27 @@ function serializeAdminProbeTargetUpdate(input: AdminProbeTargetUpdateInput) {
         enabled: assignment.enabled,
       })),
     } : {}),
+  }
+}
+
+function serializeAdminNotificationChannelCreate(input: AdminNotificationChannelCreateInput) {
+  return {
+    ...(input.id !== undefined && input.id.trim() !== '' ? { id: input.id } : {}),
+    name: input.name,
+    type: input.type,
+    destination: input.destination,
+    credential: input.credential,
+    ...(input.enabled !== undefined ? { enabled: input.enabled } : {}),
+  }
+}
+
+function serializeAdminNotificationChannelUpdate(input: AdminNotificationChannelUpdateInput) {
+  return {
+    ...(input.name !== undefined ? { name: input.name } : {}),
+    ...(input.type !== undefined ? { type: input.type } : {}),
+    ...(input.destination !== undefined ? { destination: input.destination } : {}),
+    ...(input.credential !== undefined ? { credential: input.credential } : {}),
+    ...(input.enabled !== undefined ? { enabled: input.enabled } : {}),
   }
 }
 
@@ -537,5 +706,27 @@ function normalizeAdminProbeTarget(target: ApiAdminProbeTarget): AdminProbeTarge
       nodeDisplayName: assignment.node_display_name,
       enabled: assignment.enabled,
     })),
+  }
+}
+
+function normalizeAdminNotificationChannel(channel: ApiAdminNotificationChannel): AdminNotificationChannel {
+  return {
+    id: channel.id,
+    name: channel.name,
+    type: channel.type,
+    destination: channel.destination,
+    credentialSet: channel.credential_set,
+    enabled: channel.enabled,
+    createdAt: channel.created_at,
+    updatedAt: channel.updated_at,
+  }
+}
+
+function normalizeAdminNotificationType(notificationType: ApiAdminNotificationType): AdminNotificationType {
+  return {
+    eventType: notificationType.event_type,
+    label: notificationType.label,
+    enabled: notificationType.enabled,
+    updatedAt: notificationType.updated_at,
   }
 }

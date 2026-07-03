@@ -109,3 +109,23 @@ export interface AdminProbeTarget {
   enabled: boolean
   assignments: AdminProbeTargetAssignment[]
 }
+
+export type AdminNotificationChannelType = 'telegram' | 'webhook'
+
+export interface AdminNotificationChannel {
+  id: string
+  name: string
+  type: AdminNotificationChannelType
+  destination: string
+  credentialSet: boolean
+  enabled: boolean
+  createdAt: string
+  updatedAt: string
+}
+
+export interface AdminNotificationType {
+  eventType: string
+  label: string
+  enabled: boolean
+  updatedAt?: string
+}

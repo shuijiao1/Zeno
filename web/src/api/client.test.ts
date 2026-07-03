@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { fetchAdminNodes, fetchAdminProbeTargets, normalizeAdminNodes, normalizeAdminProbeTargets, normalizeNodeLatency, normalizeNodeState, normalizeSummary, createAdminNode, createAdminProbeTarget, requestAdminNodeInstallCommand, updateAdminNode, updateAdminProbeTarget } from './client'
+import { createAdminNode, createAdminNotificationChannel, createAdminProbeTarget, fetchAdminNodes, fetchAdminNotificationChannels, fetchAdminNotificationTypes, fetchAdminProbeTargets, normalizeAdminNodes, normalizeAdminNotificationChannels, normalizeAdminNotificationTypes, normalizeAdminProbeTargets, normalizeNodeLatency, normalizeNodeState, normalizeSummary, requestAdminNodeInstallCommand, updateAdminNode, updateAdminNotificationChannel, updateAdminNotificationType, updateAdminProbeTarget } from './client'
 
 describe('normalizeSummary', () => {
   it('maps controller snake_case JSON into frontend camelCase models', () => {
@@ -211,6 +211,36 @@ describe('normalizeAdminProbeTargets', () => {
   })
 })
 
+
+describe('normalizeAdminNotifications', () => {
+  it('maps channels and types without credential values', () => {
+    const channels = normalizeAdminNotificationChannels({
+      channels: [
+        {
+          id: 'zeno-webhook',
+          name: 'Zeno Webhook',
+          type: 'webhook',
+          destination: 'https://example.com/notify',
+          credential_set: true,
+          enabled: false,
+          created_at: '2026-07-03T00:00:00Z',
+          updated_at: '2026-07-03T00:00:00Z',
+        },
+      ],
+    })
+    const types = normalizeAdminNotificationTypes({
+      types: [
+        { event_type: 'node_online', label: '上线', enabled: true, updated_at: '2026-07-03T00:00:00Z' },
+      ],
+    })
+
+    expect(channels.channels[0].credentialSet).toBe(true)
+    expect(channels.channels[0]).not.toHaveProperty('credential')
+    expect(types.types[0].eventType).toBe('node_online')
+    expect(types.types[0].enabled).toBe(true)
+  })
+})
+
 describe('fetchAdminNodes', () => {
   const originalFetch = globalThis.fetch
 
@@ -249,6 +279,42 @@ describe('fetchAdminProbeTargets', () => {
     await fetchAdminProbeTargets('admin-pass')
 
     expect(fetchMock).toHaveBeenCalledWith('/api/admin/v1/probe-targets', {
+      headers: {
+        Accept: 'application/json',
+        'X-Admin-Token': 'admin-pass',
+      },
+    })
+  })
+})
+
+
+describe('fetchAdminNotifications', () => {
+  const originalFetch = globalThis.fetch
+
+  afterEach(() => {
+    globalThis.fetch = originalFetch
+    vi.restoreAllMocks()
+  })
+
+  it('fetches notification channels and types with X-Admin-Token only', async () => {
+    const fetchMock = vi.fn(async (url: string | URL | Request) => {
+      if (String(url).includes('notification-channels')) {
+        return new Response(JSON.stringify({ channels: [] }), { status: 200, headers: { 'Content-Type': 'application/json' } })
+      }
+      return new Response(JSON.stringify({ types: [] }), { status: 200, headers: { 'Content-Type': 'application/json' } })
+    })
+    globalThis.fetch = fetchMock as unknown as typeof fetch
+
+    await fetchAdminNotificationChannels('admin-pass')
+    await fetchAdminNotificationTypes('admin-pass')
+
+    expect(fetchMock).toHaveBeenNthCalledWith(1, '/api/admin/v1/notification-channels', {
+      headers: {
+        Accept: 'application/json',
+        'X-Admin-Token': 'admin-pass',
+      },
+    })
+    expect(fetchMock).toHaveBeenNthCalledWith(2, '/api/admin/v1/notification-types', {
       headers: {
         Accept: 'application/json',
         'X-Admin-Token': 'admin-pass',
@@ -481,6 +547,99 @@ describe('updateAdminProbeTarget', () => {
         ],
       }),
     })
+  })
+})
+
+
+describe('notification writes', () => {
+  const originalFetch = globalThis.fetch
+
+  afterEach(() => {
+    globalThis.fetch = originalFetch
+    vi.restoreAllMocks()
+  })
+
+  it('creates and toggles notification config without placing credentials in URLs', async () => {
+    const fetchMock = vi.fn(async (url: string | URL | Request) => {
+      if (String(url).endsWith('/notification-channels')) {
+        return new Response(JSON.stringify({
+          channel: {
+            id: 'zeno-webhook',
+            name: 'Zeno Webhook',
+            type: 'webhook',
+            destination: 'https://example.com/notify',
+            credential_set: true,
+            enabled: true,
+            created_at: '2026-07-03T00:00:00Z',
+            updated_at: '2026-07-03T00:00:00Z',
+          },
+        }), { status: 201, headers: { 'Content-Type': 'application/json' } })
+      }
+      if (String(url).includes('/notification-channels/')) {
+        return new Response(JSON.stringify({
+          channel: {
+            id: 'zeno-webhook',
+            name: 'Zeno Webhook',
+            type: 'webhook',
+            destination: 'https://example.com/notify',
+            credential_set: true,
+            enabled: false,
+            created_at: '2026-07-03T00:00:00Z',
+            updated_at: '2026-07-03T00:00:00Z',
+          },
+        }), { status: 200, headers: { 'Content-Type': 'application/json' } })
+      }
+      return new Response(JSON.stringify({ type: { event_type: 'node_online', label: '上线', enabled: true, updated_at: '2026-07-03T00:00:00Z' } }), { status: 200, headers: { 'Content-Type': 'application/json' } })
+    })
+    globalThis.fetch = fetchMock as unknown as typeof fetch
+
+    const created = await createAdminNotificationChannel('admin-pass', {
+      name: 'Zeno Webhook',
+      type: 'webhook',
+      destination: 'https://example.com/notify',
+      credential: 'webhook-secret',
+      enabled: true,
+    })
+    const updated = await updateAdminNotificationChannel('admin-pass', 'zeno-webhook', { enabled: false })
+    const notificationType = await updateAdminNotificationType('admin-pass', 'node_online', true)
+
+    expect(created.credentialSet).toBe(true)
+    expect(updated.enabled).toBe(false)
+    expect(notificationType.enabled).toBe(true)
+    expect(fetchMock).toHaveBeenNthCalledWith(1, '/api/admin/v1/notification-channels', {
+      method: 'POST',
+      headers: {
+        Accept: 'application/json',
+        'Content-Type': 'application/json',
+        'X-Admin-Token': 'admin-pass',
+      },
+      body: JSON.stringify({
+        name: 'Zeno Webhook',
+        type: 'webhook',
+        destination: 'https://example.com/notify',
+        credential: 'webhook-secret',
+        enabled: true,
+      }),
+    })
+    expect(fetchMock).toHaveBeenNthCalledWith(2, '/api/admin/v1/notification-channels/zeno-webhook', {
+      method: 'PATCH',
+      headers: {
+        Accept: 'application/json',
+        'Content-Type': 'application/json',
+        'X-Admin-Token': 'admin-pass',
+      },
+      body: JSON.stringify({ enabled: false }),
+    })
+    expect(fetchMock).toHaveBeenNthCalledWith(3, '/api/admin/v1/notification-types/node_online', {
+      method: 'PATCH',
+      headers: {
+        Accept: 'application/json',
+        'Content-Type': 'application/json',
+        'X-Admin-Token': 'admin-pass',
+      },
+      body: JSON.stringify({ enabled: true }),
+    })
+    expect(String(fetchMock.mock.calls[0][0])).not.toContain('webhook-secret')
   })
 })
 

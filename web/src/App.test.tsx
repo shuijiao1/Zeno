@@ -1,7 +1,7 @@
 import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it } from 'vitest'
 import { AdminDashboard, HomeTopPanel } from './App'
-import type { AdminNode, AdminProbeTarget } from './types'
+import type { AdminNode, AdminNotificationChannel, AdminNotificationType, AdminProbeTarget } from './types'
 
 const overviewProps = {
   totalCount: 11,
@@ -65,6 +65,23 @@ const hytronTarget: AdminProbeTarget = {
   ],
 }
 
+const webhookChannel: AdminNotificationChannel = {
+  id: 'zeno-webhook',
+  name: 'Zeno Webhook',
+  type: 'webhook',
+  destination: 'https://example.com/notify',
+  credentialSet: true,
+  enabled: true,
+  createdAt: '2026-07-03T00:00:00Z',
+  updatedAt: '2026-07-03T00:00:00Z',
+}
+
+const notificationTypes: AdminNotificationType[] = [
+  { eventType: 'node_online', label: '上线', enabled: true, updatedAt: '2026-07-03T00:00:00Z' },
+  { eventType: 'node_offline', label: '离线', enabled: false },
+  { eventType: 'probe_unhealthy', label: '异常', enabled: false },
+]
+
 function renderAdmin(section: 'overview' | 'nodes' | 'targets' | 'notifications' = 'overview') {
   return renderToStaticMarkup(
     <AdminDashboard
@@ -75,6 +92,8 @@ function renderAdmin(section: 'overview' | 'nodes' | 'targets' | 'notifications'
         kind: 'ready',
         nodes: [hytronNode, backupNode],
         targets: [hytronTarget],
+        notificationChannels: [webhookChannel],
+        notificationTypes,
       }}
       onAdminTokenSubmit={() => {}}
       onAdminTokenClear={() => {}}
@@ -84,6 +103,9 @@ function renderAdmin(section: 'overview' | 'nodes' | 'targets' | 'notifications'
       onAdminInstallCommand={async () => 'install command'}
       onAdminProbeTargetCreate={() => {}}
       onAdminProbeTargetUpdate={() => {}}
+      onAdminNotificationChannelCreate={() => {}}
+      onAdminNotificationChannelUpdate={() => {}}
+      onAdminNotificationTypeUpdate={() => {}}
     />,
   )
 }
@@ -150,11 +172,20 @@ describe('AdminDashboard', () => {
     expect(html).toContain('通知')
   })
 
-  it('names notifications as channels and types instead of alerts', () => {
+  it('renders real notification channels and types instead of a placeholder', () => {
     const html = renderAdmin('notifications')
 
     expect(html).toContain('通知渠道')
     expect(html).toContain('通知类型')
+    expect(html).toContain('Zeno Webhook')
+    expect(html).toContain('https://example.com/notify')
+    expect(html).toContain('凭据已设置')
+    expect(html).toContain('node_online')
+    expect(html).toContain('上线')
+    expect(html).toContain('启用中')
+    expect(html).toContain('添加通知渠道')
+    expect(html).not.toContain('后续再接入')
+    expect(html).not.toContain('webhook-secret')
     expect(html).not.toContain('告警')
   })
 
