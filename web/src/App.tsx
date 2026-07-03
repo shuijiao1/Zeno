@@ -1,5 +1,5 @@
 import { type FormEvent, type ReactNode, useEffect, useState } from 'react'
-import { createAdminNode, createAdminNotificationChannel, createAdminProbeTarget, deleteAdminNotificationChannel, fetchAdminNodes, fetchAdminNotificationChannels, fetchAdminNotificationDeliveries, fetchAdminNotificationTypes, fetchAdminProbeTargets, fetchNodeLatency, fetchNodeState, fetchSummary, requestAdminNodeInstallCommand, updateAdminNode, updateAdminNotificationChannel, updateAdminNotificationType, updateAdminProbeTarget, type AdminNodeCreateInput, type AdminNodeUpdateInput, type AdminNotificationChannelCreateInput, type AdminNotificationChannelUpdateInput, type AdminProbeTargetInput, type AdminProbeTargetUpdateInput, type NodeLatencyData, type NodeStateData, type SummaryData } from './api/client'
+import { createAdminNode, createAdminNotificationChannel, createAdminProbeTarget, deleteAdminNotificationChannel, fetchAdminNodes, fetchAdminNotificationChannels, fetchAdminNotificationDeliveries, fetchAdminNotificationTypes, fetchAdminProbeTargets, fetchNodeLatency, fetchNodeState, fetchSummary, requestAdminNodeInstallCommand, testAdminNotificationChannel, updateAdminNode, updateAdminNotificationChannel, updateAdminNotificationType, updateAdminProbeTarget, type AdminNodeCreateInput, type AdminNodeUpdateInput, type AdminNotificationChannelCreateInput, type AdminNotificationChannelUpdateInput, type AdminProbeTargetInput, type AdminProbeTargetUpdateInput, type NodeLatencyData, type NodeStateData, type SummaryData } from './api/client'
 import { LatencyDetail } from './components/LatencyDetail'
 import { ServerCard } from './components/ServerCard'
 import { startLiveRefresh } from './lib/liveRefresh'
@@ -298,6 +298,18 @@ export function App() {
       .catch((error: unknown) => setAdminState({ kind: 'error', message: error instanceof Error ? error.message : 'unknown error' }))
   }
 
+  const testAdminNotificationChannelDetails = (channelId: string) => {
+    if (adminToken === '') return
+    testAdminNotificationChannel(adminToken, channelId)
+      .then((delivery) => {
+        setAdminState((current) => {
+          if (current.kind !== 'ready') return current
+          return { ...current, notificationDeliveries: [delivery, ...current.notificationDeliveries].slice(0, 50) }
+        })
+      })
+      .catch((error: unknown) => setAdminState({ kind: 'error', message: error instanceof Error ? error.message : 'unknown error' }))
+  }
+
   const updateAdminNotificationTypeDetails = (eventType: string, enabled: boolean) => {
     if (adminToken === '') return
     updateAdminNotificationType(adminToken, eventType, enabled)
@@ -358,6 +370,7 @@ export function App() {
           onAdminNotificationChannelCreate={createAdminNotificationChannelDetails}
           onAdminNotificationChannelUpdate={updateAdminNotificationChannelDetails}
           onAdminNotificationChannelDelete={deleteAdminNotificationChannelDetails}
+          onAdminNotificationChannelTest={testAdminNotificationChannelDetails}
           onAdminNotificationTypeUpdate={updateAdminNotificationTypeDetails}
         />
       )}
@@ -470,6 +483,7 @@ interface AdminDashboardProps {
   onAdminNotificationChannelCreate?: (input: AdminNotificationChannelCreateInput) => void
   onAdminNotificationChannelUpdate?: (channelId: string, input: AdminNotificationChannelUpdateInput) => void
   onAdminNotificationChannelDelete?: (channelId: string) => void
+  onAdminNotificationChannelTest?: (channelId: string) => void
   onAdminNotificationTypeUpdate?: (eventType: string, enabled: boolean) => void
 }
 
@@ -489,6 +503,7 @@ export function AdminDashboard({
   onAdminNotificationChannelCreate = () => {},
   onAdminNotificationChannelUpdate = () => {},
   onAdminNotificationChannelDelete = () => {},
+  onAdminNotificationChannelTest = () => {},
   onAdminNotificationTypeUpdate = () => {},
 }: AdminDashboardProps) {
   const [activeSection, setActiveSection] = useState<AdminSection>(initialSection)
@@ -610,6 +625,7 @@ export function AdminDashboard({
                 onChannelCreate={onAdminNotificationChannelCreate}
                 onChannelUpdate={onAdminNotificationChannelUpdate}
                 onChannelDelete={onAdminNotificationChannelDelete}
+                onChannelTest={onAdminNotificationChannelTest}
                 onTypeUpdate={onAdminNotificationTypeUpdate}
               />
             )}
@@ -1074,7 +1090,7 @@ function AdminTargetEditModal({ target, nodes, onUpdate, onClose }: { target: Ad
   )
 }
 
-function AdminNotificationsSection({ channels, types, deliveries, onChannelCreate, onChannelUpdate, onChannelDelete, onTypeUpdate }: { channels: AdminNotificationChannel[]; types: AdminNotificationType[]; deliveries: AdminNotificationDelivery[]; onChannelCreate: (input: AdminNotificationChannelCreateInput) => void; onChannelUpdate: (channelId: string, input: AdminNotificationChannelUpdateInput) => void; onChannelDelete: (channelId: string) => void; onTypeUpdate: (eventType: string, enabled: boolean) => void }) {
+function AdminNotificationsSection({ channels, types, deliveries, onChannelCreate, onChannelUpdate, onChannelDelete, onChannelTest, onTypeUpdate }: { channels: AdminNotificationChannel[]; types: AdminNotificationType[]; deliveries: AdminNotificationDelivery[]; onChannelCreate: (input: AdminNotificationChannelCreateInput) => void; onChannelUpdate: (channelId: string, input: AdminNotificationChannelUpdateInput) => void; onChannelDelete: (channelId: string) => void; onChannelTest: (channelId: string) => void; onTypeUpdate: (eventType: string, enabled: boolean) => void }) {
   const [creatingChannel, setCreatingChannel] = useState(false)
 
   return (
@@ -1090,7 +1106,7 @@ function AdminNotificationsSection({ channels, types, deliveries, onChannelCreat
       <section className="admin-notification-block" aria-label="通知渠道">
         <h4>通知渠道</h4>
         {channels.length === 0 && <div className="admin-state-card">还没有通知渠道。</div>}
-        {channels.length > 0 && <AdminNotificationChannelList channels={channels} onUpdate={onChannelUpdate} onDelete={onChannelDelete} />}
+        {channels.length > 0 && <AdminNotificationChannelList channels={channels} onUpdate={onChannelUpdate} onDelete={onChannelDelete} onTest={onChannelTest} />}
       </section>
 
       <section className="admin-notification-block" aria-label="通知类型">
@@ -1156,7 +1172,7 @@ function AdminNotificationDeliveryList({ deliveries }: { deliveries: AdminNotifi
   )
 }
 
-function AdminNotificationChannelList({ channels, onUpdate, onDelete }: { channels: AdminNotificationChannel[]; onUpdate: (channelId: string, input: AdminNotificationChannelUpdateInput) => void; onDelete: (channelId: string) => void }) {
+function AdminNotificationChannelList({ channels, onUpdate, onDelete, onTest }: { channels: AdminNotificationChannel[]; onUpdate: (channelId: string, input: AdminNotificationChannelUpdateInput) => void; onDelete: (channelId: string) => void; onTest: (channelId: string) => void }) {
   const confirmDelete = (channel: AdminNotificationChannel) => {
     const ok = typeof window === 'undefined' ? true : window.confirm(`确认删除通知渠道「${channel.name}」？`)
     if (ok) onDelete(channel.id)
@@ -1183,6 +1199,7 @@ function AdminNotificationChannelList({ channels, onUpdate, onDelete }: { channe
           <span className="admin-notification-destination">{channel.destination}</span>
           <span>{channel.credentialSet ? '凭据已设置' : '未设置凭据'}</span>
           <div className="admin-row-actions">
+            <button className="admin-row-action" type="button" onClick={() => onTest(channel.id)}>测试发送</button>
             <button className="admin-row-action" type="button" onClick={() => onUpdate(channel.id, { enabled: !channel.enabled })}>
               {channel.enabled ? '停用渠道' : '启用渠道'}
             </button>

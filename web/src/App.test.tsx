@@ -204,6 +204,7 @@ describe('AdminDashboard', () => {
     expect(html).toContain('启用中')
     expect(html).toContain('添加通知渠道')
     expect(html).toContain('删除渠道')
+    expect(html).toContain('测试发送')
     expect(html).toContain('最近发送')
     expect(html).toContain('Hytron')
     expect(html).toContain('发送失败')

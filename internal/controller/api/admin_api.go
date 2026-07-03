@@ -14,6 +14,8 @@ type adminStore interface {
 	AdminNotificationChannels(ctx context.Context) ([]AdminNotificationChannel, error)
 	AdminNotificationTypes(ctx context.Context) ([]AdminNotificationType, error)
 	AdminNotificationDeliveries(ctx context.Context, limit int) ([]AdminNotificationDelivery, error)
+	AdminNotificationDispatchChannel(ctx context.Context, channelID string) (notificationDispatchChannel, error)
+	RecordNotificationDelivery(ctx context.Context, event notificationEvent, channel notificationDispatchChannel, success bool, deliveryError string) (AdminNotificationDelivery, error)
 	CreateAdminNode(ctx context.Context, create AdminNodeCreateRequest) (AdminNode, error)
 	UpdateAdminNode(ctx context.Context, nodeID string, update AdminNodeUpdateRequest) (AdminNode, error)
 	AdminNodeInstallCommand(ctx context.Context, nodeID, controllerURL, agentVersion string) (string, error)

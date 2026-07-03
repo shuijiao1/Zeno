@@ -1,10 +1,12 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 )
 
 func (h *handler) handleAdminNotificationChannels(w http.ResponseWriter, r *http.Request) {
@@ -42,6 +44,10 @@ func (h *handler) handleAdminNotificationChannels(w http.ResponseWriter, r *http
 func (h *handler) handleAdminNotificationChannelResource(w http.ResponseWriter, r *http.Request) {
 	path := strings.Trim(strings.TrimPrefix(r.URL.Path, "/api/admin/v1/notification-channels/"), "/")
 	parts := strings.Split(path, "/")
+	if len(parts) == 2 && parts[0] != "" && parts[1] == "test" {
+		h.handleAdminNotificationChannelTest(w, r, parts[0])
+		return
+	}
 	if len(parts) != 1 || parts[0] == "" {
 		writeError(w, http.StatusNotFound, "not found")
 		return
@@ -75,6 +81,45 @@ func (h *handler) handleAdminNotificationChannelResource(w http.ResponseWriter, 
 		return
 	}
 	writeJSON(w, http.StatusOK, AdminNotificationChannelResponse{Channel: channel})
+}
+
+func (h *handler) handleAdminNotificationChannelTest(w http.ResponseWriter, r *http.Request, channelID string) {
+	if r.Method != http.MethodPost {
+		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+	store, ok := h.authorizeAdminRequest(w, r)
+	if !ok {
+		return
+	}
+	channel, err := store.AdminNotificationDispatchChannel(r.Context(), channelID)
+	if err != nil {
+		writeAdminError(w, err)
+		return
+	}
+	now := time.Now().UTC()
+	event := adminTestNotificationEvent(now)
+	sendCtx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+	sendErr := h.notificationSender.Send(sendCtx, channel, event)
+	delivery, err := store.RecordNotificationDelivery(r.Context(), event, channel, sendErr == nil, sanitizeNotificationDeliveryError(sendErr))
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "internal error")
+		return
+	}
+	writeJSON(w, http.StatusOK, AdminNotificationTestResponse{Delivery: delivery})
+}
+
+func adminTestNotificationEvent(ts time.Time) notificationEvent {
+	return notificationEvent{
+		EventType:      "test_notification",
+		Label:          "测试发送",
+		NodeID:         "admin-test",
+		NodeName:       "Zeno",
+		Status:         "test",
+		PreviousStatus: "test",
+		TS:             ts.Format(time.RFC3339),
+	}
 }
 
 func (h *handler) handleAdminNotificationTypes(w http.ResponseWriter, r *http.Request) {

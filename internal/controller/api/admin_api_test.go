@@ -865,6 +865,82 @@ func TestAdminNotificationChannelsCreateListAndPatchWithoutCredentialLeak(t *tes
 	}
 }
 
+func TestAdminNotificationChannelTestSendsWebhookAndRecordsSanitizedDelivery(t *testing.T) {
+	store, err := OpenSQLiteStore(filepath.Join(t.TempDir(), "jiaoprobe.db"))
+	if err != nil {
+		t.Fatalf("open sqlite store: %v", err)
+	}
+	defer store.Close()
+	ctx := context.Background()
+	var received struct {
+		EventType string `json:"event_type"`
+		Label     string `json:"label"`
+		NodeName  string `json:"node_name"`
+	}
+	webhook := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			t.Errorf("webhook method = %s, want POST", r.Method)
+		}
+		if r.Header.Get("Authorization") != "Bearer webhook-secret-value" {
+			t.Errorf("webhook authorization = %q, want bearer credential", r.Header.Get("Authorization"))
+		}
+		if err := json.NewDecoder(r.Body).Decode(&received); err != nil {
+			t.Errorf("decode webhook body: %v", err)
+		}
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer webhook.Close()
+	enabled := false
+	channel, err := store.CreateAdminNotificationChannel(ctx, AdminNotificationChannelCreateRequest{
+		ID:          "smoke-webhook",
+		Name:        "Smoke Webhook",
+		Type:        "webhook",
+		Destination: webhook.URL,
+		Credential:  "webhook-secret-value",
+		Enabled:     &enabled,
+	})
+	if err != nil {
+		t.Fatalf("create notification channel: %v", err)
+	}
+	handler := NewHandler(HandlerOptions{Store: store, AdminTokenHash: HashAdminToken("admin-pass"), NotificationClient: webhook.Client()})
+
+	recorder := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodPost, "/api/admin/v1/notification-channels/"+channel.ID+"/test", nil)
+	request.Header.Set("X-Admin-Token", "admin-pass")
+	handler.ServeHTTP(recorder, request)
+
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("test status = %d, want 200; body=%s", recorder.Code, recorder.Body.String())
+	}
+	assertNoSensitiveNotificationLeak(t, recorder.Body.String())
+	if received.EventType != "test_notification" || received.Label != "测试发送" || received.NodeName != "Zeno" {
+		t.Fatalf("webhook test event = %+v, want sanitized Zeno test notification", received)
+	}
+	var response struct {
+		Delivery struct {
+			EventType   string `json:"event_type"`
+			Label       string `json:"label"`
+			ChannelID   string `json:"channel_id"`
+			ChannelName string `json:"channel_name"`
+			Success     bool   `json:"success"`
+			Error       string `json:"error"`
+		} `json:"delivery"`
+	}
+	if err := json.NewDecoder(bytes.NewBufferString(recorder.Body.String())).Decode(&response); err != nil {
+		t.Fatalf("decode test delivery response: %v", err)
+	}
+	if response.Delivery.EventType != "test_notification" || response.Delivery.Label != "测试发送" || response.Delivery.ChannelID != channel.ID || response.Delivery.ChannelName != "Smoke Webhook" || !response.Delivery.Success || response.Delivery.Error != "" {
+		t.Fatalf("test delivery response = %+v, want successful sanitized test delivery", response.Delivery)
+	}
+	deliveries, err := store.AdminNotificationDeliveries(ctx, 5)
+	if err != nil {
+		t.Fatalf("list notification deliveries after test: %v", err)
+	}
+	if len(deliveries) != 1 || deliveries[0].EventType != "test_notification" || deliveries[0].ChannelID != channel.ID || !deliveries[0].Success {
+		t.Fatalf("recorded deliveries = %+v, want one successful test delivery", deliveries)
+	}
+}
+
 func TestAdminNotificationChannelDeleteRemovesChannelWithoutCredentialLeak(t *testing.T) {
 	store, err := OpenSQLiteStore(filepath.Join(t.TempDir(), "jiaoprobe.db"))
 	if err != nil {
@@ -937,6 +1013,8 @@ func TestAdminNotificationChannelsRejectUnauthorizedUnknownAndInvalidRequests(t 
 		{name: "patch empty body", method: http.MethodPatch, path: "/api/admin/v1/notification-channels/missing", body: `{}`, adminToken: "admin-pass", wantStatus: http.StatusBadRequest},
 		{name: "delete missing admin token", method: http.MethodDelete, path: "/api/admin/v1/notification-channels/missing", wantStatus: http.StatusUnauthorized},
 		{name: "delete unknown channel", method: http.MethodDelete, path: "/api/admin/v1/notification-channels/missing", adminToken: "admin-pass", wantStatus: http.StatusNotFound},
+		{name: "test missing admin token", method: http.MethodPost, path: "/api/admin/v1/notification-channels/missing/test", wantStatus: http.StatusUnauthorized},
+		{name: "test unknown channel", method: http.MethodPost, path: "/api/admin/v1/notification-channels/missing/test", adminToken: "admin-pass", wantStatus: http.StatusNotFound},
 	}
 
 	for _, tc := range cases {

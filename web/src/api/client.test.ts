@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { createAdminNode, createAdminNotificationChannel, createAdminProbeTarget, deleteAdminNotificationChannel, fetchAdminNodes, fetchAdminNotificationChannels, fetchAdminNotificationDeliveries, fetchAdminNotificationTypes, fetchAdminProbeTargets, normalizeAdminNodes, normalizeAdminNotificationChannels, normalizeAdminNotificationDeliveries, normalizeAdminNotificationTypes, normalizeAdminProbeTargets, normalizeNodeLatency, normalizeNodeState, normalizeSummary, requestAdminNodeInstallCommand, updateAdminNode, updateAdminNotificationChannel, updateAdminNotificationType, updateAdminProbeTarget } from './client'
+import { createAdminNode, createAdminNotificationChannel, createAdminProbeTarget, deleteAdminNotificationChannel, fetchAdminNodes, fetchAdminNotificationChannels, fetchAdminNotificationDeliveries, fetchAdminNotificationTypes, fetchAdminProbeTargets, normalizeAdminNodes, normalizeAdminNotificationChannels, normalizeAdminNotificationDeliveries, normalizeAdminNotificationTypes, normalizeAdminProbeTargets, normalizeNodeLatency, normalizeNodeState, normalizeSummary, requestAdminNodeInstallCommand, testAdminNotificationChannel, updateAdminNode, updateAdminNotificationChannel, updateAdminNotificationType, updateAdminProbeTarget } from './client'
 
 describe('normalizeSummary', () => {
   it('maps controller snake_case JSON into frontend camelCase models', () => {
@@ -687,6 +687,39 @@ describe('notification writes', () => {
       body: JSON.stringify({ enabled: true }),
     })
     expect(String(fetchMock.mock.calls[0][0])).not.toContain('webhook-secret')
+  })
+
+  it('tests a notification channel with the admin token and returns a sanitized delivery', async () => {
+    const fetchMock = vi.fn(async () => new Response(JSON.stringify({
+      delivery: {
+        id: 9,
+        event_type: 'test_notification',
+        label: '测试发送',
+        node_id: 'admin-test',
+        node_name: 'Zeno',
+        previous_status: 'test',
+        status: 'test',
+        channel_id: 'zeno-webhook',
+        channel_name: 'Zeno Webhook',
+        channel_type: 'webhook',
+        success: true,
+        created_at: '2026-07-03T00:10:00Z',
+      },
+    }), { status: 200, headers: { 'Content-Type': 'application/json' } }))
+    globalThis.fetch = fetchMock as unknown as typeof fetch
+
+    const delivery = await testAdminNotificationChannel('admin-pass', 'zeno-webhook')
+
+    expect(delivery.eventType).toBe('test_notification')
+    expect(delivery.label).toBe('测试发送')
+    expect(delivery.success).toBe(true)
+    expect(fetchMock).toHaveBeenCalledWith('/api/admin/v1/notification-channels/zeno-webhook/test', {
+      method: 'POST',
+      headers: {
+        Accept: 'application/json',
+        'X-Admin-Token': 'admin-pass',
+      },
+    })
   })
 
   it('deletes notification channels with the admin token in X-Admin-Token only', async () => {

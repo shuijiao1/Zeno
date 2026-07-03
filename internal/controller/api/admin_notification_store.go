@@ -163,6 +163,28 @@ func (s *SQLiteStore) adminNotificationChannelByID(ctx context.Context, channelI
 	return AdminNotificationChannel{}, errNotificationChannelNotFound
 }
 
+func (s *SQLiteStore) AdminNotificationDispatchChannel(ctx context.Context, channelID string) (notificationDispatchChannel, error) {
+	channelID = strings.TrimSpace(channelID)
+	if channelID == "" {
+		return notificationDispatchChannel{}, errNotificationChannelNotFound
+	}
+	var channel notificationDispatchChannel
+	if err := s.db.QueryRowContext(ctx, `
+		SELECT id, name, type, destination, credential
+		FROM notification_channels
+		WHERE id = ?
+	`, channelID).Scan(&channel.ID, &channel.Name, &channel.Type, &channel.Destination, &channel.Credential); err != nil {
+		if err == sql.ErrNoRows {
+			return notificationDispatchChannel{}, errNotificationChannelNotFound
+		}
+		return notificationDispatchChannel{}, err
+	}
+	if strings.TrimSpace(channel.Credential) == "" {
+		return notificationDispatchChannel{}, errInvalidAdminNotificationChannelWrite
+	}
+	return channel, nil
+}
+
 func (s *SQLiteStore) AdminNotificationTypes(ctx context.Context) ([]AdminNotificationType, error) {
 	rows, err := s.db.QueryContext(ctx, `SELECT event_type, enabled, updated_at FROM notification_types`)
 	if err != nil {

@@ -192,6 +192,10 @@ export interface ApiAdminNotificationDeliveriesResponse {
   deliveries: ApiAdminNotificationDelivery[]
 }
 
+export interface ApiAdminNotificationTestResponse {
+  delivery: ApiAdminNotificationDelivery
+}
+
 export interface ApiAdminNotificationTypeResponse {
   type: ApiAdminNotificationType
 }
@@ -476,6 +480,21 @@ export async function deleteAdminNotificationChannel(adminToken: string, channel
   if (!response.ok) {
     throw new Error(`admin notification channel delete failed: ${response.status}`)
   }
+}
+
+export async function testAdminNotificationChannel(adminToken: string, channelId: string): Promise<AdminNotificationDelivery> {
+  const response = await fetch(`/api/admin/v1/notification-channels/${encodeURIComponent(channelId)}/test`, {
+    method: 'POST',
+    headers: {
+      Accept: 'application/json',
+      'X-Admin-Token': adminToken,
+    },
+  })
+  if (!response.ok) {
+    throw new Error(`admin notification channel test failed: ${response.status}`)
+  }
+  const data = await response.json() as ApiAdminNotificationTestResponse
+  return normalizeAdminNotificationDelivery(data.delivery)
 }
 
 export async function updateAdminNotificationType(adminToken: string, eventType: string, enabled: boolean): Promise<AdminNotificationType> {

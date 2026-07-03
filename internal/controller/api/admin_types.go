@@ -240,6 +240,10 @@ type AdminNotificationDeliveriesResponse struct {
 	Deliveries []AdminNotificationDelivery `json:"deliveries"`
 }
 
+type AdminNotificationTestResponse struct {
+	Delivery AdminNotificationDelivery `json:"delivery"`
+}
+
 type AdminNotificationChannelCreateRequest struct {
 	ID          string `json:"id,omitempty"`
 	Name        string `json:"name"`

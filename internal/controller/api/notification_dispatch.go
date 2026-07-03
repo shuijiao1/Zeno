@@ -24,7 +24,7 @@ type notificationEventStore interface {
 }
 
 type notificationDeliveryStore interface {
-	RecordNotificationDelivery(ctx context.Context, event notificationEvent, channel notificationDispatchChannel, success bool, deliveryError string) error
+	RecordNotificationDelivery(ctx context.Context, event notificationEvent, channel notificationDispatchChannel, success bool, deliveryError string) (AdminNotificationDelivery, error)
 }
 
 type notificationNodeSnapshot struct {
@@ -163,6 +163,8 @@ func (event notificationEvent) messageText() string {
 		nodeName = event.NodeID
 	}
 	switch event.EventType {
+	case "test_notification":
+		return "Zeno：通知渠道测试"
 	case "node_online":
 		return fmt.Sprintf("Zeno：%s 已上线", nodeName)
 	case "node_offline":
@@ -207,7 +209,7 @@ func (h *handler) dispatchAgentStatusNotification(store agentStore, transition n
 			defer cancel()
 			err := h.notificationSender.Send(ctx, channel, event)
 			if deliveryStore, ok := store.(notificationDeliveryStore); ok {
-				_ = deliveryStore.RecordNotificationDelivery(context.Background(), event, channel, err == nil, sanitizeNotificationDeliveryError(err))
+				_, _ = deliveryStore.RecordNotificationDelivery(context.Background(), event, channel, err == nil, sanitizeNotificationDeliveryError(err))
 			}
 		}()
 	}
