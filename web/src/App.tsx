@@ -1,5 +1,5 @@
 import { type FormEvent, type ReactNode, useEffect, useState } from 'react'
-import { createAdminNode, createAdminNotificationChannel, createAdminProbeTarget, deleteAdminNotificationChannel, fetchAdminNodes, fetchAdminNotificationChannels, fetchAdminNotificationDeliveries, fetchAdminNotificationTypes, fetchAdminProbeTargets, fetchNodeLatency, fetchNodeState, fetchSummary, requestAdminNodeInstallCommand, testAdminNotificationChannel, updateAdminNode, updateAdminNotificationChannel, updateAdminNotificationType, updateAdminProbeTarget, type AdminNodeCreateInput, type AdminNodeUpdateInput, type AdminNotificationChannelCreateInput, type AdminNotificationChannelUpdateInput, type AdminProbeTargetInput, type AdminProbeTargetUpdateInput, type NodeLatencyData, type NodeStateData, type SummaryData } from './api/client'
+import { createAdminNode, createAdminNotificationChannel, createAdminProbeTarget, deleteAdminNotificationChannel, deleteAdminProbeTarget, fetchAdminNodes, fetchAdminNotificationChannels, fetchAdminNotificationDeliveries, fetchAdminNotificationTypes, fetchAdminProbeTargets, fetchNodeLatency, fetchNodeState, fetchSummary, requestAdminNodeInstallCommand, testAdminNotificationChannel, updateAdminNode, updateAdminNotificationChannel, updateAdminNotificationType, updateAdminProbeTarget, type AdminNodeCreateInput, type AdminNodeUpdateInput, type AdminNotificationChannelCreateInput, type AdminNotificationChannelUpdateInput, type AdminProbeTargetInput, type AdminProbeTargetUpdateInput, type NodeLatencyData, type NodeStateData, type SummaryData } from './api/client'
 import { LatencyDetail } from './components/LatencyDetail'
 import { ServerCard } from './components/ServerCard'
 import { startLiveRefresh } from './lib/liveRefresh'
@@ -30,6 +30,7 @@ type AdminLoadState =
   | { kind: 'error'; message: string }
 
 type AdminSection = 'overview' | 'nodes' | 'targets' | 'notifications'
+type AdminTargetSort = 'name' | 'status' | 'type' | 'assignments'
 
 function sum(values: Array<number | null | undefined>): number {
   return values.reduce<number>((total, value) => total + (value ?? 0), 0)
@@ -257,6 +258,18 @@ export function App() {
       .catch((error: unknown) => setAdminState({ kind: 'error', message: error instanceof Error ? error.message : 'unknown error' }))
   }
 
+  const deleteAdminProbeTargetDetails = (targetId: string) => {
+    if (adminToken === '') return
+    deleteAdminProbeTarget(adminToken, targetId)
+      .then(() => {
+        setAdminState((current) => {
+          if (current.kind !== 'ready') return current
+          return { ...current, targets: current.targets.filter((target) => target.id !== targetId) }
+        })
+      })
+      .catch((error: unknown) => setAdminState({ kind: 'error', message: error instanceof Error ? error.message : 'unknown error' }))
+  }
+
 
   const createAdminNotificationChannelDetails = (input: AdminNotificationChannelCreateInput) => {
     if (adminToken === '') return
@@ -367,6 +380,7 @@ export function App() {
           onAdminInstallCommand={requestAdminInstallCommand}
           onAdminProbeTargetCreate={createAdminProbeTargetDetails}
           onAdminProbeTargetUpdate={updateAdminProbeTargetDetails}
+          onAdminProbeTargetDelete={deleteAdminProbeTargetDetails}
           onAdminNotificationChannelCreate={createAdminNotificationChannelDetails}
           onAdminNotificationChannelUpdate={updateAdminNotificationChannelDetails}
           onAdminNotificationChannelDelete={deleteAdminNotificationChannelDetails}
@@ -480,6 +494,7 @@ interface AdminDashboardProps {
   onAdminInstallCommand?: (nodeId: string) => Promise<string>
   onAdminProbeTargetCreate?: (input: AdminProbeTargetInput) => void
   onAdminProbeTargetUpdate?: (targetId: string, input: AdminProbeTargetUpdateInput) => void
+  onAdminProbeTargetDelete?: (targetId: string) => void
   onAdminNotificationChannelCreate?: (input: AdminNotificationChannelCreateInput) => void
   onAdminNotificationChannelUpdate?: (channelId: string, input: AdminNotificationChannelUpdateInput) => void
   onAdminNotificationChannelDelete?: (channelId: string) => void
@@ -500,6 +515,7 @@ export function AdminDashboard({
   onAdminInstallCommand = () => Promise.reject(new Error('install command unavailable')),
   onAdminProbeTargetCreate = () => {},
   onAdminProbeTargetUpdate = () => {},
+  onAdminProbeTargetDelete = () => {},
   onAdminNotificationChannelCreate = () => {},
   onAdminNotificationChannelUpdate = () => {},
   onAdminNotificationChannelDelete = () => {},
@@ -614,6 +630,7 @@ export function AdminDashboard({
                 nodes={adminState.nodes}
                 onCreate={onAdminProbeTargetCreate}
                 onUpdate={onAdminProbeTargetUpdate}
+                onDelete={onAdminProbeTargetDelete}
               />
             )}
 
@@ -868,10 +885,12 @@ function AdminNodeEditModal({ node, onUpdate, onInstallCommand, onClose }: { nod
   )
 }
 
-function AdminTargetSection({ targets, nodes, onCreate, onUpdate }: { targets: AdminProbeTarget[]; nodes: AdminNode[]; onCreate: (input: AdminProbeTargetInput) => void; onUpdate: (targetId: string, input: AdminProbeTargetUpdateInput) => void }) {
+function AdminTargetSection({ targets, nodes, onCreate, onUpdate, onDelete }: { targets: AdminProbeTarget[]; nodes: AdminNode[]; onCreate: (input: AdminProbeTargetInput) => void; onUpdate: (targetId: string, input: AdminProbeTargetUpdateInput) => void; onDelete: (targetId: string) => void }) {
   const [creatingTarget, setCreatingTarget] = useState(false)
   const [editingTargetId, setEditingTargetId] = useState<string | null>(null)
+  const [targetSort, setTargetSort] = useState<AdminTargetSort>('name')
   const editingTarget = editingTargetId ? targets.find((target) => target.id === editingTargetId) : undefined
+  const sortedTargets = sortAdminProbeTargets(targets, targetSort)
 
   return (
     <section className="admin-target-section admin-workspace-panel" aria-label="admin probe target list">
@@ -880,11 +899,22 @@ function AdminTargetSection({ targets, nodes, onCreate, onUpdate }: { targets: A
           <p className="eyebrow">Latency</p>
           <h3>延迟监控</h3>
         </div>
-        <button className="admin-primary-action" type="button" onClick={() => setCreatingTarget(true)}>添加目标</button>
+        <div className="admin-section-actions">
+          <label className="admin-sort-control">
+            <span>排序</span>
+            <select name="target-sort" value={targetSort} onChange={(event) => setTargetSort(event.currentTarget.value as AdminTargetSort)}>
+              <option value="name">按名称排序</option>
+              <option value="status">按启用状态排序</option>
+              <option value="type">按类型排序</option>
+              <option value="assignments">按节点分配排序</option>
+            </select>
+          </label>
+          <button className="admin-primary-action" type="button" onClick={() => setCreatingTarget(true)}>添加目标</button>
+        </div>
       </header>
 
       {targets.length === 0 && <div className="admin-state-card">还没有探针目标。</div>}
-      {targets.length > 0 && <AdminTargetList targets={targets} onEdit={setEditingTargetId} />}
+      {targets.length > 0 && <AdminTargetList targets={sortedTargets} nodes={nodes} onEdit={setEditingTargetId} onUpdate={onUpdate} onDelete={onDelete} />}
 
       {creatingTarget && (
         <AdminTargetCreateModal
@@ -912,7 +942,16 @@ function AdminTargetSection({ targets, nodes, onCreate, onUpdate }: { targets: A
   )
 }
 
-function AdminTargetList({ targets, onEdit }: { targets: AdminProbeTarget[]; onEdit: (targetId: string) => void }) {
+function AdminTargetList({ targets, nodes, onEdit, onUpdate, onDelete }: { targets: AdminProbeTarget[]; nodes: AdminNode[]; onEdit: (targetId: string) => void; onUpdate: (targetId: string, input: AdminProbeTargetUpdateInput) => void; onDelete: (targetId: string) => void }) {
+  const confirmDelete = (target: AdminProbeTarget) => {
+    const ok = typeof window === 'undefined' ? true : window.confirm(`确认删除延迟监控目标「${target.name}」？`)
+    if (ok) onDelete(target.id)
+  }
+  const updateAllAssignments = (target: AdminProbeTarget, enabled: boolean) => {
+    const assignments = targetAssignmentRows(target, nodes).map((assignment) => ({ nodeId: assignment.nodeId, enabled }))
+    if (assignments.length > 0) onUpdate(target.id, { assignments })
+  }
+
   return (
     <div className="admin-list admin-target-list" role="list" aria-label="延迟监控目标列表">
       <div className="admin-list-head" aria-hidden="true">
@@ -933,7 +972,15 @@ function AdminTargetList({ targets, onEdit }: { targets: AdminProbeTarget[]; onE
           <span>{formatTargetEndpoint(target)}</span>
           <span>{formatTargetTypeLabel(target.type)} · {target.count} 次 / {target.timeoutMs}ms / {target.intervalSec}s</span>
           <span>{formatTargetAssignmentSummary(target)}</span>
-          <button className="admin-row-action" type="button" onClick={() => onEdit(target.id)}>编辑目标</button>
+          <div className="admin-row-actions">
+            <button className="admin-row-action" type="button" onClick={() => onEdit(target.id)}>编辑目标</button>
+            <button className="admin-row-action" type="button" onClick={() => onUpdate(target.id, { enabled: !target.enabled })}>
+              {target.enabled ? '停用目标' : '启用目标'}
+            </button>
+            <button className="admin-row-action" type="button" onClick={() => updateAllAssignments(target, true)}>全节点启用</button>
+            <button className="admin-row-action" type="button" onClick={() => updateAllAssignments(target, false)}>全节点停用</button>
+            <button className="admin-row-action is-danger" type="button" onClick={() => confirmDelete(target)}>删除目标</button>
+          </div>
         </article>
       ))}
     </div>
@@ -1007,23 +1054,7 @@ function AdminTargetCreateModal({ onCreate, onClose }: { onCreate: (input: Admin
 
 function AdminTargetEditModal({ target, nodes, onUpdate, onClose }: { target: AdminProbeTarget; nodes: AdminNode[]; onUpdate: (targetId: string, input: AdminProbeTargetUpdateInput) => void; onClose: () => void }) {
   const [targetType, setTargetType] = useState<ProbeType>(target.type)
-  const assignmentByNodeID = new Map(target.assignments.map((assignment) => [assignment.nodeId, assignment]))
-  const nodeAssignmentRows = nodes.map((node) => {
-    const assignment = assignmentByNodeID.get(node.id)
-    return {
-      nodeId: node.id,
-      nodeDisplayName: node.displayName,
-      enabled: assignment?.enabled ?? false,
-    }
-  })
-  const staleAssignmentRows = target.assignments
-    .filter((assignment) => !nodes.some((node) => node.id === assignment.nodeId))
-    .map((assignment) => ({
-      nodeId: assignment.nodeId,
-      nodeDisplayName: assignment.nodeDisplayName || assignment.nodeId,
-      enabled: assignment.enabled,
-    }))
-  const assignmentRows = [...nodeAssignmentRows, ...staleAssignmentRows]
+  const assignmentRows = targetAssignmentRows(target, nodes)
 
   const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
@@ -1368,6 +1399,44 @@ function AdminModal({ title, eyebrow, onClose, children }: { title: string; eyeb
       </section>
     </div>
   )
+}
+
+function sortAdminProbeTargets(targets: AdminProbeTarget[], sort: AdminTargetSort): AdminProbeTarget[] {
+  return [...targets].sort((left, right) => {
+    const byName = left.name.localeCompare(right.name, 'zh-CN') || left.id.localeCompare(right.id, 'zh-CN')
+    if (sort === 'status') {
+      return Number(right.enabled) - Number(left.enabled) || byName
+    }
+    if (sort === 'type') {
+      return formatTargetTypeLabel(left.type).localeCompare(formatTargetTypeLabel(right.type), 'zh-CN') || byName
+    }
+    if (sort === 'assignments') {
+      const rightEnabled = right.assignments.filter((assignment) => assignment.enabled).length
+      const leftEnabled = left.assignments.filter((assignment) => assignment.enabled).length
+      return rightEnabled - leftEnabled || byName
+    }
+    return byName
+  })
+}
+
+function targetAssignmentRows(target: AdminProbeTarget, nodes: AdminNode[]) {
+  const assignmentByNodeID = new Map(target.assignments.map((assignment) => [assignment.nodeId, assignment]))
+  const nodeAssignmentRows = nodes.map((node) => {
+    const assignment = assignmentByNodeID.get(node.id)
+    return {
+      nodeId: node.id,
+      nodeDisplayName: node.displayName,
+      enabled: assignment?.enabled ?? false,
+    }
+  })
+  const staleAssignmentRows = target.assignments
+    .filter((assignment) => !nodes.some((node) => node.id === assignment.nodeId))
+    .map((assignment) => ({
+      nodeId: assignment.nodeId,
+      nodeDisplayName: assignment.nodeDisplayName || assignment.nodeId,
+      enabled: assignment.enabled,
+    }))
+  return [...nodeAssignmentRows, ...staleAssignmentRows]
 }
 
 function formatTargetTypeLabel(type: ProbeType): string {

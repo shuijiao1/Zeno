@@ -381,6 +381,10 @@ HTTP GET 示例：
 
 切换到 `http_get` 时必须同时保证最终 `address` 是完整 URL；Controller 会清空旧 TCP `port` 并以 `null` 返回。切回 `tcping` 时必须提交有效 `port`。
 
+### DELETE /api/admin/v1/probe-targets/{target_id}
+
+删除探针目标。成功返回 `204 No Content`；不存在返回 `404`。删除会同时清理该目标的节点分配和历史 probe round/sample 记录。响应不会返回 Agent token、token hash、secret 或任何凭据字段。
+
 ### GET /api/admin/v1/notification-channels
 
 通知渠道管理列表。渠道凭据只在写入时提交，响应只返回 `credential_set` 标记，不返回凭据原文。

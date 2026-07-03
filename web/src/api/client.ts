@@ -442,6 +442,19 @@ export async function updateAdminProbeTarget(adminToken: string, targetId: strin
   return normalizeAdminProbeTarget(data.target)
 }
 
+export async function deleteAdminProbeTarget(adminToken: string, targetId: string): Promise<void> {
+  const response = await fetch(`/api/admin/v1/probe-targets/${encodeURIComponent(targetId)}`, {
+    method: 'DELETE',
+    headers: {
+      Accept: 'application/json',
+      'X-Admin-Token': adminToken,
+    },
+  })
+  if (!response.ok) {
+    throw new Error(`admin probe target delete failed: ${response.status}`)
+  }
+}
+
 export async function createAdminNotificationChannel(adminToken: string, input: AdminNotificationChannelCreateInput): Promise<AdminNotificationChannel> {
   const response = await fetch('/api/admin/v1/notification-channels', {
     method: 'POST',

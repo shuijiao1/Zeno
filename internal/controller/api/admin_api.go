@@ -21,6 +21,7 @@ type adminStore interface {
 	AdminNodeInstallCommand(ctx context.Context, nodeID, controllerURL, agentVersion string) (string, error)
 	CreateAdminProbeTarget(ctx context.Context, create AdminProbeTargetCreateRequest) (AdminProbeTarget, error)
 	UpdateAdminProbeTarget(ctx context.Context, targetID string, update AdminProbeTargetUpdateRequest) (AdminProbeTarget, error)
+	DeleteAdminProbeTarget(ctx context.Context, targetID string) error
 	CreateAdminNotificationChannel(ctx context.Context, create AdminNotificationChannelCreateRequest) (AdminNotificationChannel, error)
 	UpdateAdminNotificationChannel(ctx context.Context, channelID string, update AdminNotificationChannelUpdateRequest) (AdminNotificationChannel, error)
 	DeleteAdminNotificationChannel(ctx context.Context, channelID string) error
@@ -66,12 +67,20 @@ func (h *handler) handleAdminProbeTargetResource(w http.ResponseWriter, r *http.
 		writeError(w, http.StatusNotFound, "not found")
 		return
 	}
-	if r.Method != http.MethodPatch {
+	if r.Method != http.MethodPatch && r.Method != http.MethodDelete {
 		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
 		return
 	}
 	store, ok := h.authorizeAdminRequest(w, r)
 	if !ok {
+		return
+	}
+	if r.Method == http.MethodDelete {
+		if err := store.DeleteAdminProbeTarget(r.Context(), parts[0]); err != nil {
+			writeAdminError(w, err)
+			return
+		}
+		w.WriteHeader(http.StatusNoContent)
 		return
 	}
 	var update AdminProbeTargetUpdateRequest

@@ -966,6 +966,86 @@ func TestAdminProbeTargetPatchUpdatesNodeAssignments(t *testing.T) {
 	}
 }
 
+func TestAdminProbeTargetDeleteRemovesTargetAndAssignments(t *testing.T) {
+	store, err := OpenSQLiteStore(filepath.Join(t.TempDir(), "zeno.db"))
+	if err != nil {
+		t.Fatalf("open sqlite store: %v", err)
+	}
+	defer store.Close()
+	ctx := context.Background()
+	if err := store.SeedPreviewData(ctx, PreviewSeedOptions{NodeID: "hytron", DisplayName: "Hytron", CountryCode: "HK", AgentToken: "agent-super-secret"}); err != nil {
+		t.Fatalf("seed preview data: %v", err)
+	}
+	if _, err := store.CreateAdminNode(ctx, AdminNodeCreateRequest{ID: "backup", DisplayName: "Backup", CountryCode: "US"}); err != nil {
+		t.Fatalf("create backup node: %v", err)
+	}
+	if _, err := store.UpdateAdminProbeTarget(ctx, "hytron-local", AdminProbeTargetUpdateRequest{Assignments: []AdminProbeTargetAssignmentUpdate{
+		{NodeID: "hytron", Enabled: true},
+		{NodeID: "backup", Enabled: true},
+	}}); err != nil {
+		t.Fatalf("seed assignments: %v", err)
+	}
+	roundResult, err := store.db.ExecContext(ctx, `
+		INSERT INTO probe_rounds (node_id, target_id, ts, type, sent, received, loss_percent)
+		VALUES ('hytron', 'hytron-local', ?, 'tcping', 1, 1, 0)
+	`, time.Now().UTC().Unix())
+	if err != nil {
+		t.Fatalf("seed probe round: %v", err)
+	}
+	roundID, err := roundResult.LastInsertId()
+	if err != nil {
+		t.Fatalf("seed probe round id: %v", err)
+	}
+	if _, err := store.db.ExecContext(ctx, `
+		INSERT INTO probe_samples (round_id, seq, success, latency_ms)
+		VALUES (?, 1, 1, 0.42)
+	`, roundID); err != nil {
+		t.Fatalf("seed probe sample: %v", err)
+	}
+
+	recorder := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodDelete, "/api/admin/v1/probe-targets/hytron-local", nil)
+	request.Header.Set("X-Admin-Token", "admin-pass")
+	NewHandler(HandlerOptions{Store: store, AdminTokenHash: HashAdminToken("admin-pass")}).ServeHTTP(recorder, request)
+
+	if recorder.Code != http.StatusNoContent {
+		t.Fatalf("status = %d, want 204; body=%s", recorder.Code, recorder.Body.String())
+	}
+	if strings.TrimSpace(recorder.Body.String()) != "" {
+		t.Fatalf("delete body = %q, want empty", recorder.Body.String())
+	}
+	targets, err := store.AdminProbeTargets(ctx)
+	if err != nil {
+		t.Fatalf("admin targets after delete: %v", err)
+	}
+	for _, target := range targets {
+		if target.ID == "hytron-local" {
+			t.Fatalf("deleted target still visible in admin inventory: %+v", target)
+		}
+	}
+	for _, nodeID := range []string{"hytron", "backup"} {
+		enabledTargets, err := store.EnabledProbeTargets(ctx, nodeID)
+		if err != nil {
+			t.Fatalf("enabled targets for %s after delete: %v", nodeID, err)
+		}
+		for _, target := range enabledTargets {
+			if target.ID == "hytron-local" {
+				t.Fatalf("deleted target still assigned to %s agent targets", nodeID)
+			}
+		}
+	}
+	var remainingRounds, remainingSamples int
+	if err := store.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM probe_rounds WHERE target_id = 'hytron-local'`).Scan(&remainingRounds); err != nil {
+		t.Fatalf("count remaining probe rounds: %v", err)
+	}
+	if err := store.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM probe_samples WHERE round_id = ?`, roundID).Scan(&remainingSamples); err != nil {
+		t.Fatalf("count remaining probe samples: %v", err)
+	}
+	if remainingRounds != 0 || remainingSamples != 0 {
+		t.Fatalf("deleted target history remains: rounds=%d samples=%d", remainingRounds, remainingSamples)
+	}
+}
+
 func TestAdminProbeTargetWritesRejectUnauthorizedUnknownAndInvalidRequests(t *testing.T) {
 	store, err := OpenSQLiteStore(filepath.Join(t.TempDir(), "zeno.db"))
 	if err != nil {
@@ -991,6 +1071,8 @@ func TestAdminProbeTargetWritesRejectUnauthorizedUnknownAndInvalidRequests(t *te
 		{name: "patch unknown target", method: http.MethodPatch, path: "/api/admin/v1/probe-targets/missing", body: `{"name":"Changed"}`, adminToken: "admin-pass", wantStatus: http.StatusNotFound},
 		{name: "patch negative count", method: http.MethodPatch, path: "/api/admin/v1/probe-targets/hytron-local", body: `{"count":0}`, adminToken: "admin-pass", wantStatus: http.StatusBadRequest},
 		{name: "patch unknown assignment node", method: http.MethodPatch, path: "/api/admin/v1/probe-targets/hytron-local", body: `{"assignments":[{"node_id":"missing","enabled":false}]}`, adminToken: "admin-pass", wantStatus: http.StatusBadRequest},
+		{name: "delete missing token", method: http.MethodDelete, path: "/api/admin/v1/probe-targets/hytron-local", adminToken: "", wantStatus: http.StatusUnauthorized},
+		{name: "delete unknown target", method: http.MethodDelete, path: "/api/admin/v1/probe-targets/missing", adminToken: "admin-pass", wantStatus: http.StatusNotFound},
 	}
 
 	for _, tc := range cases {

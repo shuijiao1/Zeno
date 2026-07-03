@@ -458,7 +458,17 @@ svg { display: block; }
 }
 .admin-section-heading .eyebrow { margin: 0 0 4px; color: var(--muted); font-size: 12px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; }
 .admin-section-heading h3 { margin: 0; font-size: 20px; font-weight: 600; }
-.admin-section-actions { display: inline-flex; gap: 8px; }
+.admin-section-actions { display: inline-flex; align-items: center; gap: 8px; }
+.admin-sort-control { display: inline-flex; align-items: center; gap: 8px; color: var(--muted); font-size: 12px; font-weight: 500; }
+.admin-sort-control select {
+  height: 38px;
+  padding: 0 12px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--secondary);
+  color: var(--foreground);
+  font: inherit;
+}
 .admin-node-grid,
 .admin-target-grid {
   display: grid;
@@ -543,7 +553,7 @@ svg { display: block; }
 .admin-list-main strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 14px; font-weight: 600; }
 .admin-list-main small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--muted); font-size: 12px; font-weight: 500; }
 .admin-row-action { justify-self: end; white-space: nowrap; }
-.admin-row-actions { justify-self: end; display: inline-flex; align-items: center; gap: 8px; }
+.admin-row-actions { justify-self: end; display: inline-flex; align-items: center; justify-content: flex-end; flex-wrap: wrap; gap: 8px; }
 .admin-row-action.is-danger { color: var(--red); background: color-mix(in srgb, var(--red) 10%, var(--secondary)); border-color: color-mix(in srgb, var(--red) 28%, var(--border)); }
 .admin-node-edit-form {
   margin-top: 14px;
