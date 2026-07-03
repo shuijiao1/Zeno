@@ -131,6 +131,25 @@ func (s *SQLiteStore) UpdateAdminNotificationChannel(ctx context.Context, channe
 	return s.adminNotificationChannelByID(ctx, channelID)
 }
 
+func (s *SQLiteStore) DeleteAdminNotificationChannel(ctx context.Context, channelID string) error {
+	channelID = strings.TrimSpace(channelID)
+	if channelID == "" {
+		return errNotificationChannelNotFound
+	}
+	result, err := s.db.ExecContext(ctx, `DELETE FROM notification_channels WHERE id = ?`, channelID)
+	if err != nil {
+		return err
+	}
+	affected, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if affected == 0 {
+		return errNotificationChannelNotFound
+	}
+	return nil
+}
+
 func (s *SQLiteStore) adminNotificationChannelByID(ctx context.Context, channelID string) (AdminNotificationChannel, error) {
 	channels, err := s.AdminNotificationChannels(ctx)
 	if err != nil {

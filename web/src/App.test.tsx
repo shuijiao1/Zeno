@@ -184,6 +184,7 @@ describe('AdminDashboard', () => {
     expect(html).toContain('上线')
     expect(html).toContain('启用中')
     expect(html).toContain('添加通知渠道')
+    expect(html).toContain('删除渠道')
     expect(html).not.toContain('后续再接入')
     expect(html).not.toContain('webhook-secret')
     expect(html).not.toContain('告警')

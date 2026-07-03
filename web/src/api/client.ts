@@ -428,6 +428,19 @@ export async function updateAdminNotificationChannel(adminToken: string, channel
   return normalizeAdminNotificationChannel(data.channel)
 }
 
+export async function deleteAdminNotificationChannel(adminToken: string, channelId: string): Promise<void> {
+  const response = await fetch(`/api/admin/v1/notification-channels/${encodeURIComponent(channelId)}`, {
+    method: 'DELETE',
+    headers: {
+      Accept: 'application/json',
+      'X-Admin-Token': adminToken,
+    },
+  })
+  if (!response.ok) {
+    throw new Error(`admin notification channel delete failed: ${response.status}`)
+  }
+}
+
 export async function updateAdminNotificationType(adminToken: string, eventType: string, enabled: boolean): Promise<AdminNotificationType> {
   const response = await fetch(`/api/admin/v1/notification-types/${encodeURIComponent(eventType)}`, {
     method: 'PATCH',

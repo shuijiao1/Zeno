@@ -357,6 +357,10 @@ X-Admin-Token: <admin-token>
 
 部分更新通知渠道。省略 `credential` 时保留旧凭据；传入新 `credential` 时覆盖旧凭据。
 
+### DELETE /api/admin/v1/notification-channels/{channel_id}
+
+删除通知渠道。成功返回 `204 No Content`；不存在返回 `404`。响应不会返回凭据原文。
+
 ### GET /api/admin/v1/notification-types
 
 通知类型配置列表。当前保留三类中性事件：上线、离线、异常；默认关闭，通知发送逻辑会读取这里的启用状态。

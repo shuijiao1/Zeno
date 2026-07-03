@@ -45,12 +45,20 @@ func (h *handler) handleAdminNotificationChannelResource(w http.ResponseWriter, 
 		writeError(w, http.StatusNotFound, "not found")
 		return
 	}
-	if r.Method != http.MethodPatch {
+	if r.Method != http.MethodPatch && r.Method != http.MethodDelete {
 		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
 		return
 	}
 	store, ok := h.authorizeAdminRequest(w, r)
 	if !ok {
+		return
+	}
+	if r.Method == http.MethodDelete {
+		if err := store.DeleteAdminNotificationChannel(r.Context(), parts[0]); err != nil {
+			writeAdminError(w, err)
+			return
+		}
+		w.WriteHeader(http.StatusNoContent)
 		return
 	}
 	var update AdminNotificationChannelUpdateRequest

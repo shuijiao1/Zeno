@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { createAdminNode, createAdminNotificationChannel, createAdminProbeTarget, fetchAdminNodes, fetchAdminNotificationChannels, fetchAdminNotificationTypes, fetchAdminProbeTargets, normalizeAdminNodes, normalizeAdminNotificationChannels, normalizeAdminNotificationTypes, normalizeAdminProbeTargets, normalizeNodeLatency, normalizeNodeState, normalizeSummary, requestAdminNodeInstallCommand, updateAdminNode, updateAdminNotificationChannel, updateAdminNotificationType, updateAdminProbeTarget } from './client'
+import { createAdminNode, createAdminNotificationChannel, createAdminProbeTarget, deleteAdminNotificationChannel, fetchAdminNodes, fetchAdminNotificationChannels, fetchAdminNotificationTypes, fetchAdminProbeTargets, normalizeAdminNodes, normalizeAdminNotificationChannels, normalizeAdminNotificationTypes, normalizeAdminProbeTargets, normalizeNodeLatency, normalizeNodeState, normalizeSummary, requestAdminNodeInstallCommand, updateAdminNode, updateAdminNotificationChannel, updateAdminNotificationType, updateAdminProbeTarget } from './client'
 
 describe('normalizeSummary', () => {
   it('maps controller snake_case JSON into frontend camelCase models', () => {
@@ -640,6 +640,21 @@ describe('notification writes', () => {
       body: JSON.stringify({ enabled: true }),
     })
     expect(String(fetchMock.mock.calls[0][0])).not.toContain('webhook-secret')
+  })
+
+  it('deletes notification channels with the admin token in X-Admin-Token only', async () => {
+    const fetchMock = vi.fn(async () => new Response(null, { status: 204 }))
+    globalThis.fetch = fetchMock as unknown as typeof fetch
+
+    await deleteAdminNotificationChannel('admin-pass', 'zeno-webhook')
+
+    expect(fetchMock).toHaveBeenCalledWith('/api/admin/v1/notification-channels/zeno-webhook', {
+      method: 'DELETE',
+      headers: {
+        Accept: 'application/json',
+        'X-Admin-Token': 'admin-pass',
+      },
+    })
   })
 })
 

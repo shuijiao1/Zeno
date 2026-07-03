@@ -543,6 +543,8 @@ svg { display: block; }
 .admin-list-main strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 14px; font-weight: 760; }
 .admin-list-main small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--muted); font-size: 12px; font-weight: 650; }
 .admin-row-action { justify-self: end; white-space: nowrap; }
+.admin-row-actions { justify-self: end; display: inline-flex; align-items: center; gap: 8px; }
+.admin-row-action.is-danger { color: var(--red); background: color-mix(in srgb, var(--red) 10%, var(--secondary)); border-color: color-mix(in srgb, var(--red) 28%, var(--border)); }
 .admin-node-edit-form {
   margin-top: 14px;
   padding-top: 14px;

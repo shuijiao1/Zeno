@@ -865,6 +865,54 @@ func TestAdminNotificationChannelsCreateListAndPatchWithoutCredentialLeak(t *tes
 	}
 }
 
+func TestAdminNotificationChannelDeleteRemovesChannelWithoutCredentialLeak(t *testing.T) {
+	store, err := OpenSQLiteStore(filepath.Join(t.TempDir(), "jiaoprobe.db"))
+	if err != nil {
+		t.Fatalf("open sqlite store: %v", err)
+	}
+	defer store.Close()
+	ctx := context.Background()
+	enabled := true
+	channel, err := store.CreateAdminNotificationChannel(ctx, AdminNotificationChannelCreateRequest{
+		ID:          "smoke-webhook",
+		Name:        "Smoke Webhook",
+		Type:        "webhook",
+		Destination: "https://example.com/notify",
+		Credential:  "webhook-secret-value",
+		Enabled:     &enabled,
+	})
+	if err != nil {
+		t.Fatalf("create notification channel: %v", err)
+	}
+	handler := NewHandler(HandlerOptions{Store: store, AdminTokenHash: HashAdminToken("admin-pass")})
+
+	deleteRecorder := httptest.NewRecorder()
+	deleteRequest := httptest.NewRequest(http.MethodDelete, "/api/admin/v1/notification-channels/"+channel.ID, nil)
+	deleteRequest.Header.Set("X-Admin-Token", "admin-pass")
+	handler.ServeHTTP(deleteRecorder, deleteRequest)
+
+	if deleteRecorder.Code != http.StatusNoContent {
+		t.Fatalf("delete status = %d, want 204; body=%s", deleteRecorder.Code, deleteRecorder.Body.String())
+	}
+	assertNoSensitiveNotificationLeak(t, deleteRecorder.Body.String())
+	channels, err := store.AdminNotificationChannels(ctx)
+	if err != nil {
+		t.Fatalf("list notification channels after delete: %v", err)
+	}
+	if len(channels) != 0 {
+		t.Fatalf("channels after delete = %+v, want none", channels)
+	}
+
+	missingRecorder := httptest.NewRecorder()
+	missingRequest := httptest.NewRequest(http.MethodDelete, "/api/admin/v1/notification-channels/"+channel.ID, nil)
+	missingRequest.Header.Set("X-Admin-Token", "admin-pass")
+	handler.ServeHTTP(missingRecorder, missingRequest)
+	if missingRecorder.Code != http.StatusNotFound {
+		t.Fatalf("second delete status = %d, want 404; body=%s", missingRecorder.Code, missingRecorder.Body.String())
+	}
+	assertNoSensitiveNotificationLeak(t, missingRecorder.Body.String())
+}
+
 func TestAdminNotificationChannelsRejectUnauthorizedUnknownAndInvalidRequests(t *testing.T) {
 	store, err := OpenSQLiteStore(filepath.Join(t.TempDir(), "jiaoprobe.db"))
 	if err != nil {
@@ -887,6 +935,8 @@ func TestAdminNotificationChannelsRejectUnauthorizedUnknownAndInvalidRequests(t 
 		{name: "create missing credential", method: http.MethodPost, path: "/api/admin/v1/notification-channels", body: `{"name":"Home","type":"telegram","destination":"7579942307"}`, adminToken: "admin-pass", wantStatus: http.StatusBadRequest},
 		{name: "patch unknown channel", method: http.MethodPatch, path: "/api/admin/v1/notification-channels/missing", body: `{"enabled":false}`, adminToken: "admin-pass", wantStatus: http.StatusNotFound},
 		{name: "patch empty body", method: http.MethodPatch, path: "/api/admin/v1/notification-channels/missing", body: `{}`, adminToken: "admin-pass", wantStatus: http.StatusBadRequest},
+		{name: "delete missing admin token", method: http.MethodDelete, path: "/api/admin/v1/notification-channels/missing", wantStatus: http.StatusUnauthorized},
+		{name: "delete unknown channel", method: http.MethodDelete, path: "/api/admin/v1/notification-channels/missing", adminToken: "admin-pass", wantStatus: http.StatusNotFound},
 	}
 
 	for _, tc := range cases {
