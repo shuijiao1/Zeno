@@ -361,6 +361,31 @@ X-Admin-Token: <admin-token>
 
 删除通知渠道。成功返回 `204 No Content`；不存在返回 `404`。响应不会返回凭据原文。
 
+### POST /api/admin/v1/notification-channels/{channel_id}/test
+
+显式测试某个通知渠道。这个接口只在后台管理员点击“测试发送”时调用，同步发送一条合成的 `test_notification` / `测试发送` 事件，并把结果写入通知发送记录。禁用中的渠道也允许测试，方便先验证配置再启用正式通知。
+
+响应只返回一次发送记录 DTO，不返回渠道凭据、Webhook URL、Telegram Bot 凭据、Authorization header 或任何 hash。
+
+```json
+{
+  "delivery": {
+    "id": 9,
+    "event_type": "test_notification",
+    "label": "测试发送",
+    "node_id": "admin-test",
+    "node_name": "Zeno",
+    "previous_status": "test",
+    "status": "test",
+    "channel_id": "telegram-home",
+    "channel_name": "Telegram Home",
+    "channel_type": "telegram",
+    "success": true,
+    "created_at": "2026-07-03T00:10:00Z"
+  }
+}
+```
+
 ### GET /api/admin/v1/notification-types
 
 通知类型配置列表。当前保留三类中性事件：上线、离线、异常；默认关闭，通知发送逻辑会读取这里的启用状态。
@@ -382,6 +407,48 @@ X-Admin-Token: <admin-token>
 ```json
 {
   "enabled": true
+}
+```
+
+### GET /api/admin/v1/notification-deliveries
+
+查看最近通知发送记录，用于后台“最近发送”面板。默认返回最近 50 条；可以传正整数 `limit` 覆盖数量。
+
+记录只包含事件、节点、渠道标识、渠道类型、成功/失败和脱敏错误信息；不会返回渠道 destination、Webhook URL、Telegram Bot 凭据、Authorization header、token 原文、secret 或 hash。
+
+```json
+{
+  "deliveries": [
+    {
+      "id": 7,
+      "event_type": "node_online",
+      "label": "上线",
+      "node_id": "hytron",
+      "node_name": "Hytron",
+      "previous_status": "no_data",
+      "status": "online",
+      "channel_id": "telegram-home",
+      "channel_name": "Telegram Home",
+      "channel_type": "telegram",
+      "success": true,
+      "created_at": "2026-07-03T00:05:00Z"
+    },
+    {
+      "id": 6,
+      "event_type": "probe_unhealthy",
+      "label": "异常",
+      "node_id": "hytron",
+      "node_name": "Hytron",
+      "previous_status": "online",
+      "status": "warning",
+      "channel_id": "zeno-webhook",
+      "channel_name": "Zeno Webhook",
+      "channel_type": "webhook",
+      "success": false,
+      "error": "webhook returned status 500",
+      "created_at": "2026-07-03T00:04:00Z"
+    }
+  ]
 }
 ```
 
