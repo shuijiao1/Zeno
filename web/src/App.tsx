@@ -139,6 +139,11 @@ export function App() {
     setRoute({ kind: 'home' })
   }
 
+  const navigateAdmin = () => {
+    window.history.pushState(null, '', '/dashboard')
+    setRoute({ kind: 'admin' })
+  }
+
   const navigateNode = (nodeId: string) => {
     window.history.pushState(null, '', nodePath(nodeId))
     setLatencyRange('1d')
@@ -157,21 +162,12 @@ export function App() {
 
   return (
     <main className="kulin-shell">
-      <header className="kulin-nav">
-        <button className="brand" type="button" onClick={navigateHome}>
-          <span className="brand-logo"><img src="/assets/logo/id.png" alt="apple-touch-icon" /></span>
-          <span>水饺的探针</span>
-        </button>
-        <nav className="nav-actions" aria-label="dashboard actions">
-          <a className="login-link" href="/dashboard">登录</a>
-          <button className="nav-icon-button is-solid" type="button" aria-label="language"><MapIcon /></button>
-          <button className="nav-icon-button" type="button" aria-label="切换主题"><SunIcon /><span className="sr-only">切换主题</span></button>
-          <button className="nav-icon-button" type="button" aria-label="background"><ImageMinusIcon /></button>
-        </nav>
-      </header>
+      {route.kind === 'node' && <DashboardHeader onHome={navigateHome} onAdmin={navigateAdmin} />}
 
-      {state.kind === 'loading' && <section className="state-panel">正在读取 Controller API…</section>}
-      {state.kind === 'error' && <section className="state-panel is-error">API 读取失败：{state.message}</section>}
+      {route.kind === 'admin' && <AdminDashboard onHome={navigateHome} />}
+
+      {route.kind !== 'admin' && state.kind === 'loading' && <section className="state-panel">正在读取 Controller API…</section>}
+      {route.kind !== 'admin' && state.kind === 'error' && <section className="state-panel is-error">API 读取失败：{state.message}</section>}
 
       {state.kind === 'ready' && route.kind === 'node' && selectedNode && (
         <LatencyDetail
@@ -194,7 +190,7 @@ export function App() {
 
       {state.kind === 'ready' && route.kind === 'home' && (
         <div className="kulin-container">
-          <HomeOverviewPanel
+          <HomeTopPanel
             totalCount={totalCount}
             onlineCount={onlineCount}
             offlineCount={offlineCount}
@@ -202,6 +198,8 @@ export function App() {
             totalDown={totalDown}
             upSpeed={upSpeed}
             downSpeed={downSpeed}
+            onHome={navigateHome}
+            onAdmin={navigateAdmin}
           />
 
           <section className="server-card-list" aria-label="server cards">
@@ -223,27 +221,91 @@ interface HomeOverviewPanelProps {
   downSpeed: number
 }
 
+interface DashboardHeaderProps {
+  onHome: () => void
+  onAdmin: () => void
+  adminLabel?: string
+}
+
+interface HomeTopPanelProps extends HomeOverviewPanelProps {
+  onHome: () => void
+  onAdmin: () => void
+}
+
+export function HomeTopPanel({ onHome, onAdmin, ...overview }: HomeTopPanelProps) {
+  return (
+    <section className="home-top-card" aria-label="homepage control panel">
+      <DashboardHeader onHome={onHome} onAdmin={onAdmin} />
+      <HomeOverviewPanel {...overview} />
+    </section>
+  )
+}
+
+function DashboardHeader({ onHome, onAdmin, adminLabel = '后台' }: DashboardHeaderProps) {
+  return (
+    <header className="kulin-nav">
+      <button className="brand" type="button" onClick={onHome}>
+        <span className="brand-logo"><img src="/assets/logo/id.png" alt="apple-touch-icon" /></span>
+        <span>水饺的探针</span>
+      </button>
+      <nav className="nav-actions" aria-label="dashboard actions">
+        <button className="login-link" type="button" onClick={onAdmin}>{adminLabel}</button>
+        <button className="nav-icon-button is-solid" type="button" aria-label="language"><MapIcon /></button>
+        <button className="nav-icon-button" type="button" aria-label="切换主题"><SunIcon /><span className="sr-only">切换主题</span></button>
+        <button className="nav-icon-button" type="button" aria-label="background"><ImageMinusIcon /></button>
+      </nav>
+    </header>
+  )
+}
+
+export function AdminDashboard({ onHome }: { onHome: () => void }) {
+  return (
+    <div className="kulin-container admin-container">
+      <section className="home-top-card admin-panel" aria-label="admin dashboard">
+        <DashboardHeader onHome={onHome} onAdmin={onHome} adminLabel="前台" />
+        <div className="admin-hero">
+          <p className="eyebrow">JiaoProbe 后台</p>
+          <h2>控制台</h2>
+          <p>沿用前台卡片风格，后续节点、探针、告警和配置入口都放进同一套视觉语言里。</p>
+        </div>
+        <div className="admin-action-grid" aria-label="admin modules">
+          <article className="admin-action-card">
+            <p>节点管理</p>
+            <strong>服务器与状态</strong>
+          </article>
+          <article className="admin-action-card">
+            <p>探针配置</p>
+            <strong>Agent 与目标</strong>
+          </article>
+          <article className="admin-action-card">
+            <p>告警策略</p>
+            <strong>规则与通知</strong>
+          </article>
+        </div>
+      </section>
+    </div>
+  )
+}
+
 export function HomeOverviewPanel({ totalCount, onlineCount, offlineCount, totalUp, totalDown, upSpeed, downSpeed }: HomeOverviewPanelProps) {
   return (
     <section className="server-overview" aria-label="server overview">
-      <article className="overview-card overview-card--combined">
-        <div className="overview-card__body overview-combined__body">
-          <OverviewMetric tone="blue" label="服务器总数" value={String(totalCount)} />
-          <OverviewMetric tone="green" label="在线服务器" value={String(onlineCount)} pulse />
-          <OverviewMetric tone="red" label="离线服务器" value={String(offlineCount)} pulse />
-          <div className="overview-metric tone-purple">
-            <p>网络</p>
-            <section className="network-total" aria-label="traffic totals">
-              <strong className="up">↑{compactBytes(totalUp)}</strong>
-              <strong className="down">↓{compactBytes(totalDown)}</strong>
-            </section>
-            <section className="network-speed" aria-label="traffic speeds">
-              <span><CircleArrowIcon direction="up" />{compactRate(upSpeed)}</span>
-              <span><CircleArrowIcon direction="down" />{compactRate(downSpeed)}</span>
-            </section>
-          </div>
+      <div className="overview-combined__body">
+        <OverviewMetric tone="blue" label="服务器总数" value={String(totalCount)} />
+        <OverviewMetric tone="green" label="在线服务器" value={String(onlineCount)} pulse />
+        <OverviewMetric tone="red" label="离线服务器" value={String(offlineCount)} pulse />
+        <div className="overview-metric tone-purple">
+          <p>网络</p>
+          <section className="network-total" aria-label="traffic totals">
+            <strong className="up">↑{compactBytes(totalUp)}</strong>
+            <strong className="down">↓{compactBytes(totalDown)}</strong>
+          </section>
+          <section className="network-speed" aria-label="traffic speeds">
+            <span><CircleArrowIcon direction="up" />{compactRate(upSpeed)}</span>
+            <span><CircleArrowIcon direction="down" />{compactRate(downSpeed)}</span>
+          </section>
         </div>
-      </article>
+      </div>
     </section>
   )
 }

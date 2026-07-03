@@ -1,11 +1,16 @@
 export type DashboardRoute =
   | { kind: 'home' }
+  | { kind: 'admin' }
   | { kind: 'node'; nodeId: string }
 
 export function parseDashboardRoute(pathname: string): DashboardRoute {
   const normalized = pathname || '/'
   if (normalized === '/' || normalized === '/index.html') {
     return { kind: 'home' }
+  }
+
+  if (normalized === '/dashboard' || normalized === '/dashboard/') {
+    return { kind: 'admin' }
   }
 
   const match = normalized.match(/^\/server\/([^/]+)\/?$/)

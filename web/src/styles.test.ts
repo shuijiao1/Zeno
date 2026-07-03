@@ -15,6 +15,20 @@ describe('mobile latency target layout', () => {
   })
 })
 
+describe('homepage and admin shell layout', () => {
+  it('keeps homepage chrome and overview inside one shared card shell', () => {
+    expect(styles).toContain('.home-top-card')
+    expect(styles).toContain('.home-top-card .kulin-nav')
+    expect(styles).toContain('.home-top-card .server-overview')
+  })
+
+  it('styles the backend/admin shell with the same card language as the front page', () => {
+    expect(styles).toContain('.admin-panel')
+    expect(styles).toContain('.admin-action-card')
+    expect(styles).toContain('background: var(--card)')
+  })
+})
+
 describe('state history layout', () => {
   it('keeps resource history as compact cards and stacks them on phones', () => {
     expect(styles).toContain('.state-history-grid')

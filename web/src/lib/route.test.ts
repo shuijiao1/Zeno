@@ -7,6 +7,11 @@ describe('parseDashboardRoute', () => {
     expect(parseDashboardRoute('/index.html')).toEqual({ kind: 'home' })
   })
 
+  it('routes the login/backend entry to the admin dashboard shell', () => {
+    expect(parseDashboardRoute('/dashboard')).toEqual({ kind: 'admin' })
+    expect(parseDashboardRoute('/dashboard/')).toEqual({ kind: 'admin' })
+  })
+
   it('extracts decoded node ids from Kulin-style server detail URLs', () => {
     expect(parseDashboardRoute('/server/sharon')).toEqual({ kind: 'node', nodeId: 'sharon' })
     expect(parseDashboardRoute('/server/DataWave%20HK')).toEqual({ kind: 'node', nodeId: 'DataWave HK' })
