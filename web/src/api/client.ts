@@ -665,11 +665,12 @@ function serializeAdminNotificationChannelCreate(input: AdminNotificationChannel
 }
 
 function serializeAdminNotificationChannelUpdate(input: AdminNotificationChannelUpdateInput) {
+  const trimmedCredential = input.credential?.trim()
   return {
     ...(input.name !== undefined ? { name: input.name } : {}),
     ...(input.type !== undefined ? { type: input.type } : {}),
     ...(input.destination !== undefined ? { destination: input.destination } : {}),
-    ...(input.credential !== undefined ? { credential: input.credential } : {}),
+    ...(trimmedCredential !== undefined && trimmedCredential !== '' ? { credential: trimmedCredential } : {}),
     ...(input.enabled !== undefined ? { enabled: input.enabled } : {}),
   }
 }

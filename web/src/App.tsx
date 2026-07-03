@@ -1092,6 +1092,7 @@ function AdminTargetEditModal({ target, nodes, onUpdate, onClose }: { target: Ad
 
 function AdminNotificationsSection({ channels, types, deliveries, onChannelCreate, onChannelUpdate, onChannelDelete, onChannelTest, onTypeUpdate }: { channels: AdminNotificationChannel[]; types: AdminNotificationType[]; deliveries: AdminNotificationDelivery[]; onChannelCreate: (input: AdminNotificationChannelCreateInput) => void; onChannelUpdate: (channelId: string, input: AdminNotificationChannelUpdateInput) => void; onChannelDelete: (channelId: string) => void; onChannelTest: (channelId: string) => void; onTypeUpdate: (eventType: string, enabled: boolean) => void }) {
   const [creatingChannel, setCreatingChannel] = useState(false)
+  const [editingChannel, setEditingChannel] = useState<AdminNotificationChannel | null>(null)
 
   return (
     <section className="admin-notification-section admin-workspace-panel" aria-label="admin notification settings">
@@ -1106,7 +1107,7 @@ function AdminNotificationsSection({ channels, types, deliveries, onChannelCreat
       <section className="admin-notification-block" aria-label="通知渠道">
         <h4>通知渠道</h4>
         {channels.length === 0 && <div className="admin-state-card">还没有通知渠道。</div>}
-        {channels.length > 0 && <AdminNotificationChannelList channels={channels} onUpdate={onChannelUpdate} onDelete={onChannelDelete} onTest={onChannelTest} />}
+        {channels.length > 0 && <AdminNotificationChannelList channels={channels} onUpdate={onChannelUpdate} onDelete={onChannelDelete} onTest={onChannelTest} onEdit={setEditingChannel} />}
       </section>
 
       <section className="admin-notification-block" aria-label="通知类型">
@@ -1137,6 +1138,16 @@ function AdminNotificationsSection({ channels, types, deliveries, onChannelCreat
           onCreate={(input) => {
             onChannelCreate(input)
             setCreatingChannel(false)
+          }}
+        />
+      )}
+      {editingChannel && (
+        <AdminNotificationChannelEditModal
+          channel={editingChannel}
+          onClose={() => setEditingChannel(null)}
+          onUpdate={(channelId, input) => {
+            onChannelUpdate(channelId, input)
+            setEditingChannel(null)
           }}
         />
       )}
@@ -1172,7 +1183,7 @@ function AdminNotificationDeliveryList({ deliveries }: { deliveries: AdminNotifi
   )
 }
 
-function AdminNotificationChannelList({ channels, onUpdate, onDelete, onTest }: { channels: AdminNotificationChannel[]; onUpdate: (channelId: string, input: AdminNotificationChannelUpdateInput) => void; onDelete: (channelId: string) => void; onTest: (channelId: string) => void }) {
+function AdminNotificationChannelList({ channels, onUpdate, onDelete, onTest, onEdit }: { channels: AdminNotificationChannel[]; onUpdate: (channelId: string, input: AdminNotificationChannelUpdateInput) => void; onDelete: (channelId: string) => void; onTest: (channelId: string) => void; onEdit: (channel: AdminNotificationChannel) => void }) {
   const confirmDelete = (channel: AdminNotificationChannel) => {
     const ok = typeof window === 'undefined' ? true : window.confirm(`确认删除通知渠道「${channel.name}」？`)
     if (ok) onDelete(channel.id)
@@ -1200,6 +1211,7 @@ function AdminNotificationChannelList({ channels, onUpdate, onDelete, onTest }: 
           <span>{channel.credentialSet ? '凭据已设置' : '未设置凭据'}</span>
           <div className="admin-row-actions">
             <button className="admin-row-action" type="button" onClick={() => onTest(channel.id)}>测试发送</button>
+            <button className="admin-row-action" type="button" onClick={() => onEdit(channel)}>编辑渠道</button>
             <button className="admin-row-action" type="button" onClick={() => onUpdate(channel.id, { enabled: !channel.enabled })}>
               {channel.enabled ? '停用渠道' : '启用渠道'}
             </button>
@@ -1208,6 +1220,58 @@ function AdminNotificationChannelList({ channels, onUpdate, onDelete, onTest }: 
         </article>
       ))}
     </div>
+  )
+}
+
+function AdminNotificationChannelEditModal({ channel, onUpdate, onClose }: { channel: AdminNotificationChannel; onUpdate: (channelId: string, input: AdminNotificationChannelUpdateInput) => void; onClose: () => void }) {
+  const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    const formData = new FormData(event.currentTarget)
+    const name = String(formData.get('channel-name') ?? '').trim()
+    const type = String(formData.get('channel-type') ?? channel.type) === 'telegram' ? 'telegram' : 'webhook'
+    const destination = String(formData.get('channel-destination') ?? '').trim()
+    const credential = String(formData.get('channel-credential') ?? '').trim()
+    if (name === '' || destination === '') return
+    onUpdate(channel.id, {
+      name,
+      type,
+      destination,
+      ...(credential !== '' ? { credential } : {}),
+      enabled: formData.get('channel-enabled') === 'on',
+    })
+  }
+
+  return (
+    <AdminModal title="编辑通知渠道" eyebrow="Notify" onClose={onClose}>
+      <form className="admin-notification-edit-form admin-node-edit-form" aria-label="编辑通知渠道" onSubmit={handleSubmit}>
+        <label>
+          <span>渠道名称</span>
+          <input name="channel-name" autoComplete="off" defaultValue={channel.name} />
+        </label>
+        <label>
+          <span>类型</span>
+          <select name="channel-type" defaultValue={channel.type}>
+            <option value="webhook">Webhook</option>
+            <option value="telegram">Telegram</option>
+          </select>
+        </label>
+        <label>
+          <span>目标</span>
+          <input name="channel-destination" autoComplete="off" defaultValue={channel.destination} />
+        </label>
+        <label>
+          <span>凭据</span>
+          <input name="channel-credential" type="password" autoComplete="new-password" placeholder={channel.credentialSet ? '留空则保留当前凭据' : '仅写入，不回显'} />
+        </label>
+        <label className="admin-node-toggle">
+          <input name="channel-enabled" type="checkbox" defaultChecked={channel.enabled} />
+          <span>启用渠道</span>
+        </label>
+        <div className="admin-modal-actions">
+          <button type="submit">保存通知渠道</button>
+        </div>
+      </form>
+    </AdminModal>
   )
 }
 

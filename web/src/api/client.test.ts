@@ -722,6 +722,45 @@ describe('notification writes', () => {
     })
   })
 
+  it('omits a blank notification credential on channel updates to preserve the write-only credential', async () => {
+    const fetchMock = vi.fn(async () => new Response(JSON.stringify({
+      channel: {
+        id: 'zeno-webhook',
+        name: 'Zeno Webhook Updated',
+        type: 'webhook',
+        destination: 'https://example.com/updated',
+        credential_set: true,
+        enabled: true,
+        created_at: '2026-07-03T00:00:00Z',
+        updated_at: '2026-07-03T00:20:00Z',
+      },
+    }), { status: 200, headers: { 'Content-Type': 'application/json' } }))
+    globalThis.fetch = fetchMock as unknown as typeof fetch
+
+    await updateAdminNotificationChannel('admin-pass', 'zeno-webhook', {
+      name: 'Zeno Webhook Updated',
+      type: 'webhook',
+      destination: 'https://example.com/updated',
+      credential: '   ',
+      enabled: true,
+    })
+
+    expect(fetchMock).toHaveBeenCalledWith('/api/admin/v1/notification-channels/zeno-webhook', {
+      method: 'PATCH',
+      headers: {
+        Accept: 'application/json',
+        'Content-Type': 'application/json',
+        'X-Admin-Token': 'admin-pass',
+      },
+      body: JSON.stringify({
+        name: 'Zeno Webhook Updated',
+        type: 'webhook',
+        destination: 'https://example.com/updated',
+        enabled: true,
+      }),
+    })
+  })
+
   it('deletes notification channels with the admin token in X-Admin-Token only', async () => {
     const fetchMock = vi.fn(async () => new Response(null, { status: 204 }))
     globalThis.fetch = fetchMock as unknown as typeof fetch
