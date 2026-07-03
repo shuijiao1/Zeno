@@ -1,10 +1,10 @@
 import { type FormEvent, useEffect, useState } from 'react'
-import { fetchAdminNodes, fetchNodeLatency, fetchNodeState, fetchSummary, updateAdminNode, type AdminNodeUpdateInput, type NodeLatencyData, type NodeStateData, type SummaryData } from './api/client'
+import { fetchAdminNodes, fetchAdminProbeTargets, fetchNodeLatency, fetchNodeState, fetchSummary, updateAdminNode, type AdminNodeUpdateInput, type NodeLatencyData, type NodeStateData, type SummaryData } from './api/client'
 import { LatencyDetail } from './components/LatencyDetail'
 import { ServerCard } from './components/ServerCard'
 import { startLiveRefresh } from './lib/liveRefresh'
 import { nodePath, parseDashboardRoute, type DashboardRoute } from './lib/route'
-import type { AdminNode } from './types'
+import type { AdminNode, AdminProbeTarget } from './types'
 
 type LoadState =
   | { kind: 'loading' }
@@ -26,7 +26,7 @@ type StateHistoryLoadState =
 type AdminLoadState =
   | { kind: 'idle' }
   | { kind: 'loading' }
-  | { kind: 'ready'; nodes: AdminNode[] }
+  | { kind: 'ready'; nodes: AdminNode[]; targets: AdminProbeTarget[] }
   | { kind: 'error'; message: string }
 
 function sum(values: Array<number | null | undefined>): number {
@@ -154,10 +154,10 @@ export function App() {
     let loadedOnce = false
     const loadAdminNodes = () => {
       if (!loadedOnce) setAdminState({ kind: 'loading' })
-      fetchAdminNodes(adminToken)
-        .then((data) => {
+      Promise.all([fetchAdminNodes(adminToken), fetchAdminProbeTargets(adminToken)])
+        .then(([nodesData, targetsData]) => {
           loadedOnce = true
-          if (!cancelled) setAdminState({ kind: 'ready', nodes: data.nodes })
+          if (!cancelled) setAdminState({ kind: 'ready', nodes: nodesData.nodes, targets: targetsData.targets })
         })
         .catch((error: unknown) => {
           loadedOnce = true
@@ -189,8 +189,8 @@ export function App() {
   const refreshAdminNodes = () => {
     if (adminToken === '') return
     setAdminState({ kind: 'loading' })
-    fetchAdminNodes(adminToken)
-      .then((data) => setAdminState({ kind: 'ready', nodes: data.nodes }))
+    Promise.all([fetchAdminNodes(adminToken), fetchAdminProbeTargets(adminToken)])
+      .then(([nodesData, targetsData]) => setAdminState({ kind: 'ready', nodes: nodesData.nodes, targets: targetsData.targets }))
       .catch((error: unknown) => setAdminState({ kind: 'error', message: error instanceof Error ? error.message : 'unknown error' }))
   }
 
@@ -200,9 +200,9 @@ export function App() {
       .then((updatedNode) => {
         setAdminState((current) => {
           if (current.kind === 'ready') {
-            return { kind: 'ready', nodes: current.nodes.map((node) => node.id === updatedNode.id ? updatedNode : node) }
+            return { kind: 'ready', nodes: current.nodes.map((node) => node.id === updatedNode.id ? updatedNode : node), targets: current.targets }
           }
-          return { kind: 'ready', nodes: [updatedNode] }
+          return { kind: 'ready', nodes: [updatedNode], targets: [] }
         })
       })
       .catch((error: unknown) => setAdminState({ kind: 'error', message: error instanceof Error ? error.message : 'unknown error' }))
@@ -370,6 +370,7 @@ export function AdminDashboard({
   }
 
   const nodeCount = adminState.kind === 'ready' ? adminState.nodes.length : 0
+  const targetCount = adminState.kind === 'ready' ? adminState.targets.length : 0
 
   return (
     <div className="kulin-container admin-container">
@@ -387,7 +388,7 @@ export function AdminDashboard({
           </article>
           <article className="admin-action-card">
             <p>探针配置</p>
-            <strong>Agent 与目标</strong>
+            <strong>{hasAdminToken ? `${targetCount} 个目标` : 'Agent 与目标'}</strong>
           </article>
           <article className="admin-action-card">
             <p>告警策略</p>
@@ -407,27 +408,46 @@ export function AdminDashboard({
         )}
 
         {hasAdminToken && (
-          <section className="admin-node-section" aria-label="admin node list">
-            <header className="admin-section-heading">
-              <div>
-                <p className="eyebrow">Nodes</p>
-                <h3>节点列表</h3>
-              </div>
-              <div className="admin-section-actions">
-                <button type="button" onClick={onAdminRefresh}>刷新</button>
-                <button type="button" onClick={onAdminTokenClear}>退出</button>
-              </div>
-            </header>
+          <>
+            <section className="admin-node-section" aria-label="admin node list">
+              <header className="admin-section-heading">
+                <div>
+                  <p className="eyebrow">Nodes</p>
+                  <h3>节点列表</h3>
+                </div>
+                <div className="admin-section-actions">
+                  <button type="button" onClick={onAdminRefresh}>刷新</button>
+                  <button type="button" onClick={onAdminTokenClear}>退出</button>
+                </div>
+              </header>
 
-            {adminState.kind === 'loading' && <div className="admin-state-card">正在读取 Admin API…</div>}
-            {adminState.kind === 'error' && <div className="admin-state-card is-error">Admin API 读取失败：{adminState.message}</div>}
-            {adminState.kind === 'ready' && adminState.nodes.length === 0 && <div className="admin-state-card">还没有节点。</div>}
-            {adminState.kind === 'ready' && adminState.nodes.length > 0 && (
-              <div className="admin-node-grid">
-                {adminState.nodes.map((node) => <AdminNodeCard key={node.id} node={node} onUpdate={onAdminNodeUpdate} />)}
-              </div>
+              {adminState.kind === 'loading' && <div className="admin-state-card">正在读取 Admin API…</div>}
+              {adminState.kind === 'error' && <div className="admin-state-card is-error">Admin API 读取失败：{adminState.message}</div>}
+              {adminState.kind === 'ready' && adminState.nodes.length === 0 && <div className="admin-state-card">还没有节点。</div>}
+              {adminState.kind === 'ready' && adminState.nodes.length > 0 && (
+                <div className="admin-node-grid">
+                  {adminState.nodes.map((node) => <AdminNodeCard key={node.id} node={node} onUpdate={onAdminNodeUpdate} />)}
+                </div>
+              )}
+            </section>
+
+            {adminState.kind === 'ready' && (
+              <section className="admin-target-section" aria-label="admin probe target list">
+                <header className="admin-section-heading">
+                  <div>
+                    <p className="eyebrow">Targets</p>
+                    <h3>探针目标</h3>
+                  </div>
+                </header>
+                {adminState.targets.length === 0 && <div className="admin-state-card">还没有探针目标。</div>}
+                {adminState.targets.length > 0 && (
+                  <div className="admin-target-grid">
+                    {adminState.targets.map((target) => <AdminTargetCard key={target.id} target={target} />)}
+                  </div>
+                )}
+              </section>
             )}
-          </section>
+          </>
         )}
       </section>
     </div>
@@ -487,6 +507,31 @@ function AdminNodeCard({ node, onUpdate }: { node: AdminNode; onUpdate: (nodeId:
         </label>
         <button type="submit">保存节点</button>
       </form>
+    </article>
+  )
+}
+
+function AdminTargetCard({ target }: { target: AdminProbeTarget }) {
+  const endpoint = target.port ? `${target.address}:${target.port}` : target.address
+  const assignments = target.assignments.length > 0
+    ? target.assignments.map((assignment) => `${assignment.nodeDisplayName || assignment.nodeId}${assignment.enabled ? '' : '（停用）'}`).join('、')
+    : '未分配节点'
+
+  return (
+    <article className="admin-target-card">
+      <header>
+        <div>
+          <p>{target.id}</p>
+          <h4>{target.name}</h4>
+        </div>
+        <span className={`admin-node-status status-${target.enabled ? 'online' : 'disabled'}`}>{target.enabled ? 'enabled' : 'disabled'}</span>
+      </header>
+      <dl className="admin-node-meta">
+        <div><dt>类型</dt><dd>{target.type}</dd></div>
+        <div><dt>地址</dt><dd>{endpoint}</dd></div>
+        <div><dt>参数</dt><dd>{target.count} 次 / {target.timeoutMs}ms / {target.intervalSec}s</dd></div>
+        <div><dt>节点</dt><dd>{assignments}</dd></div>
+      </dl>
     </article>
   )
 }

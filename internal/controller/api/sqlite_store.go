@@ -276,6 +276,54 @@ func (s *SQLiteStore) AdminNodes(ctx context.Context) ([]AdminNode, error) {
 	return nodes, nil
 }
 
+func (s *SQLiteStore) AdminProbeTargets(ctx context.Context) ([]AdminProbeTarget, error) {
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT pt.id, pt.name, pt.type, pt.address, pt.port, pt.count, pt.timeout_ms, pt.interval_sec, pt.enabled,
+		       npt.node_id, n.display_name, npt.enabled
+		FROM probe_targets pt
+		LEFT JOIN node_probe_targets npt ON npt.target_id = pt.id
+		LEFT JOIN nodes n ON n.id = npt.node_id
+		ORDER BY pt.id ASC, npt.node_id ASC
+	`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	targets := make([]AdminProbeTarget, 0)
+	indexByID := map[string]int{}
+	for rows.Next() {
+		var target AdminProbeTarget
+		var port sql.NullInt64
+		var targetEnabled int
+		var nodeID, nodeDisplayName sql.NullString
+		var assignmentEnabled sql.NullInt64
+		if err := rows.Scan(&target.ID, &target.Name, &target.Type, &target.Address, &port, &target.Count, &target.TimeoutMS, &target.IntervalSec, &targetEnabled, &nodeID, &nodeDisplayName, &assignmentEnabled); err != nil {
+			return nil, err
+		}
+		if existingIndex, exists := indexByID[target.ID]; exists {
+			if nodeID.Valid {
+				targets[existingIndex].Assignments = append(targets[existingIndex].Assignments, AdminProbeTargetAssignment{NodeID: nodeID.String, NodeDisplayName: nullStringOr(nodeDisplayName, ""), Enabled: assignmentEnabled.Valid && assignmentEnabled.Int64 != 0})
+			}
+			continue
+		}
+		if port.Valid {
+			converted := int(port.Int64)
+			target.Port = &converted
+		}
+		target.Enabled = targetEnabled != 0
+		if nodeID.Valid {
+			target.Assignments = append(target.Assignments, AdminProbeTargetAssignment{NodeID: nodeID.String, NodeDisplayName: nullStringOr(nodeDisplayName, ""), Enabled: assignmentEnabled.Valid && assignmentEnabled.Int64 != 0})
+		}
+		indexByID[target.ID] = len(targets)
+		targets = append(targets, target)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return targets, nil
+}
+
 func (s *SQLiteStore) UpdateAdminNode(ctx context.Context, nodeID string, update AdminNodeUpdateRequest) (AdminNode, error) {
 	nodeID = strings.TrimSpace(nodeID)
 	if nodeID == "" {

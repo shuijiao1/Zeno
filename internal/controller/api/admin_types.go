@@ -19,6 +19,29 @@ type AdminNodeResponse struct {
 	Node AdminNode `json:"node"`
 }
 
+type AdminProbeTargetsResponse struct {
+	Targets []AdminProbeTarget `json:"targets"`
+}
+
+type AdminProbeTarget struct {
+	ID          string                       `json:"id"`
+	Name        string                       `json:"name"`
+	Type        string                       `json:"type"`
+	Address     string                       `json:"address"`
+	Port        *int                         `json:"port"`
+	Count       int                          `json:"count"`
+	TimeoutMS   int                          `json:"timeout_ms"`
+	IntervalSec int                          `json:"interval_sec"`
+	Enabled     bool                         `json:"enabled"`
+	Assignments []AdminProbeTargetAssignment `json:"assignments"`
+}
+
+type AdminProbeTargetAssignment struct {
+	NodeID          string `json:"node_id"`
+	NodeDisplayName string `json:"node_display_name"`
+	Enabled         bool   `json:"enabled"`
+}
+
 type AdminNodeUpdateRequest struct {
 	DisplayName       *string            `json:"display_name,omitempty"`
 	CountryCode       *string            `json:"country_code,omitempty"`

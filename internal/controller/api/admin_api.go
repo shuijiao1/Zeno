@@ -10,7 +10,25 @@ import (
 
 type adminStore interface {
 	AdminNodes(ctx context.Context) ([]AdminNode, error)
+	AdminProbeTargets(ctx context.Context) ([]AdminProbeTarget, error)
 	UpdateAdminNode(ctx context.Context, nodeID string, update AdminNodeUpdateRequest) (AdminNode, error)
+}
+
+func (h *handler) handleAdminProbeTargets(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+	store, ok := h.authorizeAdminRequest(w, r)
+	if !ok {
+		return
+	}
+	targets, err := store.AdminProbeTargets(r.Context())
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "internal error")
+		return
+	}
+	writeJSON(w, http.StatusOK, AdminProbeTargetsResponse{Targets: targets})
 }
 
 func (h *handler) handleAdminNodes(w http.ResponseWriter, r *http.Request) {

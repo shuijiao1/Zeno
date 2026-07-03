@@ -298,7 +298,8 @@ svg { display: block; }
   font-size: 13px;
   font-weight: 700;
 }
-.admin-node-section {
+.admin-node-section,
+.admin-target-section {
   margin-top: 16px;
   padding: 16px;
   border: 1px solid var(--border);
@@ -315,27 +316,32 @@ svg { display: block; }
 .admin-section-heading .eyebrow { margin: 0 0 4px; color: var(--muted); font-size: 12px; font-weight: 750; letter-spacing: .08em; text-transform: uppercase; }
 .admin-section-heading h3 { margin: 0; font-size: 20px; font-weight: 700; }
 .admin-section-actions { display: inline-flex; gap: 8px; }
-.admin-node-grid {
+.admin-node-grid,
+.admin-target-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 12px;
 }
-.admin-node-card {
+.admin-node-card,
+.admin-target-card {
   min-width: 0;
   padding: 14px;
   border: 1px solid var(--border);
   border-radius: 14px;
   background: color-mix(in srgb, var(--background) 58%, transparent);
 }
-.admin-node-card header {
+.admin-node-card header,
+.admin-target-card header {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
   gap: 12px;
   margin-bottom: 12px;
 }
-.admin-node-card header p { margin: 0 0 4px; color: var(--muted); font-size: 12px; font-weight: 650; }
-.admin-node-card h4 { margin: 0; font-size: 17px; font-weight: 750; letter-spacing: -0.02em; }
+.admin-node-card header p,
+.admin-target-card header p { margin: 0 0 4px; color: var(--muted); font-size: 12px; font-weight: 650; }
+.admin-node-card h4,
+.admin-target-card h4 { margin: 0; font-size: 17px; font-weight: 750; letter-spacing: -0.02em; }
 .admin-node-status {
   flex: none;
   padding: 4px 8px;
@@ -796,7 +802,8 @@ svg { display: block; }
   .overview-combined__body { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; padding: 12px; }
   .admin-action-grid { grid-template-columns: 1fr; }
   .admin-login-card { grid-template-columns: 1fr; align-items: stretch; }
-  .admin-node-grid { grid-template-columns: 1fr; }
+  .admin-node-grid,
+  .admin-target-grid { grid-template-columns: 1fr; }
   .admin-node-edit-form { grid-template-columns: 1fr; }
   .admin-section-heading { flex-direction: column; }
   .admin-hero h2 { font-size: 24px; }

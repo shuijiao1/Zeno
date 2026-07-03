@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { fetchAdminNodes, normalizeAdminNodes, normalizeNodeLatency, normalizeNodeState, normalizeSummary, updateAdminNode } from './client'
+import { fetchAdminNodes, fetchAdminProbeTargets, normalizeAdminNodes, normalizeAdminProbeTargets, normalizeNodeLatency, normalizeNodeState, normalizeSummary, updateAdminNode } from './client'
 
 describe('normalizeSummary', () => {
   it('maps controller snake_case JSON into frontend camelCase models', () => {
@@ -144,6 +144,34 @@ describe('normalizeAdminNodes', () => {
   })
 })
 
+describe('normalizeAdminProbeTargets', () => {
+  it('maps authenticated probe target inventory and node assignments', () => {
+    const data = normalizeAdminProbeTargets({
+      targets: [
+        {
+          id: 'hytron-local',
+          name: 'Hytron',
+          type: 'tcping',
+          address: '127.0.0.1',
+          port: 18980,
+          count: 3,
+          timeout_ms: 1200,
+          interval_sec: 60,
+          enabled: true,
+          assignments: [
+            { node_id: 'hytron', node_display_name: 'Hytron', enabled: true },
+          ],
+        },
+      ],
+    })
+
+    expect(data.targets[0].id).toBe('hytron-local')
+    expect(data.targets[0].timeoutMs).toBe(1200)
+    expect(data.targets[0].intervalSec).toBe(60)
+    expect(data.targets[0].assignments[0].nodeDisplayName).toBe('Hytron')
+  })
+})
+
 describe('fetchAdminNodes', () => {
   const originalFetch = globalThis.fetch
 
@@ -159,6 +187,29 @@ describe('fetchAdminNodes', () => {
     await fetchAdminNodes('admin-pass')
 
     expect(fetchMock).toHaveBeenCalledWith('/api/admin/v1/nodes', {
+      headers: {
+        Accept: 'application/json',
+        'X-Admin-Token': 'admin-pass',
+      },
+    })
+  })
+})
+
+describe('fetchAdminProbeTargets', () => {
+  const originalFetch = globalThis.fetch
+
+  afterEach(() => {
+    globalThis.fetch = originalFetch
+    vi.restoreAllMocks()
+  })
+
+  it('sends the admin token in X-Admin-Token and never in the URL', async () => {
+    const fetchMock = vi.fn(async () => new Response(JSON.stringify({ targets: [] }), { status: 200, headers: { 'Content-Type': 'application/json' } }))
+    globalThis.fetch = fetchMock as unknown as typeof fetch
+
+    await fetchAdminProbeTargets('admin-pass')
+
+    expect(fetchMock).toHaveBeenCalledWith('/api/admin/v1/probe-targets', {
       headers: {
         Accept: 'application/json',
         'X-Admin-Token': 'admin-pass',

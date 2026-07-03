@@ -192,3 +192,126 @@ func TestAdminNodePatchRejectsUnauthorizedUnknownAndInvalidRequests(t *testing.T
 		})
 	}
 }
+
+func TestAdminProbeTargetsListsTargetsAndAssignmentsWithoutSecrets(t *testing.T) {
+	store, err := OpenSQLiteStore(filepath.Join(t.TempDir(), "jiaoprobe.db"))
+	if err != nil {
+		t.Fatalf("open sqlite store: %v", err)
+	}
+	defer store.Close()
+	ctx := context.Background()
+	if err := store.SeedPreviewData(ctx, PreviewSeedOptions{NodeID: "hytron", DisplayName: "Hytron", CountryCode: "HK", AgentToken: "agent-super-secret"}); err != nil {
+		t.Fatalf("seed preview data: %v", err)
+	}
+	if _, err := store.db.ExecContext(ctx, `UPDATE probe_targets SET enabled = 0 WHERE id = 'google-dns'`); err != nil {
+		t.Fatalf("disable target: %v", err)
+	}
+
+	recorder := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodGet, "/api/admin/v1/probe-targets", nil)
+	request.Header.Set("X-Admin-Token", "admin-pass")
+	NewHandler(HandlerOptions{Store: store, AdminTokenHash: HashAdminToken("admin-pass")}).ServeHTTP(recorder, request)
+
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200; body=%s", recorder.Code, recorder.Body.String())
+	}
+	raw := recorder.Body.String()
+	lower := bytes.ToLower([]byte(raw))
+	if bytes.Contains(lower, []byte("token")) || bytes.Contains(lower, []byte("secret")) || bytes.Contains([]byte(raw), []byte("agent-super-secret")) {
+		t.Fatalf("admin probe targets response leaked sensitive fields: %s", raw)
+	}
+	var response struct {
+		Targets []struct {
+			ID          string `json:"id"`
+			Name        string `json:"name"`
+			Type        string `json:"type"`
+			Address     string `json:"address"`
+			Port        *int   `json:"port"`
+			Count       int    `json:"count"`
+			TimeoutMS   int    `json:"timeout_ms"`
+			IntervalSec int    `json:"interval_sec"`
+			Enabled     bool   `json:"enabled"`
+			Assignments []struct {
+				NodeID          string `json:"node_id"`
+				NodeDisplayName string `json:"node_display_name"`
+				Enabled         bool   `json:"enabled"`
+			} `json:"assignments"`
+		} `json:"targets"`
+	}
+	if err := json.NewDecoder(bytes.NewBufferString(raw)).Decode(&response); err != nil {
+		t.Fatalf("decode admin probe targets: %v", err)
+	}
+	if len(response.Targets) != len(DefaultPreviewProbeTargets()) {
+		t.Fatalf("targets len = %d, want %d", len(response.Targets), len(DefaultPreviewProbeTargets()))
+	}
+	findTarget := func(id string) struct {
+		ID          string `json:"id"`
+		Name        string `json:"name"`
+		Type        string `json:"type"`
+		Address     string `json:"address"`
+		Port        *int   `json:"port"`
+		Count       int    `json:"count"`
+		TimeoutMS   int    `json:"timeout_ms"`
+		IntervalSec int    `json:"interval_sec"`
+		Enabled     bool   `json:"enabled"`
+		Assignments []struct {
+			NodeID          string `json:"node_id"`
+			NodeDisplayName string `json:"node_display_name"`
+			Enabled         bool   `json:"enabled"`
+		} `json:"assignments"`
+	} {
+		for _, target := range response.Targets {
+			if target.ID == id {
+				return target
+			}
+		}
+		return struct {
+			ID          string `json:"id"`
+			Name        string `json:"name"`
+			Type        string `json:"type"`
+			Address     string `json:"address"`
+			Port        *int   `json:"port"`
+			Count       int    `json:"count"`
+			TimeoutMS   int    `json:"timeout_ms"`
+			IntervalSec int    `json:"interval_sec"`
+			Enabled     bool   `json:"enabled"`
+			Assignments []struct {
+				NodeID          string `json:"node_id"`
+				NodeDisplayName string `json:"node_display_name"`
+				Enabled         bool   `json:"enabled"`
+			} `json:"assignments"`
+		}{}
+	}
+	hytron := findTarget("hytron-local")
+	if hytron.ID == "" || hytron.Name != "Hytron" || hytron.Type != "tcping" || hytron.Address != "127.0.0.1" || hytron.Port == nil || *hytron.Port != 18980 || hytron.Count != 3 || hytron.TimeoutMS != 1200 || hytron.IntervalSec != 60 || !hytron.Enabled {
+		t.Fatalf("hytron target = %+v, want full target config", hytron)
+	}
+	if len(hytron.Assignments) != 1 || hytron.Assignments[0].NodeID != "hytron" || hytron.Assignments[0].NodeDisplayName != "Hytron" || !hytron.Assignments[0].Enabled {
+		t.Fatalf("hytron assignments = %+v, want enabled hytron assignment", hytron.Assignments)
+	}
+	if google := findTarget("google-dns"); google.ID == "" || google.Enabled {
+		t.Fatalf("google-dns target = %+v, want disabled target still visible in admin inventory", google)
+	}
+}
+
+func TestAdminProbeTargetsRequiresAdminToken(t *testing.T) {
+	store, err := OpenSQLiteStore(filepath.Join(t.TempDir(), "jiaoprobe.db"))
+	if err != nil {
+		t.Fatalf("open sqlite store: %v", err)
+	}
+	defer store.Close()
+	if err := store.SeedPreviewData(context.Background(), PreviewSeedOptions{NodeID: "hytron", DisplayName: "Hytron", CountryCode: "HK", AgentToken: "test-agent-token"}); err != nil {
+		t.Fatalf("seed preview data: %v", err)
+	}
+
+	recorder := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodGet, "/api/admin/v1/probe-targets", nil)
+	NewHandler(HandlerOptions{Store: store, AdminTokenHash: HashAdminToken("admin-pass")}).ServeHTTP(recorder, request)
+
+	if recorder.Code != http.StatusUnauthorized {
+		t.Fatalf("status = %d, want 401; body=%s", recorder.Code, recorder.Body.String())
+	}
+	if bytes.Contains(bytes.ToLower(recorder.Body.Bytes()), []byte("token")) || bytes.Contains(bytes.ToLower(recorder.Body.Bytes()), []byte("secret")) {
+		t.Fatalf("admin target auth failure body should not leak token/secret wording: %s", recorder.Body.String())
+	}
+}

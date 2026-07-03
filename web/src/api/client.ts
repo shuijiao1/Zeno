@@ -1,4 +1,4 @@
-import type { AdminNode, HomeCardNode, LatencyPoint, StatePoint } from '../types'
+import type { AdminNode, AdminProbeTarget, HomeCardNode, LatencyPoint, StatePoint } from '../types'
 
 interface ApiLatencySummary {
   target_id: string
@@ -81,6 +81,25 @@ interface ApiAdminNode {
   agent_version?: string
 }
 
+interface ApiAdminProbeTargetAssignment {
+  node_id: string
+  node_display_name: string
+  enabled: boolean
+}
+
+interface ApiAdminProbeTarget {
+  id: string
+  name: string
+  type: 'ping' | 'tcping'
+  address: string
+  port: number | null
+  count: number
+  timeout_ms: number
+  interval_sec: number
+  enabled: boolean
+  assignments: ApiAdminProbeTargetAssignment[]
+}
+
 export interface ApiSummaryResponse {
   nodes: ApiNode[]
   latency_points: ApiLatencyPoint[]
@@ -106,6 +125,10 @@ export interface ApiAdminNodeResponse {
   node: ApiAdminNode
 }
 
+export interface ApiAdminProbeTargetsResponse {
+  targets: ApiAdminProbeTarget[]
+}
+
 export interface SummaryData {
   nodes: HomeCardNode[]
   latencyPoints: LatencyPoint[]
@@ -125,6 +148,10 @@ export interface NodeStateData {
 
 export interface AdminNodesData {
   nodes: AdminNode[]
+}
+
+export interface AdminProbeTargetsData {
+  targets: AdminProbeTarget[]
 }
 
 export interface AdminNodeUpdateInput {
@@ -172,6 +199,19 @@ export async function fetchAdminNodes(adminToken: string): Promise<AdminNodesDat
   return normalizeAdminNodes(await response.json() as ApiAdminNodesResponse)
 }
 
+export async function fetchAdminProbeTargets(adminToken: string): Promise<AdminProbeTargetsData> {
+  const response = await fetch('/api/admin/v1/probe-targets', {
+    headers: {
+      Accept: 'application/json',
+      'X-Admin-Token': adminToken,
+    },
+  })
+  if (!response.ok) {
+    throw new Error(`admin probe targets request failed: ${response.status}`)
+  }
+  return normalizeAdminProbeTargets(await response.json() as ApiAdminProbeTargetsResponse)
+}
+
 export async function updateAdminNode(adminToken: string, nodeId: string, input: AdminNodeUpdateInput): Promise<AdminNode> {
   const response = await fetch(`/api/admin/v1/nodes/${encodeURIComponent(nodeId)}`, {
     method: 'PATCH',
@@ -215,6 +255,12 @@ export function normalizeNodeState(input: ApiStateResponse): NodeStateData {
 export function normalizeAdminNodes(input: ApiAdminNodesResponse): AdminNodesData {
   return {
     nodes: input.nodes.map(normalizeAdminNode),
+  }
+}
+
+export function normalizeAdminProbeTargets(input: ApiAdminProbeTargetsResponse): AdminProbeTargetsData {
+  return {
+    targets: input.targets.map(normalizeAdminProbeTarget),
   }
 }
 
@@ -312,5 +358,24 @@ function normalizeAdminNode(node: ApiAdminNode): AdminNode {
     diskTotalBytes: node.disk_total_bytes ?? null,
     bootTime: node.boot_time ?? undefined,
     agentVersion: node.agent_version,
+  }
+}
+
+function normalizeAdminProbeTarget(target: ApiAdminProbeTarget): AdminProbeTarget {
+  return {
+    id: target.id,
+    name: target.name,
+    type: target.type,
+    address: target.address,
+    port: target.port ?? null,
+    count: target.count,
+    timeoutMs: target.timeout_ms,
+    intervalSec: target.interval_sec,
+    enabled: target.enabled,
+    assignments: target.assignments.map((assignment) => ({
+      nodeId: assignment.node_id,
+      nodeDisplayName: assignment.node_display_name,
+      enabled: assignment.enabled,
+    })),
   }
 }

@@ -81,3 +81,22 @@ export interface AdminNode {
   bootTime?: string
   agentVersion?: string
 }
+
+export interface AdminProbeTargetAssignment {
+  nodeId: string
+  nodeDisplayName: string
+  enabled: boolean
+}
+
+export interface AdminProbeTarget {
+  id: string
+  name: string
+  type: ProbeType
+  address: string
+  port: number | null
+  count: number
+  timeoutMs: number
+  intervalSec: number
+  enabled: boolean
+  assignments: AdminProbeTargetAssignment[]
+}

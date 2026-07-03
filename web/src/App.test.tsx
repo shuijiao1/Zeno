@@ -80,6 +80,7 @@ describe('AdminDashboard', () => {
               agentVersion: 'agent-test',
             },
           ],
+          targets: [],
         }}
         onAdminTokenSubmit={() => {}}
         onAdminTokenClear={() => {}}
@@ -119,6 +120,7 @@ describe('AdminDashboard', () => {
               diskTotalBytes: 42949672960,
             },
           ],
+          targets: [],
         }}
         onAdminTokenSubmit={() => {}}
         onAdminTokenClear={() => {}}
@@ -134,6 +136,46 @@ describe('AdminDashboard', () => {
     expect(html).toContain('name="monthly-quota-gb"')
     expect(html).toContain('禁用节点')
     expect(html).toContain('保存节点')
+    expect(html).not.toContain('admin-pass')
+  })
+
+  it('renders authenticated probe target inventory in the admin shell', () => {
+    const html = renderToStaticMarkup(
+      <AdminDashboard
+        onHome={() => {}}
+        hasAdminToken
+        adminState={{
+          kind: 'ready',
+          nodes: [],
+          targets: [
+            {
+              id: 'hytron-local',
+              name: 'Hytron',
+              type: 'tcping',
+              address: '127.0.0.1',
+              port: 18980,
+              count: 3,
+              timeoutMs: 1200,
+              intervalSec: 60,
+              enabled: true,
+              assignments: [
+                { nodeId: 'hytron', nodeDisplayName: 'Hytron', enabled: true },
+              ],
+            },
+          ],
+        }}
+        onAdminTokenSubmit={() => {}}
+        onAdminTokenClear={() => {}}
+        onAdminRefresh={() => {}}
+      />,
+    )
+
+    expect(html).toContain('探针目标')
+    expect(html).toContain('admin-target-card')
+    expect(html).toContain('hytron-local')
+    expect(html).toContain('127.0.0.1:18980')
+    expect(html).toContain('3 次 / 1200ms / 60s')
+    expect(html).toContain('Hytron')
     expect(html).not.toContain('admin-pass')
   })
 })

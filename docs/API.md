@@ -262,11 +262,41 @@ X-Admin-Token: <admin-token>
 }
 ```
 
+### GET /api/admin/v1/probe-targets
+
+探针目标管理列表，返回 enabled + disabled 目标及分配到哪些节点。不会返回 Agent token、token hash 或 secret 字段。
+
+响应：
+
+```json
+{
+  "targets": [
+    {
+      "id": "hytron-local",
+      "name": "Hytron",
+      "type": "tcping",
+      "address": "127.0.0.1",
+      "port": 18980,
+      "count": 3,
+      "timeout_ms": 1200,
+      "interval_sec": 60,
+      "enabled": true,
+      "assignments": [
+        {
+          "node_id": "hytron",
+          "node_display_name": "Hytron",
+          "enabled": true
+        }
+      ]
+    }
+  ]
+}
+```
+
 ### 后续管理接口草案
 
 - `POST /api/admin/v1/nodes`
 - `POST /api/admin/v1/nodes/{node_id}/rotate-token`
-- `GET /api/admin/v1/probe-targets`
 - `POST /api/admin/v1/probe-targets`
 - `PATCH /api/admin/v1/probe-targets/{target_id}`
 
