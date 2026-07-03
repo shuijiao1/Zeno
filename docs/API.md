@@ -209,9 +209,24 @@ range=1h|1d|7d|30d
 
 ## Admin API
 
-Admin API 第一版只给管理 UI 或 CLI 使用，需要 `X-Admin-Token`。
+Admin API 第一版只给管理 UI 或 CLI 使用，需要请求头：
 
-- `GET /api/admin/v1/nodes`
+```http
+X-Admin-Token: <admin-token>
+```
+
+安全要求：
+
+- admin token 不放 query string。
+- Controller 启动时通过 `-admin-token` 或 `-admin-token-file` 配置，内部只比较 hash。
+- Admin API 也必须使用显式 DTO，不能返回 `token_hash`、token 原文或 secret 字段。
+
+### GET /api/admin/v1/nodes
+
+第一版只读节点管理列表，返回 enabled + disabled 节点、状态、地区、计费模式、配额、last seen、host info 和 agent version。
+
+### 后续管理接口草案
+
 - `POST /api/admin/v1/nodes`
 - `PATCH /api/admin/v1/nodes/{node_id}`
 - `POST /api/admin/v1/nodes/{node_id}/rotate-token`
@@ -219,4 +234,4 @@ Admin API 第一版只给管理 UI 或 CLI 使用，需要 `X-Admin-Token`。
 - `POST /api/admin/v1/probe-targets`
 - `PATCH /api/admin/v1/probe-targets/{target_id}`
 
-Admin API 返回中必须隐藏 token 原文。
+Admin API 返回中必须隐藏 token 原文和 token hash。

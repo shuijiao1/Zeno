@@ -27,6 +27,13 @@ describe('homepage and admin shell layout', () => {
     expect(styles).toContain('.admin-action-card')
     expect(styles).toContain('background: var(--card)')
   })
+
+  it('keeps authenticated node management in compact card shells', () => {
+    expect(styles).toContain('.admin-login-card')
+    expect(styles).toContain('.admin-node-section')
+    expect(styles).toContain('.admin-node-card')
+    expect(styles).toContain('.admin-node-status')
+  })
 })
 
 describe('state history layout', () => {

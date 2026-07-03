@@ -6,11 +6,24 @@ import (
 	"crypto/subtle"
 	"database/sql"
 	"encoding/hex"
+	"strings"
 )
 
 func hashAgentToken(token string) string {
 	sum := sha256.Sum256([]byte(token))
 	return hex.EncodeToString(sum[:])
+}
+
+func HashAdminToken(token string) string {
+	return hashAgentToken(strings.TrimSpace(token))
+}
+
+func adminTokenMatches(expectedHash, token string) bool {
+	if expectedHash == "" || strings.TrimSpace(token) == "" {
+		return false
+	}
+	computed := HashAdminToken(token)
+	return subtle.ConstantTimeCompare([]byte(expectedHash), []byte(computed)) == 1
 }
 
 func (s *SQLiteStore) AuthorizeAgent(ctx context.Context, nodeID, token string) (bool, error) {

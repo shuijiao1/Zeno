@@ -18,6 +18,7 @@ type handlerConfig struct {
 	SeedPreview bool
 	NodeID      string
 	AgentToken  string
+	AdminToken  string
 }
 
 type controllerRuntime struct {
@@ -29,6 +30,9 @@ type controllerRuntime struct {
 func buildController(config handlerConfig) (*controllerRuntime, error) {
 	cleanup := func() error { return nil }
 	options := api.HandlerOptions{StaticDir: config.WebDir}
+	if strings.TrimSpace(config.AdminToken) != "" {
+		options.AdminTokenHash = api.HashAdminToken(config.AdminToken)
+	}
 	var store *api.SQLiteStore
 	if config.DBPath != "" {
 		opened, err := api.OpenSQLiteStore(config.DBPath)
@@ -56,15 +60,19 @@ func buildHandler(config handlerConfig) (http.Handler, func() error, error) {
 	return runtime.Handler, runtime.Cleanup, nil
 }
 
-func readAgentToken(tokenValue, tokenFile string) (string, error) {
-	if tokenFile != "" {
-		content, err := os.ReadFile(tokenFile)
+func readSecret(secretValue, secretFile string) (string, error) {
+	if secretFile != "" {
+		content, err := os.ReadFile(secretFile)
 		if err != nil {
 			return "", err
 		}
 		return strings.TrimSpace(string(content)), nil
 	}
-	return strings.TrimSpace(tokenValue), nil
+	return strings.TrimSpace(secretValue), nil
+}
+
+func readAgentToken(tokenValue, tokenFile string) (string, error) {
+	return readSecret(tokenValue, tokenFile)
 }
 
 func main() {
@@ -76,6 +84,8 @@ func main() {
 	nodeID := flag.String("node-id", "hytron", "node id for seeded preview data and controller-local collection")
 	agentToken := flag.String("agent-token", "", "agent API bearer token for seeded preview node; prefer -agent-token-file in deployments")
 	agentTokenFile := flag.String("agent-token-file", "", "file containing the agent API bearer token for seeded preview node")
+	adminToken := flag.String("admin-token", "", "admin API token; prefer -admin-token-file in deployments")
+	adminTokenFile := flag.String("admin-token-file", "", "file containing the admin API token")
 	probeInterval := flag.Duration("probe-interval", time.Minute, "controller-local probe collection interval")
 	flag.Parse()
 
@@ -83,8 +93,12 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
+	adminSecret, err := readSecret(*adminToken, *adminTokenFile)
+	if err != nil {
+		log.Fatal(err)
+	}
 
-	runtime, err := buildController(handlerConfig{DBPath: *dbPath, WebDir: *webDir, SeedPreview: *seedPreview, NodeID: *nodeID, AgentToken: token})
+	runtime, err := buildController(handlerConfig{DBPath: *dbPath, WebDir: *webDir, SeedPreview: *seedPreview, NodeID: *nodeID, AgentToken: token, AdminToken: adminSecret})
 	if err != nil {
 		log.Fatal(err)
 	}

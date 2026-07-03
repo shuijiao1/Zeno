@@ -45,4 +45,53 @@ describe('AdminDashboard', () => {
     expect(html).toContain('沿用前台卡片风格')
     expect(html).toContain('dashboard actions')
   })
+
+  it('renders authenticated admin nodes without rendering the admin token', () => {
+    const html = renderToStaticMarkup(
+      <AdminDashboard
+        onHome={() => {}}
+        hasAdminToken
+        adminState={{
+          kind: 'ready',
+          nodes: [
+            {
+              id: 'hytron',
+              displayName: 'Hytron',
+              status: 'online',
+              countryCode: 'HK',
+              region: 'Hong Kong',
+              disabled: false,
+              billingMode: 'both',
+              monthlyQuotaBytes: 1099511627776,
+              lastSeenAt: '2026-07-03T00:00:00Z',
+              createdAt: '2026-07-02T00:00:00Z',
+              updatedAt: '2026-07-03T00:00:00Z',
+              hostname: 'hytron-real',
+              osName: 'debian',
+              osVersion: '13',
+              kernel: '6.12.0',
+              arch: 'x86_64',
+              virtualization: 'kvm',
+              cpuModel: 'AMD EPYC',
+              cpuCores: 2,
+              memoryTotalBytes: 2147483648,
+              diskTotalBytes: 42949672960,
+              bootTime: '2026-07-02T01:00:00Z',
+              agentVersion: 'agent-test',
+            },
+          ],
+        }}
+        onAdminTokenSubmit={() => {}}
+        onAdminTokenClear={() => {}}
+        onAdminRefresh={() => {}}
+      />,
+    )
+
+    expect(html).toContain('节点列表')
+    expect(html).toContain('Hytron')
+    expect(html).toContain('online')
+    expect(html).toContain('agent-test')
+    expect(html).toContain('debian 13')
+    expect(html).not.toContain('admin-pass')
+  })
 })

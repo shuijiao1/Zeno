@@ -1,5 +1,5 @@
-import { describe, expect, it } from 'vitest'
-import { normalizeNodeLatency, normalizeNodeState, normalizeSummary } from './client'
+import { afterEach, describe, expect, it, vi } from 'vitest'
+import { fetchAdminNodes, normalizeAdminNodes, normalizeNodeLatency, normalizeNodeState, normalizeSummary } from './client'
 
 describe('normalizeSummary', () => {
   it('maps controller snake_case JSON into frontend camelCase models', () => {
@@ -101,5 +101,68 @@ describe('normalizeNodeState', () => {
     expect(data.points[0].memoryUsedBytes).toBe(4096)
     expect(data.points[0].netOutSpeedBps).toBe(256)
     expect(data.points[0].uptimeSeconds).toBe(3601)
+  })
+})
+
+describe('normalizeAdminNodes', () => {
+  it('maps authenticated admin node inventory without requiring token fields', () => {
+    const data = normalizeAdminNodes({
+      nodes: [
+        {
+          id: 'hytron',
+          display_name: 'Hytron',
+          status: 'online',
+          country_code: 'HK',
+          region: 'Hong Kong',
+          disabled: false,
+          billing_mode: 'both',
+          monthly_quota_bytes: 1099511627776,
+          last_seen_at: '2026-07-03T00:00:00Z',
+          created_at: '2026-07-02T00:00:00Z',
+          updated_at: '2026-07-03T00:00:00Z',
+          hostname: 'hytron-real',
+          os_name: 'debian',
+          os_version: '13',
+          kernel: '6.12.0',
+          arch: 'x86_64',
+          virtualization: 'kvm',
+          cpu_model: 'AMD EPYC',
+          cpu_cores: 2,
+          memory_total_bytes: 2147483648,
+          disk_total_bytes: 42949672960,
+          boot_time: '2026-07-02T01:00:00Z',
+          agent_version: 'd206817',
+        },
+      ],
+    })
+
+    expect(data.nodes[0].id).toBe('hytron')
+    expect(data.nodes[0].displayName).toBe('Hytron')
+    expect(data.nodes[0].disabled).toBe(false)
+    expect(data.nodes[0].agentVersion).toBe('d206817')
+    expect(data.nodes[0].monthlyQuotaBytes).toBe(1099511627776)
+  })
+})
+
+describe('fetchAdminNodes', () => {
+  const originalFetch = globalThis.fetch
+
+  afterEach(() => {
+    globalThis.fetch = originalFetch
+    vi.restoreAllMocks()
+  })
+
+  it('sends the admin token in X-Admin-Token and never in the URL', async () => {
+    const fetchMock = vi.fn(async () => new Response(JSON.stringify({ nodes: [] }), { status: 200, headers: { 'Content-Type': 'application/json' } }))
+    globalThis.fetch = fetchMock as unknown as typeof fetch
+
+    await fetchAdminNodes('admin-pass')
+
+    expect(fetchMock).toHaveBeenCalledWith('/api/admin/v1/nodes', {
+      headers: {
+        Accept: 'application/json',
+        'X-Admin-Token': 'admin-pass',
+      },
+    })
   })
 })

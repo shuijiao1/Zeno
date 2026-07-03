@@ -31,3 +31,25 @@ func TestBuildHandlerUsesSQLiteStoreWhenDBPathProvided(t *testing.T) {
 		t.Fatalf("nodes len = %d, want empty sqlite-backed summary instead of mock data", len(body.Nodes))
 	}
 }
+
+func TestBuildHandlerEnablesAdminAPIWithAdminToken(t *testing.T) {
+	handler, cleanup, err := buildHandler(handlerConfig{
+		DBPath:      filepath.Join(t.TempDir(), "jiaoprobe.db"),
+		SeedPreview: true,
+		NodeID:      "hytron",
+		AgentToken:  "agent-token",
+		AdminToken:  "admin-pass",
+	})
+	if err != nil {
+		t.Fatalf("build handler: %v", err)
+	}
+	defer cleanup()
+
+	recorder := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodGet, "/api/admin/v1/nodes", nil)
+	request.Header.Set("X-Admin-Token", "admin-pass")
+	handler.ServeHTTP(recorder, request)
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200; body=%s", recorder.Code, recorder.Body.String())
+	}
+}

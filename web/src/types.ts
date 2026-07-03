@@ -55,3 +55,29 @@ export interface StatePoint {
   netOutSpeedBps: number | null
   uptimeSeconds: number | null
 }
+
+export interface AdminNode {
+  id: string
+  displayName: string
+  status: string
+  countryCode?: string
+  region?: string
+  disabled: boolean
+  billingMode: string
+  monthlyQuotaBytes: number | null
+  lastSeenAt?: string
+  createdAt: string
+  updatedAt: string
+  hostname?: string
+  osName?: string
+  osVersion?: string
+  kernel?: string
+  arch?: string
+  virtualization?: string
+  cpuModel?: string
+  cpuCores: number | null
+  memoryTotalBytes: number | null
+  diskTotalBytes: number | null
+  bootTime?: string
+  agentVersion?: string
+}

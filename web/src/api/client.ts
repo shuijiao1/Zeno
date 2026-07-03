@@ -1,4 +1,4 @@
-import type { HomeCardNode, LatencyPoint, StatePoint } from '../types'
+import type { AdminNode, HomeCardNode, LatencyPoint, StatePoint } from '../types'
 
 interface ApiLatencySummary {
   target_id: string
@@ -55,6 +55,32 @@ interface ApiStatePoint {
   uptime_seconds: number | null
 }
 
+interface ApiAdminNode {
+  id: string
+  display_name: string
+  status: string
+  country_code?: string
+  region?: string
+  disabled: boolean
+  billing_mode: string
+  monthly_quota_bytes?: number | null
+  last_seen_at?: string | null
+  created_at: string
+  updated_at: string
+  hostname?: string
+  os_name?: string
+  os_version?: string
+  kernel?: string
+  arch?: string
+  virtualization?: string
+  cpu_model?: string
+  cpu_cores?: number | null
+  memory_total_bytes?: number | null
+  disk_total_bytes?: number | null
+  boot_time?: string | null
+  agent_version?: string
+}
+
 export interface ApiSummaryResponse {
   nodes: ApiNode[]
   latency_points: ApiLatencyPoint[]
@@ -72,6 +98,10 @@ export interface ApiStateResponse {
   points: ApiStatePoint[]
 }
 
+export interface ApiAdminNodesResponse {
+  nodes: ApiAdminNode[]
+}
+
 export interface SummaryData {
   nodes: HomeCardNode[]
   latencyPoints: LatencyPoint[]
@@ -87,6 +117,10 @@ export interface NodeStateData {
   nodeId: string
   range: string
   points: StatePoint[]
+}
+
+export interface AdminNodesData {
+  nodes: AdminNode[]
 }
 
 export async function fetchSummary(): Promise<SummaryData> {
@@ -113,6 +147,19 @@ export async function fetchNodeState(nodeId: string, range = '1h'): Promise<Node
   return normalizeNodeState(await response.json() as ApiStateResponse)
 }
 
+export async function fetchAdminNodes(adminToken: string): Promise<AdminNodesData> {
+  const response = await fetch('/api/admin/v1/nodes', {
+    headers: {
+      Accept: 'application/json',
+      'X-Admin-Token': adminToken,
+    },
+  })
+  if (!response.ok) {
+    throw new Error(`admin nodes request failed: ${response.status}`)
+  }
+  return normalizeAdminNodes(await response.json() as ApiAdminNodesResponse)
+}
+
 export function normalizeSummary(input: ApiSummaryResponse): SummaryData {
   return {
     nodes: input.nodes.map(normalizeNode),
@@ -133,6 +180,12 @@ export function normalizeNodeState(input: ApiStateResponse): NodeStateData {
     nodeId: input.node_id,
     range: input.range,
     points: input.points.map(normalizeStatePoint),
+  }
+}
+
+export function normalizeAdminNodes(input: ApiAdminNodesResponse): AdminNodesData {
+  return {
+    nodes: input.nodes.map(normalizeAdminNode),
   }
 }
 
@@ -192,5 +245,33 @@ function normalizeStatePoint(point: ApiStatePoint): StatePoint {
     netInSpeedBps: point.net_in_speed_bps,
     netOutSpeedBps: point.net_out_speed_bps,
     uptimeSeconds: point.uptime_seconds,
+  }
+}
+
+function normalizeAdminNode(node: ApiAdminNode): AdminNode {
+  return {
+    id: node.id,
+    displayName: node.display_name,
+    status: node.status,
+    countryCode: node.country_code,
+    region: node.region,
+    disabled: node.disabled,
+    billingMode: node.billing_mode,
+    monthlyQuotaBytes: node.monthly_quota_bytes ?? null,
+    lastSeenAt: node.last_seen_at ?? undefined,
+    createdAt: node.created_at,
+    updatedAt: node.updated_at,
+    hostname: node.hostname,
+    osName: node.os_name,
+    osVersion: node.os_version,
+    kernel: node.kernel,
+    arch: node.arch,
+    virtualization: node.virtualization,
+    cpuModel: node.cpu_model,
+    cpuCores: node.cpu_cores ?? null,
+    memoryTotalBytes: node.memory_total_bytes ?? null,
+    diskTotalBytes: node.disk_total_bytes ?? null,
+    bootTime: node.boot_time ?? undefined,
+    agentVersion: node.agent_version,
   }
 }

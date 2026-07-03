@@ -262,6 +262,109 @@ svg { display: block; }
 }
 .admin-action-card p { margin: 0; color: var(--muted); font-size: 13px; font-weight: 650; }
 .admin-action-card strong { font-size: 17px; font-weight: 700; }
+.admin-login-card {
+  margin-top: 16px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(180px, 280px) auto;
+  align-items: center;
+  gap: 12px;
+  padding: 16px;
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  background: color-mix(in srgb, var(--metric-bg) 88%, transparent);
+}
+.admin-login-card p { margin: 0 0 4px; color: var(--muted); font-size: 13px; font-weight: 650; }
+.admin-login-card strong { font-size: 15px; font-weight: 700; }
+.admin-login-card input {
+  width: 100%;
+  min-width: 0;
+  height: 38px;
+  padding: 0 12px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--background) 70%, transparent);
+  color: var(--foreground);
+  font: inherit;
+}
+.admin-login-card button,
+.admin-section-actions button {
+  height: 38px;
+  padding: 0 14px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--secondary);
+  color: var(--foreground);
+  font-size: 13px;
+  font-weight: 700;
+}
+.admin-node-section {
+  margin-top: 16px;
+  padding: 16px;
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  background: color-mix(in srgb, var(--metric-bg) 88%, transparent);
+}
+.admin-section-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+.admin-section-heading .eyebrow { margin: 0 0 4px; color: var(--muted); font-size: 12px; font-weight: 750; letter-spacing: .08em; text-transform: uppercase; }
+.admin-section-heading h3 { margin: 0; font-size: 20px; font-weight: 700; }
+.admin-section-actions { display: inline-flex; gap: 8px; }
+.admin-node-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+.admin-node-card {
+  min-width: 0;
+  padding: 14px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--background) 58%, transparent);
+}
+.admin-node-card header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+.admin-node-card header p { margin: 0 0 4px; color: var(--muted); font-size: 12px; font-weight: 650; }
+.admin-node-card h4 { margin: 0; font-size: 17px; font-weight: 750; letter-spacing: -0.02em; }
+.admin-node-status {
+  flex: none;
+  padding: 4px 8px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--muted) 18%, transparent);
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 750;
+}
+.admin-node-status.status-online { background: color-mix(in srgb, var(--green) 18%, transparent); color: var(--green); }
+.admin-node-status.status-offline,
+.admin-node-status.status-disabled { background: color-mix(in srgb, var(--red) 16%, transparent); color: var(--red); }
+.admin-node-status.status-warning { background: color-mix(in srgb, var(--orange) 18%, transparent); color: var(--orange); }
+.admin-node-meta {
+  margin: 0;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+.admin-node-meta div { min-width: 0; }
+.admin-node-meta dt { margin: 0 0 3px; color: var(--muted); font-size: 12px; font-weight: 650; }
+.admin-node-meta dd { margin: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; font-weight: 700; font-variant-numeric: tabular-nums; }
+.admin-state-card {
+  padding: 18px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  color: var(--muted);
+  font-weight: 700;
+}
+.admin-state-card.is-error { color: var(--red); }
 
 .kulin-node-card {
   width: 100%;
@@ -654,6 +757,9 @@ svg { display: block; }
   .server-card-list { margin-top: 28px; gap: 16px; }
   .overview-combined__body { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; padding: 12px; }
   .admin-action-grid { grid-template-columns: 1fr; }
+  .admin-login-card { grid-template-columns: 1fr; align-items: stretch; }
+  .admin-node-grid { grid-template-columns: 1fr; }
+  .admin-section-heading { flex-direction: column; }
   .admin-hero h2 { font-size: 24px; }
   .overview-metric { min-height: 70px; padding: 10px 12px; }
   .overview-metric p { font-size: 13px; }

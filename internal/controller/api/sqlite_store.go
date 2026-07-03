@@ -208,6 +208,73 @@ func (s *SQLiteStore) NodeState(ctx context.Context, nodeID string, window laten
 	return StateResponse{NodeID: nodeID, Range: window.Name, Points: points}, nil
 }
 
+func (s *SQLiteStore) AdminNodes(ctx context.Context) ([]AdminNode, error) {
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT n.id, n.display_name, n.status, n.country_code, n.region, n.disabled,
+		       n.billing_mode, n.monthly_quota_bytes, n.last_seen_at, n.created_at, n.updated_at,
+		       h.hostname, h.os_name, h.os_version, h.kernel, h.arch, h.virtualization,
+		       h.cpu_model, h.cpu_cores, h.memory_total_bytes, h.disk_total_bytes,
+		       h.boot_time, h.agent_version
+		FROM nodes n
+		LEFT JOIN host_info h ON h.node_id = n.id
+		ORDER BY n.id ASC
+	`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var nodes []AdminNode
+	now := time.Now().UTC()
+	for rows.Next() {
+		var node AdminNode
+		var status string
+		var countryCode, region, billingMode sql.NullString
+		var disabled int
+		var quota, lastSeenAt, createdAt, updatedAt sql.NullInt64
+		var hostname, osName, osVersion, kernel, arch, virtualization, cpuModel, agentVersion sql.NullString
+		var cpuCores, memoryTotal, diskTotal, bootTime sql.NullInt64
+		if err := rows.Scan(
+			&node.ID, &node.DisplayName, &status, &countryCode, &region, &disabled,
+			&billingMode, &quota, &lastSeenAt, &createdAt, &updatedAt,
+			&hostname, &osName, &osVersion, &kernel, &arch, &virtualization,
+			&cpuModel, &cpuCores, &memoryTotal, &diskTotal,
+			&bootTime, &agentVersion,
+		); err != nil {
+			return nil, err
+		}
+		node.Disabled = disabled != 0
+		node.Status = publicNodeStatus(status, lastSeenAt, now)
+		if node.Disabled {
+			node.Status = "disabled"
+		}
+		node.CountryCode = nullStringOr(countryCode, "")
+		node.Region = nullStringOr(region, "")
+		node.BillingMode = nullStringOr(billingMode, "both")
+		node.MonthlyQuotaBytes = int64Ptr(quota)
+		node.LastSeenAt = unixStringPtr(lastSeenAt)
+		node.CreatedAt = unixStringOr(createdAt, now)
+		node.UpdatedAt = unixStringOr(updatedAt, now)
+		node.Hostname = nullStringOr(hostname, "")
+		node.OSName = nullStringOr(osName, "")
+		node.OSVersion = nullStringOr(osVersion, "")
+		node.Kernel = nullStringOr(kernel, "")
+		node.Arch = nullStringOr(arch, "")
+		node.Virtualization = nullStringOr(virtualization, "")
+		node.CPUModel = nullStringOr(cpuModel, "")
+		node.CPUCores = intSQLPtr(cpuCores)
+		node.MemoryTotalBytes = int64Ptr(memoryTotal)
+		node.DiskTotalBytes = int64Ptr(diskTotal)
+		node.BootTime = unixStringPtr(bootTime)
+		node.AgentVersion = nullStringOr(agentVersion, "")
+		nodes = append(nodes, node)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return nodes, nil
+}
+
 func (s *SQLiteStore) nodes(ctx context.Context) ([]Node, error) {
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT n.id, n.display_name, n.status, n.country_code, n.last_seen_at,
@@ -426,6 +493,37 @@ func intPtr(value sql.NullInt64) *float64 {
 	}
 	converted := float64(value.Int64)
 	return &converted
+}
+
+func intSQLPtr(value sql.NullInt64) *int {
+	if !value.Valid {
+		return nil
+	}
+	converted := int(value.Int64)
+	return &converted
+}
+
+func int64Ptr(value sql.NullInt64) *int64 {
+	if !value.Valid {
+		return nil
+	}
+	converted := value.Int64
+	return &converted
+}
+
+func unixStringPtr(value sql.NullInt64) *string {
+	if !value.Valid || value.Int64 <= 0 {
+		return nil
+	}
+	formatted := time.Unix(value.Int64, 0).UTC().Format(time.RFC3339)
+	return &formatted
+}
+
+func unixStringOr(value sql.NullInt64, fallback time.Time) string {
+	if !value.Valid || value.Int64 <= 0 {
+		return fallback.UTC().Format(time.RFC3339)
+	}
+	return time.Unix(value.Int64, 0).UTC().Format(time.RFC3339)
 }
 
 func floatPtr(value sql.NullFloat64) *float64 {

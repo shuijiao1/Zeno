@@ -10,12 +10,14 @@ import (
 )
 
 type HandlerOptions struct {
-	StaticDir string
-	Store     Store
+	StaticDir      string
+	Store          Store
+	AdminTokenHash string
 }
 
 type handler struct {
-	store Store
+	store          Store
+	adminTokenHash string
 }
 
 func NewHandler(options ...HandlerOptions) http.Handler {
@@ -27,12 +29,13 @@ func NewHandler(options ...HandlerOptions) http.Handler {
 	if store == nil {
 		store = mockStore{}
 	}
-	h := &handler{store: store}
+	h := &handler{store: store, adminTokenHash: opts.AdminTokenHash}
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/health", handleHealth)
 	mux.HandleFunc("/api/public/v1/summary", h.handleSummary)
 	mux.HandleFunc("/api/public/v1/nodes/", h.handlePublicNodeResource)
+	mux.HandleFunc("/api/admin/v1/nodes", h.handleAdminNodes)
 	mux.HandleFunc("/api/agent/v1/probe-targets", h.handleAgentProbeTargets)
 	mux.HandleFunc("/api/agent/v1/probe-results", h.handleAgentProbeResults)
 	mux.HandleFunc("/api/agent/v1/heartbeat", h.handleAgentHeartbeat)

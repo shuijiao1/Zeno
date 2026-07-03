@@ -1,9 +1,10 @@
-import { useEffect, useState } from 'react'
-import { fetchNodeLatency, fetchNodeState, fetchSummary, type NodeLatencyData, type NodeStateData, type SummaryData } from './api/client'
+import { type FormEvent, useEffect, useState } from 'react'
+import { fetchAdminNodes, fetchNodeLatency, fetchNodeState, fetchSummary, type NodeLatencyData, type NodeStateData, type SummaryData } from './api/client'
 import { LatencyDetail } from './components/LatencyDetail'
 import { ServerCard } from './components/ServerCard'
 import { startLiveRefresh } from './lib/liveRefresh'
 import { nodePath, parseDashboardRoute, type DashboardRoute } from './lib/route'
+import type { AdminNode } from './types'
 
 type LoadState =
   | { kind: 'loading' }
@@ -20,6 +21,12 @@ type StateHistoryLoadState =
   | { kind: 'idle' }
   | { kind: 'loading' }
   | { kind: 'ready'; data: NodeStateData }
+  | { kind: 'error'; message: string }
+
+type AdminLoadState =
+  | { kind: 'idle' }
+  | { kind: 'loading' }
+  | { kind: 'ready'; nodes: AdminNode[] }
   | { kind: 'error'; message: string }
 
 function sum(values: Array<number | null | undefined>): number {
@@ -49,6 +56,8 @@ export function App() {
   const [latencyRange, setLatencyRange] = useState('1d')
   const [latencyState, setLatencyState] = useState<LatencyLoadState>({ kind: 'idle' })
   const [stateHistoryState, setStateHistoryState] = useState<StateHistoryLoadState>({ kind: 'idle' })
+  const [adminToken, setAdminToken] = useState(() => window.sessionStorage.getItem('jiaoprobe_admin_token') ?? '')
+  const [adminState, setAdminState] = useState<AdminLoadState>({ kind: 'idle' })
 
   useEffect(() => {
     let cancelled = false
@@ -134,6 +143,57 @@ export function App() {
     }
   }, [route, latencyRange])
 
+  useEffect(() => {
+    if (route.kind !== 'admin') return
+    if (adminToken === '') {
+      setAdminState({ kind: 'idle' })
+      return
+    }
+
+    let cancelled = false
+    let loadedOnce = false
+    const loadAdminNodes = () => {
+      if (!loadedOnce) setAdminState({ kind: 'loading' })
+      fetchAdminNodes(adminToken)
+        .then((data) => {
+          loadedOnce = true
+          if (!cancelled) setAdminState({ kind: 'ready', nodes: data.nodes })
+        })
+        .catch((error: unknown) => {
+          loadedOnce = true
+          if (!cancelled) setAdminState({ kind: 'error', message: error instanceof Error ? error.message : 'unknown error' })
+        })
+    }
+
+    loadAdminNodes()
+    const stopRefresh = startLiveRefresh(loadAdminNodes)
+    return () => {
+      cancelled = true
+      stopRefresh()
+    }
+  }, [route, adminToken])
+
+  const submitAdminToken = (token: string) => {
+    const trimmed = token.trim()
+    if (trimmed === '') return
+    window.sessionStorage.setItem('jiaoprobe_admin_token', trimmed)
+    setAdminToken(trimmed)
+  }
+
+  const clearAdminToken = () => {
+    window.sessionStorage.removeItem('jiaoprobe_admin_token')
+    setAdminToken('')
+    setAdminState({ kind: 'idle' })
+  }
+
+  const refreshAdminNodes = () => {
+    if (adminToken === '') return
+    setAdminState({ kind: 'loading' })
+    fetchAdminNodes(adminToken)
+      .then((data) => setAdminState({ kind: 'ready', nodes: data.nodes }))
+      .catch((error: unknown) => setAdminState({ kind: 'error', message: error instanceof Error ? error.message : 'unknown error' }))
+  }
+
   const navigateHome = () => {
     window.history.pushState(null, '', '/')
     setRoute({ kind: 'home' })
@@ -164,7 +224,16 @@ export function App() {
     <main className="kulin-shell">
       {route.kind === 'node' && <DashboardHeader onHome={navigateHome} onAdmin={navigateAdmin} />}
 
-      {route.kind === 'admin' && <AdminDashboard onHome={navigateHome} />}
+      {route.kind === 'admin' && (
+        <AdminDashboard
+          onHome={navigateHome}
+          hasAdminToken={adminToken !== ''}
+          adminState={adminState}
+          onAdminTokenSubmit={submitAdminToken}
+          onAdminTokenClear={clearAdminToken}
+          onAdminRefresh={refreshAdminNodes}
+        />
+      )}
 
       {route.kind !== 'admin' && state.kind === 'loading' && <section className="state-panel">正在读取 Controller API…</section>}
       {route.kind !== 'admin' && state.kind === 'error' && <section className="state-panel is-error">API 读取失败：{state.message}</section>}
@@ -258,7 +327,33 @@ function DashboardHeader({ onHome, onAdmin, adminLabel = '后台' }: DashboardHe
   )
 }
 
-export function AdminDashboard({ onHome }: { onHome: () => void }) {
+interface AdminDashboardProps {
+  onHome: () => void
+  hasAdminToken?: boolean
+  adminState?: AdminLoadState
+  onAdminTokenSubmit?: (token: string) => void
+  onAdminTokenClear?: () => void
+  onAdminRefresh?: () => void
+}
+
+export function AdminDashboard({
+  onHome,
+  hasAdminToken = false,
+  adminState = { kind: 'idle' },
+  onAdminTokenSubmit = () => {},
+  onAdminTokenClear = () => {},
+  onAdminRefresh = () => {},
+}: AdminDashboardProps) {
+  const handleTokenSubmit = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    const form = event.currentTarget
+    const token = String(new FormData(form).get('admin-token') ?? '')
+    onAdminTokenSubmit(token)
+    form.reset()
+  }
+
+  const nodeCount = adminState.kind === 'ready' ? adminState.nodes.length : 0
+
   return (
     <div className="kulin-container admin-container">
       <section className="home-top-card admin-panel" aria-label="admin dashboard">
@@ -266,12 +361,12 @@ export function AdminDashboard({ onHome }: { onHome: () => void }) {
         <div className="admin-hero">
           <p className="eyebrow">JiaoProbe 后台</p>
           <h2>控制台</h2>
-          <p>沿用前台卡片风格，后续节点、探针、告警和配置入口都放进同一套视觉语言里。</p>
+          <p>沿用前台卡片风格，节点管理已接入真实 Admin API；敏感凭据只通过请求头提交，不会展示在页面里。</p>
         </div>
         <div className="admin-action-grid" aria-label="admin modules">
           <article className="admin-action-card">
             <p>节点管理</p>
-            <strong>服务器与状态</strong>
+            <strong>{hasAdminToken ? `${nodeCount} 台节点` : '等待认证'}</strong>
           </article>
           <article className="admin-action-card">
             <p>探针配置</p>
@@ -282,9 +377,85 @@ export function AdminDashboard({ onHome }: { onHome: () => void }) {
             <strong>规则与通知</strong>
           </article>
         </div>
+
+        {!hasAdminToken && (
+          <form className="admin-login-card" aria-label="admin token form" onSubmit={handleTokenSubmit}>
+            <div>
+              <p>后台认证</p>
+              <strong>输入 Admin Token 后读取节点管理数据</strong>
+            </div>
+            <input name="admin-token" type="password" autoComplete="current-password" placeholder="Admin Token" aria-label="Admin Token" />
+            <button type="submit">进入后台</button>
+          </form>
+        )}
+
+        {hasAdminToken && (
+          <section className="admin-node-section" aria-label="admin node list">
+            <header className="admin-section-heading">
+              <div>
+                <p className="eyebrow">Nodes</p>
+                <h3>节点列表</h3>
+              </div>
+              <div className="admin-section-actions">
+                <button type="button" onClick={onAdminRefresh}>刷新</button>
+                <button type="button" onClick={onAdminTokenClear}>退出</button>
+              </div>
+            </header>
+
+            {adminState.kind === 'loading' && <div className="admin-state-card">正在读取 Admin API…</div>}
+            {adminState.kind === 'error' && <div className="admin-state-card is-error">Admin API 读取失败：{adminState.message}</div>}
+            {adminState.kind === 'ready' && adminState.nodes.length === 0 && <div className="admin-state-card">还没有节点。</div>}
+            {adminState.kind === 'ready' && adminState.nodes.length > 0 && (
+              <div className="admin-node-grid">
+                {adminState.nodes.map((node) => <AdminNodeCard key={node.id} node={node} />)}
+              </div>
+            )}
+          </section>
+        )}
       </section>
     </div>
   )
+}
+
+function AdminNodeCard({ node }: { node: AdminNode }) {
+  return (
+    <article className="admin-node-card">
+      <header>
+        <div>
+          <p>{node.id}</p>
+          <h4>{node.displayName}</h4>
+        </div>
+        <span className={`admin-node-status status-${node.status}`}>{node.status}</span>
+      </header>
+      <dl className="admin-node-meta">
+        <div><dt>系统</dt><dd>{formatAdminSystem(node)}</dd></div>
+        <div><dt>Agent</dt><dd>{node.agentVersion || '—'}</dd></div>
+        <div><dt>最近在线</dt><dd>{formatAdminDate(node.lastSeenAt)}</dd></div>
+        <div><dt>流量模式</dt><dd>{node.billingMode || 'both'}</dd></div>
+        <div><dt>月配额</dt><dd>{node.monthlyQuotaBytes ? compactBytes(node.monthlyQuotaBytes) : '—'}</dd></div>
+        <div><dt>资源</dt><dd>{formatAdminResources(node)}</dd></div>
+      </dl>
+    </article>
+  )
+}
+
+function formatAdminSystem(node: AdminNode): string {
+  const system = [node.osName, node.osVersion].filter(Boolean).join(' ')
+  return system || node.arch || '—'
+}
+
+function formatAdminResources(node: AdminNode): string {
+  const cpu = node.cpuCores ? `${node.cpuCores}C` : '—'
+  const mem = node.memoryTotalBytes ? compactBytes(node.memoryTotalBytes) : '—'
+  const disk = node.diskTotalBytes ? compactBytes(node.diskTotalBytes) : '—'
+  return `${cpu} / ${mem} / ${disk}`
+}
+
+function formatAdminDate(value?: string): string {
+  if (!value) return '—'
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return value
+  return date.toLocaleString('zh-CN', { hour12: false })
 }
 
 export function HomeOverviewPanel({ totalCount, onlineCount, offlineCount, totalUp, totalDown, upSpeed, downSpeed }: HomeOverviewPanelProps) {
