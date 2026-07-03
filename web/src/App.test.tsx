@@ -139,6 +139,42 @@ describe('AdminDashboard', () => {
     expect(html).not.toContain('admin-pass')
   })
 
+  it('renders backend-first node create controls and install command action in node edit cards', () => {
+    const html = renderToStaticMarkup(
+      <AdminDashboard
+        onHome={() => {}}
+        hasAdminToken
+        adminState={{
+          kind: 'ready',
+          nodes: [
+            {
+              id: 'hytron',
+              displayName: 'Hytron',
+              status: 'online',
+              disabled: false,
+              billingMode: 'both',
+              monthlyQuotaBytes: null,
+              createdAt: '2026-07-02T00:00:00Z',
+              updatedAt: '2026-07-03T00:00:00Z',
+              cpuCores: null,
+              memoryTotalBytes: null,
+              diskTotalBytes: null,
+            },
+          ],
+          targets: [],
+        }}
+        onAdminNodeCreate={() => {}}
+        onAdminInstallCommand={async () => 'install command'}
+      />,
+    )
+
+    expect(html).toContain('admin-node-create-form')
+    expect(html).toContain('添加服务器')
+    expect(html).toContain('name="new-display-name"')
+    expect(html).toContain('获取安装命令')
+    expect(html).not.toContain('admin-pass')
+  })
+
   it('renders authenticated probe target inventory in the admin shell', () => {
     const html = renderToStaticMarkup(
       <AdminDashboard

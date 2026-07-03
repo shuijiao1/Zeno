@@ -7,7 +7,11 @@ import (
 	"strings"
 )
 
-var errInvalidAdminNodeUpdate = errors.New("invalid admin node update")
+var (
+	errInvalidAdminNodeUpdate = errors.New("invalid admin node update")
+	errInvalidAdminNodeCreate = errors.New("invalid admin node create")
+	errNodeAlreadyExists      = errors.New("node already exists")
+)
 
 // AdminNodesResponse is the authenticated management view for node inventory.
 // It intentionally omits token hashes and other credentials.
@@ -17,6 +21,38 @@ type AdminNodesResponse struct {
 
 type AdminNodeResponse struct {
 	Node AdminNode `json:"node"`
+}
+
+type AdminNodeInstallCommandResponse struct {
+	NodeID  string `json:"node_id"`
+	Command string `json:"command"`
+}
+
+type AdminNodeCreateRequest struct {
+	ID                string             `json:"id,omitempty"`
+	DisplayName       string             `json:"display_name"`
+	CountryCode       string             `json:"country_code,omitempty"`
+	Region            string             `json:"region,omitempty"`
+	MonthlyQuotaBytes adminOptionalInt64 `json:"monthly_quota_bytes,omitempty"`
+	Disabled          bool               `json:"disabled,omitempty"`
+}
+
+func (request *AdminNodeCreateRequest) normalize() error {
+	trimmedName := strings.TrimSpace(request.DisplayName)
+	if trimmedName == "" {
+		return errInvalidAdminNodeCreate
+	}
+	request.DisplayName = trimmedName
+	request.ID = strings.TrimSpace(request.ID)
+	request.CountryCode = strings.ToUpper(strings.TrimSpace(request.CountryCode))
+	if len(request.CountryCode) > 8 {
+		return errInvalidAdminNodeCreate
+	}
+	request.Region = strings.TrimSpace(request.Region)
+	if request.MonthlyQuotaBytes.Set && request.MonthlyQuotaBytes.Valid && request.MonthlyQuotaBytes.Value < 0 {
+		return errInvalidAdminNodeCreate
+	}
+	return nil
 }
 
 type AdminProbeTargetsResponse struct {

@@ -1,4 +1,4 @@
-import type { AdminNode, AdminProbeTarget, HomeCardNode, LatencyPoint, StatePoint } from '../types'
+import type { AdminNode, AdminNodeInstallCommand, AdminProbeTarget, HomeCardNode, LatencyPoint, StatePoint } from '../types'
 
 interface ApiLatencySummary {
   target_id: string
@@ -125,6 +125,11 @@ export interface ApiAdminNodeResponse {
   node: ApiAdminNode
 }
 
+export interface ApiAdminNodeInstallCommandResponse {
+  node_id: string
+  command: string
+}
+
 export interface ApiAdminProbeTargetsResponse {
   targets: ApiAdminProbeTarget[]
 }
@@ -156,6 +161,15 @@ export interface AdminProbeTargetsData {
 
 export interface AdminNodeUpdateInput {
   displayName?: string
+  countryCode?: string
+  region?: string
+  monthlyQuotaBytes?: number | null
+  disabled?: boolean
+}
+
+export interface AdminNodeCreateInput {
+  id?: string
+  displayName: string
   countryCode?: string
   region?: string
   monthlyQuotaBytes?: number | null
@@ -210,6 +224,38 @@ export async function fetchAdminProbeTargets(adminToken: string): Promise<AdminP
     throw new Error(`admin probe targets request failed: ${response.status}`)
   }
   return normalizeAdminProbeTargets(await response.json() as ApiAdminProbeTargetsResponse)
+}
+
+export async function createAdminNode(adminToken: string, input: AdminNodeCreateInput): Promise<AdminNode> {
+  const response = await fetch('/api/admin/v1/nodes', {
+    method: 'POST',
+    headers: {
+      Accept: 'application/json',
+      'Content-Type': 'application/json',
+      'X-Admin-Token': adminToken,
+    },
+    body: JSON.stringify(serializeAdminNodeCreate(input)),
+  })
+  if (!response.ok) {
+    throw new Error(`admin node create failed: ${response.status}`)
+  }
+  const data = await response.json() as ApiAdminNodeResponse
+  return normalizeAdminNode(data.node)
+}
+
+export async function requestAdminNodeInstallCommand(adminToken: string, nodeId: string): Promise<AdminNodeInstallCommand> {
+  const response = await fetch(`/api/admin/v1/nodes/${encodeURIComponent(nodeId)}/install-command`, {
+    method: 'POST',
+    headers: {
+      Accept: 'application/json',
+      'X-Admin-Token': adminToken,
+    },
+  })
+  if (!response.ok) {
+    throw new Error(`admin node install command failed: ${response.status}`)
+  }
+  const data = await response.json() as ApiAdminNodeInstallCommandResponse
+  return { nodeId: data.node_id, command: data.command }
 }
 
 export async function updateAdminNode(adminToken: string, nodeId: string, input: AdminNodeUpdateInput): Promise<AdminNode> {
@@ -267,6 +313,17 @@ export function normalizeAdminProbeTargets(input: ApiAdminProbeTargetsResponse):
 function serializeAdminNodeUpdate(input: AdminNodeUpdateInput) {
   return {
     ...(input.displayName !== undefined ? { display_name: input.displayName } : {}),
+    ...(input.countryCode !== undefined ? { country_code: input.countryCode } : {}),
+    ...(input.region !== undefined ? { region: input.region } : {}),
+    ...(input.monthlyQuotaBytes !== undefined ? { monthly_quota_bytes: input.monthlyQuotaBytes } : {}),
+    ...(input.disabled !== undefined ? { disabled: input.disabled } : {}),
+  }
+}
+
+function serializeAdminNodeCreate(input: AdminNodeCreateInput) {
+  return {
+    ...(input.id !== undefined && input.id.trim() !== '' ? { id: input.id } : {}),
+    display_name: input.displayName,
     ...(input.countryCode !== undefined ? { country_code: input.countryCode } : {}),
     ...(input.region !== undefined ? { region: input.region } : {}),
     ...(input.monthlyQuotaBytes !== undefined ? { monthly_quota_bytes: input.monthlyQuotaBytes } : {}),

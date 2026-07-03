@@ -11,7 +11,9 @@ import (
 type adminStore interface {
 	AdminNodes(ctx context.Context) ([]AdminNode, error)
 	AdminProbeTargets(ctx context.Context) ([]AdminProbeTarget, error)
+	CreateAdminNode(ctx context.Context, create AdminNodeCreateRequest) (AdminNode, error)
 	UpdateAdminNode(ctx context.Context, nodeID string, update AdminNodeUpdateRequest) (AdminNode, error)
+	AdminNodeInstallCommand(ctx context.Context, nodeID, controllerURL, agentVersion string) (string, error)
 }
 
 func (h *handler) handleAdminProbeTargets(w http.ResponseWriter, r *http.Request) {
@@ -32,23 +34,48 @@ func (h *handler) handleAdminProbeTargets(w http.ResponseWriter, r *http.Request
 }
 
 func (h *handler) handleAdminNodes(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet {
-		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
-		return
-	}
 	store, ok := h.authorizeAdminRequest(w, r)
 	if !ok {
 		return
 	}
-	nodes, err := store.AdminNodes(r.Context())
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, "internal error")
-		return
+	switch r.Method {
+	case http.MethodGet:
+		nodes, err := store.AdminNodes(r.Context())
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, "internal error")
+			return
+		}
+		writeJSON(w, http.StatusOK, AdminNodesResponse{Nodes: nodes})
+	case http.MethodPost:
+		var create AdminNodeCreateRequest
+		decoder := json.NewDecoder(r.Body)
+		decoder.DisallowUnknownFields()
+		if err := decoder.Decode(&create); err != nil {
+			writeError(w, http.StatusBadRequest, "bad request")
+			return
+		}
+		node, err := store.CreateAdminNode(r.Context(), create)
+		if err != nil {
+			writeAdminError(w, err)
+			return
+		}
+		writeJSON(w, http.StatusCreated, AdminNodeResponse{Node: node})
+	default:
+		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
 	}
-	writeJSON(w, http.StatusOK, AdminNodesResponse{Nodes: nodes})
 }
 
 func (h *handler) handleAdminNodeResource(w http.ResponseWriter, r *http.Request) {
+	path := strings.Trim(strings.TrimPrefix(r.URL.Path, "/api/admin/v1/nodes/"), "/")
+	parts := strings.Split(path, "/")
+	if len(parts) == 2 && parts[1] == "install-command" {
+		h.handleAdminNodeInstallCommand(w, r, parts[0])
+		return
+	}
+	if len(parts) != 1 || parts[0] == "" {
+		writeError(w, http.StatusNotFound, "not found")
+		return
+	}
 	if r.Method != http.MethodPatch {
 		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
 		return
@@ -57,11 +84,7 @@ func (h *handler) handleAdminNodeResource(w http.ResponseWriter, r *http.Request
 	if !ok {
 		return
 	}
-	nodeID := strings.Trim(strings.TrimPrefix(r.URL.Path, "/api/admin/v1/nodes/"), "/")
-	if nodeID == "" || strings.Contains(nodeID, "/") {
-		writeError(w, http.StatusNotFound, "not found")
-		return
-	}
+	nodeID := parts[0]
 	var update AdminNodeUpdateRequest
 	decoder := json.NewDecoder(r.Body)
 	decoder.DisallowUnknownFields()
@@ -75,6 +98,23 @@ func (h *handler) handleAdminNodeResource(w http.ResponseWriter, r *http.Request
 		return
 	}
 	writeJSON(w, http.StatusOK, AdminNodeResponse{Node: node})
+}
+
+func (h *handler) handleAdminNodeInstallCommand(w http.ResponseWriter, r *http.Request, nodeID string) {
+	if r.Method != http.MethodPost {
+		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+	store, ok := h.authorizeAdminRequest(w, r)
+	if !ok {
+		return
+	}
+	command, err := store.AdminNodeInstallCommand(r.Context(), nodeID, requestBaseURL(r), h.agentVersion)
+	if err != nil {
+		writeAdminError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, AdminNodeInstallCommandResponse{NodeID: nodeID, Command: command})
 }
 
 func (h *handler) authorizeAdminRequest(w http.ResponseWriter, r *http.Request) (adminStore, bool) {
@@ -100,8 +140,12 @@ func writeAdminError(w http.ResponseWriter, err error) {
 		writeError(w, http.StatusNotFound, "node not found")
 		return
 	}
-	if errors.Is(err, errInvalidAdminNodeUpdate) {
+	if errors.Is(err, errInvalidAdminNodeUpdate) || errors.Is(err, errInvalidAdminNodeCreate) {
 		writeError(w, http.StatusBadRequest, "bad request")
+		return
+	}
+	if errors.Is(err, errNodeAlreadyExists) {
+		writeError(w, http.StatusConflict, "node already exists")
 		return
 	}
 	writeError(w, http.StatusInternalServerError, "internal error")

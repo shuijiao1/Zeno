@@ -82,6 +82,11 @@ export interface AdminNode {
   agentVersion?: string
 }
 
+export interface AdminNodeInstallCommand {
+  nodeId: string
+  command: string
+}
+
 export interface AdminProbeTargetAssignment {
   nodeId: string
   nodeDisplayName: string

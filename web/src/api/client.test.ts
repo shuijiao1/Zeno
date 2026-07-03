@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { fetchAdminNodes, fetchAdminProbeTargets, normalizeAdminNodes, normalizeAdminProbeTargets, normalizeNodeLatency, normalizeNodeState, normalizeSummary, updateAdminNode } from './client'
+import { fetchAdminNodes, fetchAdminProbeTargets, normalizeAdminNodes, normalizeAdminProbeTargets, normalizeNodeLatency, normalizeNodeState, normalizeSummary, createAdminNode, requestAdminNodeInstallCommand, updateAdminNode } from './client'
 
 describe('normalizeSummary', () => {
   it('maps controller snake_case JSON into frontend camelCase models', () => {
@@ -268,6 +268,86 @@ describe('updateAdminNode', () => {
         monthly_quota_bytes: 123456789,
         disabled: true,
       }),
+    })
+  })
+})
+
+describe('createAdminNode', () => {
+  const originalFetch = globalThis.fetch
+
+  afterEach(() => {
+    globalThis.fetch = originalFetch
+    vi.restoreAllMocks()
+  })
+
+  it('creates a backend-first node with editable fields and the admin token in X-Admin-Token only', async () => {
+    const fetchMock = vi.fn(async () => new Response(JSON.stringify({
+      node: {
+        id: 'new-server-a1b2c3d4',
+        display_name: 'New Server',
+        status: 'no_data',
+        country_code: 'US',
+        region: 'Los Angeles',
+        disabled: false,
+        billing_mode: 'both',
+        monthly_quota_bytes: 1099511627776,
+        created_at: '2026-07-03T00:00:00Z',
+        updated_at: '2026-07-03T00:00:00Z',
+      },
+    }), { status: 201, headers: { 'Content-Type': 'application/json' } }))
+    globalThis.fetch = fetchMock as unknown as typeof fetch
+
+    const node = await createAdminNode('admin-pass', {
+      displayName: 'New Server',
+      countryCode: 'US',
+      region: 'Los Angeles',
+      monthlyQuotaBytes: 1099511627776,
+    })
+
+    expect(node.id).toBe('new-server-a1b2c3d4')
+    expect(node.status).toBe('no_data')
+    expect(fetchMock).toHaveBeenCalledWith('/api/admin/v1/nodes', {
+      method: 'POST',
+      headers: {
+        Accept: 'application/json',
+        'Content-Type': 'application/json',
+        'X-Admin-Token': 'admin-pass',
+      },
+      body: JSON.stringify({
+        display_name: 'New Server',
+        country_code: 'US',
+        region: 'Los Angeles',
+        monthly_quota_bytes: 1099511627776,
+      }),
+    })
+  })
+})
+
+describe('requestAdminNodeInstallCommand', () => {
+  const originalFetch = globalThis.fetch
+
+  afterEach(() => {
+    globalThis.fetch = originalFetch
+    vi.restoreAllMocks()
+  })
+
+  it('requests an install command from the node edit context without putting the admin token in the URL', async () => {
+    const fetchMock = vi.fn(async () => new Response(JSON.stringify({
+      node_id: 'hytron',
+      command: "curl -fsSL 'https://probe.example.com/api/public/v1/agent/linux-amd64'",
+    }), { status: 200, headers: { 'Content-Type': 'application/json' } }))
+    globalThis.fetch = fetchMock as unknown as typeof fetch
+
+    const result = await requestAdminNodeInstallCommand('admin-pass', 'hytron')
+
+    expect(result.nodeId).toBe('hytron')
+    expect(result.command).toContain('/api/public/v1/agent/linux-amd64')
+    expect(fetchMock).toHaveBeenCalledWith('/api/admin/v1/nodes/hytron/install-command', {
+      method: 'POST',
+      headers: {
+        Accept: 'application/json',
+        'X-Admin-Token': 'admin-pass',
+      },
     })
   })
 })

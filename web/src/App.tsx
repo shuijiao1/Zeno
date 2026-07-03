@@ -1,5 +1,5 @@
 import { type FormEvent, useEffect, useState } from 'react'
-import { fetchAdminNodes, fetchAdminProbeTargets, fetchNodeLatency, fetchNodeState, fetchSummary, updateAdminNode, type AdminNodeUpdateInput, type NodeLatencyData, type NodeStateData, type SummaryData } from './api/client'
+import { createAdminNode, fetchAdminNodes, fetchAdminProbeTargets, fetchNodeLatency, fetchNodeState, fetchSummary, requestAdminNodeInstallCommand, updateAdminNode, type AdminNodeCreateInput, type AdminNodeUpdateInput, type NodeLatencyData, type NodeStateData, type SummaryData } from './api/client'
 import { LatencyDetail } from './components/LatencyDetail'
 import { ServerCard } from './components/ServerCard'
 import { startLiveRefresh } from './lib/liveRefresh'
@@ -194,6 +194,25 @@ export function App() {
       .catch((error: unknown) => setAdminState({ kind: 'error', message: error instanceof Error ? error.message : 'unknown error' }))
   }
 
+  const createAdminNodeDetails = (input: AdminNodeCreateInput) => {
+    if (adminToken === '') return
+    createAdminNode(adminToken, input)
+      .then((createdNode) => {
+        setAdminState((current) => {
+          if (current.kind === 'ready') {
+            return { kind: 'ready', nodes: [...current.nodes, createdNode], targets: current.targets }
+          }
+          return { kind: 'ready', nodes: [createdNode], targets: [] }
+        })
+      })
+      .catch((error: unknown) => setAdminState({ kind: 'error', message: error instanceof Error ? error.message : 'unknown error' }))
+  }
+
+  const requestAdminInstallCommand = (nodeId: string): Promise<string> => {
+    if (adminToken === '') return Promise.reject(new Error('missing admin token'))
+    return requestAdminNodeInstallCommand(adminToken, nodeId).then((result) => result.command)
+  }
+
   const updateAdminNodeDetails = (nodeId: string, input: AdminNodeUpdateInput) => {
     if (adminToken === '') return
     updateAdminNode(adminToken, nodeId, input)
@@ -246,7 +265,9 @@ export function App() {
           onAdminTokenSubmit={submitAdminToken}
           onAdminTokenClear={clearAdminToken}
           onAdminRefresh={refreshAdminNodes}
+          onAdminNodeCreate={createAdminNodeDetails}
           onAdminNodeUpdate={updateAdminNodeDetails}
+          onAdminInstallCommand={requestAdminInstallCommand}
         />
       )}
 
@@ -349,7 +370,9 @@ interface AdminDashboardProps {
   onAdminTokenSubmit?: (token: string) => void
   onAdminTokenClear?: () => void
   onAdminRefresh?: () => void
+  onAdminNodeCreate?: (input: AdminNodeCreateInput) => void
   onAdminNodeUpdate?: (nodeId: string, input: AdminNodeUpdateInput) => void
+  onAdminInstallCommand?: (nodeId: string) => Promise<string>
 }
 
 export function AdminDashboard({
@@ -359,7 +382,9 @@ export function AdminDashboard({
   onAdminTokenSubmit = () => {},
   onAdminTokenClear = () => {},
   onAdminRefresh = () => {},
+  onAdminNodeCreate = () => {},
   onAdminNodeUpdate = () => {},
+  onAdminInstallCommand = () => Promise.reject(new Error('install command unavailable')),
 }: AdminDashboardProps) {
   const handleTokenSubmit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
@@ -421,12 +446,14 @@ export function AdminDashboard({
                 </div>
               </header>
 
+              <AdminNodeCreateForm onCreate={onAdminNodeCreate} />
+
               {adminState.kind === 'loading' && <div className="admin-state-card">正在读取 Admin API…</div>}
               {adminState.kind === 'error' && <div className="admin-state-card is-error">Admin API 读取失败：{adminState.message}</div>}
               {adminState.kind === 'ready' && adminState.nodes.length === 0 && <div className="admin-state-card">还没有节点。</div>}
               {adminState.kind === 'ready' && adminState.nodes.length > 0 && (
                 <div className="admin-node-grid">
-                  {adminState.nodes.map((node) => <AdminNodeCard key={node.id} node={node} onUpdate={onAdminNodeUpdate} />)}
+                  {adminState.nodes.map((node) => <AdminNodeCard key={node.id} node={node} onUpdate={onAdminNodeUpdate} onInstallCommand={onAdminInstallCommand} />)}
                 </div>
               )}
             </section>
@@ -454,7 +481,53 @@ export function AdminDashboard({
   )
 }
 
-function AdminNodeCard({ node, onUpdate }: { node: AdminNode; onUpdate: (nodeId: string, input: AdminNodeUpdateInput) => void }) {
+function AdminNodeCreateForm({ onCreate }: { onCreate: (input: AdminNodeCreateInput) => void }) {
+  const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    const form = event.currentTarget
+    const formData = new FormData(form)
+    const displayName = String(formData.get('new-display-name') ?? '').trim()
+    if (displayName === '') return
+    onCreate({
+      id: String(formData.get('new-node-id') ?? '').trim() || undefined,
+      displayName,
+      countryCode: String(formData.get('new-country-code') ?? ''),
+      region: String(formData.get('new-region') ?? ''),
+      monthlyQuotaBytes: parseQuotaGigabytes(String(formData.get('new-monthly-quota-gb') ?? '')),
+    })
+    form.reset()
+  }
+
+  return (
+    <form className="admin-node-create-form admin-node-edit-form" aria-label="添加服务器" onSubmit={handleSubmit}>
+      <label>
+        <span>服务器名称</span>
+        <input name="new-display-name" autoComplete="off" placeholder="New Server" />
+      </label>
+      <label>
+        <span>节点 ID（可选）</span>
+        <input name="new-node-id" autoComplete="off" placeholder="自动生成" />
+      </label>
+      <label>
+        <span>国家</span>
+        <input name="new-country-code" autoComplete="off" placeholder="HK" />
+      </label>
+      <label>
+        <span>地区</span>
+        <input name="new-region" autoComplete="off" placeholder="Hong Kong" />
+      </label>
+      <label>
+        <span>月配额 GB</span>
+        <input name="new-monthly-quota-gb" type="number" min="0" step="0.01" />
+      </label>
+      <button type="submit">添加服务器</button>
+    </form>
+  )
+}
+
+function AdminNodeCard({ node, onUpdate, onInstallCommand }: { node: AdminNode; onUpdate: (nodeId: string, input: AdminNodeUpdateInput) => void; onInstallCommand: (nodeId: string) => Promise<string> }) {
+  const [installCommandState, setInstallCommandState] = useState<{ kind: 'idle' } | { kind: 'loading' } | { kind: 'ready'; command: string } | { kind: 'error'; message: string }>({ kind: 'idle' })
+
   const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
     const formData = new FormData(event.currentTarget)
@@ -465,6 +538,13 @@ function AdminNodeCard({ node, onUpdate }: { node: AdminNode; onUpdate: (nodeId:
       monthlyQuotaBytes: parseQuotaGigabytes(String(formData.get('monthly-quota-gb') ?? '')),
       disabled: formData.get('disabled') === 'on',
     })
+  }
+
+  const handleInstallCommand = () => {
+    setInstallCommandState({ kind: 'loading' })
+    onInstallCommand(node.id)
+      .then((command) => setInstallCommandState({ kind: 'ready', command }))
+      .catch((error: unknown) => setInstallCommandState({ kind: 'error', message: error instanceof Error ? error.message : 'unknown error' }))
   }
 
   return (
@@ -506,7 +586,12 @@ function AdminNodeCard({ node, onUpdate }: { node: AdminNode; onUpdate: (nodeId:
           <span>禁用节点</span>
         </label>
         <button type="submit">保存节点</button>
+        <button type="button" onClick={handleInstallCommand} disabled={installCommandState.kind === 'loading'}>{installCommandState.kind === 'loading' ? '生成中…' : '获取安装命令'}</button>
       </form>
+      {installCommandState.kind === 'ready' && (
+        <textarea className="admin-install-command" aria-label={`${node.displayName} Agent 安装命令`} readOnly value={installCommandState.command} />
+      )}
+      {installCommandState.kind === 'error' && <div className="admin-install-error">安装命令生成失败：{installCommandState.message}</div>}
     </article>
   )
 }

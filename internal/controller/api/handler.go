@@ -10,14 +10,18 @@ import (
 )
 
 type HandlerOptions struct {
-	StaticDir      string
-	Store          Store
-	AdminTokenHash string
+	StaticDir       string
+	Store           Store
+	AdminTokenHash  string
+	AgentBinaryPath string
+	AgentVersion    string
 }
 
 type handler struct {
-	store          Store
-	adminTokenHash string
+	store           Store
+	adminTokenHash  string
+	agentBinaryPath string
+	agentVersion    string
 }
 
 func NewHandler(options ...HandlerOptions) http.Handler {
@@ -29,10 +33,11 @@ func NewHandler(options ...HandlerOptions) http.Handler {
 	if store == nil {
 		store = mockStore{}
 	}
-	h := &handler{store: store, adminTokenHash: opts.AdminTokenHash}
+	h := &handler{store: store, adminTokenHash: opts.AdminTokenHash, agentBinaryPath: opts.AgentBinaryPath, agentVersion: opts.AgentVersion}
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/health", handleHealth)
+	mux.HandleFunc("/api/public/v1/agent/linux-amd64", h.handleAgentBinary)
 	mux.HandleFunc("/api/public/v1/summary", h.handleSummary)
 	mux.HandleFunc("/api/public/v1/nodes/", h.handlePublicNodeResource)
 	mux.HandleFunc("/api/admin/v1/probe-targets", h.handleAdminProbeTargets)
@@ -55,6 +60,43 @@ func handleHealth(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
+}
+
+func (h *handler) handleAgentBinary(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet && r.Method != http.MethodHead {
+		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+	if h.agentBinaryPath == "" {
+		writeError(w, http.StatusNotFound, "agent binary not configured")
+		return
+	}
+	if info, err := os.Stat(h.agentBinaryPath); err != nil || info.IsDir() {
+		writeError(w, http.StatusNotFound, "agent binary not found")
+		return
+	}
+	w.Header().Set("Content-Type", "application/octet-stream")
+	w.Header().Set("Content-Disposition", `attachment; filename="jiaoprobe-agent-linux-amd64"`)
+	http.ServeFile(w, r, h.agentBinaryPath)
+}
+
+func requestBaseURL(r *http.Request) string {
+	proto := strings.TrimSpace(r.Header.Get("X-Forwarded-Proto"))
+	if proto == "" {
+		if r.TLS != nil {
+			proto = "https"
+		} else {
+			proto = "http"
+		}
+	}
+	host := strings.TrimSpace(r.Header.Get("X-Forwarded-Host"))
+	if host == "" {
+		host = r.Host
+	}
+	if host == "" {
+		host = "127.0.0.1:18980"
+	}
+	return strings.TrimRight(proto+"://"+host, "/")
 }
 
 func (h *handler) handleSummary(w http.ResponseWriter, r *http.Request) {

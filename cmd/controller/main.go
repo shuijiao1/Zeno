@@ -13,12 +13,14 @@ import (
 )
 
 type handlerConfig struct {
-	DBPath      string
-	WebDir      string
-	SeedPreview bool
-	NodeID      string
-	AgentToken  string
-	AdminToken  string
+	DBPath          string
+	WebDir          string
+	SeedPreview     bool
+	NodeID          string
+	AgentToken      string
+	AdminToken      string
+	AgentBinaryPath string
+	AgentVersion    string
 }
 
 type controllerRuntime struct {
@@ -29,7 +31,7 @@ type controllerRuntime struct {
 
 func buildController(config handlerConfig) (*controllerRuntime, error) {
 	cleanup := func() error { return nil }
-	options := api.HandlerOptions{StaticDir: config.WebDir}
+	options := api.HandlerOptions{StaticDir: config.WebDir, AgentBinaryPath: config.AgentBinaryPath, AgentVersion: config.AgentVersion}
 	if strings.TrimSpace(config.AdminToken) != "" {
 		options.AdminTokenHash = api.HashAdminToken(config.AdminToken)
 	}
@@ -86,6 +88,8 @@ func main() {
 	agentTokenFile := flag.String("agent-token-file", "", "file containing the agent API bearer token for seeded preview node")
 	adminToken := flag.String("admin-token", "", "admin API token; prefer -admin-token-file in deployments")
 	adminTokenFile := flag.String("admin-token-file", "", "file containing the admin API token")
+	agentBinaryPath := flag.String("agent-binary", "", "optional jiaoprobe-agent linux/amd64 binary path served for dashboard install commands")
+	agentVersion := flag.String("agent-version", "", "optional version string inserted into generated agent install commands")
 	probeInterval := flag.Duration("probe-interval", time.Minute, "controller-local probe collection interval")
 	flag.Parse()
 
@@ -98,7 +102,7 @@ func main() {
 		log.Fatal(err)
 	}
 
-	runtime, err := buildController(handlerConfig{DBPath: *dbPath, WebDir: *webDir, SeedPreview: *seedPreview, NodeID: *nodeID, AgentToken: token, AdminToken: adminSecret})
+	runtime, err := buildController(handlerConfig{DBPath: *dbPath, WebDir: *webDir, SeedPreview: *seedPreview, NodeID: *nodeID, AgentToken: token, AdminToken: adminSecret, AgentBinaryPath: *agentBinaryPath, AgentVersion: *agentVersion})
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -128,6 +132,9 @@ func main() {
 	}
 	if *dbPath != "" {
 		log.Printf("using SQLite data store %s", *dbPath)
+	}
+	if *agentBinaryPath != "" {
+		log.Printf("serving agent binary from %s", *agentBinaryPath)
 	}
 	if *seedPreview {
 		log.Printf("seeded preview data for node %s", *nodeID)

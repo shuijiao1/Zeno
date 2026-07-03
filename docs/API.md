@@ -225,6 +225,23 @@ X-Admin-Token: <admin-token>
 
 节点管理列表，返回 enabled + disabled 节点、状态、地区、计费模式、配额、last seen、host info 和 agent version。
 
+### POST /api/admin/v1/nodes
+
+新增服务器。JiaoProbe 的服务器接入流程是先在后台添加服务器并编辑名称/地区/配额等管理字段，然后在该服务器编辑区获取 Agent 安装命令。
+
+请求：
+
+```json
+{
+  "display_name": "New Server",
+  "country_code": "HK",
+  "region": "Hong Kong",
+  "monthly_quota_bytes": 1099511627776
+}
+```
+
+响应返回新节点 DTO，但不会返回 Agent token 原文或 token hash。新节点默认 `status=no_data`，并自动分配当前启用的探针目标。
+
 ### PATCH /api/admin/v1/nodes/{node_id}
 
 更新节点可编辑管理字段。不会返回 token 原文或 token hash。

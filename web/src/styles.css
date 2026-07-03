@@ -372,6 +372,13 @@ svg { display: block; }
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 10px;
 }
+.admin-node-create-form {
+  margin: 0 0 14px;
+  padding: 14px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--background) 58%, transparent);
+}
 .admin-node-edit-form label {
   min-width: 0;
   display: flex;
@@ -401,6 +408,19 @@ svg { display: block; }
 }
 .admin-node-toggle input { width: 16px; height: 16px; accent-color: var(--red); }
 .admin-node-edit-form button { align-self: end; }
+.admin-install-command {
+  width: 100%;
+  min-height: 120px;
+  margin-top: 12px;
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--background) 70%, transparent);
+  color: var(--foreground);
+  font: 12px/1.5 ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+  resize: vertical;
+}
+.admin-install-error { margin-top: 10px; color: var(--red); font-size: 13px; font-weight: 700; }
 .admin-state-card {
   padding: 18px;
   border: 1px solid var(--border);
