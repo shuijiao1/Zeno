@@ -769,3 +769,231 @@ func TestAdminProbeTargetsRequiresAdminToken(t *testing.T) {
 		t.Fatalf("admin target auth failure body should not leak token/secret wording: %s", recorder.Body.String())
 	}
 }
+
+func TestAdminNotificationChannelsCreateListAndPatchWithoutCredentialLeak(t *testing.T) {
+	store, err := OpenSQLiteStore(filepath.Join(t.TempDir(), "jiaoprobe.db"))
+	if err != nil {
+		t.Fatalf("open sqlite store: %v", err)
+	}
+	defer store.Close()
+	handler := NewHandler(HandlerOptions{Store: store, AdminTokenHash: HashAdminToken("admin-pass")})
+
+	createRecorder := httptest.NewRecorder()
+	createRequest := httptest.NewRequest(http.MethodPost, "/api/admin/v1/notification-channels", bytes.NewBufferString(`{
+		"name": "  Telegram Home  ",
+		"type": "telegram",
+		"destination": "  7579942307  ",
+		"credential": "telegram-bot-secret-value",
+		"enabled": true
+	}`))
+	createRequest.Header.Set("X-Admin-Token", "admin-pass")
+	handler.ServeHTTP(createRecorder, createRequest)
+
+	if createRecorder.Code != http.StatusCreated {
+		t.Fatalf("create status = %d, want 201; body=%s", createRecorder.Code, createRecorder.Body.String())
+	}
+	assertNoSensitiveNotificationLeak(t, createRecorder.Body.String())
+	var createResponse struct {
+		Channel struct {
+			ID            string `json:"id"`
+			Name          string `json:"name"`
+			Type          string `json:"type"`
+			Destination   string `json:"destination"`
+			CredentialSet bool   `json:"credential_set"`
+			Enabled       bool   `json:"enabled"`
+		} `json:"channel"`
+	}
+	if err := json.NewDecoder(bytes.NewBufferString(createRecorder.Body.String())).Decode(&createResponse); err != nil {
+		t.Fatalf("decode created notification channel: %v", err)
+	}
+	if createResponse.Channel.ID == "" || createResponse.Channel.Name != "Telegram Home" || createResponse.Channel.Type != "telegram" || createResponse.Channel.Destination != "7579942307" || !createResponse.Channel.CredentialSet || !createResponse.Channel.Enabled {
+		t.Fatalf("created channel = %+v, want normalized enabled telegram channel with credential marker", createResponse.Channel)
+	}
+
+	listRecorder := httptest.NewRecorder()
+	listRequest := httptest.NewRequest(http.MethodGet, "/api/admin/v1/notification-channels", nil)
+	listRequest.Header.Set("X-Admin-Token", "admin-pass")
+	handler.ServeHTTP(listRecorder, listRequest)
+	if listRecorder.Code != http.StatusOK {
+		t.Fatalf("list status = %d, want 200; body=%s", listRecorder.Code, listRecorder.Body.String())
+	}
+	assertNoSensitiveNotificationLeak(t, listRecorder.Body.String())
+	var listResponse struct {
+		Channels []struct {
+			ID            string `json:"id"`
+			Name          string `json:"name"`
+			Type          string `json:"type"`
+			Destination   string `json:"destination"`
+			CredentialSet bool   `json:"credential_set"`
+			Enabled       bool   `json:"enabled"`
+		} `json:"channels"`
+	}
+	if err := json.NewDecoder(bytes.NewBufferString(listRecorder.Body.String())).Decode(&listResponse); err != nil {
+		t.Fatalf("decode notification channels: %v", err)
+	}
+	if len(listResponse.Channels) != 1 || listResponse.Channels[0].ID != createResponse.Channel.ID || !listResponse.Channels[0].CredentialSet {
+		t.Fatalf("listed channels = %+v, want one persisted channel with credential marker", listResponse.Channels)
+	}
+
+	patchRecorder := httptest.NewRecorder()
+	patchRequest := httptest.NewRequest(http.MethodPatch, "/api/admin/v1/notification-channels/"+createResponse.Channel.ID, bytes.NewBufferString(`{
+		"name": "  Home Telegram Updated  ",
+		"enabled": false
+	}`))
+	patchRequest.Header.Set("X-Admin-Token", "admin-pass")
+	handler.ServeHTTP(patchRecorder, patchRequest)
+	if patchRecorder.Code != http.StatusOK {
+		t.Fatalf("patch status = %d, want 200; body=%s", patchRecorder.Code, patchRecorder.Body.String())
+	}
+	assertNoSensitiveNotificationLeak(t, patchRecorder.Body.String())
+	var patchResponse struct {
+		Channel struct {
+			ID            string `json:"id"`
+			Name          string `json:"name"`
+			CredentialSet bool   `json:"credential_set"`
+			Enabled       bool   `json:"enabled"`
+		} `json:"channel"`
+	}
+	if err := json.NewDecoder(bytes.NewBufferString(patchRecorder.Body.String())).Decode(&patchResponse); err != nil {
+		t.Fatalf("decode patched notification channel: %v", err)
+	}
+	if patchResponse.Channel.ID != createResponse.Channel.ID || patchResponse.Channel.Name != "Home Telegram Updated" || !patchResponse.Channel.CredentialSet || patchResponse.Channel.Enabled {
+		t.Fatalf("patched channel = %+v, want renamed disabled channel preserving credential marker", patchResponse.Channel)
+	}
+}
+
+func TestAdminNotificationChannelsRejectUnauthorizedUnknownAndInvalidRequests(t *testing.T) {
+	store, err := OpenSQLiteStore(filepath.Join(t.TempDir(), "jiaoprobe.db"))
+	if err != nil {
+		t.Fatalf("open sqlite store: %v", err)
+	}
+	defer store.Close()
+	handler := NewHandler(HandlerOptions{Store: store, AdminTokenHash: HashAdminToken("admin-pass")})
+
+	cases := []struct {
+		name       string
+		method     string
+		path       string
+		body       string
+		adminToken string
+		wantStatus int
+	}{
+		{name: "create missing admin token", method: http.MethodPost, path: "/api/admin/v1/notification-channels", body: `{"name":"Home","type":"telegram","destination":"7579942307","credential":"telegram-bot-secret-value"}`, wantStatus: http.StatusUnauthorized},
+		{name: "create blank name", method: http.MethodPost, path: "/api/admin/v1/notification-channels", body: `{"name":"   ","type":"telegram","destination":"7579942307","credential":"telegram-bot-secret-value"}`, adminToken: "admin-pass", wantStatus: http.StatusBadRequest},
+		{name: "create unsupported type", method: http.MethodPost, path: "/api/admin/v1/notification-channels", body: `{"name":"Home","type":"email","destination":"ops@example.com","credential":"email-secret-value"}`, adminToken: "admin-pass", wantStatus: http.StatusBadRequest},
+		{name: "create missing credential", method: http.MethodPost, path: "/api/admin/v1/notification-channels", body: `{"name":"Home","type":"telegram","destination":"7579942307"}`, adminToken: "admin-pass", wantStatus: http.StatusBadRequest},
+		{name: "patch unknown channel", method: http.MethodPatch, path: "/api/admin/v1/notification-channels/missing", body: `{"enabled":false}`, adminToken: "admin-pass", wantStatus: http.StatusNotFound},
+		{name: "patch empty body", method: http.MethodPatch, path: "/api/admin/v1/notification-channels/missing", body: `{}`, adminToken: "admin-pass", wantStatus: http.StatusBadRequest},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			recorder := httptest.NewRecorder()
+			request := httptest.NewRequest(tc.method, tc.path, bytes.NewBufferString(tc.body))
+			if tc.adminToken != "" {
+				request.Header.Set("X-Admin-Token", tc.adminToken)
+			}
+			handler.ServeHTTP(recorder, request)
+			if recorder.Code != tc.wantStatus {
+				t.Fatalf("status = %d, want %d; body=%s", recorder.Code, tc.wantStatus, recorder.Body.String())
+			}
+			assertNoSensitiveNotificationLeak(t, recorder.Body.String())
+		})
+	}
+}
+
+func TestAdminNotificationTypesListAndPatch(t *testing.T) {
+	store, err := OpenSQLiteStore(filepath.Join(t.TempDir(), "jiaoprobe.db"))
+	if err != nil {
+		t.Fatalf("open sqlite store: %v", err)
+	}
+	defer store.Close()
+	handler := NewHandler(HandlerOptions{Store: store, AdminTokenHash: HashAdminToken("admin-pass")})
+
+	listRecorder := httptest.NewRecorder()
+	listRequest := httptest.NewRequest(http.MethodGet, "/api/admin/v1/notification-types", nil)
+	listRequest.Header.Set("X-Admin-Token", "admin-pass")
+	handler.ServeHTTP(listRecorder, listRequest)
+	if listRecorder.Code != http.StatusOK {
+		t.Fatalf("list status = %d, want 200; body=%s", listRecorder.Code, listRecorder.Body.String())
+	}
+	var listResponse struct {
+		Types []struct {
+			EventType string `json:"event_type"`
+			Label     string `json:"label"`
+			Enabled   bool   `json:"enabled"`
+		} `json:"types"`
+	}
+	if err := json.NewDecoder(bytes.NewBufferString(listRecorder.Body.String())).Decode(&listResponse); err != nil {
+		t.Fatalf("decode notification types: %v", err)
+	}
+	if len(listResponse.Types) != 3 || listResponse.Types[0].EventType != "node_online" || listResponse.Types[0].Label != "上线" || listResponse.Types[0].Enabled {
+		t.Fatalf("notification types = %+v, want disabled default online/offline/unhealthy types", listResponse.Types)
+	}
+
+	patchRecorder := httptest.NewRecorder()
+	patchRequest := httptest.NewRequest(http.MethodPatch, "/api/admin/v1/notification-types/node_offline", bytes.NewBufferString(`{"enabled": true}`))
+	patchRequest.Header.Set("X-Admin-Token", "admin-pass")
+	handler.ServeHTTP(patchRecorder, patchRequest)
+	if patchRecorder.Code != http.StatusOK {
+		t.Fatalf("patch status = %d, want 200; body=%s", patchRecorder.Code, patchRecorder.Body.String())
+	}
+	var patchResponse struct {
+		Type struct {
+			EventType string `json:"event_type"`
+			Label     string `json:"label"`
+			Enabled   bool   `json:"enabled"`
+		} `json:"type"`
+	}
+	if err := json.NewDecoder(bytes.NewBufferString(patchRecorder.Body.String())).Decode(&patchResponse); err != nil {
+		t.Fatalf("decode patched notification type: %v", err)
+	}
+	if patchResponse.Type.EventType != "node_offline" || patchResponse.Type.Label != "离线" || !patchResponse.Type.Enabled {
+		t.Fatalf("patched notification type = %+v, want enabled offline type", patchResponse.Type)
+	}
+}
+
+func TestAdminNotificationTypesRejectUnauthorizedUnknownAndInvalidRequests(t *testing.T) {
+	store, err := OpenSQLiteStore(filepath.Join(t.TempDir(), "jiaoprobe.db"))
+	if err != nil {
+		t.Fatalf("open sqlite store: %v", err)
+	}
+	defer store.Close()
+	handler := NewHandler(HandlerOptions{Store: store, AdminTokenHash: HashAdminToken("admin-pass")})
+
+	cases := []struct {
+		name       string
+		method     string
+		path       string
+		body       string
+		adminToken string
+		wantStatus int
+	}{
+		{name: "list missing admin token", method: http.MethodGet, path: "/api/admin/v1/notification-types", wantStatus: http.StatusUnauthorized},
+		{name: "patch unknown type", method: http.MethodPatch, path: "/api/admin/v1/notification-types/missing", body: `{"enabled":true}`, adminToken: "admin-pass", wantStatus: http.StatusNotFound},
+		{name: "patch missing enabled", method: http.MethodPatch, path: "/api/admin/v1/notification-types/node_offline", body: `{}`, adminToken: "admin-pass", wantStatus: http.StatusBadRequest},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			recorder := httptest.NewRecorder()
+			request := httptest.NewRequest(tc.method, tc.path, bytes.NewBufferString(tc.body))
+			if tc.adminToken != "" {
+				request.Header.Set("X-Admin-Token", tc.adminToken)
+			}
+			handler.ServeHTTP(recorder, request)
+			if recorder.Code != tc.wantStatus {
+				t.Fatalf("status = %d, want %d; body=%s", recorder.Code, tc.wantStatus, recorder.Body.String())
+			}
+			assertNoSensitiveNotificationLeak(t, recorder.Body.String())
+		})
+	}
+}
+
+func assertNoSensitiveNotificationLeak(t *testing.T, raw string) {
+	t.Helper()
+	lower := bytes.ToLower([]byte(raw))
+	if bytes.Contains(lower, []byte("token")) || bytes.Contains(lower, []byte("secret")) || bytes.Contains([]byte(raw), []byte("telegram-bot-secret-value")) || bytes.Contains([]byte(raw), []byte("email-secret-value")) {
+		t.Fatalf("notification response leaked sensitive fields: %s", raw)
+	}
+}

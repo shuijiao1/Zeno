@@ -71,6 +71,13 @@ Public API 只返回展示所需数据：
 - SQLite 文件权限限制在服务用户内。
 - systemd unit 使用专用用户时优先。
 
+## 通知渠道凭据
+
+- 通知渠道写入时可以提交 Telegram/Webhook 凭据。
+- Admin API 响应只返回 `credential_set`，不返回凭据原文。
+- 渠道凭据不进入 URL query string，不写入日志，不放到 Telegram 汇报里。
+- SQLite 文件权限仍是第一道边界；后续如加入专用服务用户，应继续限制 DB 读取权限。
+
 ## 日志红线
 
 日志里不得出现：

@@ -310,11 +310,75 @@ X-Admin-Token: <admin-token>
 }
 ```
 
-### 后续管理接口草案
+### POST /api/admin/v1/probe-targets
 
-- `POST /api/admin/v1/nodes`
-- `POST /api/admin/v1/nodes/{node_id}/rotate-token`
-- `POST /api/admin/v1/probe-targets`
-- `PATCH /api/admin/v1/probe-targets/{target_id}`
+新增探针目标。新目标默认分配到现有节点；响应仍不包含 Agent 凭据。
 
-Admin API 返回中必须隐藏 token 原文和 token hash。
+### PATCH /api/admin/v1/probe-targets/{target_id}
+
+更新探针目标配置或节点分配。`assignments` 省略表示不改变分配；传入时按 `node_id` 更新启用状态。
+
+### GET /api/admin/v1/notification-channels
+
+通知渠道管理列表。渠道凭据只在写入时提交，响应只返回 `credential_set` 标记，不返回凭据原文。
+
+```json
+{
+  "channels": [
+    {
+      "id": "telegram-home",
+      "name": "Telegram Home",
+      "type": "telegram",
+      "destination": "7579942307",
+      "credential_set": true,
+      "enabled": true,
+      "created_at": "2026-07-03T00:00:00Z",
+      "updated_at": "2026-07-03T00:00:00Z"
+    }
+  ]
+}
+```
+
+### POST /api/admin/v1/notification-channels
+
+新增通知渠道。当前支持 `telegram` 和 `webhook` 两类；`credential` 可以是 Telegram Bot 凭据或 Webhook URL，只保存用于后续发送，响应不会返回。
+
+```json
+{
+  "name": "Telegram Home",
+  "type": "telegram",
+  "destination": "7579942307",
+  "credential": "***",
+  "enabled": true
+}
+```
+
+### PATCH /api/admin/v1/notification-channels/{channel_id}
+
+部分更新通知渠道。省略 `credential` 时保留旧凭据；传入新 `credential` 时覆盖旧凭据。
+
+### GET /api/admin/v1/notification-types
+
+通知类型配置列表。当前保留三类中性事件：上线、离线、异常；默认关闭，后续通知发送逻辑会读取这里的启用状态。
+
+```json
+{
+  "types": [
+    {"event_type": "node_online", "label": "上线", "enabled": false},
+    {"event_type": "node_offline", "label": "离线", "enabled": false},
+    {"event_type": "probe_unhealthy", "label": "异常", "enabled": false}
+  ]
+}
+```
+
+### PATCH /api/admin/v1/notification-types/{event_type}
+
+启用或关闭某个通知类型。
+
+```json
+{
+  "enabled": true
+}
+```
+
+Admin API 返回中必须隐藏 token 原文、token hash、通知渠道凭据原文和 secret 字段。

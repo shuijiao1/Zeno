@@ -140,6 +140,21 @@ func (s *SQLiteStore) ensureSchema(ctx context.Context) error {
 			error TEXT,
 			PRIMARY KEY (round_id, seq)
 		);`,
+		`CREATE TABLE IF NOT EXISTS notification_channels (
+			id TEXT PRIMARY KEY,
+			name TEXT NOT NULL,
+			type TEXT NOT NULL,
+			destination TEXT NOT NULL,
+			credential TEXT NOT NULL,
+			enabled INTEGER NOT NULL DEFAULT 1,
+			created_at INTEGER NOT NULL,
+			updated_at INTEGER NOT NULL
+		);`,
+		`CREATE TABLE IF NOT EXISTS notification_types (
+			event_type TEXT PRIMARY KEY,
+			enabled INTEGER NOT NULL DEFAULT 0,
+			updated_at INTEGER NOT NULL
+		);`,
 		`CREATE TABLE IF NOT EXISTS settings (
 			key TEXT PRIMARY KEY,
 			value TEXT NOT NULL,

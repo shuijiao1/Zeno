@@ -8,12 +8,17 @@ import (
 )
 
 var (
-	errInvalidAdminNodeUpdate   = errors.New("invalid admin node update")
-	errInvalidAdminNodeCreate   = errors.New("invalid admin node create")
-	errNodeAlreadyExists        = errors.New("node already exists")
-	errInvalidAdminTargetWrite  = errors.New("invalid admin probe target write")
-	errProbeTargetNotFound      = errors.New("probe target not found")
-	errProbeTargetAlreadyExists = errors.New("probe target already exists")
+	errInvalidAdminNodeUpdate               = errors.New("invalid admin node update")
+	errInvalidAdminNodeCreate               = errors.New("invalid admin node create")
+	errNodeAlreadyExists                    = errors.New("node already exists")
+	errInvalidAdminTargetWrite              = errors.New("invalid admin probe target write")
+	errProbeTargetNotFound                  = errors.New("probe target not found")
+	errProbeTargetAlreadyExists             = errors.New("probe target already exists")
+	errInvalidAdminNotificationChannelWrite = errors.New("invalid admin notification channel write")
+	errNotificationChannelNotFound          = errors.New("notification channel not found")
+	errNotificationChannelAlreadyExists     = errors.New("notification channel already exists")
+	errInvalidAdminNotificationTypeWrite    = errors.New("invalid admin notification type write")
+	errNotificationTypeNotFound             = errors.New("notification type not found")
 )
 
 // AdminNodesResponse is the authenticated management view for node inventory.
@@ -213,6 +218,132 @@ type AdminProbeTargetAssignment struct {
 	NodeID          string `json:"node_id"`
 	NodeDisplayName string `json:"node_display_name"`
 	Enabled         bool   `json:"enabled"`
+}
+
+type AdminNotificationChannelsResponse struct {
+	Channels []AdminNotificationChannel `json:"channels"`
+}
+
+type AdminNotificationChannelResponse struct {
+	Channel AdminNotificationChannel `json:"channel"`
+}
+
+type AdminNotificationTypesResponse struct {
+	Types []AdminNotificationType `json:"types"`
+}
+
+type AdminNotificationTypeResponse struct {
+	Type AdminNotificationType `json:"type"`
+}
+
+type AdminNotificationChannelCreateRequest struct {
+	ID          string `json:"id,omitempty"`
+	Name        string `json:"name"`
+	Type        string `json:"type"`
+	Destination string `json:"destination"`
+	Credential  string `json:"credential"`
+	Enabled     *bool  `json:"enabled,omitempty"`
+}
+
+func (request *AdminNotificationChannelCreateRequest) normalize() error {
+	request.ID = normalizeAdminNodeID(request.ID)
+	request.Name = strings.TrimSpace(request.Name)
+	request.Type = strings.ToLower(strings.TrimSpace(request.Type))
+	request.Destination = strings.TrimSpace(request.Destination)
+	request.Credential = strings.TrimSpace(request.Credential)
+	if request.Name == "" || request.Destination == "" || request.Credential == "" || !validAdminNotificationChannelType(request.Type) {
+		return errInvalidAdminNotificationChannelWrite
+	}
+	return nil
+}
+
+type AdminNotificationChannelUpdateRequest struct {
+	Name        *string `json:"name,omitempty"`
+	Type        *string `json:"type,omitempty"`
+	Destination *string `json:"destination,omitempty"`
+	Credential  *string `json:"credential,omitempty"`
+	Enabled     *bool   `json:"enabled,omitempty"`
+}
+
+func (request *AdminNotificationChannelUpdateRequest) normalize() error {
+	changed := false
+	if request.Name != nil {
+		changed = true
+		trimmed := strings.TrimSpace(*request.Name)
+		if trimmed == "" {
+			return errInvalidAdminNotificationChannelWrite
+		}
+		request.Name = &trimmed
+	}
+	if request.Type != nil {
+		changed = true
+		trimmed := strings.ToLower(strings.TrimSpace(*request.Type))
+		if !validAdminNotificationChannelType(trimmed) {
+			return errInvalidAdminNotificationChannelWrite
+		}
+		request.Type = &trimmed
+	}
+	if request.Destination != nil {
+		changed = true
+		trimmed := strings.TrimSpace(*request.Destination)
+		if trimmed == "" {
+			return errInvalidAdminNotificationChannelWrite
+		}
+		request.Destination = &trimmed
+	}
+	if request.Credential != nil {
+		changed = true
+		trimmed := strings.TrimSpace(*request.Credential)
+		if trimmed == "" {
+			return errInvalidAdminNotificationChannelWrite
+		}
+		request.Credential = &trimmed
+	}
+	if request.Enabled != nil {
+		changed = true
+	}
+	if !changed {
+		return errInvalidAdminNotificationChannelWrite
+	}
+	return nil
+}
+
+func validAdminNotificationChannelType(channelType string) bool {
+	switch channelType {
+	case "telegram", "webhook":
+		return true
+	default:
+		return false
+	}
+}
+
+type AdminNotificationTypeUpdateRequest struct {
+	Enabled *bool `json:"enabled,omitempty"`
+}
+
+func (request AdminNotificationTypeUpdateRequest) normalize() error {
+	if request.Enabled == nil {
+		return errInvalidAdminNotificationTypeWrite
+	}
+	return nil
+}
+
+type AdminNotificationChannel struct {
+	ID            string `json:"id"`
+	Name          string `json:"name"`
+	Type          string `json:"type"`
+	Destination   string `json:"destination"`
+	CredentialSet bool   `json:"credential_set"`
+	Enabled       bool   `json:"enabled"`
+	CreatedAt     string `json:"created_at"`
+	UpdatedAt     string `json:"updated_at"`
+}
+
+type AdminNotificationType struct {
+	EventType string `json:"event_type"`
+	Label     string `json:"label"`
+	Enabled   bool   `json:"enabled"`
+	UpdatedAt string `json:"updated_at,omitempty"`
 }
 
 type AdminNodeUpdateRequest struct {

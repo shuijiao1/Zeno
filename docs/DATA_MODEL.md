@@ -164,6 +164,35 @@ CREATE TABLE probe_samples (
 );
 ```
 
+## notification_channels
+
+通知渠道。`credential` 用于后续发送，不通过 Admin API 响应返回；展示层只能看到 `credential_set`。
+
+```sql
+CREATE TABLE notification_channels (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  type TEXT NOT NULL, -- telegram | webhook
+  destination TEXT NOT NULL,
+  credential TEXT NOT NULL,
+  enabled INTEGER NOT NULL DEFAULT 1,
+  created_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL
+);
+```
+
+## notification_types
+
+通知类型开关。
+
+```sql
+CREATE TABLE notification_types (
+  event_type TEXT PRIMARY KEY, -- node_online | node_offline | probe_unhealthy
+  enabled INTEGER NOT NULL DEFAULT 0,
+  updated_at INTEGER NOT NULL
+);
+```
+
 ## settings
 
 全局设置。

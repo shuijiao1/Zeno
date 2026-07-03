@@ -11,11 +11,16 @@ import (
 type adminStore interface {
 	AdminNodes(ctx context.Context) ([]AdminNode, error)
 	AdminProbeTargets(ctx context.Context) ([]AdminProbeTarget, error)
+	AdminNotificationChannels(ctx context.Context) ([]AdminNotificationChannel, error)
+	AdminNotificationTypes(ctx context.Context) ([]AdminNotificationType, error)
 	CreateAdminNode(ctx context.Context, create AdminNodeCreateRequest) (AdminNode, error)
 	UpdateAdminNode(ctx context.Context, nodeID string, update AdminNodeUpdateRequest) (AdminNode, error)
 	AdminNodeInstallCommand(ctx context.Context, nodeID, controllerURL, agentVersion string) (string, error)
 	CreateAdminProbeTarget(ctx context.Context, create AdminProbeTargetCreateRequest) (AdminProbeTarget, error)
 	UpdateAdminProbeTarget(ctx context.Context, targetID string, update AdminProbeTargetUpdateRequest) (AdminProbeTarget, error)
+	CreateAdminNotificationChannel(ctx context.Context, create AdminNotificationChannelCreateRequest) (AdminNotificationChannel, error)
+	UpdateAdminNotificationChannel(ctx context.Context, channelID string, update AdminNotificationChannelUpdateRequest) (AdminNotificationChannel, error)
+	UpdateAdminNotificationType(ctx context.Context, eventType string, update AdminNotificationTypeUpdateRequest) (AdminNotificationType, error)
 }
 
 func (h *handler) handleAdminProbeTargets(w http.ResponseWriter, r *http.Request) {
@@ -183,15 +188,15 @@ func (h *handler) authorizeAdminRequest(w http.ResponseWriter, r *http.Request) 
 }
 
 func writeAdminError(w http.ResponseWriter, err error) {
-	if errors.Is(err, errNodeNotFound) || errors.Is(err, errProbeTargetNotFound) {
+	if errors.Is(err, errNodeNotFound) || errors.Is(err, errProbeTargetNotFound) || errors.Is(err, errNotificationChannelNotFound) || errors.Is(err, errNotificationTypeNotFound) {
 		writeError(w, http.StatusNotFound, "not found")
 		return
 	}
-	if errors.Is(err, errInvalidAdminNodeUpdate) || errors.Is(err, errInvalidAdminNodeCreate) || errors.Is(err, errInvalidAdminTargetWrite) {
+	if errors.Is(err, errInvalidAdminNodeUpdate) || errors.Is(err, errInvalidAdminNodeCreate) || errors.Is(err, errInvalidAdminTargetWrite) || errors.Is(err, errInvalidAdminNotificationChannelWrite) || errors.Is(err, errInvalidAdminNotificationTypeWrite) {
 		writeError(w, http.StatusBadRequest, "bad request")
 		return
 	}
-	if errors.Is(err, errNodeAlreadyExists) || errors.Is(err, errProbeTargetAlreadyExists) {
+	if errors.Is(err, errNodeAlreadyExists) || errors.Is(err, errProbeTargetAlreadyExists) || errors.Is(err, errNotificationChannelAlreadyExists) {
 		writeError(w, http.StatusConflict, "already exists")
 		return
 	}
