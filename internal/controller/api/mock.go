@@ -22,6 +22,37 @@ func used(total *float64, percent float64) *float64 {
 	return ptr(*total * percent / 100)
 }
 
+func mockOSVersion(osName string) string {
+	if osName == "windows" {
+		return "11"
+	}
+	return "13"
+}
+
+func mockKernel(osName string) string {
+	if osName == "windows" {
+		return "10.0.26100"
+	}
+	return "6.12.0"
+}
+
+func mockVirtualization(osName string) string {
+	if osName == "windows" {
+		return "hyper-v"
+	}
+	return "kvm"
+}
+
+func mockCPUModel(osName string, cores float64) string {
+	if osName == "windows" {
+		return "AMD Ryzen 9 7945HX"
+	}
+	if cores >= 4 {
+		return "AMD EPYC 7B13"
+	}
+	return "Intel Xeon Virtual CPU"
+}
+
 func mockNode(id, name, osName, countryCode string, cores float64, expiry string, cpuPercent float64, memoryTotal *float64, memoryPercent float64, diskTotal *float64, diskPercent float64, monthlyBillable, monthlyQuota, netOutSpeed, netInSpeed *float64, latency, loss *float64) Node {
 	var latencySummary *LatencySummary
 	if latency != nil || loss != nil {
@@ -32,7 +63,11 @@ func mockNode(id, name, osName, countryCode string, cores float64, expiry string
 		DisplayName:          name,
 		Status:               "online",
 		OS:                   osName,
+		OSVersion:            mockOSVersion(osName),
+		Kernel:               mockKernel(osName),
 		Arch:                 "x86_64",
+		Virtualization:       mockVirtualization(osName),
+		CPUModel:             mockCPUModel(osName, cores),
 		CountryCode:          countryCode,
 		CPUCores:             ptr(cores),
 		ExpiryLabel:          expiry,

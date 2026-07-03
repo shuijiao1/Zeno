@@ -14,7 +14,11 @@ interface ApiNode {
   display_name: string
   status: HomeCardNode['status']
   os: HomeCardNode['os']
+  os_version?: string
+  kernel?: string
   arch?: string
+  virtualization?: string
+  cpu_model?: string
   country_code?: string
   subtitle?: string
   cpu_cores?: number | null
@@ -101,20 +105,20 @@ interface ApiAdminProbeTarget {
 }
 
 export interface ApiSummaryResponse {
-  nodes: ApiNode[]
-  latency_points: ApiLatencyPoint[]
+  nodes: ApiNode[] | null
+  latency_points: ApiLatencyPoint[] | null
 }
 
 export interface ApiLatencyResponse {
   node_id: string
   range: string
-  points: ApiLatencyPoint[]
+  points: ApiLatencyPoint[] | null
 }
 
 export interface ApiStateResponse {
   node_id: string
   range: string
-  points: ApiStatePoint[]
+  points: ApiStatePoint[] | null
 }
 
 export interface ApiAdminNodesResponse {
@@ -339,8 +343,8 @@ export async function updateAdminNode(adminToken: string, nodeId: string, input:
 
 export function normalizeSummary(input: ApiSummaryResponse): SummaryData {
   return {
-    nodes: input.nodes.map(normalizeNode),
-    latencyPoints: input.latency_points.map(normalizeLatencyPoint),
+    nodes: (input.nodes ?? []).map(normalizeNode),
+    latencyPoints: (input.latency_points ?? []).map(normalizeLatencyPoint),
   }
 }
 
@@ -348,7 +352,7 @@ export function normalizeNodeLatency(input: ApiLatencyResponse): NodeLatencyData
   return {
     nodeId: input.node_id,
     range: input.range,
-    points: input.points.map(normalizeLatencyPoint),
+    points: (input.points ?? []).map(normalizeLatencyPoint),
   }
 }
 
@@ -356,7 +360,7 @@ export function normalizeNodeState(input: ApiStateResponse): NodeStateData {
   return {
     nodeId: input.node_id,
     range: input.range,
-    points: input.points.map(normalizeStatePoint),
+    points: (input.points ?? []).map(normalizeStatePoint),
   }
 }
 
@@ -432,7 +436,11 @@ function normalizeNode(node: ApiNode): HomeCardNode {
     displayName: node.display_name,
     status: node.status,
     os: node.os,
+    osVersion: node.os_version,
+    kernel: node.kernel,
     arch: node.arch,
+    virtualization: node.virtualization,
+    cpuModel: node.cpu_model,
     countryCode: node.country_code,
     subtitle: node.subtitle,
     cpuCores: node.cpu_cores ?? null,

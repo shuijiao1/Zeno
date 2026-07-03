@@ -1,6 +1,7 @@
 import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it } from 'vitest'
 import { AdminDashboard, HomeTopPanel } from './App'
+import type { AdminNode, AdminProbeTarget } from './types'
 
 const overviewProps = {
   totalCount: 11,
@@ -12,8 +13,83 @@ const overviewProps = {
   downSpeed: 256,
 }
 
+const hytronNode: AdminNode = {
+  id: 'hytron',
+  displayName: 'Hytron',
+  status: 'online',
+  countryCode: 'HK',
+  region: 'Hong Kong',
+  disabled: false,
+  billingMode: 'both',
+  monthlyQuotaBytes: 1099511627776,
+  lastSeenAt: '2026-07-03T00:00:00Z',
+  createdAt: '2026-07-02T00:00:00Z',
+  updatedAt: '2026-07-03T00:00:00Z',
+  hostname: 'hytron-real',
+  osName: 'debian',
+  osVersion: '13',
+  kernel: '6.12.0',
+  arch: 'x86_64',
+  virtualization: 'kvm',
+  cpuModel: 'AMD EPYC',
+  cpuCores: 2,
+  memoryTotalBytes: 2147483648,
+  diskTotalBytes: 42949672960,
+  bootTime: '2026-07-02T01:00:00Z',
+  agentVersion: 'agent-test',
+}
+
+const backupNode: AdminNode = {
+  ...hytronNode,
+  id: 'backup',
+  displayName: 'Backup',
+  status: 'no_data',
+  countryCode: undefined,
+  region: undefined,
+  agentVersion: undefined,
+}
+
+const hytronTarget: AdminProbeTarget = {
+  id: 'hytron-local',
+  name: 'Hytron',
+  type: 'tcping',
+  address: '127.0.0.1',
+  port: 18980,
+  count: 3,
+  timeoutMs: 1200,
+  intervalSec: 60,
+  enabled: true,
+  assignments: [
+    { nodeId: 'hytron', nodeDisplayName: 'Hytron', enabled: true },
+    { nodeId: 'backup', nodeDisplayName: 'Backup', enabled: false },
+  ],
+}
+
+function renderAdmin(section: 'overview' | 'nodes' | 'targets' | 'notifications' = 'overview') {
+  return renderToStaticMarkup(
+    <AdminDashboard
+      onHome={() => {}}
+      hasAdminToken
+      initialSection={section}
+      adminState={{
+        kind: 'ready',
+        nodes: [hytronNode, backupNode],
+        targets: [hytronTarget],
+      }}
+      onAdminTokenSubmit={() => {}}
+      onAdminTokenClear={() => {}}
+      onAdminRefresh={() => {}}
+      onAdminNodeCreate={() => {}}
+      onAdminNodeUpdate={() => {}}
+      onAdminInstallCommand={async () => 'install command'}
+      onAdminProbeTargetCreate={() => {}}
+      onAdminProbeTargetUpdate={() => {}}
+    />,
+  )
+}
+
 describe('HomeTopPanel', () => {
-  it('keeps every homepage top control inside one card above server cards', () => {
+  it('keeps the homepage top controls inside one card with a simple custom overview', () => {
     const html = renderToStaticMarkup(
       <HomeTopPanel
         {...overviewProps}
@@ -25,29 +101,40 @@ describe('HomeTopPanel', () => {
     expect(html).toContain('home-top-card')
     expect(html).toContain('dashboard actions')
     expect(html).toContain('水饺的探针')
+    expect(html).toContain('home-summary')
+    expect(html).toContain('JiaoProbe Overview')
+    expect(html).toContain('服务器运行概览')
     expect(html).toContain('服务器总数')
     expect(html).toContain('在线服务器')
     expect(html).toContain('离线服务器')
-    expect(html).toContain('网络')
-    expect(html.match(/overview-metric/g)).toHaveLength(4)
-    expect(html.indexOf('水饺的探针')).toBeLessThan(html.indexOf('服务器总数'))
+    expect(html).toContain('累计上传')
+    expect(html).toContain('累计下载')
+    expect(html).toContain('实时上传')
+    expect(html).toContain('实时下载')
+    expect(html.indexOf('水饺的探针')).toBeLessThan(html.indexOf('服务器运行概览'))
     expect(html).not.toContain('overview-card--combined')
+    expect(html).not.toContain('overview-metric')
   })
 })
 
 describe('AdminDashboard', () => {
-  it('uses the same card shell and action style as the public front page', () => {
-    const html = renderToStaticMarkup(<AdminDashboard onHome={() => {}} />)
+  it('uses the same card shell and introduces separated backend navigation', () => {
+    const html = renderAdmin()
 
     expect(html).toContain('home-top-card')
     expect(html).toContain('admin-panel')
     expect(html).toContain('JiaoProbe 后台')
-    expect(html).toContain('沿用前台卡片风格')
-    expect(html).toContain('dashboard actions')
+    expect(html).toContain('列表只保留关键字段')
+    expect(html).toContain('admin-section-nav')
+    expect(html).toContain('后台导航')
+    expect(html).toContain('概览')
+    expect(html).toContain('服务器')
+    expect(html).toContain('延迟监控')
+    expect(html).toContain('通知')
   })
 
   it('names notifications as channels and types instead of alerts', () => {
-    const html = renderToStaticMarkup(<AdminDashboard onHome={() => {}} />)
+    const html = renderAdmin('notifications')
 
     expect(html).toContain('通知渠道')
     expect(html).toContain('通知类型')
@@ -62,279 +149,49 @@ describe('AdminDashboard', () => {
     expect(html).toContain('name="admin-password"')
     expect(html).toContain('placeholder="admin"')
     expect(html).toContain('默认账号：admin / admin')
+    expect(html).toContain('列表 / 弹窗编辑')
     expect(html).not.toContain('Admin Token')
   })
 
-  it('renders authenticated admin nodes without rendering the admin token', () => {
-    const html = renderToStaticMarkup(
-      <AdminDashboard
-        onHome={() => {}}
-        hasAdminToken
-        adminState={{
-          kind: 'ready',
-          nodes: [
-            {
-              id: 'hytron',
-              displayName: 'Hytron',
-              status: 'online',
-              countryCode: 'HK',
-              region: 'Hong Kong',
-              disabled: false,
-              billingMode: 'both',
-              monthlyQuotaBytes: 1099511627776,
-              lastSeenAt: '2026-07-03T00:00:00Z',
-              createdAt: '2026-07-02T00:00:00Z',
-              updatedAt: '2026-07-03T00:00:00Z',
-              hostname: 'hytron-real',
-              osName: 'debian',
-              osVersion: '13',
-              kernel: '6.12.0',
-              arch: 'x86_64',
-              virtualization: 'kvm',
-              cpuModel: 'AMD EPYC',
-              cpuCores: 2,
-              memoryTotalBytes: 2147483648,
-              diskTotalBytes: 42949672960,
-              bootTime: '2026-07-02T01:00:00Z',
-              agentVersion: 'agent-test',
-            },
-          ],
-          targets: [],
-        }}
-        onAdminTokenSubmit={() => {}}
-        onAdminTokenClear={() => {}}
-        onAdminRefresh={() => {}}
-      />,
-    )
+  it('renders authenticated server management as a compact list, not detailed cards', () => {
+    const html = renderAdmin('nodes')
 
-    expect(html).toContain('节点列表')
+    expect(html).toContain('服务器列表')
+    expect(html).toContain('admin-list')
     expect(html).toContain('Hytron')
     expect(html).toContain('online')
     expect(html).toContain('agent-test')
     expect(html).toContain('debian 13')
+    expect(html).toContain('编辑服务器')
+    expect(html).not.toContain('admin-node-card')
+    expect(html).not.toContain('name="display-name"')
+    expect(html).not.toContain('保存服务器')
     expect(html).not.toContain('admin-pass')
   })
 
-  it('renders inline node edit controls for authenticated node management', () => {
-    const html = renderToStaticMarkup(
-      <AdminDashboard
-        onHome={() => {}}
-        hasAdminToken
-        adminState={{
-          kind: 'ready',
-          nodes: [
-            {
-              id: 'hytron',
-              displayName: 'Hytron',
-              status: 'online',
-              countryCode: 'HK',
-              region: 'Hong Kong',
-              disabled: false,
-              billingMode: 'both',
-              monthlyQuotaBytes: 1099511627776,
-              createdAt: '2026-07-02T00:00:00Z',
-              updatedAt: '2026-07-03T00:00:00Z',
-              cpuCores: 2,
-              memoryTotalBytes: 2147483648,
-              diskTotalBytes: 42949672960,
-            },
-          ],
-          targets: [],
-        }}
-        onAdminTokenSubmit={() => {}}
-        onAdminTokenClear={() => {}}
-        onAdminRefresh={() => {}}
-        onAdminNodeUpdate={() => {}}
-      />,
-    )
+  it('keeps latency monitor management on its own list page', () => {
+    const html = renderAdmin('targets')
 
-    expect(html).toContain('admin-node-edit-form')
-    expect(html).toContain('name="display-name"')
-    expect(html).toContain('name="country-code"')
-    expect(html).toContain('name="region"')
-    expect(html).toContain('name="monthly-quota-gb"')
-    expect(html).toContain('禁用节点')
-    expect(html).toContain('保存节点')
-    expect(html).not.toContain('admin-pass')
-  })
-
-  it('renders backend-first node create controls and install command action in node edit cards', () => {
-    const html = renderToStaticMarkup(
-      <AdminDashboard
-        onHome={() => {}}
-        hasAdminToken
-        adminState={{
-          kind: 'ready',
-          nodes: [
-            {
-              id: 'hytron',
-              displayName: 'Hytron',
-              status: 'online',
-              disabled: false,
-              billingMode: 'both',
-              monthlyQuotaBytes: null,
-              createdAt: '2026-07-02T00:00:00Z',
-              updatedAt: '2026-07-03T00:00:00Z',
-              cpuCores: null,
-              memoryTotalBytes: null,
-              diskTotalBytes: null,
-            },
-          ],
-          targets: [],
-        }}
-        onAdminNodeCreate={() => {}}
-        onAdminInstallCommand={async () => 'install command'}
-      />,
-    )
-
-    expect(html).toContain('admin-node-create-form')
-    expect(html).toContain('添加服务器')
-    expect(html).toContain('name="new-display-name"')
-    expect(html).toContain('获取安装命令')
-    expect(html).not.toContain('admin-pass')
-  })
-
-  it('renders authenticated probe target inventory in the admin shell', () => {
-    const html = renderToStaticMarkup(
-      <AdminDashboard
-        onHome={() => {}}
-        hasAdminToken
-        adminState={{
-          kind: 'ready',
-          nodes: [],
-          targets: [
-            {
-              id: 'hytron-local',
-              name: 'Hytron',
-              type: 'tcping',
-              address: '127.0.0.1',
-              port: 18980,
-              count: 3,
-              timeoutMs: 1200,
-              intervalSec: 60,
-              enabled: true,
-              assignments: [
-                { nodeId: 'hytron', nodeDisplayName: 'Hytron', enabled: true },
-              ],
-            },
-          ],
-        }}
-        onAdminTokenSubmit={() => {}}
-        onAdminTokenClear={() => {}}
-        onAdminRefresh={() => {}}
-      />,
-    )
-
-    expect(html).toContain('探针目标')
-    expect(html).toContain('admin-target-card')
+    expect(html).toContain('延迟监控')
+    expect(html).toContain('admin-target-list')
     expect(html).toContain('hytron-local')
     expect(html).toContain('127.0.0.1:18980')
     expect(html).toContain('3 次 / 1200ms / 60s')
-    expect(html).toContain('Hytron')
+    expect(html).toContain('1 / 2 节点启用')
+    expect(html).toContain('编辑目标')
+    expect(html).not.toContain('admin-target-card')
+    expect(html).not.toContain('name="target-name"')
+    expect(html).not.toContain('保存目标')
     expect(html).not.toContain('admin-pass')
   })
 
-  it('renders probe target create and edit controls without leaking admin token', () => {
-    const html = renderToStaticMarkup(
-      <AdminDashboard
-        onHome={() => {}}
-        hasAdminToken
-        adminState={{
-          kind: 'ready',
-          nodes: [],
-          targets: [
-            {
-              id: 'hytron-local',
-              name: 'Hytron',
-              type: 'tcping',
-              address: '127.0.0.1',
-              port: 18980,
-              count: 3,
-              timeoutMs: 1200,
-              intervalSec: 60,
-              enabled: true,
-              assignments: [],
-            },
-          ],
-        }}
-        onAdminProbeTargetCreate={() => {}}
-        onAdminProbeTargetUpdate={() => {}}
-      />,
-    )
+  it('does not render every admin workspace on one page', () => {
+    const nodeHtml = renderAdmin('nodes')
+    const targetHtml = renderAdmin('targets')
 
-    expect(html).toContain('admin-target-create-form')
-    expect(html).toContain('添加目标')
-    expect(html).toContain('admin-target-edit-form')
-    expect(html).toContain('name="target-name"')
-    expect(html).toContain('name="target-address"')
-    expect(html).toContain('name="target-port"')
-    expect(html).toContain('保存目标')
-    expect(html).not.toContain('admin-pass')
-  })
-
-  it('renders per-node probe target assignment toggles', () => {
-    const html = renderToStaticMarkup(
-      <AdminDashboard
-        onHome={() => {}}
-        hasAdminToken
-        adminState={{
-          kind: 'ready',
-          nodes: [
-            {
-              id: 'hytron',
-              displayName: 'Hytron',
-              status: 'online',
-              disabled: false,
-              billingMode: 'both',
-              monthlyQuotaBytes: null,
-              createdAt: '2026-07-02T00:00:00Z',
-              updatedAt: '2026-07-03T00:00:00Z',
-              cpuCores: null,
-              memoryTotalBytes: null,
-              diskTotalBytes: null,
-            },
-            {
-              id: 'backup',
-              displayName: 'Backup',
-              status: 'no_data',
-              disabled: false,
-              billingMode: 'both',
-              monthlyQuotaBytes: null,
-              createdAt: '2026-07-02T00:00:00Z',
-              updatedAt: '2026-07-03T00:00:00Z',
-              cpuCores: null,
-              memoryTotalBytes: null,
-              diskTotalBytes: null,
-            },
-          ],
-          targets: [
-            {
-              id: 'hytron-local',
-              name: 'Hytron',
-              type: 'tcping',
-              address: '127.0.0.1',
-              port: 18980,
-              count: 3,
-              timeoutMs: 1200,
-              intervalSec: 60,
-              enabled: true,
-              assignments: [
-                { nodeId: 'hytron', nodeDisplayName: 'Hytron', enabled: true },
-                { nodeId: 'backup', nodeDisplayName: 'Backup', enabled: false },
-              ],
-            },
-          ],
-        }}
-        onAdminProbeTargetUpdate={() => {}}
-      />,
-    )
-
-    expect(html).toContain('admin-target-assignment-list')
-    expect(html).toContain('按节点启用')
-    expect(html).toContain('name="target-assignment-hytron"')
-    expect(html).toContain('name="target-assignment-backup"')
-    expect(html).toContain('Hytron')
-    expect(html).toContain('Backup')
-    expect(html).not.toContain('admin-pass')
+    expect(nodeHtml).toContain('服务器列表')
+    expect(nodeHtml).not.toContain('延迟监控目标列表')
+    expect(targetHtml).toContain('延迟监控目标列表')
+    expect(targetHtml).not.toContain('服务器列表')
   })
 })

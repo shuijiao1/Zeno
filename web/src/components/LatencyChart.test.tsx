@@ -9,17 +9,24 @@ const points = [
 ]
 
 describe('LatencyChart', () => {
-  it('renders hover titles with target latency values on curve hit points', () => {
-    const html = renderToStaticMarkup(<LatencyChart points={points} activeTargetNames={['Alpha']} />)
+  it('renders hover guide columns with a vertical line and latency-only titles', () => {
+    const html = renderToStaticMarkup(<LatencyChart points={points} activeTargetNames={['Alpha', 'Beta']} />)
 
-    expect(html).toContain('latency-hover-point')
-    expect(html).toContain('<title>Alpha · 42ms · 丢包 25.00%')
+    expect(html).toContain('latency-hover-column')
+    expect(html).toContain('latency-hover-guide')
+    expect(html).toContain('<title>')
+    expect(html).toContain('Alpha · 42ms')
+    expect(html).toContain('Beta · 20ms')
+    expect(html).not.toContain('丢包 25.00%')
   })
 
-  it('renders a Nezha-like yellow packet-loss background in the chart', () => {
-    const html = renderToStaticMarkup(<LatencyChart points={points} />)
+  it('shows packet loss only for a single selected target, not when multiple latency lines are displayed', () => {
+    const multiHtml = renderToStaticMarkup(<LatencyChart points={points} activeTargetNames={['Alpha', 'Beta']} />)
+    const singleHtml = renderToStaticMarkup(<LatencyChart points={points} activeTargetNames={['Alpha']} />)
 
-    expect(html).toContain('packet-loss-area')
-    expect(html).toContain('丢包')
+    expect(multiHtml).not.toContain('packet-loss-area')
+    expect(multiHtml).not.toContain('丢包')
+    expect(singleHtml).toContain('packet-loss-area')
+    expect(singleHtml).toContain('Alpha 丢包')
   })
 })

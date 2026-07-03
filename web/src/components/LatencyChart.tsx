@@ -5,6 +5,7 @@ import {
   buildKulinTargetSeries,
   selectKulinChartView,
   type KulinChartRow,
+  type KulinTargetSeries,
 } from '../lib/kulinLatencyChart'
 import { formatPercent } from '../lib/format'
 
@@ -40,12 +41,13 @@ export function LatencyChart({
   const domain = yDomainForRows(rows, baseView.lineKeys)
   const packetLossSeries = baseView.showPacketLossArea
     ? series.find((item) => item.targetName === activeTargetNames[0])
-    : series[0]
-  const lossRows = baseView.showPacketLossArea
-    ? rows
-    : (packetLossSeries?.points.map((point) => ({ created_at: point.created_at, packet_loss: point.packet_loss })) ?? [])
-  const selectedSeries = packetLossSeries
+    : undefined
+  const lossRows = baseView.showPacketLossArea ? rows : []
   const visibleLineKeys = baseView.lineKeys
+  const hoverColumns = hoverColumnsForRows(rows, visibleLineKeys, activeTargetNames)
+  const legendSeries = activeTargetNames.length > 0
+    ? series.filter((item) => activeTargetNames.includes(item.targetName))
+    : series
 
   const x = (createdAt: number) => pad.left + Math.max(0, timestamps.indexOf(createdAt)) * xStep
   const yDelay = (value: number) => pad.top + (1 - (value - domain.min) / (domain.max - domain.min)) * plotHeight
@@ -53,6 +55,7 @@ export function LatencyChart({
 
   const lastLabel = timestamps.at(-1) ? formatAxisTime(timestamps.at(-1)!) : '--:--'
   const firstLabel = timestamps[0] ? formatAxisTime(timestamps[0]) : '--:--'
+  const hitWidth = timestamps.length > 1 ? Math.max(18, xStep) : width - pad.left - pad.right
 
   return (
     <section className={`latency-panel${compactHeader ? ' is-compact' : ''}`}>
@@ -95,39 +98,61 @@ export function LatencyChart({
           />
         )}
 
-        {visibleLineKeys.map((key) => {
-          const seriesIndex = series.findIndex((item) => item.targetName === (key === 'avg_delay' ? activeTargetNames[0] : key))
+        {visibleLineKeys.map((key) => (
+          <path
+            key={key}
+            d={linePath(rows, key, x, yDelay)}
+            fill="none"
+            stroke={palette[paletteIndexForKey(series, key, activeTargetNames) % palette.length]}
+            strokeWidth={1}
+            vectorEffect="non-scaling-stroke"
+          />
+        ))}
+
+        {hoverColumns.map((column) => {
+          const xx = x(column.createdAt)
           return (
-            <path
-              key={key}
-              d={linePath(rows, key, x, yDelay)}
-              fill="none"
-              stroke={palette[(Math.max(seriesIndex, 0)) % palette.length]}
-              strokeWidth={1}
-              vectorEffect="non-scaling-stroke"
-            />
+            <g key={column.createdAt} className="latency-hover-column">
+              <rect
+                className="latency-hover-hit"
+                x={Math.max(pad.left, xx - hitWidth / 2)}
+                y={pad.top}
+                width={Math.min(hitWidth, width - pad.right - Math.max(pad.left, xx - hitWidth / 2))}
+                height={plotHeight}
+              >
+                <title>{column.title}</title>
+              </rect>
+              <line
+                className="latency-hover-guide"
+                x1={xx}
+                x2={xx}
+                y1={pad.top}
+                y2={height - pad.bottom}
+                vectorEffect="non-scaling-stroke"
+              />
+              {column.points.map((point) => (
+                <circle
+                  key={`${point.key}-${column.createdAt}`}
+                  className="latency-hover-point"
+                  cx={xx}
+                  cy={yDelay(point.delay)}
+                  r={5}
+                  fill={palette[paletteIndexForKey(series, point.key, activeTargetNames) % palette.length]}
+                >
+                  <title>{column.title}</title>
+                </circle>
+              ))}
+            </g>
           )
         })}
-
-        {visibleLineKeys.flatMap((key) => hoverPointsForKey(rows, key, activeTargetNames).map((point) => (
-          <circle
-            key={`${key}-${point.createdAt}`}
-            className="latency-hover-point"
-            cx={x(point.createdAt)}
-            cy={yDelay(point.delay)}
-            r={8}
-          >
-            <title>{tooltipTitle(point)}</title>
-          </circle>
-        )))}
       </svg>
 
       <div className="latency-legend">
-        {(activeTargetNames.length > 1 ? series.filter((item) => activeTargetNames.includes(item.targetName)) : series).map((item, index) => (
+        {legendSeries.map((item, index) => (
           <span key={item.targetId}><i style={{ background: palette[(series.findIndex((seriesItem) => seriesItem.targetId === item.targetId) >= 0 ? series.findIndex((seriesItem) => seriesItem.targetId === item.targetId) : index) % palette.length] }} />{item.targetName}</span>
         ))}
-        {selectedSeries && (
-          <span><i style={{ background: 'hsl(45, 100%, 60%)' }} />{selectedSeries.targetName} 丢包 {formatPercent(avgPacketLoss(lossRows))}</span>
+        {baseView.showPacketLossArea && packetLossSeries && (
+          <span><i style={{ background: 'hsl(45, 100%, 60%)' }} />{packetLossSeries.targetName} 丢包 {formatPercent(avgPacketLoss(lossRows))}</span>
         )}
       </div>
     </section>
@@ -178,29 +203,50 @@ function rowNumber(row: KulinChartRow, key: string): number | null {
   return typeof value === 'number' && Number.isFinite(value) ? value : null
 }
 
-function hoverPointsForKey(rows: KulinChartRow[], key: string, activeTargetNames: string[]): Array<{ createdAt: number; label: string; delay: number; packetLoss: number }> {
-  const label = key === 'avg_delay' ? (activeTargetNames[0] ?? '延迟') : key
-  const packetLossKey = key === 'avg_delay' ? 'packet_loss' : `${key}_packet_loss`
+interface HoverPoint {
+  key: string
+  label: string
+  delay: number
+}
+
+interface HoverColumn {
+  createdAt: number
+  title: string
+  points: HoverPoint[]
+}
+
+function hoverColumnsForRows(rows: KulinChartRow[], keys: string[], activeTargetNames: string[]): HoverColumn[] {
   return rows
     .map((row) => {
-      const delay = rowNumber(row, key)
-      if (delay === null) return null
-      return {
-        createdAt: row.created_at,
-        label,
-        delay,
-        packetLoss: rowNumber(row, packetLossKey) ?? 0,
-      }
+      const points = keys
+        .map((key) => {
+          const delay = rowNumber(row, key)
+          if (delay === null) return null
+          return {
+            key,
+            label: key === 'avg_delay' ? (activeTargetNames[0] ?? '延迟') : key,
+            delay,
+          }
+        })
+        .filter((point): point is HoverPoint => point !== null)
+      if (points.length === 0) return null
+      const title = [
+        formatTooltipTime(row.created_at),
+        ...points.map((point) => `${point.label} · ${formatLatencyValue(point.delay)}`),
+      ].join('\n')
+      return { createdAt: row.created_at, title, points }
     })
-    .filter((point): point is { createdAt: number; label: string; delay: number; packetLoss: number } => point !== null)
+    .filter((column): column is HoverColumn => column !== null)
+}
+
+function paletteIndexForKey(series: KulinTargetSeries[], key: string, activeTargetNames: string[]): number {
+  const targetName = key === 'avg_delay' ? activeTargetNames[0] : key
+  const index = series.findIndex((item) => item.targetName === targetName)
+  return Math.max(index, 0)
 }
 
 function formatLatencyValue(value: number): string {
   return `${Number.isInteger(value) ? value.toFixed(0) : value.toFixed(2)}ms`
-}
-
-function tooltipTitle(point: { createdAt: number; label: string; delay: number; packetLoss: number }): string {
-  return `${point.label} · ${formatLatencyValue(point.delay)} · 丢包 ${point.packetLoss.toFixed(2)}% · ${formatTooltipTime(point.createdAt)}`
 }
 
 function formatTooltipTime(createdAt: number): string {

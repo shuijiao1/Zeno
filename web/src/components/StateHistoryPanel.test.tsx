@@ -41,6 +41,9 @@ describe('StateHistoryPanel', () => {
     expect(html).toContain('系统资源历史')
     expect(html).toContain('1 天 · 2 个状态采样')
     expect(html).toContain('运行 1 小时 1 分钟')
+    expect(html).toContain('state-history-stack')
+    expect(html).toContain('state-history-chart-card')
+    expect(html).toContain('viewBox="0 0 900 180"')
     expect(html).toContain('CPU')
     expect(html).toContain('18.8%')
     expect(html).toContain('内存')
@@ -51,7 +54,10 @@ describe('StateHistoryPanel', () => {
     expect(html).toContain('↑512.0 KiB/s')
     expect(html).toContain('↓64.0 KiB/s')
     expect(html).toContain('data-series="cpu"')
-    expect(html).toContain('data-series="network"')
+    expect(html).toContain('data-series="memory"')
+    expect(html).toContain('data-series="disk"')
+    expect(html).toContain('data-series="net-out"')
+    expect(html).toContain('data-series="net-in"')
   })
 
   it('shows an explicit empty state instead of a blank chart', () => {

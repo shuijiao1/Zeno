@@ -51,17 +51,23 @@ export function LatencyDetail({
 
   return (
     <div className="kulin-container detail-container">
-      <button className="detail-title-button" type="button" onClick={onBack}>
-        <BackIcon />
-        <span>{node.displayName}</span>
-      </button>
-
-      <section className="detail-info-grid" aria-label={`${node.displayName} server facts`}>
-        <InfoCard label="状态" value={node.status === 'online' ? '在线' : node.status} />
-        <InfoCard label="架构" value={node.arch || '--'} />
-        <InfoCard label="内存" value={formatBinaryBytes(node.memoryTotalBytes)} />
-        <InfoCard label="磁盘" value={formatBinaryBytes(node.diskTotalBytes)} />
-        <InfoCard label="区域" value={node.countryCode ?? '--'} />
+      <section className="detail-hero" aria-label={`${node.displayName} server overview`}>
+        <div className="detail-hero__main">
+          <button className="detail-title-button" type="button" onClick={onBack}>
+            <BackIcon />
+            <span>{node.displayName}</span>
+          </button>
+          <p>{formatStatusLabel(node.status)} · {formatOSLabel(node)} · {node.arch || '--'}</p>
+        </div>
+        <section className="detail-info-grid" aria-label={`${node.displayName} server facts`}>
+          <InfoCard label="CPU" value={node.cpuModel || '--'} />
+          <InfoCard label="核心 / 虚拟化" value={`${formatCores(node.cpuCores)} · ${node.virtualization || '--'}`} />
+          <InfoCard label="系统" value={formatOSLabel(node)} />
+          <InfoCard label="内核" value={node.kernel || '--'} />
+          <InfoCard label="内存" value={formatBinaryBytes(node.memoryTotalBytes)} />
+          <InfoCard label="磁盘" value={formatBinaryBytes(node.diskTotalBytes)} />
+          <InfoCard label="区域" value={node.countryCode ?? '--'} />
+        </section>
       </section>
 
       <StateHistoryPanel
@@ -140,6 +146,23 @@ function InfoCard({ label, value }: { label: string; value: string }) {
       <strong>{value}</strong>
     </article>
   )
+}
+
+function formatStatusLabel(status: HomeCardNode['status']): string {
+  if (status === 'online') return '在线'
+  if (status === 'offline') return '离线'
+  if (status === 'warning') return '异常'
+  if (status === 'no_data') return '暂无数据'
+  return status
+}
+
+function formatOSLabel(node: HomeCardNode): string {
+  return [node.os, node.osVersion].filter(Boolean).join(' ') || '--'
+}
+
+function formatCores(value: number | null | undefined): string {
+  if (value === null || value === undefined) return '-- Cores'
+  return `${Number.isInteger(value) ? value.toFixed(0) : value.toFixed(1)} Cores`
 }
 
 function formatBinaryBytes(value: number | null | undefined): string {

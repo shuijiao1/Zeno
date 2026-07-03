@@ -37,10 +37,11 @@ describe('homepage and admin shell layout', () => {
 })
 
 describe('state history layout', () => {
-  it('keeps resource history as compact cards and stacks them on phones', () => {
-    expect(styles).toContain('.state-history-grid')
-    expect(styles).toContain('grid-template-columns: repeat(4, minmax(0, 1fr))')
-    expect(styles).toContain('grid-template-columns: repeat(2, minmax(0, 1fr))')
+  it('renders resource history as separated full-width chart cards on phones too', () => {
+    expect(styles).toContain('.state-history-stack')
+    expect(styles).toContain('flex-direction: column')
+    expect(styles).toContain('.state-history-chart-card')
+    expect(styles).toContain('.state-sparkline--large')
   })
 
   it('keeps uptime as a compact header badge', () => {

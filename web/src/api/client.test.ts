@@ -10,6 +10,10 @@ describe('normalizeSummary', () => {
           display_name: 'Hytron',
           status: 'online',
           os: 'debian',
+          os_version: '13',
+          kernel: '6.12.0',
+          virtualization: 'kvm',
+          cpu_model: 'AMD EPYC',
           arch: 'aarch64',
           country_code: 'HK',
           subtitle: 'Hong Kong',
@@ -48,9 +52,23 @@ describe('normalizeSummary', () => {
     expect(summary.nodes[0].expiryLabel).toBe('永 久')
     expect(summary.nodes[0].monthlyBillableBytes).toBe(1000)
     expect(summary.nodes[0].latencySummary?.targetName).toBe('Google')
+    expect(summary.nodes[0].osVersion).toBe('13')
+    expect(summary.nodes[0].kernel).toBe('6.12.0')
+    expect(summary.nodes[0].virtualization).toBe('kvm')
+    expect(summary.nodes[0].cpuModel).toBe('AMD EPYC')
     expect(summary.latencyPoints[0].targetId).toBe('google')
     expect(summary.latencyPoints[0].medianMs).toBeNull()
     expect(summary.latencyPoints[0].lossPercent).toBe(100)
+  })
+
+  it('normalizes null collections from empty preview stores', () => {
+    const summary = normalizeSummary({
+      nodes: null,
+      latency_points: null,
+    })
+
+    expect(summary.nodes).toEqual([])
+    expect(summary.latencyPoints).toEqual([])
   })
 })
 

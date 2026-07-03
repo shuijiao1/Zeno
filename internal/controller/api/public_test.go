@@ -59,6 +59,9 @@ func TestSummaryEndpointReturnsMockHomeCardsWithoutSecrets(t *testing.T) {
 	if summary.Nodes[0].CPUCores == nil || *summary.Nodes[0].CPUCores != 16 {
 		t.Fatalf("first node cpu cores = %v, want 16", summary.Nodes[0].CPUCores)
 	}
+	if summary.Nodes[0].CPUModel == "" || summary.Nodes[0].Virtualization == "" {
+		t.Fatalf("first node details = cpu_model %q virtualization %q, want public host details", summary.Nodes[0].CPUModel, summary.Nodes[0].Virtualization)
+	}
 	if summary.Nodes[0].LatencySummary != nil {
 		t.Fatalf("first node should omit latency summary like the reference homepage")
 	}

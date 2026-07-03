@@ -1,4 +1,4 @@
-import { type FormEvent, useEffect, useState } from 'react'
+import { type FormEvent, type ReactNode, useEffect, useState } from 'react'
 import { createAdminNode, createAdminProbeTarget, fetchAdminNodes, fetchAdminProbeTargets, fetchNodeLatency, fetchNodeState, fetchSummary, requestAdminNodeInstallCommand, updateAdminNode, updateAdminProbeTarget, type AdminNodeCreateInput, type AdminNodeUpdateInput, type AdminProbeTargetInput, type AdminProbeTargetUpdateInput, type NodeLatencyData, type NodeStateData, type SummaryData } from './api/client'
 import { LatencyDetail } from './components/LatencyDetail'
 import { ServerCard } from './components/ServerCard'
@@ -28,6 +28,8 @@ type AdminLoadState =
   | { kind: 'loading' }
   | { kind: 'ready'; nodes: AdminNode[]; targets: AdminProbeTarget[] }
   | { kind: 'error'; message: string }
+
+type AdminSection = 'overview' | 'nodes' | 'targets' | 'notifications'
 
 function sum(values: Array<number | null | undefined>): number {
   return values.reduce<number>((total, value) => total + (value ?? 0), 0)
@@ -397,6 +399,7 @@ interface AdminDashboardProps {
   onHome: () => void
   hasAdminToken?: boolean
   adminState?: AdminLoadState
+  initialSection?: AdminSection
   onAdminTokenSubmit?: (token: string) => void
   onAdminTokenClear?: () => void
   onAdminRefresh?: () => void
@@ -411,6 +414,7 @@ export function AdminDashboard({
   onHome,
   hasAdminToken = false,
   adminState = { kind: 'idle' },
+  initialSection = 'overview',
   onAdminTokenSubmit = () => {},
   onAdminTokenClear = () => {},
   onAdminRefresh = () => {},
@@ -420,6 +424,8 @@ export function AdminDashboard({
   onAdminProbeTargetCreate = () => {},
   onAdminProbeTargetUpdate = () => {},
 }: AdminDashboardProps) {
+  const [activeSection, setActiveSection] = useState<AdminSection>(initialSection)
+
   const handleTokenSubmit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
     const form = event.currentTarget
@@ -433,6 +439,8 @@ export function AdminDashboard({
 
   const nodeCount = adminState.kind === 'ready' ? adminState.nodes.length : 0
   const targetCount = adminState.kind === 'ready' ? adminState.targets.length : 0
+  const onlineNodeCount = adminState.kind === 'ready' ? adminState.nodes.filter((node) => node.status === 'online').length : 0
+  const enabledTargetCount = adminState.kind === 'ready' ? adminState.targets.filter((target) => target.enabled).length : 0
 
   return (
     <div className="kulin-container admin-container">
@@ -441,88 +449,93 @@ export function AdminDashboard({
         <div className="admin-hero">
           <p className="eyebrow">JiaoProbe 后台</p>
           <h2>控制台</h2>
-          <p>沿用前台卡片风格，节点管理已接入真实 Admin API；敏感凭据只通过请求头提交，不会展示在页面里。</p>
-        </div>
-        <div className="admin-action-grid" aria-label="admin modules">
-          <article className="admin-action-card">
-            <p>节点管理</p>
-            <strong>{hasAdminToken ? `${nodeCount} 台节点` : '等待认证'}</strong>
-          </article>
-          <article className="admin-action-card">
-            <p>探针配置</p>
-            <strong>{hasAdminToken ? `${targetCount} 个目标` : 'Agent 与目标'}</strong>
-          </article>
-          <article className="admin-action-card">
-            <p>通知渠道</p>
-            <strong>Telegram / Webhook</strong>
-          </article>
-          <article className="admin-action-card">
-            <p>通知类型</p>
-            <strong>上线 / 离线 / 异常</strong>
-          </article>
+          <p>服务器、延迟监控和通知拆成独立导航；列表只保留关键字段，编辑放进弹窗里处理。</p>
         </div>
 
         {!hasAdminToken && (
-          <form className="admin-login-card" aria-label="admin login form" onSubmit={handleTokenSubmit}>
-            <div>
-              <p>后台登录</p>
-              <strong>默认账号：admin / admin</strong>
+          <>
+            <div className="admin-action-grid" aria-label="admin modules">
+              <article className="admin-action-card">
+                <p>服务器</p>
+                <strong>列表 / 弹窗编辑</strong>
+              </article>
+              <article className="admin-action-card">
+                <p>延迟监控</p>
+                <strong>目标 / 节点分配</strong>
+              </article>
+              <article className="admin-action-card">
+                <p>通知渠道</p>
+                <strong>Telegram / Webhook</strong>
+              </article>
+              <article className="admin-action-card">
+                <p>通知类型</p>
+                <strong>上线 / 离线 / 异常</strong>
+              </article>
             </div>
-            <label>
-              <span>账号</span>
-              <input name="admin-username" autoComplete="username" placeholder="admin" aria-label="后台账号" />
-            </label>
-            <label>
-              <span>密码</span>
-              <input name="admin-password" type="password" autoComplete="current-password" placeholder="admin" aria-label="后台密码" />
-            </label>
-            <button type="submit">登录后台</button>
-          </form>
+            <form className="admin-login-card" aria-label="admin login form" onSubmit={handleTokenSubmit}>
+              <div>
+                <p>后台登录</p>
+                <strong>默认账号：admin / admin</strong>
+              </div>
+              <label>
+                <span>账号</span>
+                <input name="admin-username" autoComplete="username" placeholder="admin" aria-label="后台账号" />
+              </label>
+              <label>
+                <span>密码</span>
+                <input name="admin-password" type="password" autoComplete="current-password" placeholder="admin" aria-label="后台密码" />
+              </label>
+              <button type="submit">登录后台</button>
+            </form>
+          </>
         )}
 
         {hasAdminToken && (
           <>
-            <section className="admin-node-section" aria-label="admin node list">
-              <header className="admin-section-heading">
-                <div>
-                  <p className="eyebrow">Nodes</p>
-                  <h3>节点列表</h3>
-                </div>
-                <div className="admin-section-actions">
-                  <button type="button" onClick={onAdminRefresh}>刷新</button>
-                  <button type="button" onClick={onAdminTokenClear}>退出</button>
-                </div>
-              </header>
+            <div className="admin-toolbar">
+              <AdminSectionNav
+                activeSection={activeSection}
+                onSectionChange={setActiveSection}
+                nodeCount={nodeCount}
+                targetCount={targetCount}
+              />
+              <div className="admin-section-actions">
+                <button type="button" onClick={onAdminRefresh}>刷新</button>
+                <button type="button" onClick={onAdminTokenClear}>退出</button>
+              </div>
+            </div>
 
-              <AdminNodeCreateForm onCreate={onAdminNodeCreate} />
+            {adminState.kind === 'loading' && <div className="admin-state-card">正在读取 Admin API…</div>}
+            {adminState.kind === 'error' && <div className="admin-state-card is-error">Admin API 读取失败：{adminState.message}</div>}
 
-              {adminState.kind === 'loading' && <div className="admin-state-card">正在读取 Admin API…</div>}
-              {adminState.kind === 'error' && <div className="admin-state-card is-error">Admin API 读取失败：{adminState.message}</div>}
-              {adminState.kind === 'ready' && adminState.nodes.length === 0 && <div className="admin-state-card">还没有节点。</div>}
-              {adminState.kind === 'ready' && adminState.nodes.length > 0 && (
-                <div className="admin-node-grid">
-                  {adminState.nodes.map((node) => <AdminNodeCard key={node.id} node={node} onUpdate={onAdminNodeUpdate} onInstallCommand={onAdminInstallCommand} />)}
-                </div>
-              )}
-            </section>
-
-            {adminState.kind === 'ready' && (
-              <section className="admin-target-section" aria-label="admin probe target list">
-                <header className="admin-section-heading">
-                  <div>
-                    <p className="eyebrow">Targets</p>
-                    <h3>探针目标</h3>
-                  </div>
-                </header>
-                <AdminTargetCreateForm onCreate={onAdminProbeTargetCreate} />
-                {adminState.targets.length === 0 && <div className="admin-state-card">还没有探针目标。</div>}
-                {adminState.targets.length > 0 && (
-                  <div className="admin-target-grid">
-                    {adminState.targets.map((target) => <AdminTargetCard key={target.id} target={target} nodes={adminState.nodes} onUpdate={onAdminProbeTargetUpdate} />)}
-                  </div>
-                )}
-              </section>
+            {adminState.kind === 'ready' && activeSection === 'overview' && (
+              <AdminOverviewPanel
+                nodeCount={nodeCount}
+                onlineNodeCount={onlineNodeCount}
+                targetCount={targetCount}
+                enabledTargetCount={enabledTargetCount}
+              />
             )}
+
+            {adminState.kind === 'ready' && activeSection === 'nodes' && (
+              <AdminNodeSection
+                nodes={adminState.nodes}
+                onCreate={onAdminNodeCreate}
+                onUpdate={onAdminNodeUpdate}
+                onInstallCommand={onAdminInstallCommand}
+              />
+            )}
+
+            {adminState.kind === 'ready' && activeSection === 'targets' && (
+              <AdminTargetSection
+                targets={adminState.targets}
+                nodes={adminState.nodes}
+                onCreate={onAdminProbeTargetCreate}
+                onUpdate={onAdminProbeTargetUpdate}
+              />
+            )}
+
+            {adminState.kind === 'ready' && activeSection === 'notifications' && <AdminNotificationsSection />}
           </>
         )}
       </section>
@@ -530,7 +543,130 @@ export function AdminDashboard({
   )
 }
 
-function AdminNodeCreateForm({ onCreate }: { onCreate: (input: AdminNodeCreateInput) => void }) {
+function AdminSectionNav({ activeSection, onSectionChange, nodeCount, targetCount }: { activeSection: AdminSection; onSectionChange: (section: AdminSection) => void; nodeCount: number; targetCount: number }) {
+  const sections: Array<{ id: AdminSection; label: string; meta: string }> = [
+    { id: 'overview', label: '概览', meta: 'Summary' },
+    { id: 'nodes', label: '服务器', meta: `${nodeCount} 台` },
+    { id: 'targets', label: '延迟监控', meta: `${targetCount} 个目标` },
+    { id: 'notifications', label: '通知', meta: 'Channels' },
+  ]
+
+  return (
+    <nav className="admin-section-nav" aria-label="后台导航">
+      {sections.map((section) => (
+        <button
+          key={section.id}
+          type="button"
+          data-active={activeSection === section.id}
+          onClick={() => onSectionChange(section.id)}
+        >
+          <span>{section.label}</span>
+          <em>{section.meta}</em>
+        </button>
+      ))}
+    </nav>
+  )
+}
+
+function AdminOverviewPanel({ nodeCount, onlineNodeCount, targetCount, enabledTargetCount }: { nodeCount: number; onlineNodeCount: number; targetCount: number; enabledTargetCount: number }) {
+  return (
+    <section className="admin-overview-panel" aria-label="admin overview">
+      <div className="admin-action-grid" aria-label="admin modules">
+        <article className="admin-action-card">
+          <p>服务器</p>
+          <strong>{onlineNodeCount} / {nodeCount} 在线</strong>
+        </article>
+        <article className="admin-action-card">
+          <p>延迟监控</p>
+          <strong>{enabledTargetCount} / {targetCount} 启用</strong>
+        </article>
+        <article className="admin-action-card">
+          <p>通知渠道</p>
+          <strong>Telegram / Webhook</strong>
+        </article>
+        <article className="admin-action-card">
+          <p>通知类型</p>
+          <strong>上线 / 离线 / 异常</strong>
+        </article>
+      </div>
+      <p className="admin-overview-note">从上方导航进入具体模块；列表页只显示关键状态，所有编辑动作都在弹窗中完成。</p>
+    </section>
+  )
+}
+
+function AdminNodeSection({ nodes, onCreate, onUpdate, onInstallCommand }: { nodes: AdminNode[]; onCreate: (input: AdminNodeCreateInput) => void; onUpdate: (nodeId: string, input: AdminNodeUpdateInput) => void; onInstallCommand: (nodeId: string) => Promise<string> }) {
+  const [creatingNode, setCreatingNode] = useState(false)
+  const [editingNodeId, setEditingNodeId] = useState<string | null>(null)
+  const editingNode = editingNodeId ? nodes.find((node) => node.id === editingNodeId) : undefined
+
+  return (
+    <section className="admin-node-section admin-workspace-panel" aria-label="admin node list">
+      <header className="admin-section-heading">
+        <div>
+          <p className="eyebrow">Servers</p>
+          <h3>服务器列表</h3>
+        </div>
+        <button className="admin-primary-action" type="button" onClick={() => setCreatingNode(true)}>添加服务器</button>
+      </header>
+
+      {nodes.length === 0 && <div className="admin-state-card">还没有节点。</div>}
+      {nodes.length > 0 && <AdminNodeList nodes={nodes} onEdit={setEditingNodeId} />}
+
+      {creatingNode && (
+        <AdminNodeCreateModal
+          onClose={() => setCreatingNode(false)}
+          onCreate={(input) => {
+            onCreate(input)
+            setCreatingNode(false)
+          }}
+        />
+      )}
+
+      {editingNode && (
+        <AdminNodeEditModal
+          key={editingNode.id}
+          node={editingNode}
+          onClose={() => setEditingNodeId(null)}
+          onUpdate={(nodeId, input) => {
+            onUpdate(nodeId, input)
+            setEditingNodeId(null)
+          }}
+          onInstallCommand={onInstallCommand}
+        />
+      )}
+    </section>
+  )
+}
+
+function AdminNodeList({ nodes, onEdit }: { nodes: AdminNode[]; onEdit: (nodeId: string) => void }) {
+  return (
+    <div className="admin-list" role="list" aria-label="服务器列表">
+      <div className="admin-list-head" aria-hidden="true">
+        <span>服务器</span>
+        <span>状态</span>
+        <span>系统</span>
+        <span>最近在线</span>
+        <span>Agent</span>
+        <span>操作</span>
+      </div>
+      {nodes.map((node) => (
+        <article className="admin-list-row" role="listitem" key={node.id}>
+          <div className="admin-list-main">
+            <strong>{node.displayName}</strong>
+            <small>{node.id}{node.region ? ` · ${node.region}` : ''}</small>
+          </div>
+          <span className={`admin-node-status status-${node.disabled ? 'disabled' : node.status}`}>{node.disabled ? 'disabled' : node.status}</span>
+          <span>{formatAdminSystem(node)}</span>
+          <span>{formatAdminDate(node.lastSeenAt)}</span>
+          <span>{node.agentVersion || '—'}</span>
+          <button className="admin-row-action" type="button" onClick={() => onEdit(node.id)}>编辑服务器</button>
+        </article>
+      ))}
+    </div>
+  )
+}
+
+function AdminNodeCreateModal({ onCreate, onClose }: { onCreate: (input: AdminNodeCreateInput) => void; onClose: () => void }) {
   const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
     const form = event.currentTarget
@@ -544,37 +680,38 @@ function AdminNodeCreateForm({ onCreate }: { onCreate: (input: AdminNodeCreateIn
       region: String(formData.get('new-region') ?? ''),
       monthlyQuotaBytes: parseQuotaGigabytes(String(formData.get('new-monthly-quota-gb') ?? '')),
     })
-    form.reset()
   }
 
   return (
-    <form className="admin-node-create-form admin-node-edit-form" aria-label="添加服务器" onSubmit={handleSubmit}>
-      <label>
-        <span>服务器名称</span>
-        <input name="new-display-name" autoComplete="off" placeholder="New Server" />
-      </label>
-      <label>
-        <span>节点 ID（可选）</span>
-        <input name="new-node-id" autoComplete="off" placeholder="自动生成" />
-      </label>
-      <label>
-        <span>国家</span>
-        <input name="new-country-code" autoComplete="off" placeholder="HK" />
-      </label>
-      <label>
-        <span>地区</span>
-        <input name="new-region" autoComplete="off" placeholder="Hong Kong" />
-      </label>
-      <label>
-        <span>月配额 GB</span>
-        <input name="new-monthly-quota-gb" type="number" min="0" step="0.01" />
-      </label>
-      <button type="submit">添加服务器</button>
-    </form>
+    <AdminModal title="添加服务器" eyebrow="Servers" onClose={onClose}>
+      <form className="admin-node-create-form admin-node-edit-form" aria-label="添加服务器" onSubmit={handleSubmit}>
+        <label>
+          <span>服务器名称</span>
+          <input name="new-display-name" autoComplete="off" placeholder="New Server" />
+        </label>
+        <label>
+          <span>节点 ID（可选）</span>
+          <input name="new-node-id" autoComplete="off" placeholder="自动生成" />
+        </label>
+        <label>
+          <span>国家</span>
+          <input name="new-country-code" autoComplete="off" placeholder="HK" />
+        </label>
+        <label>
+          <span>地区</span>
+          <input name="new-region" autoComplete="off" placeholder="Hong Kong" />
+        </label>
+        <label>
+          <span>月配额 GB</span>
+          <input name="new-monthly-quota-gb" type="number" min="0" step="0.01" />
+        </label>
+        <button type="submit">添加服务器</button>
+      </form>
+    </AdminModal>
   )
 }
 
-function AdminNodeCard({ node, onUpdate, onInstallCommand }: { node: AdminNode; onUpdate: (nodeId: string, input: AdminNodeUpdateInput) => void; onInstallCommand: (nodeId: string) => Promise<string> }) {
+function AdminNodeEditModal({ node, onUpdate, onInstallCommand, onClose }: { node: AdminNode; onUpdate: (nodeId: string, input: AdminNodeUpdateInput) => void; onInstallCommand: (nodeId: string) => Promise<string>; onClose: () => void }) {
   const [installCommandState, setInstallCommandState] = useState<{ kind: 'idle' } | { kind: 'loading' } | { kind: 'ready'; command: string } | { kind: 'error'; message: string }>({ kind: 'idle' })
 
   const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
@@ -597,21 +734,12 @@ function AdminNodeCard({ node, onUpdate, onInstallCommand }: { node: AdminNode; 
   }
 
   return (
-    <article className="admin-node-card">
-      <header>
-        <div>
-          <p>{node.id}</p>
-          <h4>{node.displayName}</h4>
-        </div>
-        <span className={`admin-node-status status-${node.status}`}>{node.status}</span>
-      </header>
-      <dl className="admin-node-meta">
+    <AdminModal title={`编辑服务器 · ${node.displayName}`} eyebrow={node.id} onClose={onClose}>
+      <dl className="admin-modal-summary">
+        <div><dt>状态</dt><dd>{node.disabled ? 'disabled' : node.status}</dd></div>
         <div><dt>系统</dt><dd>{formatAdminSystem(node)}</dd></div>
-        <div><dt>Agent</dt><dd>{node.agentVersion || '—'}</dd></div>
-        <div><dt>最近在线</dt><dd>{formatAdminDate(node.lastSeenAt)}</dd></div>
-        <div><dt>流量模式</dt><dd>{node.billingMode || 'both'}</dd></div>
-        <div><dt>月配额</dt><dd>{node.monthlyQuotaBytes ? compactBytes(node.monthlyQuotaBytes) : '—'}</dd></div>
         <div><dt>资源</dt><dd>{formatAdminResources(node)}</dd></div>
+        <div><dt>最近在线</dt><dd>{formatAdminDate(node.lastSeenAt)}</dd></div>
       </dl>
       <form className="admin-node-edit-form" aria-label={`${node.displayName} 节点编辑`} onSubmit={handleSubmit}>
         <label>
@@ -634,22 +762,95 @@ function AdminNodeCard({ node, onUpdate, onInstallCommand }: { node: AdminNode; 
           <input name="disabled" type="checkbox" defaultChecked={node.disabled} />
           <span>禁用节点</span>
         </label>
-        <button type="submit">保存节点</button>
-        <button type="button" onClick={handleInstallCommand} disabled={installCommandState.kind === 'loading'}>{installCommandState.kind === 'loading' ? '生成中…' : '获取安装命令'}</button>
+        <div className="admin-modal-actions">
+          <button type="submit">保存服务器</button>
+          <button type="button" onClick={handleInstallCommand} disabled={installCommandState.kind === 'loading'}>{installCommandState.kind === 'loading' ? '生成中…' : '获取安装命令'}</button>
+        </div>
       </form>
       {installCommandState.kind === 'ready' && (
         <textarea className="admin-install-command" aria-label={`${node.displayName} Agent 安装命令`} readOnly value={installCommandState.command} />
       )}
       {installCommandState.kind === 'error' && <div className="admin-install-error">安装命令生成失败：{installCommandState.message}</div>}
-    </article>
+    </AdminModal>
   )
 }
 
-function AdminTargetCreateForm({ onCreate }: { onCreate: (input: AdminProbeTargetInput) => void }) {
+function AdminTargetSection({ targets, nodes, onCreate, onUpdate }: { targets: AdminProbeTarget[]; nodes: AdminNode[]; onCreate: (input: AdminProbeTargetInput) => void; onUpdate: (targetId: string, input: AdminProbeTargetUpdateInput) => void }) {
+  const [creatingTarget, setCreatingTarget] = useState(false)
+  const [editingTargetId, setEditingTargetId] = useState<string | null>(null)
+  const editingTarget = editingTargetId ? targets.find((target) => target.id === editingTargetId) : undefined
+
+  return (
+    <section className="admin-target-section admin-workspace-panel" aria-label="admin probe target list">
+      <header className="admin-section-heading">
+        <div>
+          <p className="eyebrow">Latency</p>
+          <h3>延迟监控</h3>
+        </div>
+        <button className="admin-primary-action" type="button" onClick={() => setCreatingTarget(true)}>添加目标</button>
+      </header>
+
+      {targets.length === 0 && <div className="admin-state-card">还没有探针目标。</div>}
+      {targets.length > 0 && <AdminTargetList targets={targets} onEdit={setEditingTargetId} />}
+
+      {creatingTarget && (
+        <AdminTargetCreateModal
+          onClose={() => setCreatingTarget(false)}
+          onCreate={(input) => {
+            onCreate(input)
+            setCreatingTarget(false)
+          }}
+        />
+      )}
+
+      {editingTarget && (
+        <AdminTargetEditModal
+          key={editingTarget.id}
+          target={editingTarget}
+          nodes={nodes}
+          onClose={() => setEditingTargetId(null)}
+          onUpdate={(targetId, input) => {
+            onUpdate(targetId, input)
+            setEditingTargetId(null)
+          }}
+        />
+      )}
+    </section>
+  )
+}
+
+function AdminTargetList({ targets, onEdit }: { targets: AdminProbeTarget[]; onEdit: (targetId: string) => void }) {
+  return (
+    <div className="admin-list admin-target-list" role="list" aria-label="延迟监控目标列表">
+      <div className="admin-list-head" aria-hidden="true">
+        <span>目标</span>
+        <span>状态</span>
+        <span>地址</span>
+        <span>参数</span>
+        <span>节点</span>
+        <span>操作</span>
+      </div>
+      {targets.map((target) => (
+        <article className="admin-list-row" role="listitem" key={target.id}>
+          <div className="admin-list-main">
+            <strong>{target.name}</strong>
+            <small>{target.id}</small>
+          </div>
+          <span className={`admin-node-status status-${target.enabled ? 'online' : 'disabled'}`}>{target.enabled ? 'enabled' : 'disabled'}</span>
+          <span>{formatTargetEndpoint(target)}</span>
+          <span>{target.count} 次 / {target.timeoutMs}ms / {target.intervalSec}s</span>
+          <span>{formatTargetAssignmentSummary(target)}</span>
+          <button className="admin-row-action" type="button" onClick={() => onEdit(target.id)}>编辑目标</button>
+        </article>
+      ))}
+    </div>
+  )
+}
+
+function AdminTargetCreateModal({ onCreate, onClose }: { onCreate: (input: AdminProbeTargetInput) => void; onClose: () => void }) {
   const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
-    const form = event.currentTarget
-    const formData = new FormData(form)
+    const formData = new FormData(event.currentTarget)
     const name = String(formData.get('new-target-name') ?? '').trim()
     const address = String(formData.get('new-target-address') ?? '').trim()
     const port = parsePositiveInt(String(formData.get('new-target-port') ?? ''))
@@ -663,45 +864,42 @@ function AdminTargetCreateForm({ onCreate }: { onCreate: (input: AdminProbeTarge
       timeoutMs: parsePositiveInt(String(formData.get('new-target-timeout-ms') ?? '')) ?? 1200,
       intervalSec: parsePositiveInt(String(formData.get('new-target-interval-sec') ?? '')) ?? 60,
     })
-    form.reset()
   }
 
   return (
-    <form className="admin-target-create-form admin-node-edit-form" aria-label="添加探针目标" onSubmit={handleSubmit}>
-      <label>
-        <span>目标名称</span>
-        <input name="new-target-name" autoComplete="off" placeholder="Example HTTPS" />
-      </label>
-      <label>
-        <span>地址</span>
-        <input name="new-target-address" autoComplete="off" placeholder="example.com" />
-      </label>
-      <label>
-        <span>端口</span>
-        <input name="new-target-port" type="number" min="1" max="65535" defaultValue="443" />
-      </label>
-      <label>
-        <span>次数</span>
-        <input name="new-target-count" type="number" min="1" defaultValue="3" />
-      </label>
-      <label>
-        <span>超时 ms</span>
-        <input name="new-target-timeout-ms" type="number" min="1" defaultValue="1200" />
-      </label>
-      <label>
-        <span>间隔 s</span>
-        <input name="new-target-interval-sec" type="number" min="1" defaultValue="60" />
-      </label>
-      <button type="submit">添加目标</button>
-    </form>
+    <AdminModal title="添加延迟监控目标" eyebrow="Latency" onClose={onClose}>
+      <form className="admin-target-create-form admin-node-edit-form" aria-label="添加探针目标" onSubmit={handleSubmit}>
+        <label>
+          <span>目标名称</span>
+          <input name="new-target-name" autoComplete="off" placeholder="Example HTTPS" />
+        </label>
+        <label>
+          <span>地址</span>
+          <input name="new-target-address" autoComplete="off" placeholder="example.com" />
+        </label>
+        <label>
+          <span>端口</span>
+          <input name="new-target-port" type="number" min="1" max="65535" defaultValue="443" />
+        </label>
+        <label>
+          <span>次数</span>
+          <input name="new-target-count" type="number" min="1" defaultValue="3" />
+        </label>
+        <label>
+          <span>超时 ms</span>
+          <input name="new-target-timeout-ms" type="number" min="1" defaultValue="1200" />
+        </label>
+        <label>
+          <span>间隔 s</span>
+          <input name="new-target-interval-sec" type="number" min="1" defaultValue="60" />
+        </label>
+        <button type="submit">添加目标</button>
+      </form>
+    </AdminModal>
   )
 }
 
-function AdminTargetCard({ target, nodes, onUpdate }: { target: AdminProbeTarget; nodes: AdminNode[]; onUpdate: (targetId: string, input: AdminProbeTargetUpdateInput) => void }) {
-  const endpoint = target.port ? `${target.address}:${target.port}` : target.address
-  const assignments = target.assignments.length > 0
-    ? target.assignments.map((assignment) => `${assignment.nodeDisplayName || assignment.nodeId}${assignment.enabled ? '' : '（停用）'}`).join('、')
-    : '未分配节点'
+function AdminTargetEditModal({ target, nodes, onUpdate, onClose }: { target: AdminProbeTarget; nodes: AdminNode[]; onUpdate: (targetId: string, input: AdminProbeTargetUpdateInput) => void; onClose: () => void }) {
   const assignmentByNodeID = new Map(target.assignments.map((assignment) => [assignment.nodeId, assignment]))
   const nodeAssignmentRows = nodes.map((node) => {
     const assignment = assignmentByNodeID.get(node.id)
@@ -744,19 +942,12 @@ function AdminTargetCard({ target, nodes, onUpdate }: { target: AdminProbeTarget
   }
 
   return (
-    <article className="admin-target-card">
-      <header>
-        <div>
-          <p>{target.id}</p>
-          <h4>{target.name}</h4>
-        </div>
-        <span className={`admin-node-status status-${target.enabled ? 'online' : 'disabled'}`}>{target.enabled ? 'enabled' : 'disabled'}</span>
-      </header>
-      <dl className="admin-node-meta">
-        <div><dt>类型</dt><dd>{target.type}</dd></div>
-        <div><dt>地址</dt><dd>{endpoint}</dd></div>
+    <AdminModal title={`编辑延迟监控 · ${target.name}`} eyebrow={target.id} onClose={onClose}>
+      <dl className="admin-modal-summary">
+        <div><dt>状态</dt><dd>{target.enabled ? 'enabled' : 'disabled'}</dd></div>
+        <div><dt>地址</dt><dd>{formatTargetEndpoint(target)}</dd></div>
         <div><dt>参数</dt><dd>{target.count} 次 / {target.timeoutMs}ms / {target.intervalSec}s</dd></div>
-        <div><dt>节点</dt><dd>{assignments}</dd></div>
+        <div><dt>节点</dt><dd>{formatTargetAssignmentSummary(target)}</dd></div>
       </dl>
       <form className="admin-target-edit-form admin-node-edit-form" aria-label={`${target.name} 探针目标编辑`} onSubmit={handleSubmit}>
         <label>
@@ -798,10 +989,63 @@ function AdminTargetCard({ target, nodes, onUpdate }: { target: AdminProbeTarget
             ))}
           </fieldset>
         )}
-        <button type="submit">保存目标</button>
+        <div className="admin-modal-actions">
+          <button type="submit">保存目标</button>
+        </div>
       </form>
-    </article>
+    </AdminModal>
   )
+}
+
+function AdminNotificationsSection() {
+  return (
+    <section className="admin-notification-section admin-workspace-panel" aria-label="admin notification settings">
+      <header className="admin-section-heading">
+        <div>
+          <p className="eyebrow">Notify</p>
+          <h3>通知</h3>
+        </div>
+      </header>
+      <div className="admin-action-grid">
+        <article className="admin-action-card">
+          <p>通知渠道</p>
+          <strong>Telegram / Webhook</strong>
+        </article>
+        <article className="admin-action-card">
+          <p>通知类型</p>
+          <strong>上线 / 离线 / 异常</strong>
+        </article>
+      </div>
+      <p className="admin-overview-note">这里先保持信息入口，后续再接入具体渠道配置表单。</p>
+    </section>
+  )
+}
+
+function AdminModal({ title, eyebrow, onClose, children }: { title: string; eyebrow: string; onClose: () => void; children: ReactNode }) {
+  return (
+    <div className="admin-modal-backdrop" role="presentation">
+      <section className="admin-modal" role="dialog" aria-modal="true" aria-label={title}>
+        <header className="admin-modal-header">
+          <div>
+            <p className="eyebrow">{eyebrow}</p>
+            <h3>{title}</h3>
+          </div>
+          <button className="admin-modal-close" type="button" onClick={onClose} aria-label="关闭弹窗">×</button>
+        </header>
+        {children}
+      </section>
+    </div>
+  )
+}
+
+function formatTargetEndpoint(target: AdminProbeTarget): string {
+  return target.port ? `${target.address}:${target.port}` : target.address
+}
+
+function formatTargetAssignmentSummary(target: AdminProbeTarget): string {
+  if (target.assignments.length === 0) return '未分配节点'
+  const enabled = target.assignments.filter((assignment) => assignment.enabled).length
+  return `${enabled} / ${target.assignments.length} 节点启用`
 }
 
 function parsePositiveInt(value: string): number | null {
@@ -844,37 +1088,66 @@ function formatAdminDate(value?: string): string {
 }
 
 export function HomeOverviewPanel({ totalCount, onlineCount, offlineCount, totalUp, totalDown, upSpeed, downSpeed }: HomeOverviewPanelProps) {
-  return (
-    <section className="server-overview" aria-label="server overview">
-      <div className="overview-combined__body">
-        <OverviewMetric tone="blue" label="服务器总数" value={String(totalCount)} />
-        <OverviewMetric tone="green" label="在线服务器" value={String(onlineCount)} pulse />
-        <OverviewMetric tone="red" label="离线服务器" value={String(offlineCount)} pulse />
-        <div className="overview-metric tone-purple">
-          <p>网络</p>
-          <section className="network-total" aria-label="traffic totals">
-            <strong className="up">↑{compactBytes(totalUp)}</strong>
-            <strong className="down">↓{compactBytes(totalDown)}</strong>
-          </section>
-          <section className="network-speed" aria-label="traffic speeds">
-            <span><CircleArrowIcon direction="up" />{compactRate(upSpeed)}</span>
-            <span><CircleArrowIcon direction="down" />{compactRate(downSpeed)}</span>
-          </section>
-        </div>
-      </div>
-    </section>
-  )
-}
+  const onlineRatio = totalCount > 0 ? Math.round((onlineCount / totalCount) * 100) : 0
+  const healthLabel = totalCount === 0 ? '等待接入' : offlineCount === 0 ? '全部在线' : `${offlineCount} 台离线`
 
-function OverviewMetric({ label, value, tone, pulse = false }: { label: string; value: string; tone: 'blue' | 'green' | 'red'; pulse?: boolean }) {
   return (
-    <div className={`overview-metric tone-${tone}`}>
-      <p>{label}</p>
-      <div className="overview-value">
-        <span className="pulse-dot"><i className={pulse ? 'is-pulsing' : ''} /><b /></span>
-        <strong aria-label={value}>{value}</strong>
+    <section className="home-summary" aria-label="server overview">
+      <div className="home-summary__intro">
+        <div>
+          <p className="eyebrow">JiaoProbe Overview</p>
+          <h1>服务器运行概览</h1>
+        </div>
+        <span className={`home-health-pill ${offlineCount === 0 ? 'is-good' : 'is-warning'}`}>{healthLabel}</span>
       </div>
-    </div>
+
+      <div className="home-summary__main">
+        <div className="home-health-block">
+          <div className="home-health-number">
+            <strong>{onlineCount}</strong>
+            <span>/ {totalCount} 在线</span>
+          </div>
+          <div className="home-health-bar" aria-label={`在线率 ${onlineRatio}%`}>
+            <span style={{ transform: `scaleX(${onlineRatio / 100})` }} />
+          </div>
+          <p>离线 {offlineCount} 台 · 在线率 {onlineRatio}%</p>
+        </div>
+
+        <dl className="home-stat-grid">
+          <div>
+            <dt>服务器总数</dt>
+            <dd>{totalCount}</dd>
+          </div>
+          <div>
+            <dt>在线服务器</dt>
+            <dd>{onlineCount}</dd>
+          </div>
+          <div>
+            <dt>离线服务器</dt>
+            <dd>{offlineCount}</dd>
+          </div>
+        </dl>
+      </div>
+
+      <dl className="home-network-grid" aria-label="traffic totals and speeds">
+        <div>
+          <dt>累计上传</dt>
+          <dd>{compactBytes(totalUp)}</dd>
+        </div>
+        <div>
+          <dt>累计下载</dt>
+          <dd>{compactBytes(totalDown)}</dd>
+        </div>
+        <div>
+          <dt>实时上传</dt>
+          <dd><CircleArrowIcon direction="up" />{compactRate(upSpeed)}</dd>
+        </div>
+        <div>
+          <dt>实时下载</dt>
+          <dd><CircleArrowIcon direction="down" />{compactRate(downSpeed)}</dd>
+        </div>
+      </dl>
+    </section>
   )
 }
 

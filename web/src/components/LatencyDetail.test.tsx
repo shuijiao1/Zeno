@@ -3,12 +3,16 @@ import { describe, expect, it, vi } from 'vitest'
 import type { HomeCardNode, StatePoint } from '../types'
 import { LatencyDetail } from './LatencyDetail'
 
-const node: HomeCardNode = {
+const node = {
   id: 'hytron',
   displayName: 'Hytron',
   status: 'online',
   os: 'debian',
   arch: 'aarch64',
+  osVersion: '13',
+  kernel: '6.12.0',
+  virtualization: 'kvm',
+  cpuModel: 'AMD EPYC 7B13',
   countryCode: 'HK',
   cpuCores: 2,
   cpuPercent: 12,
@@ -22,7 +26,7 @@ const node: HomeCardNode = {
   netOutTotalBytes: 2048,
   monthlyBillableBytes: 3072,
   monthlyQuotaBytes: null,
-}
+} as HomeCardNode
 
 const statePoints: StatePoint[] = [
   {
@@ -54,10 +58,15 @@ describe('LatencyDetail', () => {
       />,
     )
 
+    expect(html).toContain('detail-hero')
+    expect(html).toContain('Hytron')
+    expect(html).toContain('AMD EPYC 7B13')
+    expect(html).toContain('2 Cores')
+    expect(html).toContain('kvm')
+    expect(html).toContain('debian 13')
+    expect(html).toContain('6.12.0')
     expect(html).toContain('系统资源历史')
     expect(html).toContain('1 天 · 1 个状态采样')
-    expect(html).toContain('<strong>aarch64</strong>')
-    expect(html).not.toContain('<strong>x86_64</strong>')
     expect(html).toContain('Hytron 网络延迟')
     expect(html).toContain('monitor services')
   })

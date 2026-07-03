@@ -9,18 +9,26 @@ interface StateHistoryPanelProps {
   error?: string
 }
 
+interface MetricLine {
+  key: string
+  label: string
+  values: Array<number | null>
+  color: string
+}
+
 interface MetricConfig {
   key: string
   label: string
   value: ReactNode
   tone: 'green' | 'blue' | 'purple' | 'orange'
-  values: Array<number | null>
   unitLabel: string
+  domainMax?: number
+  lines: MetricLine[]
 }
 
-const chartWidth = 300
-const chartHeight = 92
-const chartPad = { left: 8, right: 8, top: 10, bottom: 12 }
+const chartWidth = 900
+const chartHeight = 180
+const chartPad = { left: 48, right: 18, top: 18, bottom: 34 }
 
 export function StateHistoryPanel({ points, rangeLabel, loading = false, error }: StateHistoryPanelProps) {
   const sampleCount = points.length
@@ -37,32 +45,38 @@ export function StateHistoryPanel({ points, rangeLabel, loading = false, error }
       label: 'CPU',
       value: formatPercent(latestCpu),
       tone: 'green',
-      values: points.map((point) => finiteOrNull(point.cpuPercent)),
       unitLabel: '%',
+      domainMax: 100,
+      lines: [{ key: 'cpu', label: 'CPU', values: points.map((point) => finiteOrNull(point.cpuPercent)), color: '#22c55e' }],
     },
     {
       key: 'memory',
       label: '内存',
       value: formatPercent(latestMemory),
       tone: 'blue',
-      values: points.map(memoryPercent),
       unitLabel: '%',
+      domainMax: 100,
+      lines: [{ key: 'memory', label: '内存', values: points.map(memoryPercent), color: '#2563eb' }],
     },
     {
       key: 'disk',
       label: '磁盘',
       value: formatPercent(latestDisk),
       tone: 'purple',
-      values: points.map(diskPercent),
       unitLabel: '%',
+      domainMax: 100,
+      lines: [{ key: 'disk', label: '磁盘', values: points.map(diskPercent), color: '#9333ea' }],
     },
     {
       key: 'network',
       label: '网络速率',
       value: <><span>↑{formatBps(latestOutSpeed)}</span><span>↓{formatBps(latestInSpeed)}</span></>,
       tone: 'orange',
-      values: points.map((point) => sumFinite(point.netInSpeedBps, point.netOutSpeedBps)),
       unitLabel: 'B/s',
+      lines: [
+        { key: 'net-out', label: '上传', values: points.map((point) => finiteOrNull(point.netOutSpeedBps)), color: '#f97316' },
+        { key: 'net-in', label: '下载', values: points.map((point) => finiteOrNull(point.netInSpeedBps)), color: '#06b6d4' },
+      ],
     },
   ]
 
@@ -81,28 +95,51 @@ export function StateHistoryPanel({ points, rangeLabel, loading = false, error }
       {!loading && !error && sampleCount === 0 && <div className="detail-state">暂无系统资源历史</div>}
 
       {!loading && !error && sampleCount > 0 && (
-        <div className="state-history-grid">
-          {metrics.map((metric) => <MetricCard key={metric.key} metric={metric} />)}
+        <div className="state-history-stack">
+          {metrics.map((metric) => <MetricChartCard key={metric.key} metric={metric} />)}
         </div>
       )}
     </section>
   )
 }
 
-function MetricCard({ metric }: { metric: MetricConfig }) {
-  const domain = yDomain(metric.values)
-  const path = sparklinePath(metric.values, domain)
+function MetricChartCard({ metric }: { metric: MetricConfig }) {
+  const domain = yDomain(metric.lines.flatMap((line) => line.values), metric.domainMax)
 
   return (
-    <article className={`state-history-card tone-${metric.tone}`}>
+    <article className={`state-history-chart-card tone-${metric.tone}`}>
       <div className="state-history-card__meta">
-        <p>{metric.label}</p>
+        <div>
+          <p>{metric.label}</p>
+          {metric.lines.length > 1 && (
+            <span className="state-chart-legend">
+              {metric.lines.map((line) => <em key={line.key} style={{ color: line.color }}>{line.label}</em>)}
+            </span>
+          )}
+        </div>
         <strong>{metric.value}</strong>
       </div>
-      <svg className="state-sparkline" viewBox={`0 0 ${chartWidth} ${chartHeight}`} role="img" aria-label={`${metric.label} history`} data-series={metric.key}>
-        <line x1={chartPad.left} x2={chartWidth - chartPad.right} y1={chartHeight - chartPad.bottom} y2={chartHeight - chartPad.bottom} className="state-sparkline__baseline" />
-        <text x={chartPad.left} y={chartHeight - 2} className="state-sparkline__axis">{metric.unitLabel}</text>
-        <path d={path} className="state-sparkline__line" vectorEffect="non-scaling-stroke" />
+      <svg className="state-sparkline state-sparkline--large" viewBox={`0 0 ${chartWidth} ${chartHeight}`} role="img" aria-label={`${metric.label} history`}>
+        {[0, 0.5, 1].map((ratio) => {
+          const y = chartPad.top + ratio * (chartHeight - chartPad.top - chartPad.bottom)
+          const value = domain.max - ratio * (domain.max - domain.min)
+          return (
+            <g key={ratio}>
+              <line x1={chartPad.left} x2={chartWidth - chartPad.right} y1={y} y2={y} className="state-sparkline__baseline" />
+              <text x={8} y={y + 4} className="state-sparkline__axis">{formatAxisValue(value, metric.unitLabel)}</text>
+            </g>
+          )
+        })}
+        {metric.lines.map((line) => (
+          <path
+            key={line.key}
+            d={sparklinePath(line.values, domain)}
+            className="state-sparkline__line"
+            data-series={line.key}
+            style={{ stroke: line.color }}
+            vectorEffect="non-scaling-stroke"
+          />
+        ))}
       </svg>
     </article>
   )
@@ -142,22 +179,15 @@ function ratioPercent(used: number | null | undefined, total: number | null | un
   return Math.max(0, Math.min(100, (safeUsed / safeTotal) * 100))
 }
 
-function sumFinite(first: number | null | undefined, second: number | null | undefined): number | null {
-  const safeFirst = finiteOrNull(first)
-  const safeSecond = finiteOrNull(second)
-  if (safeFirst === null && safeSecond === null) return null
-  return (safeFirst ?? 0) + (safeSecond ?? 0)
-}
-
 function finiteOrNull(value: number | null | undefined): number | null {
   return typeof value === 'number' && Number.isFinite(value) ? value : null
 }
 
-function yDomain(values: Array<number | null>): { min: number; max: number } {
+function yDomain(values: Array<number | null>, forcedMax?: number): { min: number; max: number } {
   const finiteValues = values.filter((value): value is number => value !== null)
-  if (finiteValues.length === 0) return { min: 0, max: 1 }
+  if (finiteValues.length === 0) return { min: 0, max: forcedMax ?? 1 }
   const max = Math.max(...finiteValues)
-  return { min: 0, max: Math.max(1, Math.ceil(max * 1.15)) }
+  return { min: 0, max: Math.max(1, forcedMax ?? Math.ceil(max * 1.15)) }
 }
 
 function sparklinePath(values: Array<number | null>, domain: { min: number; max: number }): string {
@@ -181,4 +211,9 @@ function sparklinePath(values: Array<number | null>, domain: { min: number; max:
     })
     .filter(Boolean)
     .join(' ')
+}
+
+function formatAxisValue(value: number, unitLabel: string): string {
+  if (unitLabel === '%') return `${Math.round(value)}%`
+  return value >= 1024 ? formatBps(value).replace('/s', '') : `${Math.round(value)} ${unitLabel}`
 }
