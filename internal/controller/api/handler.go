@@ -1,12 +1,14 @@
 package api
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 )
 
 type HandlerOptions struct {
@@ -47,10 +49,13 @@ func NewHandler(options ...HandlerOptions) http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/health", handleHealth)
 	mux.HandleFunc("/api/public/v1/agent/linux-amd64", h.handleAgentBinary)
+	mux.HandleFunc("/api/public/v1/assets/", h.handlePublicAsset)
 	mux.HandleFunc("/api/public/v1/settings", h.handlePublicSettings)
 	mux.HandleFunc("/api/public/v1/summary", h.handleSummary)
 	mux.HandleFunc("/api/public/v1/nodes/", h.handlePublicNodeResource)
 	mux.HandleFunc("/api/admin/v1/settings", h.handleAdminSettings)
+	mux.HandleFunc("/api/admin/v1/assets", h.handleAdminAssets)
+	mux.HandleFunc("/api/admin/v1/assets/", h.handleAdminAssetResource)
 	mux.HandleFunc("/api/admin/v1/maintenance", h.handleAdminMaintenance)
 	mux.HandleFunc("/api/admin/v1/maintenance/cleanup", h.handleAdminMaintenanceCleanup)
 	mux.HandleFunc("/api/admin/v1/notification-channels", h.handleAdminNotificationChannels)
@@ -74,6 +79,30 @@ func NewHandler(options ...HandlerOptions) http.Handler {
 		mux.HandleFunc("/", handleStatic(opts.StaticDir))
 	}
 	return mux
+}
+
+func (h *handler) handlePublicAsset(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet && r.Method != http.MethodHead {
+		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+	assetID := strings.Trim(strings.TrimPrefix(r.URL.Path, "/api/public/v1/assets/"), "/")
+	if assetID == "" || strings.Contains(assetID, "/") {
+		writeError(w, http.StatusNotFound, "not found")
+		return
+	}
+	asset, err := h.store.PublicAsset(r.Context(), assetID)
+	if err != nil {
+		writeStoreError(w, err)
+		return
+	}
+	modTime := time.Now().UTC()
+	if parsed, err := time.Parse(time.RFC3339, asset.CreatedAt); err == nil {
+		modTime = parsed
+	}
+	w.Header().Set("Content-Type", asset.ContentType)
+	w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
+	http.ServeContent(w, r, asset.Filename, modTime, bytes.NewReader(asset.Bytes))
 }
 
 func handleHealth(w http.ResponseWriter, r *http.Request) {
@@ -222,6 +251,10 @@ func writeError(w http.ResponseWriter, status int, message string) {
 func writeStoreError(w http.ResponseWriter, err error) {
 	if errors.Is(err, errNodeNotFound) {
 		writeError(w, http.StatusNotFound, "node not found")
+		return
+	}
+	if errors.Is(err, errAssetNotFound) {
+		writeError(w, http.StatusNotFound, "not found")
 		return
 	}
 	writeError(w, http.StatusInternalServerError, "internal error")

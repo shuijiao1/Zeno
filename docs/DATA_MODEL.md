@@ -305,6 +305,26 @@ CREATE TABLE settings (
 - `maintenance_probe_retention_days`
 - `maintenance_notification_retention_days`
 
+## assets
+
+后台上传的本地外观图片，供 Logo / 背景图 URL 使用。资产通过 Public API 公开读取，但上传和删除需要 Admin token。
+
+```sql
+CREATE TABLE assets (
+  id TEXT PRIMARY KEY,
+  filename TEXT NOT NULL,
+  content_type TEXT NOT NULL,
+  size_bytes INTEGER NOT NULL,
+  content BLOB NOT NULL,
+  created_at INTEGER NOT NULL
+);
+```
+
+- `id` 使用图片内容 hash 派生，例如 `asset_deadbeefcafebabe.png`。
+- `content_type` 仅允许 `image/png`、`image/jpeg`、`image/webp`。
+- 单张图片限制 4MB，避免把 SQLite 当大对象仓库。
+- 删除资产不会自动改写 `settings` 中的 URL。
+
 ## 迁移策略
 
 `ensureSchema` 会在启动时创建缺失表，并通过 additive `ALTER TABLE ... ADD COLUMN` 补齐新增列。现阶段只做向前兼容 additive migration，不兼容旧系统 DB。

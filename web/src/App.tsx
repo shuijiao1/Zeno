@@ -1,10 +1,10 @@
 import { type CSSProperties, type FormEvent, type ReactNode, useEffect, useState } from 'react'
-import { createAdminNode, createAdminNotificationChannel, createAdminProbeTarget, deleteAdminNotificationChannel, deleteAdminProbeTarget, fetchAdminAlertRules, fetchAdminAlertRuleStates, fetchAdminMaintenance, fetchAdminNodes, fetchAdminNotificationChannels, fetchAdminNotificationDeliveries, fetchAdminNotificationTypes, fetchAdminProbeTargets, fetchAdminSettings, fetchNodeLatency, fetchNodeState, fetchPublicSettings, fetchSummary, requestAdminNodeInstallCommand, runAdminMaintenanceCleanup, testAdminNotificationChannel, updateAdminAlertRule, updateAdminMaintenance, updateAdminNode, updateAdminNotificationChannel, updateAdminNotificationType, updateAdminProbeTarget, updateAdminSettings, type AdminAlertRuleUpdateInput, type AdminMaintenanceCleanupInput, type AdminMaintenanceUpdateInput, type AdminNodeCreateInput, type AdminNodeUpdateInput, type AdminNotificationChannelCreateInput, type AdminNotificationChannelUpdateInput, type AdminProbeTargetInput, type AdminProbeTargetUpdateInput, type AdminSettingsUpdateInput, type NodeLatencyData, type NodeStateData, type SummaryData } from './api/client'
+import { createAdminNode, createAdminNotificationChannel, createAdminProbeTarget, deleteAdminNotificationChannel, deleteAdminProbeTarget, fetchAdminAlertRules, fetchAdminAlertRuleStates, fetchAdminMaintenance, fetchAdminNodes, fetchAdminNotificationChannels, fetchAdminNotificationDeliveries, fetchAdminNotificationTypes, fetchAdminProbeTargets, fetchAdminSettings, fetchNodeLatency, fetchNodeState, fetchPublicSettings, fetchSummary, requestAdminNodeInstallCommand, runAdminMaintenanceCleanup, testAdminNotificationChannel, updateAdminAlertRule, updateAdminMaintenance, updateAdminNode, updateAdminNotificationChannel, updateAdminNotificationType, updateAdminProbeTarget, updateAdminSettings, uploadAdminAsset, type AdminAlertRuleUpdateInput, type AdminAssetUploadInput, type AdminMaintenanceCleanupInput, type AdminMaintenanceUpdateInput, type AdminNodeCreateInput, type AdminNodeUpdateInput, type AdminNotificationChannelCreateInput, type AdminNotificationChannelUpdateInput, type AdminProbeTargetInput, type AdminProbeTargetUpdateInput, type AdminSettingsUpdateInput, type NodeLatencyData, type NodeStateData, type SummaryData } from './api/client'
 import { LatencyDetail } from './components/LatencyDetail'
 import { ServerCard } from './components/ServerCard'
 import { startLiveRefresh } from './lib/liveRefresh'
 import { nodePath, parseDashboardRoute, type DashboardRoute } from './lib/route'
-import type { AdminAlertRule, AdminAlertRuleState, AdminMaintenance, AdminMaintenanceCleanup, AdminMaintenanceStats, AdminNode, AdminNotificationChannel, AdminNotificationDelivery, AdminNotificationType, AdminProbeTarget, AdminSettings, ProbeType } from './types'
+import type { AdminAlertRule, AdminAlertRuleState, AdminAsset, AdminMaintenance, AdminMaintenanceCleanup, AdminMaintenanceStats, AdminNode, AdminNotificationChannel, AdminNotificationDelivery, AdminNotificationType, AdminProbeTarget, AdminSettings, ProbeType } from './types'
 
 type LoadState =
   | { kind: 'loading' }
@@ -492,6 +492,15 @@ export function App() {
       .catch((error: unknown) => setAdminState({ kind: 'error', message: error instanceof Error ? error.message : 'unknown error' }))
   }
 
+  const uploadAdminAssetDetails = (input: AdminAssetUploadInput): Promise<AdminAsset> => {
+    if (adminToken === '') return Promise.reject(new Error('missing admin token'))
+    return uploadAdminAsset(adminToken, input)
+      .catch((error: unknown) => {
+        setAdminState({ kind: 'error', message: error instanceof Error ? error.message : 'unknown error' })
+        throw error
+      })
+  }
+
   const updateAdminMaintenanceDetails = (input: AdminMaintenanceUpdateInput) => {
     if (adminToken === '') return
     updateAdminMaintenance(adminToken, input)
@@ -566,6 +575,7 @@ export function App() {
           onAdminNotificationTypeUpdate={updateAdminNotificationTypeDetails}
           onAdminAlertRuleUpdate={updateAdminAlertRuleDetails}
           onAdminSettingsUpdate={updateAdminSettingsDetails}
+          onAdminAssetUpload={uploadAdminAssetDetails}
           onAdminMaintenanceUpdate={updateAdminMaintenanceDetails}
           onAdminMaintenanceCleanup={runAdminMaintenanceCleanupDetails}
         />
@@ -688,6 +698,7 @@ interface AdminDashboardProps {
   onAdminNotificationTypeUpdate?: (eventType: string, enabled: boolean) => void
   onAdminAlertRuleUpdate?: (ruleId: string, input: AdminAlertRuleUpdateInput) => void
   onAdminSettingsUpdate?: (input: AdminSettingsUpdateInput) => void
+  onAdminAssetUpload?: (input: AdminAssetUploadInput) => Promise<AdminAsset>
   onAdminMaintenanceUpdate?: (input: AdminMaintenanceUpdateInput) => void
   onAdminMaintenanceCleanup?: (input: AdminMaintenanceCleanupInput) => Promise<AdminMaintenanceCleanup>
 }
@@ -714,6 +725,7 @@ export function AdminDashboard({
   onAdminNotificationTypeUpdate = () => {},
   onAdminAlertRuleUpdate = () => {},
   onAdminSettingsUpdate = () => {},
+  onAdminAssetUpload = () => Promise.reject(new Error('asset upload unavailable')),
   onAdminMaintenanceUpdate = () => {},
   onAdminMaintenanceCleanup = () => Promise.reject(new Error('maintenance cleanup unavailable')),
 }: AdminDashboardProps) {
@@ -858,7 +870,7 @@ export function AdminDashboard({
             )}
 
             {adminState.kind === 'ready' && activeSection === 'settings' && (
-              <AdminSettingsSection settings={settings} onUpdate={onAdminSettingsUpdate} />
+              <AdminSettingsSection settings={settings} onUpdate={onAdminSettingsUpdate} onAssetUpload={onAdminAssetUpload} />
             )}
 
             {adminState.kind === 'ready' && activeSection === 'notifications' && (
@@ -938,21 +950,46 @@ function AdminOverviewPanel({ nodeCount, onlineNodeCount, targetCount, enabledTa
   )
 }
 
-function AdminSettingsSection({ settings, onUpdate }: { settings: AdminSettings; onUpdate: (input: AdminSettingsUpdateInput) => void }) {
+function AdminSettingsSection({ settings, onUpdate, onAssetUpload }: { settings: AdminSettings; onUpdate: (input: AdminSettingsUpdateInput) => void; onAssetUpload: (input: AdminAssetUploadInput) => Promise<AdminAsset> }) {
+  const [draft, setDraft] = useState(settings)
+  const [assetStatus, setAssetStatus] = useState<{ kind: 'idle' } | { kind: 'loading'; label: string } | { kind: 'ready'; label: string } | { kind: 'error'; label: string }>({ kind: 'idle' })
+
+  useEffect(() => {
+    setDraft(settings)
+  }, [settings.updatedAt])
+
   const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
-    const formData = new FormData(event.currentTarget)
-    const theme = String(formData.get('theme') ?? 'system') as AdminSettings['theme']
     onUpdate({
-      siteTitle: String(formData.get('site-title') ?? '').trim(),
-      siteSubtitle: String(formData.get('site-subtitle') ?? '').trim(),
-      logoUrl: String(formData.get('logo-url') ?? '').trim(),
-      theme,
-      backgroundUrl: String(formData.get('desktop-background-url') ?? '').trim(),
-      desktopBackgroundUrl: String(formData.get('desktop-background-url') ?? '').trim(),
-      mobileBackgroundUrl: String(formData.get('mobile-background-url') ?? '').trim(),
+      siteTitle: draft.siteTitle.trim(),
+      siteSubtitle: draft.siteSubtitle.trim(),
+      logoUrl: draft.logoUrl.trim(),
+      theme: draft.theme,
+      backgroundUrl: draft.desktopBackgroundUrl.trim(),
+      desktopBackgroundUrl: draft.desktopBackgroundUrl.trim(),
+      mobileBackgroundUrl: draft.mobileBackgroundUrl.trim(),
     })
   }
+
+  const handleAssetUpload = (event: FormEvent<HTMLInputElement>, field: 'logoUrl' | 'desktopBackgroundUrl' | 'mobileBackgroundUrl') => {
+    const file = event.currentTarget.files?.[0]
+    event.currentTarget.value = ''
+    if (!file) return
+    setAssetStatus({ kind: 'loading', label: `正在上传 ${file.name}…` })
+    readFileAsBase64(file)
+      .then((dataBase64) => onAssetUpload({ filename: file.name, contentType: file.type, dataBase64 }))
+      .then((asset) => {
+        setDraft((current) => ({
+          ...current,
+          [field]: asset.url,
+          ...(field === 'desktopBackgroundUrl' ? { backgroundUrl: asset.url } : {}),
+        }))
+        setAssetStatus({ kind: 'ready', label: `已上传 ${asset.filename}，保存设置后生效。` })
+      })
+      .catch((error: unknown) => setAssetStatus({ kind: 'error', label: error instanceof Error ? error.message : '上传失败' }))
+  }
+
+  const updateDraft = (patch: Partial<AdminSettings>) => setDraft((current) => ({ ...current, ...patch }))
 
   return (
     <section className="admin-settings-section admin-workspace-panel" aria-label="admin settings">
@@ -965,19 +1002,20 @@ function AdminSettingsSection({ settings, onUpdate }: { settings: AdminSettings;
       <form className="admin-settings-form admin-node-edit-form" aria-label="外观配置" onSubmit={handleSubmit}>
         <label>
           <span>站点标题</span>
-          <input name="site-title" autoComplete="off" defaultValue={settings.siteTitle} />
+          <input name="site-title" autoComplete="off" value={draft.siteTitle} onChange={(event) => updateDraft({ siteTitle: event.currentTarget.value })} />
         </label>
         <label>
           <span>站点副标题</span>
-          <input name="site-subtitle" autoComplete="off" defaultValue={settings.siteSubtitle} />
+          <input name="site-subtitle" autoComplete="off" value={draft.siteSubtitle} onChange={(event) => updateDraft({ siteSubtitle: event.currentTarget.value })} />
         </label>
         <label>
           <span>头像 / Logo URL</span>
-          <input name="logo-url" autoComplete="off" defaultValue={settings.logoUrl} />
+          <input name="logo-url" autoComplete="off" value={draft.logoUrl} onChange={(event) => updateDraft({ logoUrl: event.currentTarget.value })} />
+          <input aria-label="上传 Logo 图片" type="file" accept="image/png,image/jpeg,image/webp" onChange={(event) => handleAssetUpload(event, 'logoUrl')} />
         </label>
         <label>
           <span>主题</span>
-          <select name="theme" defaultValue={settings.theme}>
+          <select name="theme" value={draft.theme} onChange={(event) => updateDraft({ theme: event.currentTarget.value as AdminSettings['theme'] })}>
             <option value="system">跟随系统</option>
             <option value="dark">深色</option>
             <option value="light">浅色</option>
@@ -985,12 +1023,15 @@ function AdminSettingsSection({ settings, onUpdate }: { settings: AdminSettings;
         </label>
         <label>
           <span>电脑端背景图 URL</span>
-          <input name="desktop-background-url" autoComplete="off" defaultValue={settings.desktopBackgroundUrl || settings.backgroundUrl} placeholder="可留空" />
+          <input name="desktop-background-url" autoComplete="off" value={draft.desktopBackgroundUrl || draft.backgroundUrl} placeholder="可留空" onChange={(event) => updateDraft({ backgroundUrl: event.currentTarget.value, desktopBackgroundUrl: event.currentTarget.value })} />
+          <input aria-label="上传电脑端背景图" type="file" accept="image/png,image/jpeg,image/webp" onChange={(event) => handleAssetUpload(event, 'desktopBackgroundUrl')} />
         </label>
         <label>
           <span>手机端背景图 URL</span>
-          <input name="mobile-background-url" autoComplete="off" defaultValue={settings.mobileBackgroundUrl} placeholder="可留空，默认跟随电脑端" />
+          <input name="mobile-background-url" autoComplete="off" value={draft.mobileBackgroundUrl} placeholder="可留空，默认跟随电脑端" onChange={(event) => updateDraft({ mobileBackgroundUrl: event.currentTarget.value })} />
+          <input aria-label="上传手机端背景图" type="file" accept="image/png,image/jpeg,image/webp" onChange={(event) => handleAssetUpload(event, 'mobileBackgroundUrl')} />
         </label>
+        <p className={`admin-overview-note${assetStatus.kind === 'error' ? ' is-error' : ''}`}>支持上传 PNG / JPEG / WebP，单张不超过 4MB。{assetStatus.kind !== 'idle' ? ` ${assetStatus.label}` : ''}</p>
         {settings.updatedAt && <p className="admin-overview-note">最近更新：{formatAdminDate(settings.updatedAt)}</p>}
         <button type="submit">保存设置</button>
       </form>
@@ -2209,6 +2250,19 @@ function parseNonNegativeInt(value: string): number | null {
   const parsed = Number(trimmed)
   if (!Number.isInteger(parsed) || parsed < 0) return null
   return parsed
+}
+
+function readFileAsBase64(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onerror = () => reject(new Error('读取图片失败'))
+    reader.onload = () => {
+      const result = typeof reader.result === 'string' ? reader.result : ''
+      const comma = result.indexOf(',')
+      resolve(comma >= 0 ? result.slice(comma + 1) : result)
+    }
+    reader.readAsDataURL(file)
+  })
 }
 
 function parseMonthlyResetDay(value: string): number | null {

@@ -180,6 +180,13 @@ Agent 使用 tokenless、可替换的轻量 HTTP provider 自动发现公网 IPv
 
 兼容字段：`background_url` 会映射到 desktop background。不要重新拆出 `avatar_url`。
 
+后台可上传本地外观图片：
+
+- 上传入口只在 Admin API，读取入口是公开的 `/api/public/v1/assets/{asset_id}`。
+- 图片存入 SQLite `assets` 表，ID 由内容 hash 派生，方便长期缓存和去重。
+- 仅接受 PNG / JPEG / WebP，单张 4MB 上限；不接受 SVG，避免脚本型图片风险。
+- 上传只返回站内 URL，不自动改写设置；后台 UI 会填入对应输入框，保存设置后生效。
+
 ## 数据维护
 
 数据维护通过 Admin API 暴露：

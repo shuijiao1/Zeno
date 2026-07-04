@@ -28,10 +28,39 @@ var (
 	errAlertRuleNotFound                    = errors.New("alert rule not found")
 	errInvalidAdminMaintenanceUpdate        = errors.New("invalid admin maintenance update")
 	errInvalidAdminMaintenanceCleanup       = errors.New("invalid admin maintenance cleanup")
+	errInvalidAdminAssetUpload              = errors.New("invalid admin asset upload")
 )
 
 type AdminSettingsResponse struct {
 	Settings SiteSettings `json:"settings"`
+}
+
+type AdminAssetResponse struct {
+	Asset AdminAsset `json:"asset"`
+}
+
+type AdminAssetUploadRequest struct {
+	Filename    string `json:"filename"`
+	ContentType string `json:"content_type"`
+	DataBase64  string `json:"data_base64"`
+}
+
+type AdminAsset struct {
+	ID          string `json:"id"`
+	Filename    string `json:"filename"`
+	ContentType string `json:"content_type"`
+	SizeBytes   int64  `json:"size_bytes"`
+	URL         string `json:"url"`
+	CreatedAt   string `json:"created_at"`
+}
+
+type PublicAsset struct {
+	ID          string
+	Filename    string
+	ContentType string
+	SizeBytes   int64
+	Bytes       []byte
+	CreatedAt   string
 }
 
 type AdminMaintenanceResponse struct {
