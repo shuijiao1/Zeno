@@ -31,7 +31,7 @@ Zeno 当前已经具备完整预览闭环：
 - React 前台和后台。
 - Agent 主机状态、资源历史、月流量（含首页计费周期范围）、延迟/服务探测。
 - `tcping`、`ping`/ICMP、`http_get` 探针目标。
-- Admin 服务器、服务器排序、Agent 安装命令复制、Agent 接入 URL、探针目标、探针目标排序、节点分配、通知、外观设置和当前异常。
+- Admin 服务器、服务器排序、Agent 安装命令复制、Agent 接入 URL、探针目标、探针目标排序、节点分配、通知、外观设置和当前异常；外观 / Agent 接入 URL 保存前会先校验格式。
 - Telegram-only 通知 dispatch、测试发送和 sanitized delivery history。
 - 服务器元数据：到期日、账单周期、显示顺序（后台可上移/下移/整理）、国家码/国旗、公网 IPv4、公网 IPv6，Agent 可自动识别公网 IP / GeoIP。
 - 通知类型触发条件支持按服务器范围生效。
@@ -50,4 +50,4 @@ Zeno 当前已经具备完整预览闭环：
 
 1. 多节点铺 Agent：在 Controller 公网 HTTPS 入口确认后逐台安装，先少量 smoke，再批量。
 2. 后续服务监控状态页 / 历史页：暂缓，确认需要后再做。
-3. UI polish：外观 URL 输入体验、拖拽排序等，放在主线闭环之后。
+3. UI polish：拖拽排序等，放在主线闭环之后。

@@ -360,6 +360,7 @@ X-Admin-Token: <admin-token>
 - `logo_url` 必须是站内绝对路径（如 `/assets/logo/id.png`）或 `https://` URL；当前首页/后台头部头像与 Logo 都使用这一字段。
 - `background_url` 是旧兼容字段，当前等价于电脑端背景图；`background_url`、`desktop_background_url`、`mobile_background_url` 均可为空，非空时必须是站内绝对路径或 `https://` URL。手机端背景留空时前端跟随电脑端背景。
 - 图片只通过 URL / 站内静态路径引用，不把外观图片写入数据库。
+- 后台保存前会先做同口径的客户端校验，减少提交后才被 API 拒绝的情况。
 - 响应仍只返回公开展示字段，不返回 Admin token、Agent token、token hash、secret、credential 或任何凭据值。
 
 ### GET /api/admin/v1/nodes

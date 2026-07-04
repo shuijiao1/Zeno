@@ -1,6 +1,6 @@
 import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it } from 'vitest'
-import { AdminDashboard, HomeTopPanel, reconcileAlertRuleStates, reconcileAlertRuleStatesForNode, shellStyleForSettings } from './App'
+import { AdminDashboard, HomeTopPanel, reconcileAlertRuleStates, reconcileAlertRuleStatesForNode, shellStyleForSettings, validateAdminSettingsInput } from './App'
 import type { AdminAlertRule, AdminAlertRuleState, AdminNode, AdminNotificationChannel, AdminNotificationDelivery, AdminNotificationType, AdminProbeTarget, AdminSettings } from './types'
 
 const overviewProps = {
@@ -346,6 +346,7 @@ describe('AdminDashboard', () => {
     expect(html).toContain('Agent 接入 URL')
     expect(html).toContain('name="agent-controller-url"')
     expect(html).toContain('https://zeno.example.com')
+    expect(html).toContain('图片字段只填 https:// 链接或 /assets/... 站内路径')
     expect(html).toContain('name="desktop-background-url"')
     expect(html).toContain('https://example.com/desktop-bg.webp')
     expect(html).toContain('name="mobile-background-url"')
@@ -354,6 +355,27 @@ describe('AdminDashboard', () => {
     expect(html).not.toContain('secret')
     expect(html).not.toContain('credential')
     expect(html).not.toContain('hash')
+  })
+
+  it('validates settings URL fields before saving', () => {
+    const baseInput = {
+      siteTitle: 'Zeno',
+      siteSubtitle: '服务器运行概览',
+      logoUrl: '/assets/logo/id.png',
+      theme: 'system' as const,
+      agentControllerUrl: '',
+      backgroundUrl: 'https://example.com/desktop.webp',
+      desktopBackgroundUrl: 'https://example.com/desktop.webp',
+      mobileBackgroundUrl: '',
+    }
+
+    expect(validateAdminSettingsInput(baseInput)).toBeNull()
+    expect(validateAdminSettingsInput({ ...baseInput, logoUrl: 'http://example.com/logo.png' })).toContain('头像 / Logo URL')
+    expect(validateAdminSettingsInput({ ...baseInput, desktopBackgroundUrl: 'javascript:alert(1)' })).toContain('电脑端背景图 URL')
+    expect(validateAdminSettingsInput({ ...baseInput, mobileBackgroundUrl: '//example.com/bg.png' })).toContain('手机端背景图 URL')
+    expect(validateAdminSettingsInput({ ...baseInput, agentControllerUrl: 'https://user:pass@example.com' })).toContain('Agent 接入 URL')
+    expect(validateAdminSettingsInput({ ...baseInput, agentControllerUrl: 'https://zeno.example.com/?token=1' })).toContain('Agent 接入 URL')
+    expect(validateAdminSettingsInput({ ...baseInput, agentControllerUrl: 'https://zeno.example.com/' })).toBeNull()
   })
 
   it('renders real notification channels and types instead of a placeholder', () => {

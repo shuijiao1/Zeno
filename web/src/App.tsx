@@ -833,11 +833,12 @@ function AdminSectionNav({ activeSection, onSectionChange, nodeCount, targetCoun
 }
 
 function AdminSettingsSection({ settings, onUpdate }: { settings: AdminSettings; onUpdate: (input: AdminSettingsUpdateInput) => void }) {
+  const [settingsError, setSettingsError] = useState<string | null>(null)
   const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
     const formData = new FormData(event.currentTarget)
     const theme = String(formData.get('theme') ?? 'system') as AdminSettings['theme']
-    onUpdate({
+    const input: AdminSettingsUpdateInput = {
       siteTitle: String(formData.get('site-title') ?? '').trim(),
       siteSubtitle: String(formData.get('site-subtitle') ?? '').trim(),
       logoUrl: String(formData.get('logo-url') ?? '').trim(),
@@ -846,7 +847,14 @@ function AdminSettingsSection({ settings, onUpdate }: { settings: AdminSettings;
       backgroundUrl: String(formData.get('desktop-background-url') ?? '').trim(),
       desktopBackgroundUrl: String(formData.get('desktop-background-url') ?? '').trim(),
       mobileBackgroundUrl: String(formData.get('mobile-background-url') ?? '').trim(),
-    })
+    }
+    const validationError = validateAdminSettingsInput(input)
+    if (validationError) {
+      setSettingsError(validationError)
+      return
+    }
+    setSettingsError(null)
+    onUpdate(input)
   }
 
   return (
@@ -870,6 +878,7 @@ function AdminSettingsSection({ settings, onUpdate }: { settings: AdminSettings;
           <span>头像 / Logo URL</span>
           <input name="logo-url" autoComplete="off" defaultValue={settings.logoUrl} />
         </label>
+        <p className="admin-overview-note">图片字段只填 https:// 链接或 /assets/... 站内路径。</p>
         <label>
           <span>主题</span>
           <select name="theme" defaultValue={settings.theme}>
@@ -892,10 +901,42 @@ function AdminSettingsSection({ settings, onUpdate }: { settings: AdminSettings;
           <input name="mobile-background-url" autoComplete="off" defaultValue={settings.mobileBackgroundUrl} placeholder="可留空，默认跟随电脑端" />
         </label>
         {settings.updatedAt && <p className="admin-overview-note">最近更新：{formatAdminDate(settings.updatedAt)}</p>}
+        {settingsError && <p className="admin-install-error">{settingsError}</p>}
         <button type="submit">保存设置</button>
       </form>
     </section>
   )
+}
+
+export function validateAdminSettingsInput(input: AdminSettingsUpdateInput): string | null {
+  if (!validSettingsImageURL(input.logoUrl ?? '')) return '头像 / Logo URL 只能是 https:// 链接或 /assets/... 站内路径。'
+  if (!validSettingsImageURL(input.desktopBackgroundUrl ?? input.backgroundUrl ?? '')) return '电脑端背景图 URL 只能是 https:// 链接或 /assets/... 站内路径。'
+  if (!validSettingsImageURL(input.mobileBackgroundUrl ?? '')) return '手机端背景图 URL 只能是 https:// 链接或 /assets/... 站内路径。'
+  if (!validAgentControllerURL(input.agentControllerUrl ?? '')) return 'Agent 接入 URL 只能是 http:// 或 https://，且不能包含用户名密码、query 或 fragment。'
+  return null
+}
+
+function validSettingsImageURL(value: string): boolean {
+  const trimmed = value.trim()
+  if (trimmed === '') return true
+  if (trimmed.startsWith('/') && !trimmed.startsWith('//')) return true
+  try {
+    const parsed = new URL(trimmed)
+    return parsed.protocol === 'https:' && parsed.hostname !== '' && parsed.username === '' && parsed.password === ''
+  } catch {
+    return false
+  }
+}
+
+function validAgentControllerURL(value: string): boolean {
+  const trimmed = value.trim().replace(/\/+$/, '')
+  if (trimmed === '') return true
+  try {
+    const parsed = new URL(trimmed)
+    return (parsed.protocol === 'http:' || parsed.protocol === 'https:') && parsed.hostname !== '' && parsed.username === '' && parsed.password === '' && parsed.search === '' && parsed.hash === ''
+  } catch {
+    return false
+  }
 }
 
 function AdminNodeSection({ nodes, onCreate, onUpdate, onInstallCommand }: { nodes: AdminNode[]; onCreate: (input: AdminNodeCreateInput) => void; onUpdate: (nodeId: string, input: AdminNodeUpdateInput) => void; onInstallCommand: (nodeId: string) => Promise<string> }) {
