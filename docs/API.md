@@ -172,7 +172,7 @@ X-Agent-Version: <version>
 
 ### GET /api/public/v1/settings
 
-读取公开站点外观配置。首页启动时会先读取该接口，用于品牌标题、头像/Logo、副标题、主题，以及电脑端/手机端背景图。头像/Logo 只用 `logo_url` 一个字段，不再拆出额外头像字段。响应只包含公开展示字段，不包含 Admin token、Agent token、token hash、通知渠道凭据、secret 或 credential 原文。
+读取公开站点外观配置。首页启动时会先读取该接口，用于品牌标题、头像/Logo、副标题、主题，以及电脑端/手机端背景图。头像/Logo 只用 `logo_url` 一个字段，不再拆出额外头像字段。图片字段只保存 URL / 站内静态路径，不存图片二进制。响应只包含公开展示字段，不包含 Admin token、Agent token、token hash、通知渠道凭据、secret 或 credential 原文。
 
 默认值：
 
@@ -349,6 +349,7 @@ X-Admin-Token: <admin-token>
 - `theme` 只能是 `system`、`dark` 或 `light`。
 - `logo_url` 必须是站内绝对路径（如 `/assets/logo/id.png`）或 `https://` URL；当前首页/后台头部头像与 Logo 都使用这一字段。
 - `background_url` 是旧兼容字段，当前等价于电脑端背景图；`background_url`、`desktop_background_url`、`mobile_background_url` 均可为空，非空时必须是站内绝对路径或 `https://` URL。手机端背景留空时前端跟随电脑端背景。
+- 图片只通过 URL / 站内静态路径引用；Controller 不接收图片上传，也不把外观图片写入数据库。
 - 响应仍只返回公开展示字段，不返回 Admin token、Agent token、token hash、secret、credential 或任何凭据值。
 
 ### GET /api/admin/v1/nodes
