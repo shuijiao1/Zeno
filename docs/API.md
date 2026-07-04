@@ -183,7 +183,35 @@ X-Agent-Version: <version>
 
 ### GET /api/public/v1/summary
 
-首页使用，返回节点卡片所需数据。
+首页使用，返回节点卡片所需数据。节点按后台 `display_order ASC, id ASC` 排序；`expiry_label` 来自后台节点的 `expiry_date`，没有配置时为空，前端按永久展示。
+
+节点响应示例：
+
+```json
+{
+  "nodes": [
+    {
+      "id": "hytron",
+      "display_name": "Hytron",
+      "status": "online",
+      "country_code": "HK",
+      "expiry_label": "2026-08-01",
+      "cpu_percent": 12.5,
+      "memory_used_bytes": 1073741824,
+      "memory_total_bytes": 2147483648,
+      "disk_used_bytes": 10737418240,
+      "disk_total_bytes": 42949672960,
+      "net_in_speed_bps": 1024,
+      "net_out_speed_bps": 2048,
+      "net_in_total_bytes": 4096,
+      "net_out_total_bytes": 8192,
+      "monthly_billable_bytes": 1099511627776,
+      "monthly_quota_bytes": 2199023255552
+    }
+  ],
+  "latency_points": []
+}
+```
 
 ### GET /api/public/v1/nodes/{node_id}/latency
 
@@ -314,7 +342,35 @@ X-Admin-Token: <admin-token>
 
 ### GET /api/admin/v1/nodes
 
-节点管理列表，返回 enabled + disabled 节点、状态、地区、计费模式、配额、last seen、host info 和 agent version。
+节点管理列表，返回 enabled + disabled 节点、状态、地区、到期日、账单周期、显示顺序、公网 IPv4/IPv6、计费模式、配额、last seen、host info 和 agent version。列表按 `display_order ASC, id ASC` 排序；后台 UI 用 `country_code` 渲染国旗。
+
+响应字段重点：
+
+```json
+{
+  "nodes": [
+    {
+      "id": "hytron",
+      "display_name": "Hytron",
+      "status": "online",
+      "country_code": "HK",
+      "region": "Hong Kong",
+      "disabled": false,
+      "billing_mode": "both",
+      "expiry_date": "2026-08-01",
+      "billing_cycle": "月付",
+      "display_order": 10,
+      "public_ipv4": "198.51.100.8",
+      "public_ipv6": "2001:db8::8",
+      "monthly_quota_bytes": 1099511627776,
+      "last_seen_at": "2026-07-03T00:00:00Z",
+      "created_at": "2026-07-02T00:00:00Z",
+      "updated_at": "2026-07-03T00:00:00Z",
+      "agent_version": "a0cd835"
+    }
+  ]
+}
+```
 
 ### POST /api/admin/v1/nodes
 
@@ -327,11 +383,16 @@ X-Admin-Token: <admin-token>
   "display_name": "New Server",
   "country_code": "HK",
   "region": "Hong Kong",
+  "expiry_date": "2026-08-01",
+  "billing_cycle": "月付",
+  "display_order": 10,
+  "public_ipv4": "198.51.100.8",
+  "public_ipv6": "2001:db8::8",
   "monthly_quota_bytes": 1099511627776
 }
 ```
 
-响应返回新节点 DTO，但不会返回 Agent token 原文或 token hash。新节点默认 `status=no_data`，并自动分配当前启用的探针目标。
+响应返回新节点 DTO，但不会返回 Agent token 原文或 token hash。新节点默认 `status=no_data`，并自动分配当前启用的探针目标。`expiry_date` 为空时清空到期日；非空时必须是 `YYYY-MM-DD`。`display_order` 必须是非负整数；`public_ipv4` / `public_ipv6` 为空可省略，非空时会校验 IP 版本。
 
 ### PATCH /api/admin/v1/nodes/{node_id}
 
@@ -344,12 +405,17 @@ X-Admin-Token: <admin-token>
   "display_name": "Hytron",
   "country_code": "HK",
   "region": "Hong Kong",
+  "expiry_date": "2026-08-01",
+  "billing_cycle": "月付",
+  "display_order": 10,
+  "public_ipv4": "198.51.100.8",
+  "public_ipv6": "2001:db8::8",
   "monthly_quota_bytes": 1099511627776,
   "disabled": false
 }
 ```
 
-字段均可部分提交；`monthly_quota_bytes: null` 表示清空月配额。`display_name` 不能为空。
+字段均可部分提交；`monthly_quota_bytes: null` 表示清空月配额；`expiry_date` / `billing_cycle` / `public_ipv4` / `public_ipv6` 提交空字符串表示清空。`display_name` 不能为空，`expiry_date` 非空时必须是 `YYYY-MM-DD`，`display_order` 必须是非负整数，公网 IP 会分别校验 IPv4 / IPv6。
 
 响应：
 
@@ -363,6 +429,11 @@ X-Admin-Token: <admin-token>
     "region": "Hong Kong",
     "disabled": false,
     "billing_mode": "both",
+    "expiry_date": "2026-08-01",
+    "billing_cycle": "月付",
+    "display_order": 10,
+    "public_ipv4": "198.51.100.8",
+    "public_ipv6": "2001:db8::8",
     "monthly_quota_bytes": 1099511627776,
     "created_at": "2026-07-02T00:00:00Z",
     "updated_at": "2026-07-03T00:00:00Z"

@@ -44,9 +44,9 @@ func (s *SQLiteStore) CreateAdminNode(ctx context.Context, create AdminNodeCreat
 	defer rollbackUnlessCommitted(tx)
 
 	result, err := tx.ExecContext(ctx, `
-		INSERT OR IGNORE INTO nodes (id, display_name, token_hash, status, country_code, region, billing_mode, monthly_quota_bytes, monthly_reset_day, disabled, created_at, updated_at, last_seen_at)
-		VALUES (?, ?, ?, 'no_data', ?, ?, 'both', ?, 1, ?, ?, ?, NULL)
-	`, nodeID, create.DisplayName, hashAgentToken(credential), nullIfEmpty(create.CountryCode), nullIfEmpty(create.Region), quota, disabled, now, now)
+		INSERT OR IGNORE INTO nodes (id, display_name, token_hash, status, country_code, region, expiry_date, billing_cycle, display_order, public_ipv4, public_ipv6, billing_mode, monthly_quota_bytes, monthly_reset_day, disabled, created_at, updated_at, last_seen_at)
+		VALUES (?, ?, ?, 'no_data', ?, ?, ?, ?, ?, ?, ?, 'both', ?, 1, ?, ?, ?, NULL)
+	`, nodeID, create.DisplayName, hashAgentToken(credential), nullIfEmpty(create.CountryCode), nullIfEmpty(create.Region), nullIfEmpty(create.ExpiryDate), nullIfEmpty(create.BillingCycle), create.DisplayOrder, nullIfEmpty(create.PublicIPv4), nullIfEmpty(create.PublicIPv6), quota, disabled, now, now)
 	if err != nil {
 		return AdminNode{}, err
 	}

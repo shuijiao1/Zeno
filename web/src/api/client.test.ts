@@ -175,6 +175,11 @@ describe('normalizeAdminNodes', () => {
           region: 'Hong Kong',
           disabled: false,
           billing_mode: 'both',
+          expiry_date: '2026-08-01',
+          billing_cycle: '月付',
+          display_order: 10,
+          public_ipv4: '198.51.100.8',
+          public_ipv6: '2001:db8::8',
           monthly_quota_bytes: 1099511627776,
           last_seen_at: '2026-07-03T00:00:00Z',
           created_at: '2026-07-02T00:00:00Z',
@@ -199,6 +204,11 @@ describe('normalizeAdminNodes', () => {
     expect(data.nodes[0].displayName).toBe('Hytron')
     expect(data.nodes[0].disabled).toBe(false)
     expect(data.nodes[0].agentVersion).toBe('d206817')
+    expect(data.nodes[0].expiryDate).toBe('2026-08-01')
+    expect(data.nodes[0].billingCycle).toBe('月付')
+    expect(data.nodes[0].displayOrder).toBe(10)
+    expect(data.nodes[0].publicIPv4).toBe('198.51.100.8')
+    expect(data.nodes[0].publicIPv6).toBe('2001:db8::8')
     expect(data.nodes[0].monthlyQuotaBytes).toBe(1099511627776)
   })
 })
@@ -618,6 +628,11 @@ describe('updateAdminNode', () => {
         region: 'Hong Kong',
         disabled: true,
         billing_mode: 'both',
+        expiry_date: '2026-08-01',
+        billing_cycle: '月付',
+        display_order: 10,
+        public_ipv4: '198.51.100.8',
+        public_ipv6: '2001:db8::8',
         monthly_quota_bytes: 123456789,
         created_at: '2026-07-02T00:00:00Z',
         updated_at: '2026-07-03T00:00:00Z',
@@ -629,6 +644,11 @@ describe('updateAdminNode', () => {
       displayName: 'Hytron Edited',
       countryCode: 'HK',
       region: 'Hong Kong',
+      expiryDate: '2026-08-01',
+      billingCycle: '月付',
+      displayOrder: 10,
+      publicIPv4: '198.51.100.8',
+      publicIPv6: '2001:db8::8',
       monthlyQuotaBytes: 123456789,
       disabled: true,
     })
@@ -636,6 +656,11 @@ describe('updateAdminNode', () => {
     expect(node.displayName).toBe('Hytron Edited')
     expect(node.disabled).toBe(true)
     expect(node.monthlyQuotaBytes).toBe(123456789)
+    expect(node.expiryDate).toBe('2026-08-01')
+    expect(node.billingCycle).toBe('月付')
+    expect(node.displayOrder).toBe(10)
+    expect(node.publicIPv4).toBe('198.51.100.8')
+    expect(node.publicIPv6).toBe('2001:db8::8')
     expect(fetchMock).toHaveBeenCalledWith('/api/admin/v1/nodes/hytron', {
       method: 'PATCH',
       headers: {
@@ -647,6 +672,11 @@ describe('updateAdminNode', () => {
         display_name: 'Hytron Edited',
         country_code: 'HK',
         region: 'Hong Kong',
+        expiry_date: '2026-08-01',
+        billing_cycle: '月付',
+        display_order: 10,
+        public_ipv4: '198.51.100.8',
+        public_ipv6: '2001:db8::8',
         monthly_quota_bytes: 123456789,
         disabled: true,
       }),
@@ -672,6 +702,11 @@ describe('createAdminNode', () => {
         region: 'Los Angeles',
         disabled: false,
         billing_mode: 'both',
+        expiry_date: '2026-09-01',
+        billing_cycle: '月付',
+        display_order: 20,
+        public_ipv4: '203.0.113.20',
+        public_ipv6: '2001:db8::20',
         monthly_quota_bytes: 1099511627776,
         created_at: '2026-07-03T00:00:00Z',
         updated_at: '2026-07-03T00:00:00Z',
@@ -683,11 +718,18 @@ describe('createAdminNode', () => {
       displayName: 'New Server',
       countryCode: 'US',
       region: 'Los Angeles',
+      expiryDate: '2026-09-01',
+      billingCycle: '月付',
+      displayOrder: 20,
+      publicIPv4: '203.0.113.20',
+      publicIPv6: '2001:db8::20',
       monthlyQuotaBytes: 1099511627776,
     })
 
     expect(node.id).toBe('new-server-a1b2c3d4')
     expect(node.status).toBe('no_data')
+    expect(node.displayOrder).toBe(20)
+    expect(node.publicIPv4).toBe('203.0.113.20')
     expect(fetchMock).toHaveBeenCalledWith('/api/admin/v1/nodes', {
       method: 'POST',
       headers: {
@@ -699,6 +741,11 @@ describe('createAdminNode', () => {
         display_name: 'New Server',
         country_code: 'US',
         region: 'Los Angeles',
+        expiry_date: '2026-09-01',
+        billing_cycle: '月付',
+        display_order: 20,
+        public_ipv4: '203.0.113.20',
+        public_ipv6: '2001:db8::20',
         monthly_quota_bytes: 1099511627776,
       }),
     })

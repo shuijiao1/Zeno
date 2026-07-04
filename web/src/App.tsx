@@ -1025,6 +1025,8 @@ function AdminNodeList({ nodes, onEdit }: { nodes: AdminNode[]; onEdit: (nodeId:
       <div className="admin-list-head" aria-hidden="true">
         <span>服务器</span>
         <span>状态</span>
+        <span>公网 IP</span>
+        <span>账单</span>
         <span>系统</span>
         <span>最近在线</span>
         <span>Agent</span>
@@ -1034,9 +1036,11 @@ function AdminNodeList({ nodes, onEdit }: { nodes: AdminNode[]; onEdit: (nodeId:
         <article className="admin-list-row" role="listitem" key={node.id}>
           <div className="admin-list-main">
             <strong>{node.displayName}</strong>
-            <small>{node.id}{node.region ? ` · ${node.region}` : ''}</small>
+            <small>{node.id} · {countryCodeToFlag(node.countryCode)} {formatAdminLocation(node)} · 顺序 {node.displayOrder}</small>
           </div>
           <span className={`admin-node-status status-${node.disabled ? 'disabled' : node.status}`}>{node.disabled ? 'disabled' : node.status}</span>
+          <span>{formatAdminPublicIPs(node)}</span>
+          <span>{formatAdminBilling(node)}</span>
           <span>{formatAdminSystem(node)}</span>
           <span>{formatAdminDate(node.lastSeenAt)}</span>
           <span>{node.agentVersion || '—'}</span>
@@ -1059,6 +1063,11 @@ function AdminNodeCreateModal({ onCreate, onClose }: { onCreate: (input: AdminNo
       displayName,
       countryCode: String(formData.get('new-country-code') ?? ''),
       region: String(formData.get('new-region') ?? ''),
+      expiryDate: String(formData.get('new-expiry-date') ?? '').trim(),
+      billingCycle: String(formData.get('new-billing-cycle') ?? '').trim(),
+      displayOrder: parseNonNegativeInt(String(formData.get('new-display-order') ?? '')) ?? 0,
+      publicIPv4: String(formData.get('new-public-ipv4') ?? '').trim(),
+      publicIPv6: String(formData.get('new-public-ipv6') ?? '').trim(),
       monthlyQuotaBytes: parseQuotaGigabytes(String(formData.get('new-monthly-quota-gb') ?? '')),
     })
   }
@@ -1083,6 +1092,26 @@ function AdminNodeCreateModal({ onCreate, onClose }: { onCreate: (input: AdminNo
           <input name="new-region" autoComplete="off" placeholder="Hong Kong" />
         </label>
         <label>
+          <span>到期日</span>
+          <input name="new-expiry-date" type="date" autoComplete="off" />
+        </label>
+        <label>
+          <span>账单周期</span>
+          <input name="new-billing-cycle" autoComplete="off" placeholder="月付 / 年付" />
+        </label>
+        <label>
+          <span>显示顺序</span>
+          <input name="new-display-order" type="number" min="0" step="1" defaultValue="0" />
+        </label>
+        <label>
+          <span>公网 IPv4</span>
+          <input name="new-public-ipv4" autoComplete="off" placeholder="198.51.100.8" />
+        </label>
+        <label>
+          <span>公网 IPv6</span>
+          <input name="new-public-ipv6" autoComplete="off" placeholder="2001:db8::8" />
+        </label>
+        <label>
           <span>月配额 GB</span>
           <input name="new-monthly-quota-gb" type="number" min="0" step="0.01" />
         </label>
@@ -1102,6 +1131,11 @@ function AdminNodeEditModal({ node, onUpdate, onInstallCommand, onClose }: { nod
       displayName: String(formData.get('display-name') ?? ''),
       countryCode: String(formData.get('country-code') ?? ''),
       region: String(formData.get('region') ?? ''),
+      expiryDate: String(formData.get('expiry-date') ?? '').trim(),
+      billingCycle: String(formData.get('billing-cycle') ?? '').trim(),
+      displayOrder: parseNonNegativeInt(String(formData.get('display-order') ?? '')) ?? node.displayOrder,
+      publicIPv4: String(formData.get('public-ipv4') ?? '').trim(),
+      publicIPv6: String(formData.get('public-ipv6') ?? '').trim(),
       monthlyQuotaBytes: parseQuotaGigabytes(String(formData.get('monthly-quota-gb') ?? '')),
       disabled: formData.get('disabled') === 'on',
     })
@@ -1118,6 +1152,9 @@ function AdminNodeEditModal({ node, onUpdate, onInstallCommand, onClose }: { nod
     <AdminModal title={`编辑服务器 · ${node.displayName}`} eyebrow={node.id} onClose={onClose}>
       <dl className="admin-modal-summary">
         <div><dt>状态</dt><dd>{node.disabled ? 'disabled' : node.status}</dd></div>
+        <div><dt>账单</dt><dd>{formatAdminBilling(node)}</dd></div>
+        <div><dt>公网 IP</dt><dd>{formatAdminPublicIPs(node)}</dd></div>
+        <div><dt>顺序</dt><dd>{node.displayOrder}</dd></div>
         <div><dt>系统</dt><dd>{formatAdminSystem(node)}</dd></div>
         <div><dt>资源</dt><dd>{formatAdminResources(node)}</dd></div>
         <div><dt>最近在线</dt><dd>{formatAdminDate(node.lastSeenAt)}</dd></div>
@@ -1134,6 +1171,26 @@ function AdminNodeEditModal({ node, onUpdate, onInstallCommand, onClose }: { nod
         <label>
           <span>地区</span>
           <input name="region" defaultValue={node.region ?? ''} autoComplete="off" />
+        </label>
+        <label>
+          <span>到期日</span>
+          <input name="expiry-date" type="date" defaultValue={node.expiryDate ?? ''} autoComplete="off" />
+        </label>
+        <label>
+          <span>账单周期</span>
+          <input name="billing-cycle" defaultValue={node.billingCycle ?? ''} autoComplete="off" />
+        </label>
+        <label>
+          <span>显示顺序</span>
+          <input name="display-order" type="number" min="0" step="1" defaultValue={node.displayOrder} />
+        </label>
+        <label>
+          <span>公网 IPv4</span>
+          <input name="public-ipv4" defaultValue={node.publicIPv4 ?? ''} autoComplete="off" />
+        </label>
+        <label>
+          <span>公网 IPv6</span>
+          <input name="public-ipv6" defaultValue={node.publicIPv6 ?? ''} autoComplete="off" />
         </label>
         <label>
           <span>月配额 GB</span>
@@ -2015,6 +2072,14 @@ function parsePositiveInt(value: string): number | null {
   return parsed
 }
 
+function parseNonNegativeInt(value: string): number | null {
+  const trimmed = value.trim()
+  if (trimmed === '') return null
+  const parsed = Number(trimmed)
+  if (!Number.isInteger(parsed) || parsed < 0) return null
+  return parsed
+}
+
 function formatQuotaGigabytes(value: number | null): string {
   if (!value || value <= 0) return ''
   const gigabytes = value / (1024 ** 3)
@@ -2027,6 +2092,28 @@ function parseQuotaGigabytes(value: string): number | null {
   const parsed = Number(trimmed)
   if (!Number.isFinite(parsed) || parsed < 0) return null
   return Math.round(parsed * (1024 ** 3))
+}
+
+function formatAdminLocation(node: AdminNode): string {
+  return [node.countryCode, node.region].filter(Boolean).join(' · ') || '—'
+}
+
+function formatAdminPublicIPs(node: AdminNode): string {
+  return [node.publicIPv4, node.publicIPv6].filter(Boolean).join(' / ') || '—'
+}
+
+function formatAdminBilling(node: AdminNode): string {
+  return [node.expiryDate, node.billingCycle].filter(Boolean).join(' · ') || '—'
+}
+
+function countryCodeToFlag(countryCode?: string): string {
+  const normalized = countryCode?.trim().toUpperCase()
+  if (!normalized || normalized.length !== 2 || !/^[A-Z]{2}$/.test(normalized)) return '🏳️'
+  const base = 127397
+  return normalized
+    .split('')
+    .map((char) => String.fromCodePoint(char.charCodeAt(0) + base))
+    .join('')
 }
 
 function formatAdminSystem(node: AdminNode): string {

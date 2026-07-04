@@ -560,6 +560,10 @@ svg { display: block; }
   gap: 12px;
   padding: 12px 14px;
 }
+.admin-node-section .admin-list-head,
+.admin-node-section .admin-list-row {
+  grid-template-columns: minmax(180px, 1.25fr) minmax(84px, .55fr) minmax(180px, 1fr) minmax(128px, .75fr) minmax(110px, .7fr) minmax(130px, .85fr) minmax(96px, .6fr) auto;
+}
 .admin-list-head {
   color: var(--muted);
   background: color-mix(in srgb, var(--secondary) 62%, transparent);

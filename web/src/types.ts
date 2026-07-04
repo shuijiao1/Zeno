@@ -112,6 +112,11 @@ export interface AdminNode {
   region?: string
   disabled: boolean
   billingMode: string
+  expiryDate?: string
+  billingCycle?: string
+  displayOrder: number
+  publicIPv4?: string
+  publicIPv6?: string
   monthlyQuotaBytes: number | null
   lastSeenAt?: string
   createdAt: string

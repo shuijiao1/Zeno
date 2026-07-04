@@ -5,8 +5,10 @@ import (
 	"encoding/json"
 	"errors"
 	"math"
+	"net"
 	"net/url"
 	"strings"
+	"time"
 )
 
 var (
@@ -199,6 +201,51 @@ func validSettingsAssetURL(value string) bool {
 	return parsed.Scheme == "https"
 }
 
+func normalizeAdminNodeDate(value string) (string, error) {
+	trimmed := strings.TrimSpace(value)
+	if trimmed == "" {
+		return "", nil
+	}
+	parsed, err := time.Parse("2006-01-02", trimmed)
+	if err != nil || parsed.Format("2006-01-02") != trimmed {
+		return "", errInvalidAdminNodeUpdate
+	}
+	return trimmed, nil
+}
+
+func normalizeAdminNodeShortText(value string, maxRunes int) (string, error) {
+	trimmed := strings.TrimSpace(value)
+	if len([]rune(trimmed)) > maxRunes {
+		return "", errInvalidAdminNodeUpdate
+	}
+	return trimmed, nil
+}
+
+func normalizeAdminNodeIP(value string, family int) (string, error) {
+	trimmed := strings.TrimSpace(value)
+	if trimmed == "" {
+		return "", nil
+	}
+	parsed := net.ParseIP(trimmed)
+	if parsed == nil {
+		return "", errInvalidAdminNodeUpdate
+	}
+	if family == 4 {
+		ipv4 := parsed.To4()
+		if ipv4 == nil {
+			return "", errInvalidAdminNodeUpdate
+		}
+		return ipv4.String(), nil
+	}
+	if family == 6 {
+		if parsed.To4() != nil || parsed.To16() == nil {
+			return "", errInvalidAdminNodeUpdate
+		}
+		return parsed.String(), nil
+	}
+	return "", errInvalidAdminNodeUpdate
+}
+
 // AdminNodesResponse is the authenticated management view for node inventory.
 // It intentionally omits token hashes and other credentials.
 type AdminNodesResponse struct {
@@ -219,6 +266,11 @@ type AdminNodeCreateRequest struct {
 	DisplayName       string             `json:"display_name"`
 	CountryCode       string             `json:"country_code,omitempty"`
 	Region            string             `json:"region,omitempty"`
+	ExpiryDate        string             `json:"expiry_date,omitempty"`
+	BillingCycle      string             `json:"billing_cycle,omitempty"`
+	DisplayOrder      int                `json:"display_order,omitempty"`
+	PublicIPv4        string             `json:"public_ipv4,omitempty"`
+	PublicIPv6        string             `json:"public_ipv6,omitempty"`
 	MonthlyQuotaBytes adminOptionalInt64 `json:"monthly_quota_bytes,omitempty"`
 	Disabled          bool               `json:"disabled,omitempty"`
 }
@@ -235,6 +287,29 @@ func (request *AdminNodeCreateRequest) normalize() error {
 		return errInvalidAdminNodeCreate
 	}
 	request.Region = strings.TrimSpace(request.Region)
+	expiryDate, err := normalizeAdminNodeDate(request.ExpiryDate)
+	if err != nil {
+		return errInvalidAdminNodeCreate
+	}
+	request.ExpiryDate = expiryDate
+	billingCycle, err := normalizeAdminNodeShortText(request.BillingCycle, 64)
+	if err != nil {
+		return errInvalidAdminNodeCreate
+	}
+	request.BillingCycle = billingCycle
+	if request.DisplayOrder < 0 {
+		return errInvalidAdminNodeCreate
+	}
+	publicIPv4, err := normalizeAdminNodeIP(request.PublicIPv4, 4)
+	if err != nil {
+		return errInvalidAdminNodeCreate
+	}
+	request.PublicIPv4 = publicIPv4
+	publicIPv6, err := normalizeAdminNodeIP(request.PublicIPv6, 6)
+	if err != nil {
+		return errInvalidAdminNodeCreate
+	}
+	request.PublicIPv6 = publicIPv6
 	if request.MonthlyQuotaBytes.Set && request.MonthlyQuotaBytes.Valid && request.MonthlyQuotaBytes.Value < 0 {
 		return errInvalidAdminNodeCreate
 	}
@@ -669,6 +744,11 @@ type AdminNodeUpdateRequest struct {
 	DisplayName       *string            `json:"display_name,omitempty"`
 	CountryCode       *string            `json:"country_code,omitempty"`
 	Region            *string            `json:"region,omitempty"`
+	ExpiryDate        *string            `json:"expiry_date,omitempty"`
+	BillingCycle      *string            `json:"billing_cycle,omitempty"`
+	DisplayOrder      *int               `json:"display_order,omitempty"`
+	PublicIPv4        *string            `json:"public_ipv4,omitempty"`
+	PublicIPv6        *string            `json:"public_ipv6,omitempty"`
 	MonthlyQuotaBytes adminOptionalInt64 `json:"monthly_quota_bytes,omitempty"`
 	Disabled          *bool              `json:"disabled,omitempty"`
 }
@@ -695,6 +775,44 @@ func (request *AdminNodeUpdateRequest) normalize() error {
 		changed = true
 		trimmed := strings.TrimSpace(*request.Region)
 		request.Region = &trimmed
+	}
+	if request.ExpiryDate != nil {
+		changed = true
+		trimmed, err := normalizeAdminNodeDate(*request.ExpiryDate)
+		if err != nil {
+			return errInvalidAdminNodeUpdate
+		}
+		request.ExpiryDate = &trimmed
+	}
+	if request.BillingCycle != nil {
+		changed = true
+		trimmed, err := normalizeAdminNodeShortText(*request.BillingCycle, 64)
+		if err != nil {
+			return errInvalidAdminNodeUpdate
+		}
+		request.BillingCycle = &trimmed
+	}
+	if request.DisplayOrder != nil {
+		changed = true
+		if *request.DisplayOrder < 0 {
+			return errInvalidAdminNodeUpdate
+		}
+	}
+	if request.PublicIPv4 != nil {
+		changed = true
+		trimmed, err := normalizeAdminNodeIP(*request.PublicIPv4, 4)
+		if err != nil {
+			return errInvalidAdminNodeUpdate
+		}
+		request.PublicIPv4 = &trimmed
+	}
+	if request.PublicIPv6 != nil {
+		changed = true
+		trimmed, err := normalizeAdminNodeIP(*request.PublicIPv6, 6)
+		if err != nil {
+			return errInvalidAdminNodeUpdate
+		}
+		request.PublicIPv6 = &trimmed
 	}
 	if request.MonthlyQuotaBytes.Set {
 		changed = true
@@ -741,6 +859,11 @@ type AdminNode struct {
 	Region            string  `json:"region,omitempty"`
 	Disabled          bool    `json:"disabled"`
 	BillingMode       string  `json:"billing_mode"`
+	ExpiryDate        string  `json:"expiry_date,omitempty"`
+	BillingCycle      string  `json:"billing_cycle,omitempty"`
+	DisplayOrder      int     `json:"display_order"`
+	PublicIPv4        string  `json:"public_ipv4,omitempty"`
+	PublicIPv6        string  `json:"public_ipv6,omitempty"`
 	MonthlyQuotaBytes *int64  `json:"monthly_quota_bytes,omitempty"`
 	LastSeenAt        *string `json:"last_seen_at,omitempty"`
 	CreatedAt         string  `json:"created_at"`

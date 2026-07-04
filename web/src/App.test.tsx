@@ -21,6 +21,11 @@ const hytronNode: AdminNode = {
   region: 'Hong Kong',
   disabled: false,
   billingMode: 'both',
+  expiryDate: '2026-08-01',
+  billingCycle: '月付',
+  displayOrder: 10,
+  publicIPv4: '198.51.100.8',
+  publicIPv6: '2001:db8::8',
   monthlyQuotaBytes: 1099511627776,
   lastSeenAt: '2026-07-03T00:00:00Z',
   createdAt: '2026-07-02T00:00:00Z',
@@ -466,6 +471,12 @@ describe('AdminDashboard', () => {
     expect(html).toContain('online')
     expect(html).toContain('agent-test')
     expect(html).toContain('debian 13')
+    expect(html).toContain('198.51.100.8')
+    expect(html).toContain('2001:db8::8')
+    expect(html).toContain('2026-08-01')
+    expect(html).toContain('月付')
+    expect(html).toContain('顺序 10')
+    expect(html).toContain('🇭🇰')
     expect(html).toContain('编辑服务器')
     expect(html).not.toContain('admin-node-card')
     expect(html).not.toContain('name="display-name"')

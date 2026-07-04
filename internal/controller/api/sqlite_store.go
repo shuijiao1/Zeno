@@ -45,6 +45,11 @@ func (s *SQLiteStore) ensureSchema(ctx context.Context) error {
 			status TEXT NOT NULL DEFAULT 'no_data',
 			country_code TEXT,
 			region TEXT,
+			expiry_date TEXT,
+			billing_cycle TEXT,
+			display_order INTEGER NOT NULL DEFAULT 0,
+			public_ipv4 TEXT,
+			public_ipv6 TEXT,
 			billing_mode TEXT NOT NULL DEFAULT 'both',
 			monthly_quota_bytes INTEGER,
 			monthly_reset_day INTEGER NOT NULL DEFAULT 1,
@@ -231,6 +236,18 @@ func (s *SQLiteStore) ensureSchema(ctx context.Context) error {
 			return err
 		}
 	}
+	nodeColumns := map[string]string{
+		"expiry_date":   "TEXT",
+		"billing_cycle": "TEXT",
+		"display_order": "INTEGER NOT NULL DEFAULT 0",
+		"public_ipv4":   "TEXT",
+		"public_ipv6":   "TEXT",
+	}
+	for column, columnType := range nodeColumns {
+		if err := s.ensureColumn(ctx, "nodes", column, columnType); err != nil {
+			return err
+		}
+	}
 	alertRuleStateColumns := map[string]string{
 		"last_value": "REAL",
 	}
@@ -345,13 +362,14 @@ func (s *SQLiteStore) NodeState(ctx context.Context, nodeID string, window laten
 func (s *SQLiteStore) AdminNodes(ctx context.Context) ([]AdminNode, error) {
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT n.id, n.display_name, n.status, n.country_code, n.region, n.disabled,
-		       n.billing_mode, n.monthly_quota_bytes, n.last_seen_at, n.created_at, n.updated_at,
+		       n.billing_mode, n.expiry_date, n.billing_cycle, n.display_order, n.public_ipv4, n.public_ipv6,
+		       n.monthly_quota_bytes, n.last_seen_at, n.created_at, n.updated_at,
 		       h.hostname, h.os_name, h.os_version, h.kernel, h.arch, h.virtualization,
 		       h.cpu_model, h.cpu_cores, h.memory_total_bytes, h.disk_total_bytes,
 		       h.boot_time, h.agent_version
 		FROM nodes n
 		LEFT JOIN host_info h ON h.node_id = n.id
-		ORDER BY n.id ASC
+		ORDER BY n.display_order ASC, n.id ASC
 	`)
 	if err != nil {
 		return nil, err
@@ -363,14 +381,16 @@ func (s *SQLiteStore) AdminNodes(ctx context.Context) ([]AdminNode, error) {
 	for rows.Next() {
 		var node AdminNode
 		var status string
-		var countryCode, region, billingMode sql.NullString
+		var countryCode, region, billingMode, expiryDate, billingCycle, publicIPv4, publicIPv6 sql.NullString
 		var disabled int
+		var displayOrder int
 		var quota, lastSeenAt, createdAt, updatedAt sql.NullInt64
 		var hostname, osName, osVersion, kernel, arch, virtualization, cpuModel, agentVersion sql.NullString
 		var cpuCores, memoryTotal, diskTotal, bootTime sql.NullInt64
 		if err := rows.Scan(
 			&node.ID, &node.DisplayName, &status, &countryCode, &region, &disabled,
-			&billingMode, &quota, &lastSeenAt, &createdAt, &updatedAt,
+			&billingMode, &expiryDate, &billingCycle, &displayOrder, &publicIPv4, &publicIPv6,
+			&quota, &lastSeenAt, &createdAt, &updatedAt,
 			&hostname, &osName, &osVersion, &kernel, &arch, &virtualization,
 			&cpuModel, &cpuCores, &memoryTotal, &diskTotal,
 			&bootTime, &agentVersion,
@@ -385,6 +405,11 @@ func (s *SQLiteStore) AdminNodes(ctx context.Context) ([]AdminNode, error) {
 		node.CountryCode = nullStringOr(countryCode, "")
 		node.Region = nullStringOr(region, "")
 		node.BillingMode = nullStringOr(billingMode, "both")
+		node.ExpiryDate = nullStringOr(expiryDate, "")
+		node.BillingCycle = nullStringOr(billingCycle, "")
+		node.DisplayOrder = displayOrder
+		node.PublicIPv4 = nullStringOr(publicIPv4, "")
+		node.PublicIPv6 = nullStringOr(publicIPv6, "")
 		node.MonthlyQuotaBytes = int64Ptr(quota)
 		node.LastSeenAt = unixStringPtr(lastSeenAt)
 		node.CreatedAt = unixStringOr(createdAt, now)
@@ -703,8 +728,8 @@ func (s *SQLiteStore) UpdateAdminNode(ctx context.Context, nodeID string, update
 		return AdminNode{}, err
 	}
 
-	sets := make([]string, 0, 6)
-	args := make([]any, 0, 7)
+	sets := make([]string, 0, 11)
+	args := make([]any, 0, 12)
 	if update.DisplayName != nil {
 		sets = append(sets, "display_name = ?")
 		args = append(args, *update.DisplayName)
@@ -716,6 +741,26 @@ func (s *SQLiteStore) UpdateAdminNode(ctx context.Context, nodeID string, update
 	if update.Region != nil {
 		sets = append(sets, "region = ?")
 		args = append(args, nullIfEmpty(*update.Region))
+	}
+	if update.ExpiryDate != nil {
+		sets = append(sets, "expiry_date = ?")
+		args = append(args, nullIfEmpty(*update.ExpiryDate))
+	}
+	if update.BillingCycle != nil {
+		sets = append(sets, "billing_cycle = ?")
+		args = append(args, nullIfEmpty(*update.BillingCycle))
+	}
+	if update.DisplayOrder != nil {
+		sets = append(sets, "display_order = ?")
+		args = append(args, *update.DisplayOrder)
+	}
+	if update.PublicIPv4 != nil {
+		sets = append(sets, "public_ipv4 = ?")
+		args = append(args, nullIfEmpty(*update.PublicIPv4))
+	}
+	if update.PublicIPv6 != nil {
+		sets = append(sets, "public_ipv6 = ?")
+		args = append(args, nullIfEmpty(*update.PublicIPv6))
 	}
 	if update.MonthlyQuotaBytes.Set {
 		sets = append(sets, "monthly_quota_bytes = ?")
@@ -755,7 +800,7 @@ func (s *SQLiteStore) UpdateAdminNode(ctx context.Context, nodeID string, update
 
 func (s *SQLiteStore) nodes(ctx context.Context) ([]Node, error) {
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT n.id, n.display_name, n.status, n.country_code, n.last_seen_at,
+		SELECT n.id, n.display_name, n.status, n.country_code, n.expiry_date, n.last_seen_at,
 		       h.os_name, h.os_version, h.kernel, h.arch, h.virtualization, h.cpu_model, h.cpu_cores, h.memory_total_bytes, h.disk_total_bytes,
 		       ss.cpu_percent, ss.memory_used_bytes, ss.disk_used_bytes,
 		       ss.net_in_speed_bps, ss.net_out_speed_bps, ss.net_in_total_bytes, ss.net_out_total_bytes,
@@ -767,7 +812,7 @@ func (s *SQLiteStore) nodes(ctx context.Context) ([]Node, error) {
 		)
 		LEFT JOIN traffic_monthly tm ON tm.node_id = n.id AND tm.month = strftime('%Y-%m', 'now')
 		WHERE n.disabled = 0
-		ORDER BY n.id ASC
+		ORDER BY n.display_order ASC, n.id ASC
 	`)
 	if err != nil {
 		return nil, err
@@ -778,11 +823,11 @@ func (s *SQLiteStore) nodes(ctx context.Context) ([]Node, error) {
 	now := time.Now().UTC()
 	for rows.Next() {
 		var id, displayName, status string
-		var countryCode, osName, osVersion, kernel, arch, virtualization, cpuModel sql.NullString
+		var countryCode, expiryDate, osName, osVersion, kernel, arch, virtualization, cpuModel sql.NullString
 		var cpuCores, memoryTotal, diskTotal, lastSeenAt sql.NullInt64
 		var cpuPercent, netInSpeed, netOutSpeed sql.NullFloat64
 		var memoryUsed, diskUsed, netInTotal, netOutTotal, billable, quota sql.NullInt64
-		if err := rows.Scan(&id, &displayName, &status, &countryCode, &lastSeenAt, &osName, &osVersion, &kernel, &arch, &virtualization, &cpuModel, &cpuCores, &memoryTotal, &diskTotal, &cpuPercent, &memoryUsed, &diskUsed, &netInSpeed, &netOutSpeed, &netInTotal, &netOutTotal, &billable, &quota); err != nil {
+		if err := rows.Scan(&id, &displayName, &status, &countryCode, &expiryDate, &lastSeenAt, &osName, &osVersion, &kernel, &arch, &virtualization, &cpuModel, &cpuCores, &memoryTotal, &diskTotal, &cpuPercent, &memoryUsed, &diskUsed, &netInSpeed, &netOutSpeed, &netInTotal, &netOutTotal, &billable, &quota); err != nil {
 			return nil, err
 		}
 		node := Node{
@@ -796,6 +841,7 @@ func (s *SQLiteStore) nodes(ctx context.Context) ([]Node, error) {
 			Virtualization:       nullStringOr(virtualization, ""),
 			CPUModel:             nullStringOr(cpuModel, ""),
 			CountryCode:          nullStringOr(countryCode, ""),
+			ExpiryLabel:          nullStringOr(expiryDate, ""),
 			CPUCores:             intPtr(cpuCores),
 			CPUPercent:           floatPtr(cpuPercent),
 			MemoryUsedBytes:      intPtr(memoryUsed),

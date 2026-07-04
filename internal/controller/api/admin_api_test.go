@@ -151,6 +151,96 @@ func TestAdminNodePatchUpdatesEditableFieldsAndReturnsSafeDTO(t *testing.T) {
 	}
 }
 
+func TestAdminNodeBillingIPAndDisplayOrderFieldsFlowThroughAdminAndPublicSummary(t *testing.T) {
+	store, err := OpenSQLiteStore(filepath.Join(t.TempDir(), "zeno.db"))
+	if err != nil {
+		t.Fatalf("open sqlite store: %v", err)
+	}
+	defer store.Close()
+	ctx := context.Background()
+	if err := store.SeedPreviewData(ctx, PreviewSeedOptions{NodeID: "hytron", DisplayName: "Hytron", CountryCode: "HK", AgentToken: "test-agent-token"}); err != nil {
+		t.Fatalf("seed preview data: %v", err)
+	}
+	handler := NewHandler(HandlerOptions{Store: store, AdminTokenHash: HashAdminToken("admin-pass")})
+
+	createRecorder := httptest.NewRecorder()
+	createRequest := httptest.NewRequest(http.MethodPost, "/api/admin/v1/nodes", bytes.NewBufferString(`{
+		"id": "backup",
+		"display_name": "Backup",
+		"country_code": " jp ",
+		"expiry_date": "2026-12-31",
+		"billing_cycle": "年付",
+		"display_order": 30,
+		"public_ipv4": "203.0.113.10",
+		"public_ipv6": "2001:db8::10"
+	}`))
+	createRequest.Header.Set("X-Admin-Token", "admin-pass")
+	handler.ServeHTTP(createRecorder, createRequest)
+	if createRecorder.Code != http.StatusCreated {
+		t.Fatalf("create status = %d, want 201; body=%s", createRecorder.Code, createRecorder.Body.String())
+	}
+
+	patchRecorder := httptest.NewRecorder()
+	patchRequest := httptest.NewRequest(http.MethodPatch, "/api/admin/v1/nodes/hytron", bytes.NewBufferString(`{
+		"expiry_date": "2026-08-01",
+		"billing_cycle": "月付",
+		"display_order": 10,
+		"public_ipv4": "198.51.100.8",
+		"public_ipv6": "2001:db8::8"
+	}`))
+	patchRequest.Header.Set("X-Admin-Token", "admin-pass")
+	handler.ServeHTTP(patchRecorder, patchRequest)
+	if patchRecorder.Code != http.StatusOK {
+		t.Fatalf("patch status = %d, want 200; body=%s", patchRecorder.Code, patchRecorder.Body.String())
+	}
+
+	listRecorder := httptest.NewRecorder()
+	listRequest := httptest.NewRequest(http.MethodGet, "/api/admin/v1/nodes", nil)
+	listRequest.Header.Set("X-Admin-Token", "admin-pass")
+	handler.ServeHTTP(listRecorder, listRequest)
+	if listRecorder.Code != http.StatusOK {
+		t.Fatalf("list status = %d, want 200; body=%s", listRecorder.Code, listRecorder.Body.String())
+	}
+	raw := listRecorder.Body.String()
+	lower := bytes.ToLower([]byte(raw))
+	if bytes.Contains(lower, []byte("token")) || bytes.Contains(lower, []byte("secret")) || bytes.Contains(lower, []byte("credential")) || bytes.Contains(lower, []byte("hash")) {
+		t.Fatalf("admin node metadata response leaked sensitive wording: %s", raw)
+	}
+	var response struct {
+		Nodes []struct {
+			ID           string `json:"id"`
+			ExpiryDate   string `json:"expiry_date"`
+			BillingCycle string `json:"billing_cycle"`
+			DisplayOrder int    `json:"display_order"`
+			PublicIPv4   string `json:"public_ipv4"`
+			PublicIPv6   string `json:"public_ipv6"`
+		} `json:"nodes"`
+	}
+	if err := json.NewDecoder(bytes.NewBufferString(raw)).Decode(&response); err != nil {
+		t.Fatalf("decode admin nodes metadata: %v", err)
+	}
+	if len(response.Nodes) != 2 {
+		t.Fatalf("nodes len = %d, want 2", len(response.Nodes))
+	}
+	if response.Nodes[0].ID != "hytron" || response.Nodes[0].DisplayOrder != 10 || response.Nodes[0].ExpiryDate != "2026-08-01" || response.Nodes[0].BillingCycle != "月付" || response.Nodes[0].PublicIPv4 != "198.51.100.8" || response.Nodes[0].PublicIPv6 != "2001:db8::8" {
+		t.Fatalf("hytron metadata = %+v, want edited billing/IP/order fields", response.Nodes[0])
+	}
+	if response.Nodes[1].ID != "backup" || response.Nodes[1].DisplayOrder != 30 {
+		t.Fatalf("second node = %+v, want display-order sorted backup", response.Nodes[1])
+	}
+
+	summary, err := store.Summary(ctx)
+	if err != nil {
+		t.Fatalf("summary: %v", err)
+	}
+	if len(summary.Nodes) != 2 || summary.Nodes[0].ID != "hytron" || summary.Nodes[1].ID != "backup" {
+		t.Fatalf("summary nodes order = %+v, want display_order order", summary.Nodes)
+	}
+	if summary.Nodes[0].ExpiryLabel != "2026-08-01" || summary.Nodes[1].ExpiryLabel != "2026-12-31" {
+		t.Fatalf("summary expiry labels = %q/%q, want explicit expiry dates", summary.Nodes[0].ExpiryLabel, summary.Nodes[1].ExpiryLabel)
+	}
+}
+
 func TestAdminNodePatchRejectsUnauthorizedUnknownAndInvalidRequests(t *testing.T) {
 	store, err := OpenSQLiteStore(filepath.Join(t.TempDir(), "zeno.db"))
 	if err != nil {

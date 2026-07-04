@@ -98,6 +98,11 @@ interface ApiAdminNode {
   region?: string
   disabled: boolean
   billing_mode: string
+  expiry_date?: string
+  billing_cycle?: string
+  display_order?: number
+  public_ipv4?: string
+  public_ipv6?: string
   monthly_quota_bytes?: number | null
   last_seen_at?: string | null
   created_at: string
@@ -369,6 +374,11 @@ export interface AdminNodeUpdateInput {
   displayName?: string
   countryCode?: string
   region?: string
+  expiryDate?: string
+  billingCycle?: string
+  displayOrder?: number
+  publicIPv4?: string
+  publicIPv6?: string
   monthlyQuotaBytes?: number | null
   disabled?: boolean
 }
@@ -378,6 +388,11 @@ export interface AdminNodeCreateInput {
   displayName: string
   countryCode?: string
   region?: string
+  expiryDate?: string
+  billingCycle?: string
+  displayOrder?: number
+  publicIPv4?: string
+  publicIPv6?: string
   monthlyQuotaBytes?: number | null
   disabled?: boolean
 }
@@ -963,6 +978,11 @@ function serializeAdminNodeUpdate(input: AdminNodeUpdateInput) {
     ...(input.displayName !== undefined ? { display_name: input.displayName } : {}),
     ...(input.countryCode !== undefined ? { country_code: input.countryCode } : {}),
     ...(input.region !== undefined ? { region: input.region } : {}),
+    ...(input.expiryDate !== undefined ? { expiry_date: input.expiryDate } : {}),
+    ...(input.billingCycle !== undefined ? { billing_cycle: input.billingCycle } : {}),
+    ...(input.displayOrder !== undefined ? { display_order: input.displayOrder } : {}),
+    ...(input.publicIPv4 !== undefined ? { public_ipv4: input.publicIPv4 } : {}),
+    ...(input.publicIPv6 !== undefined ? { public_ipv6: input.publicIPv6 } : {}),
     ...(input.monthlyQuotaBytes !== undefined ? { monthly_quota_bytes: input.monthlyQuotaBytes } : {}),
     ...(input.disabled !== undefined ? { disabled: input.disabled } : {}),
   }
@@ -974,6 +994,11 @@ function serializeAdminNodeCreate(input: AdminNodeCreateInput) {
     display_name: input.displayName,
     ...(input.countryCode !== undefined ? { country_code: input.countryCode } : {}),
     ...(input.region !== undefined ? { region: input.region } : {}),
+    ...(input.expiryDate !== undefined ? { expiry_date: input.expiryDate } : {}),
+    ...(input.billingCycle !== undefined ? { billing_cycle: input.billingCycle } : {}),
+    ...(input.displayOrder !== undefined ? { display_order: input.displayOrder } : {}),
+    ...(input.publicIPv4 !== undefined ? { public_ipv4: input.publicIPv4 } : {}),
+    ...(input.publicIPv6 !== undefined ? { public_ipv6: input.publicIPv6 } : {}),
     ...(input.monthlyQuotaBytes !== undefined ? { monthly_quota_bytes: input.monthlyQuotaBytes } : {}),
     ...(input.disabled !== undefined ? { disabled: input.disabled } : {}),
   }
@@ -1121,6 +1146,11 @@ function normalizeAdminNode(node: ApiAdminNode): AdminNode {
     region: node.region,
     disabled: node.disabled,
     billingMode: node.billing_mode,
+    expiryDate: node.expiry_date,
+    billingCycle: node.billing_cycle,
+    displayOrder: node.display_order ?? 0,
+    publicIPv4: node.public_ipv4,
+    publicIPv6: node.public_ipv6,
     monthlyQuotaBytes: node.monthly_quota_bytes ?? null,
     lastSeenAt: node.last_seen_at ?? undefined,
     createdAt: node.created_at,
