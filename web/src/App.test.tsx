@@ -21,6 +21,7 @@ const hytronNode: AdminNode = {
   region: 'Hong Kong',
   disabled: false,
   billingMode: 'both',
+  monthlyResetDay: 1,
   expiryDate: '2026-08-01',
   billingCycle: '月付',
   displayOrder: 10,

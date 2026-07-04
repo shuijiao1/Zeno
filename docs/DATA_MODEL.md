@@ -35,6 +35,8 @@ CREATE TABLE nodes (
 - `expiry_date` / `billing_cycle` 用于后台和首页展示到期/账单信息。
 - `display_order` 控制首页卡片和后台列表排序。
 - `public_ipv4` / `public_ipv6` 可由后台编辑，也会由新 Agent best-effort 自动识别后上报；识别失败不会清空已有值。
+- `billing_mode` 控制月流量口径：`both`、`in`、`out`、`max`。
+- `monthly_reset_day` 控制账单周期从每月第几天开始，范围 1–31。
 - `token_hash` 只存 hash，不通过 API 返回。
 
 ## host_info

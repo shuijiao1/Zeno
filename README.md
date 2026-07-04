@@ -15,7 +15,7 @@ Zeno 是一个从零实现的轻量服务器探针 / 在线监控系统。
 - Agent：独立 Go 二进制，主动上报 heartbeat、host、state、probe results。
 - Host 基础信息：系统、内核、架构、CPU、内存、磁盘、启动时间、Agent 版本。
 - State 实时状态与历史：CPU、内存、磁盘、网络累计流量、上下行速度、uptime、load、swap、进程数、TCP 连接数。
-- 月流量：按网卡累计 counter 的 delta 计算，不用速度积分。
+- 月流量：按网卡累计 counter 的 delta 计算，不用速度积分；支持入站/出站/合计/取较大值和每台服务器独立重置日。
 - 延迟/服务探测：`tcping`、`ping`/ICMP、`http_get`，每轮保留 summary 和 raw samples。
 - Public API：主页 summary、节点延迟、节点状态历史、公开外观设置。
 - Web UI：主页卡片、节点详情页、延迟图、资源历史图、移动端紧凑布局。

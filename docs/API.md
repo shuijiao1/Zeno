@@ -353,7 +353,7 @@ X-Admin-Token: <admin-token>
 
 ### GET /api/admin/v1/nodes
 
-节点管理列表，返回 enabled + disabled 节点、状态、地区、到期日、账单周期、显示顺序、公网 IPv4/IPv6、计费模式、配额、last seen、host info 和 agent version。列表按 `display_order ASC, id ASC` 排序；后台 UI 用 `country_code` 渲染国旗。
+节点管理列表，返回 enabled + disabled 节点、状态、地区、到期日、账单周期、显示顺序、公网 IPv4/IPv6、流量计费口径、月流量重置日、配额、last seen、host info 和 agent version。列表按 `display_order ASC, id ASC` 排序；后台 UI 用 `country_code` 渲染国旗。
 
 响应字段重点：
 
@@ -368,6 +368,7 @@ X-Admin-Token: <admin-token>
       "region": "Hong Kong",
       "disabled": false,
       "billing_mode": "both",
+      "monthly_reset_day": 1,
       "expiry_date": "2026-08-01",
       "billing_cycle": "月付",
       "display_order": 10,
@@ -396,6 +397,8 @@ X-Admin-Token: <admin-token>
   "region": "Hong Kong",
   "expiry_date": "2026-08-01",
   "billing_cycle": "月付",
+  "billing_mode": "both",
+  "monthly_reset_day": 1,
   "display_order": 10,
   "public_ipv4": "198.51.100.8",
   "public_ipv6": "2001:db8::8",
@@ -403,7 +406,7 @@ X-Admin-Token: <admin-token>
 }
 ```
 
-响应返回新节点 DTO，但不会返回 Agent token 原文或 token hash。新节点默认 `status=no_data`，并自动分配当前启用的探针目标。`expiry_date` 为空时清空到期日；非空时必须是 `YYYY-MM-DD`。`display_order` 必须是非负整数；`public_ipv4` / `public_ipv6` 为空可省略，非空时会校验 IP 版本。
+响应返回新节点 DTO，但不会返回 Agent token 原文或 token hash。新节点默认 `status=no_data`，并自动分配当前启用的探针目标。`billing_mode` 可选 `both`、`in`、`out`、`max`，默认 `both`；`monthly_reset_day` 范围 1–31，默认 1。`expiry_date` 为空时清空到期日；非空时必须是 `YYYY-MM-DD`。`display_order` 必须是非负整数；`public_ipv4` / `public_ipv6` 为空可省略，非空时会校验 IP 版本。
 
 ### PATCH /api/admin/v1/nodes/{node_id}
 
@@ -418,6 +421,8 @@ X-Admin-Token: <admin-token>
   "region": "Hong Kong",
   "expiry_date": "2026-08-01",
   "billing_cycle": "月付",
+  "billing_mode": "max",
+  "monthly_reset_day": 15,
   "display_order": 10,
   "public_ipv4": "198.51.100.8",
   "public_ipv6": "2001:db8::8",
@@ -426,7 +431,7 @@ X-Admin-Token: <admin-token>
 }
 ```
 
-字段均可部分提交；`monthly_quota_bytes: null` 表示清空月配额；`expiry_date` / `billing_cycle` / `public_ipv4` / `public_ipv6` 提交空字符串表示清空。`display_name` 不能为空，`expiry_date` 非空时必须是 `YYYY-MM-DD`，`display_order` 必须是非负整数，公网 IP 会分别校验 IPv4 / IPv6。
+字段均可部分提交；`monthly_quota_bytes: null` 表示清空月配额；`expiry_date` / `billing_cycle` / `public_ipv4` / `public_ipv6` 提交空字符串表示清空。`billing_mode` 可选 `both`（入站+出站）、`in`（只算入站）、`out`（只算出站）、`max`（入/出取较大）；`monthly_reset_day` 范围 1–31。`display_name` 不能为空，`expiry_date` 非空时必须是 `YYYY-MM-DD`，`display_order` 必须是非负整数，公网 IP 会分别校验 IPv4 / IPv6。
 
 响应：
 
@@ -438,9 +443,10 @@ X-Admin-Token: <admin-token>
     "status": "online",
     "country_code": "HK",
     "region": "Hong Kong",
-    "disabled": false,
-    "billing_mode": "both",
-    "expiry_date": "2026-08-01",
+      "disabled": false,
+      "billing_mode": "max",
+      "monthly_reset_day": 15,
+      "expiry_date": "2026-08-01",
     "billing_cycle": "月付",
     "display_order": 10,
     "public_ipv4": "198.51.100.8",

@@ -1088,6 +1088,8 @@ function AdminNodeCreateModal({ onCreate, onClose }: { onCreate: (input: AdminNo
       region: String(formData.get('new-region') ?? ''),
       expiryDate: String(formData.get('new-expiry-date') ?? '').trim(),
       billingCycle: String(formData.get('new-billing-cycle') ?? '').trim(),
+      billingMode: String(formData.get('new-billing-mode') ?? 'both'),
+      monthlyResetDay: parseMonthlyResetDay(String(formData.get('new-monthly-reset-day') ?? '')) ?? 1,
       displayOrder: parseNonNegativeInt(String(formData.get('new-display-order') ?? '')) ?? 0,
       publicIPv4: String(formData.get('new-public-ipv4') ?? '').trim(),
       publicIPv6: String(formData.get('new-public-ipv6') ?? '').trim(),
@@ -1123,6 +1125,19 @@ function AdminNodeCreateModal({ onCreate, onClose }: { onCreate: (input: AdminNo
           <input name="new-billing-cycle" autoComplete="off" placeholder="月付 / 年付" />
         </label>
         <label>
+          <span>流量计费口径</span>
+          <select name="new-billing-mode" defaultValue="both">
+            <option value="both">入站 + 出站</option>
+            <option value="in">只算入站</option>
+            <option value="out">只算出站</option>
+            <option value="max">入/出取较大值</option>
+          </select>
+        </label>
+        <label>
+          <span>月流量重置日</span>
+          <input name="new-monthly-reset-day" type="number" min="1" max="31" step="1" defaultValue="1" />
+        </label>
+        <label>
           <span>显示顺序</span>
           <input name="new-display-order" type="number" min="0" step="1" defaultValue="0" />
         </label>
@@ -1156,6 +1171,8 @@ function AdminNodeEditModal({ node, onUpdate, onInstallCommand, onClose }: { nod
       region: String(formData.get('region') ?? ''),
       expiryDate: String(formData.get('expiry-date') ?? '').trim(),
       billingCycle: String(formData.get('billing-cycle') ?? '').trim(),
+      billingMode: String(formData.get('billing-mode') ?? node.billingMode),
+      monthlyResetDay: parseMonthlyResetDay(String(formData.get('monthly-reset-day') ?? '')) ?? node.monthlyResetDay,
       displayOrder: parseNonNegativeInt(String(formData.get('display-order') ?? '')) ?? node.displayOrder,
       publicIPv4: String(formData.get('public-ipv4') ?? '').trim(),
       publicIPv6: String(formData.get('public-ipv6') ?? '').trim(),
@@ -1202,6 +1219,19 @@ function AdminNodeEditModal({ node, onUpdate, onInstallCommand, onClose }: { nod
         <label>
           <span>账单周期</span>
           <input name="billing-cycle" defaultValue={node.billingCycle ?? ''} autoComplete="off" />
+        </label>
+        <label>
+          <span>流量计费口径</span>
+          <select name="billing-mode" defaultValue={node.billingMode || 'both'}>
+            <option value="both">入站 + 出站</option>
+            <option value="in">只算入站</option>
+            <option value="out">只算出站</option>
+            <option value="max">入/出取较大值</option>
+          </select>
+        </label>
+        <label>
+          <span>月流量重置日</span>
+          <input name="monthly-reset-day" type="number" min="1" max="31" step="1" defaultValue={node.monthlyResetDay || 1} />
         </label>
         <label>
           <span>显示顺序</span>
@@ -2105,6 +2135,12 @@ function parseNonNegativeInt(value: string): number | null {
   return parsed
 }
 
+function parseMonthlyResetDay(value: string): number | null {
+  const parsed = parseNonNegativeInt(value)
+  if (!parsed || parsed < 1 || parsed > 31) return null
+  return parsed
+}
+
 function formatQuotaGigabytes(value: number | null): string {
   if (!value || value <= 0) return ''
   const gigabytes = value / (1024 ** 3)
@@ -2128,7 +2164,21 @@ function formatAdminPublicIPs(node: AdminNode): string {
 }
 
 function formatAdminBilling(node: AdminNode): string {
-  return [node.expiryDate, node.billingCycle].filter(Boolean).join(' · ') || '—'
+  const details = [node.expiryDate, node.billingCycle, billingModeLabel(node.billingMode), `每月 ${node.monthlyResetDay || 1} 日重置`].filter(Boolean)
+  return details.join(' · ') || '—'
+}
+
+function billingModeLabel(mode?: string): string {
+  switch (mode) {
+    case 'in':
+      return '只算入站'
+    case 'out':
+      return '只算出站'
+    case 'max':
+      return '入/出取较大'
+    default:
+      return '入站+出站'
+  }
 }
 
 function countryCodeToFlag(countryCode?: string): string {

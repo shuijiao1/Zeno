@@ -114,6 +114,7 @@ export interface AdminNode {
   region?: string
   disabled: boolean
   billingMode: string
+  monthlyResetDay: number
   expiryDate?: string
   billingCycle?: string
   displayOrder: number

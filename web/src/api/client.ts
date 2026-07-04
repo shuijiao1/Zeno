@@ -100,6 +100,7 @@ interface ApiAdminNode {
   region?: string
   disabled: boolean
   billing_mode: string
+  monthly_reset_day: number
   expiry_date?: string
   billing_cycle?: string
   display_order?: number
@@ -379,6 +380,8 @@ export interface AdminNodeUpdateInput {
   region?: string
   expiryDate?: string
   billingCycle?: string
+  billingMode?: string
+  monthlyResetDay?: number
   displayOrder?: number
   publicIPv4?: string
   publicIPv6?: string
@@ -393,6 +396,8 @@ export interface AdminNodeCreateInput {
   region?: string
   expiryDate?: string
   billingCycle?: string
+  billingMode?: string
+  monthlyResetDay?: number
   displayOrder?: number
   publicIPv4?: string
   publicIPv6?: string
@@ -988,6 +993,8 @@ function serializeAdminNodeUpdate(input: AdminNodeUpdateInput) {
     ...(input.region !== undefined ? { region: input.region } : {}),
     ...(input.expiryDate !== undefined ? { expiry_date: input.expiryDate } : {}),
     ...(input.billingCycle !== undefined ? { billing_cycle: input.billingCycle } : {}),
+    ...(input.billingMode !== undefined ? { billing_mode: input.billingMode } : {}),
+    ...(input.monthlyResetDay !== undefined ? { monthly_reset_day: input.monthlyResetDay } : {}),
     ...(input.displayOrder !== undefined ? { display_order: input.displayOrder } : {}),
     ...(input.publicIPv4 !== undefined ? { public_ipv4: input.publicIPv4 } : {}),
     ...(input.publicIPv6 !== undefined ? { public_ipv6: input.publicIPv6 } : {}),
@@ -1004,6 +1011,8 @@ function serializeAdminNodeCreate(input: AdminNodeCreateInput) {
     ...(input.region !== undefined ? { region: input.region } : {}),
     ...(input.expiryDate !== undefined ? { expiry_date: input.expiryDate } : {}),
     ...(input.billingCycle !== undefined ? { billing_cycle: input.billingCycle } : {}),
+    ...(input.billingMode !== undefined ? { billing_mode: input.billingMode } : {}),
+    ...(input.monthlyResetDay !== undefined ? { monthly_reset_day: input.monthlyResetDay } : {}),
     ...(input.displayOrder !== undefined ? { display_order: input.displayOrder } : {}),
     ...(input.publicIPv4 !== undefined ? { public_ipv4: input.publicIPv4 } : {}),
     ...(input.publicIPv6 !== undefined ? { public_ipv6: input.publicIPv6 } : {}),
@@ -1153,6 +1162,7 @@ function normalizeAdminNode(node: ApiAdminNode): AdminNode {
     region: node.region,
     disabled: node.disabled,
     billingMode: node.billing_mode,
+    monthlyResetDay: node.monthly_reset_day ?? 1,
     expiryDate: node.expiry_date,
     billingCycle: node.billing_cycle,
     displayOrder: node.display_order ?? 0,

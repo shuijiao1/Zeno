@@ -1160,6 +1160,27 @@ func TestAgentStateSamplesDrivePublicSummaryAndMonthlyTrafficDeltas(t *testing.T
 	}
 }
 
+func TestBillingTrafficModeAndResetPeriodHelpers(t *testing.T) {
+	if got := billableTrafficDelta("in", 100, 400); got != 100 {
+		t.Fatalf("in billable = %d, want 100", got)
+	}
+	if got := billableTrafficDelta("out", 100, 400); got != 400 {
+		t.Fatalf("out billable = %d, want 400", got)
+	}
+	if got := billableTrafficDelta("max", 100, 400); got != 400 {
+		t.Fatalf("max billable = %d, want 400", got)
+	}
+	if got := billableTrafficDelta("both", 100, 400); got != 500 {
+		t.Fatalf("both billable = %d, want 500", got)
+	}
+	if got := billingPeriodKey(time.Date(2026, 7, 14, 12, 0, 0, 0, time.UTC), 15); got != "2026-06" {
+		t.Fatalf("billing period before reset = %s, want 2026-06", got)
+	}
+	if got := billingPeriodKey(time.Date(2026, 7, 15, 0, 0, 0, 0, time.UTC), 15); got != "2026-07" {
+		t.Fatalf("billing period on reset = %s, want 2026-07", got)
+	}
+}
+
 func TestAgentStateLegacyPayloadKeepsExtraMetricsNull(t *testing.T) {
 	store, err := OpenSQLiteStore(filepath.Join(t.TempDir(), "zeno.db"))
 	if err != nil {

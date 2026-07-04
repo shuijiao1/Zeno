@@ -369,7 +369,7 @@ func (s *SQLiteStore) NodeState(ctx context.Context, nodeID string, window laten
 func (s *SQLiteStore) AdminNodes(ctx context.Context) ([]AdminNode, error) {
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT n.id, n.display_name, n.status, n.country_code, n.region, n.disabled,
-		       n.billing_mode, n.expiry_date, n.billing_cycle, n.display_order, n.public_ipv4, n.public_ipv6,
+		       n.billing_mode, n.monthly_reset_day, n.expiry_date, n.billing_cycle, n.display_order, n.public_ipv4, n.public_ipv6,
 		       n.monthly_quota_bytes, n.last_seen_at, n.created_at, n.updated_at,
 		       h.hostname, h.os_name, h.os_version, h.kernel, h.arch, h.virtualization,
 		       h.cpu_model, h.cpu_cores, h.memory_total_bytes, h.disk_total_bytes,
@@ -390,13 +390,14 @@ func (s *SQLiteStore) AdminNodes(ctx context.Context) ([]AdminNode, error) {
 		var status string
 		var countryCode, region, billingMode, expiryDate, billingCycle, publicIPv4, publicIPv6 sql.NullString
 		var disabled int
+		var monthlyResetDay int
 		var displayOrder int
 		var quota, lastSeenAt, createdAt, updatedAt sql.NullInt64
 		var hostname, osName, osVersion, kernel, arch, virtualization, cpuModel, agentVersion sql.NullString
 		var cpuCores, memoryTotal, diskTotal, bootTime sql.NullInt64
 		if err := rows.Scan(
 			&node.ID, &node.DisplayName, &status, &countryCode, &region, &disabled,
-			&billingMode, &expiryDate, &billingCycle, &displayOrder, &publicIPv4, &publicIPv6,
+			&billingMode, &monthlyResetDay, &expiryDate, &billingCycle, &displayOrder, &publicIPv4, &publicIPv6,
 			&quota, &lastSeenAt, &createdAt, &updatedAt,
 			&hostname, &osName, &osVersion, &kernel, &arch, &virtualization,
 			&cpuModel, &cpuCores, &memoryTotal, &diskTotal,
@@ -412,6 +413,10 @@ func (s *SQLiteStore) AdminNodes(ctx context.Context) ([]AdminNode, error) {
 		node.CountryCode = nullStringOr(countryCode, "")
 		node.Region = nullStringOr(region, "")
 		node.BillingMode = nullStringOr(billingMode, "both")
+		if monthlyResetDay <= 0 {
+			monthlyResetDay = 1
+		}
+		node.MonthlyResetDay = monthlyResetDay
 		node.ExpiryDate = nullStringOr(expiryDate, "")
 		node.BillingCycle = nullStringOr(billingCycle, "")
 		node.DisplayOrder = displayOrder
@@ -757,6 +762,14 @@ func (s *SQLiteStore) UpdateAdminNode(ctx context.Context, nodeID string, update
 		sets = append(sets, "billing_cycle = ?")
 		args = append(args, nullIfEmpty(*update.BillingCycle))
 	}
+	if update.BillingMode != nil {
+		sets = append(sets, "billing_mode = ?")
+		args = append(args, *update.BillingMode)
+	}
+	if update.MonthlyResetDay != nil {
+		sets = append(sets, "monthly_reset_day = ?")
+		args = append(args, *update.MonthlyResetDay)
+	}
 	if update.DisplayOrder != nil {
 		sets = append(sets, "display_order = ?")
 		args = append(args, *update.DisplayOrder)
@@ -811,13 +824,21 @@ func (s *SQLiteStore) nodes(ctx context.Context) ([]Node, error) {
 		       h.os_name, h.os_version, h.kernel, h.arch, h.virtualization, h.cpu_model, h.cpu_cores, h.memory_total_bytes, h.disk_total_bytes,
 		       ss.cpu_percent, ss.memory_used_bytes, ss.disk_used_bytes,
 		       ss.net_in_speed_bps, ss.net_out_speed_bps, ss.net_in_total_bytes, ss.net_out_total_bytes,
-		       tm.billable_bytes, n.monthly_quota_bytes
+		       (
+		         SELECT tm.billable_bytes
+		         FROM traffic_monthly tm
+		         WHERE tm.node_id = n.id
+		           AND tm.month = CASE
+		             WHEN CAST(strftime('%d', 'now') AS INTEGER) < n.monthly_reset_day THEN strftime('%Y-%m', 'now', '-1 month')
+		             ELSE strftime('%Y-%m', 'now')
+		           END
+		       ) AS billable_bytes,
+		       n.monthly_quota_bytes
 		FROM nodes n
 		LEFT JOIN host_info h ON h.node_id = n.id
 		LEFT JOIN state_samples ss ON ss.id = (
 			SELECT id FROM state_samples WHERE node_id = n.id ORDER BY ts DESC, id DESC LIMIT 1
 		)
-		LEFT JOIN traffic_monthly tm ON tm.node_id = n.id AND tm.month = strftime('%Y-%m', 'now')
 		WHERE n.disabled = 0
 		ORDER BY n.display_order ASC, n.id ASC
 	`)

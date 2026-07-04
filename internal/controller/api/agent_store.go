@@ -196,10 +196,11 @@ func (s *SQLiteStore) InsertAgentState(ctx context.Context, nodeID string, state
 	}
 
 	var billingMode string
-	if err := tx.QueryRowContext(ctx, `SELECT billing_mode FROM nodes WHERE id = ? AND disabled = 0`, nodeID).Scan(&billingMode); err != nil {
+	var monthlyResetDay int
+	if err := tx.QueryRowContext(ctx, `SELECT billing_mode, monthly_reset_day FROM nodes WHERE id = ? AND disabled = 0`, nodeID).Scan(&billingMode, &monthlyResetDay); err != nil {
 		return err
 	}
-	month := sampleTS.Format("2006-01")
+	month := billingPeriodKey(sampleTS, monthlyResetDay)
 	if err := upsertMonthlyTraffic(ctx, tx, nodeID, month, billingMode, state.NetInTotalBytes, state.NetOutTotalBytes, now); err != nil {
 		return err
 	}
@@ -300,6 +301,17 @@ func billableTrafficDelta(mode string, deltaIn, deltaOut int64) int64 {
 	default:
 		return deltaIn + deltaOut
 	}
+}
+
+func billingPeriodKey(ts time.Time, resetDay int) string {
+	if resetDay < 1 || resetDay > 31 {
+		resetDay = 1
+	}
+	period := ts.UTC()
+	if period.Day() < resetDay {
+		period = period.AddDate(0, -1, 0)
+	}
+	return period.Format("2006-01")
 }
 
 func nullableUnix(value int64) any {

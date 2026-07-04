@@ -111,6 +111,8 @@ func TestAdminNodePatchUpdatesEditableFieldsAndReturnsSafeDTO(t *testing.T) {
 		"display_name": "  Hytron Edited  ",
 		"country_code": " hk ",
 		"region": "  Hong Kong  ",
+		"billing_mode": "max",
+		"monthly_reset_day": 15,
 		"monthly_quota_bytes": 123456789,
 		"disabled": true
 	}`))
@@ -132,13 +134,15 @@ func TestAdminNodePatchUpdatesEditableFieldsAndReturnsSafeDTO(t *testing.T) {
 			CountryCode       string `json:"country_code"`
 			Region            string `json:"region"`
 			Disabled          bool   `json:"disabled"`
+			BillingMode       string `json:"billing_mode"`
+			MonthlyResetDay   int    `json:"monthly_reset_day"`
 			MonthlyQuotaBytes int64  `json:"monthly_quota_bytes"`
 		} `json:"node"`
 	}
 	if err := json.NewDecoder(bytes.NewBufferString(raw)).Decode(&response); err != nil {
 		t.Fatalf("decode updated admin node: %v", err)
 	}
-	if response.Node.ID != "hytron" || response.Node.DisplayName != "Hytron Edited" || response.Node.Status != "disabled" || response.Node.CountryCode != "HK" || response.Node.Region != "Hong Kong" || !response.Node.Disabled || response.Node.MonthlyQuotaBytes != 123456789 {
+	if response.Node.ID != "hytron" || response.Node.DisplayName != "Hytron Edited" || response.Node.Status != "disabled" || response.Node.CountryCode != "HK" || response.Node.Region != "Hong Kong" || !response.Node.Disabled || response.Node.BillingMode != "max" || response.Node.MonthlyResetDay != 15 || response.Node.MonthlyQuotaBytes != 123456789 {
 		t.Fatalf("updated admin node = %+v, want trimmed editable fields and disabled status", response.Node)
 	}
 
@@ -170,6 +174,8 @@ func TestAdminNodeBillingIPAndDisplayOrderFieldsFlowThroughAdminAndPublicSummary
 		"country_code": " jp ",
 		"expiry_date": "2026-12-31",
 		"billing_cycle": "年付",
+		"billing_mode": "in",
+		"monthly_reset_day": 10,
 		"display_order": 30,
 		"public_ipv4": "203.0.113.10",
 		"public_ipv6": "2001:db8::10"
@@ -184,6 +190,8 @@ func TestAdminNodeBillingIPAndDisplayOrderFieldsFlowThroughAdminAndPublicSummary
 	patchRequest := httptest.NewRequest(http.MethodPatch, "/api/admin/v1/nodes/hytron", bytes.NewBufferString(`{
 		"expiry_date": "2026-08-01",
 		"billing_cycle": "月付",
+		"billing_mode": "max",
+		"monthly_reset_day": 15,
 		"display_order": 10,
 		"public_ipv4": "198.51.100.8",
 		"public_ipv6": "2001:db8::8"
@@ -211,6 +219,8 @@ func TestAdminNodeBillingIPAndDisplayOrderFieldsFlowThroughAdminAndPublicSummary
 			ID           string `json:"id"`
 			ExpiryDate   string `json:"expiry_date"`
 			BillingCycle string `json:"billing_cycle"`
+			BillingMode  string `json:"billing_mode"`
+			ResetDay     int    `json:"monthly_reset_day"`
 			DisplayOrder int    `json:"display_order"`
 			PublicIPv4   string `json:"public_ipv4"`
 			PublicIPv6   string `json:"public_ipv6"`
@@ -222,10 +232,10 @@ func TestAdminNodeBillingIPAndDisplayOrderFieldsFlowThroughAdminAndPublicSummary
 	if len(response.Nodes) != 2 {
 		t.Fatalf("nodes len = %d, want 2", len(response.Nodes))
 	}
-	if response.Nodes[0].ID != "hytron" || response.Nodes[0].DisplayOrder != 10 || response.Nodes[0].ExpiryDate != "2026-08-01" || response.Nodes[0].BillingCycle != "月付" || response.Nodes[0].PublicIPv4 != "198.51.100.8" || response.Nodes[0].PublicIPv6 != "2001:db8::8" {
+	if response.Nodes[0].ID != "hytron" || response.Nodes[0].DisplayOrder != 10 || response.Nodes[0].ExpiryDate != "2026-08-01" || response.Nodes[0].BillingCycle != "月付" || response.Nodes[0].BillingMode != "max" || response.Nodes[0].ResetDay != 15 || response.Nodes[0].PublicIPv4 != "198.51.100.8" || response.Nodes[0].PublicIPv6 != "2001:db8::8" {
 		t.Fatalf("hytron metadata = %+v, want edited billing/IP/order fields", response.Nodes[0])
 	}
-	if response.Nodes[1].ID != "backup" || response.Nodes[1].DisplayOrder != 30 {
+	if response.Nodes[1].ID != "backup" || response.Nodes[1].DisplayOrder != 30 || response.Nodes[1].BillingMode != "in" || response.Nodes[1].ResetDay != 10 {
 		t.Fatalf("second node = %+v, want display-order sorted backup", response.Nodes[1])
 	}
 
@@ -264,6 +274,9 @@ func TestAdminNodePatchRejectsUnauthorizedUnknownAndInvalidRequests(t *testing.T
 		{name: "unknown node", nodeID: "missing", body: `{"display_name":"Changed"}`, adminToken: "admin-pass", wantStatus: http.StatusNotFound},
 		{name: "blank display name", nodeID: "hytron", body: `{"display_name":"   "}`, adminToken: "admin-pass", wantStatus: http.StatusBadRequest},
 		{name: "negative monthly quota", nodeID: "hytron", body: `{"monthly_quota_bytes":-1}`, adminToken: "admin-pass", wantStatus: http.StatusBadRequest},
+		{name: "invalid billing mode", nodeID: "hytron", body: `{"billing_mode":"95th"}`, adminToken: "admin-pass", wantStatus: http.StatusBadRequest},
+		{name: "zero monthly reset day", nodeID: "hytron", body: `{"monthly_reset_day":0}`, adminToken: "admin-pass", wantStatus: http.StatusBadRequest},
+		{name: "invalid monthly reset day", nodeID: "hytron", body: `{"monthly_reset_day":32}`, adminToken: "admin-pass", wantStatus: http.StatusBadRequest},
 	}
 
 	for _, tc := range cases {
@@ -300,6 +313,8 @@ func TestAdminNodeCreateAddsEditableNodeWithoutReturningSecrets(t *testing.T) {
 		"display_name": "  New Server  ",
 		"country_code": " us ",
 		"region": "  Los Angeles  ",
+		"billing_mode": "out",
+		"monthly_reset_day": 20,
 		"monthly_quota_bytes": 1099511627776
 	}`))
 	request.Header.Set("X-Admin-Token", "admin-pass")
@@ -321,13 +336,15 @@ func TestAdminNodeCreateAddsEditableNodeWithoutReturningSecrets(t *testing.T) {
 			CountryCode       string `json:"country_code"`
 			Region            string `json:"region"`
 			Disabled          bool   `json:"disabled"`
+			BillingMode       string `json:"billing_mode"`
+			MonthlyResetDay   int    `json:"monthly_reset_day"`
 			MonthlyQuotaBytes int64  `json:"monthly_quota_bytes"`
 		} `json:"node"`
 	}
 	if err := json.NewDecoder(bytes.NewBufferString(raw)).Decode(&response); err != nil {
 		t.Fatalf("decode created admin node: %v", err)
 	}
-	if response.Node.ID == "" || response.Node.DisplayName != "New Server" || response.Node.Status != "no_data" || response.Node.CountryCode != "US" || response.Node.Region != "Los Angeles" || response.Node.Disabled || response.Node.MonthlyQuotaBytes != 1099511627776 {
+	if response.Node.ID == "" || response.Node.DisplayName != "New Server" || response.Node.Status != "no_data" || response.Node.CountryCode != "US" || response.Node.Region != "Los Angeles" || response.Node.Disabled || response.Node.BillingMode != "out" || response.Node.MonthlyResetDay != 20 || response.Node.MonthlyQuotaBytes != 1099511627776 {
 		t.Fatalf("created admin node = %+v, want trimmed editable no_data node", response.Node)
 	}
 

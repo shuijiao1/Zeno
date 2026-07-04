@@ -268,6 +268,35 @@ func normalizeAdminNodeIP(value string, family int) (string, error) {
 	return "", errInvalidAdminNodeUpdate
 }
 
+func normalizeAdminNodeBillingMode(value string) (string, bool) {
+	mode := strings.ToLower(strings.TrimSpace(value))
+	if mode == "" {
+		return "both", true
+	}
+	switch mode {
+	case "in", "download", "inbound":
+		return "in", true
+	case "out", "upload", "outbound":
+		return "out", true
+	case "both", "sum", "total":
+		return "both", true
+	case "max", "higher":
+		return "max", true
+	default:
+		return "", false
+	}
+}
+
+func normalizeAdminNodeMonthlyResetDay(value int) (int, bool) {
+	if value == 0 {
+		return 1, true
+	}
+	if value < 1 || value > 31 {
+		return 0, false
+	}
+	return value, true
+}
+
 // AdminNodesResponse is the authenticated management view for node inventory.
 // It intentionally omits token hashes and other credentials.
 type AdminNodesResponse struct {
@@ -290,6 +319,8 @@ type AdminNodeCreateRequest struct {
 	Region            string             `json:"region,omitempty"`
 	ExpiryDate        string             `json:"expiry_date,omitempty"`
 	BillingCycle      string             `json:"billing_cycle,omitempty"`
+	BillingMode       string             `json:"billing_mode,omitempty"`
+	MonthlyResetDay   *int               `json:"monthly_reset_day,omitempty"`
 	DisplayOrder      int                `json:"display_order,omitempty"`
 	PublicIPv4        string             `json:"public_ipv4,omitempty"`
 	PublicIPv6        string             `json:"public_ipv6,omitempty"`
@@ -319,6 +350,24 @@ func (request *AdminNodeCreateRequest) normalize() error {
 		return errInvalidAdminNodeCreate
 	}
 	request.BillingCycle = billingCycle
+	billingMode, ok := normalizeAdminNodeBillingMode(request.BillingMode)
+	if !ok {
+		return errInvalidAdminNodeCreate
+	}
+	request.BillingMode = billingMode
+	if request.MonthlyResetDay == nil {
+		defaultResetDay := 1
+		request.MonthlyResetDay = &defaultResetDay
+	} else {
+		if *request.MonthlyResetDay == 0 {
+			return errInvalidAdminNodeCreate
+		}
+		resetDay, ok := normalizeAdminNodeMonthlyResetDay(*request.MonthlyResetDay)
+		if !ok {
+			return errInvalidAdminNodeCreate
+		}
+		request.MonthlyResetDay = &resetDay
+	}
 	if request.DisplayOrder < 0 {
 		return errInvalidAdminNodeCreate
 	}
@@ -762,6 +811,8 @@ type AdminNodeUpdateRequest struct {
 	Region            *string            `json:"region,omitempty"`
 	ExpiryDate        *string            `json:"expiry_date,omitempty"`
 	BillingCycle      *string            `json:"billing_cycle,omitempty"`
+	BillingMode       *string            `json:"billing_mode,omitempty"`
+	MonthlyResetDay   *int               `json:"monthly_reset_day,omitempty"`
 	DisplayOrder      *int               `json:"display_order,omitempty"`
 	PublicIPv4        *string            `json:"public_ipv4,omitempty"`
 	PublicIPv6        *string            `json:"public_ipv6,omitempty"`
@@ -807,6 +858,25 @@ func (request *AdminNodeUpdateRequest) normalize() error {
 			return errInvalidAdminNodeUpdate
 		}
 		request.BillingCycle = &trimmed
+	}
+	if request.BillingMode != nil {
+		changed = true
+		mode, ok := normalizeAdminNodeBillingMode(*request.BillingMode)
+		if !ok {
+			return errInvalidAdminNodeUpdate
+		}
+		request.BillingMode = &mode
+	}
+	if request.MonthlyResetDay != nil {
+		changed = true
+		if *request.MonthlyResetDay == 0 {
+			return errInvalidAdminNodeUpdate
+		}
+		resetDay, ok := normalizeAdminNodeMonthlyResetDay(*request.MonthlyResetDay)
+		if !ok {
+			return errInvalidAdminNodeUpdate
+		}
+		request.MonthlyResetDay = &resetDay
 	}
 	if request.DisplayOrder != nil {
 		changed = true
@@ -875,6 +945,7 @@ type AdminNode struct {
 	Region            string  `json:"region,omitempty"`
 	Disabled          bool    `json:"disabled"`
 	BillingMode       string  `json:"billing_mode"`
+	MonthlyResetDay   int     `json:"monthly_reset_day"`
 	ExpiryDate        string  `json:"expiry_date,omitempty"`
 	BillingCycle      string  `json:"billing_cycle,omitempty"`
 	DisplayOrder      int     `json:"display_order"`

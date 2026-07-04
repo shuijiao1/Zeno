@@ -175,6 +175,7 @@ describe('normalizeAdminNodes', () => {
           region: 'Hong Kong',
           disabled: false,
           billing_mode: 'both',
+          monthly_reset_day: 15,
           expiry_date: '2026-08-01',
           billing_cycle: '月付',
           display_order: 10,
@@ -206,6 +207,7 @@ describe('normalizeAdminNodes', () => {
     expect(data.nodes[0].agentVersion).toBe('d206817')
     expect(data.nodes[0].expiryDate).toBe('2026-08-01')
     expect(data.nodes[0].billingCycle).toBe('月付')
+    expect(data.nodes[0].monthlyResetDay).toBe(15)
     expect(data.nodes[0].displayOrder).toBe(10)
     expect(data.nodes[0].publicIPv4).toBe('198.51.100.8')
     expect(data.nodes[0].publicIPv6).toBe('2001:db8::8')
@@ -642,7 +644,8 @@ describe('updateAdminNode', () => {
         country_code: 'HK',
         region: 'Hong Kong',
         disabled: true,
-        billing_mode: 'both',
+        billing_mode: 'max',
+        monthly_reset_day: 20,
         expiry_date: '2026-08-01',
         billing_cycle: '月付',
         display_order: 10,
@@ -661,6 +664,8 @@ describe('updateAdminNode', () => {
       region: 'Hong Kong',
       expiryDate: '2026-08-01',
       billingCycle: '月付',
+      billingMode: 'max',
+      monthlyResetDay: 20,
       displayOrder: 10,
       publicIPv4: '198.51.100.8',
       publicIPv6: '2001:db8::8',
@@ -673,6 +678,8 @@ describe('updateAdminNode', () => {
     expect(node.monthlyQuotaBytes).toBe(123456789)
     expect(node.expiryDate).toBe('2026-08-01')
     expect(node.billingCycle).toBe('月付')
+    expect(node.billingMode).toBe('max')
+    expect(node.monthlyResetDay).toBe(20)
     expect(node.displayOrder).toBe(10)
     expect(node.publicIPv4).toBe('198.51.100.8')
     expect(node.publicIPv6).toBe('2001:db8::8')
@@ -689,6 +696,8 @@ describe('updateAdminNode', () => {
         region: 'Hong Kong',
         expiry_date: '2026-08-01',
         billing_cycle: '月付',
+        billing_mode: 'max',
+        monthly_reset_day: 20,
         display_order: 10,
         public_ipv4: '198.51.100.8',
         public_ipv6: '2001:db8::8',
@@ -716,7 +725,8 @@ describe('createAdminNode', () => {
         country_code: 'US',
         region: 'Los Angeles',
         disabled: false,
-        billing_mode: 'both',
+        billing_mode: 'out',
+        monthly_reset_day: 10,
         expiry_date: '2026-09-01',
         billing_cycle: '月付',
         display_order: 20,
@@ -735,6 +745,8 @@ describe('createAdminNode', () => {
       region: 'Los Angeles',
       expiryDate: '2026-09-01',
       billingCycle: '月付',
+      billingMode: 'out',
+      monthlyResetDay: 10,
       displayOrder: 20,
       publicIPv4: '203.0.113.20',
       publicIPv6: '2001:db8::20',
@@ -758,6 +770,8 @@ describe('createAdminNode', () => {
         region: 'Los Angeles',
         expiry_date: '2026-09-01',
         billing_cycle: '月付',
+        billing_mode: 'out',
+        monthly_reset_day: 10,
         display_order: 20,
         public_ipv4: '203.0.113.20',
         public_ipv6: '2001:db8::20',
