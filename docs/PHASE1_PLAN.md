@@ -17,6 +17,7 @@
 - `docs/DATA_MODEL.md`
 - `docs/API.md`
 - `docs/SECURITY.md`
+- `docs/SELF_HOSTING.md`
 - `docs/TECHNICAL_DESIGN.md`
 - `docs/RELEASE_PACKAGING.md`
 
@@ -34,7 +35,7 @@ Zeno 当前已经具备完整预览闭环：
 - Telegram-only 通知 dispatch、测试发送和 sanitized delivery history。
 - 服务器元数据：到期日、账单周期、显示顺序（后台可上移/下移/整理）、国家码/国旗、公网 IPv4、公网 IPv6，Agent 可自动识别公网 IP / GeoIP。
 - 通知类型触发条件支持按服务器范围生效。
-- Linux amd64 发布包、systemd 模板、本机 Controller 更新脚本、单独 Agent 安装脚本和 GUKO 服务器清单导入脚本。
+- Linux amd64 发布包（含 README/docs）、systemd 模板、本机 Controller 更新脚本、单独 Agent 安装脚本、GUKO 服务器清单导入脚本和自部署指南。
 - Hytron 预览部署：`/opt/zeno`，`zeno-controller.service`，`zeno-agent.service`。
 
 ## 当前迭代原则
@@ -48,6 +49,5 @@ Zeno 当前已经具备完整预览闭环：
 ## 下一批建议切片
 
 1. 多节点铺 Agent：在 Controller 公网 HTTPS 入口确认后逐台安装，先少量 smoke，再批量。
-2. 安装文档打磨和开源前自部署说明。
-3. 后续服务监控状态页 / 历史页：暂缓，确认需要后再做。
-4. UI polish：外观 URL 输入体验、拖拽排序等，放在主线闭环之后。
+2. 后续服务监控状态页 / 历史页：暂缓，确认需要后再做。
+3. UI polish：外观 URL 输入体验、拖拽排序等，放在主线闭环之后。

@@ -6,7 +6,7 @@ usage() {
 Usage: scripts/package-release.sh [--sha <revision>] [--out-dir <dir>] [--skip-tests] [--allow-dirty]
 
 Builds a Linux amd64 Zeno release archive containing:
-  zeno-controller, zeno-agent, web/, REVISION, scripts/, packaging/systemd/
+  zeno-controller, zeno-agent, web/, REVISION, README.md, docs/, scripts/, packaging/systemd/
 
 Default output: build/releases/zeno-<sha>-linux-amd64.tar.gz
 USAGE
@@ -80,12 +80,14 @@ trap cleanup EXIT
 
 release_name="zeno-${sha}-linux-amd64"
 release_dir="$work_dir/$release_name"
-mkdir -p "$release_dir/web" "$release_dir/scripts" "$release_dir/packaging/systemd"
+mkdir -p "$release_dir/web" "$release_dir/docs" "$release_dir/scripts" "$release_dir/packaging/systemd"
 
 GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -trimpath -ldflags "-s -w" -o "$release_dir/zeno-controller" ./cmd/controller
 GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -trimpath -ldflags "-s -w" -o "$release_dir/zeno-agent" ./cmd/agent
 cp -a web/dist/. "$release_dir/web/"
 printf '%s\n' "$sha" > "$release_dir/REVISION"
+cp README.md "$release_dir/"
+cp docs/*.md "$release_dir/docs/"
 cp scripts/deploy-local-release.sh scripts/install-agent.sh scripts/import-guko-servers.py "$release_dir/scripts/"
 cp packaging/systemd/zeno-controller.service packaging/systemd/zeno-agent.service "$release_dir/packaging/systemd/"
 chmod +x "$release_dir/zeno-controller" "$release_dir/zeno-agent" "$release_dir/scripts/"*.sh

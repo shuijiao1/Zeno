@@ -21,6 +21,8 @@ build/releases/zeno-<sha>-linux-amd64.tar.gz
     ├── REVISION
     ├── zeno-controller
     ├── zeno-agent
+    ├── README.md
+    ├── docs/
     ├── web/
     ├── scripts/
     │   ├── deploy-local-release.sh
@@ -36,6 +38,7 @@ build/releases/zeno-<sha>-linux-amd64.tar.gz
 - `zeno-controller`：`GOOS=linux GOARCH=amd64 CGO_ENABLED=0`。
 - `zeno-agent`：`GOOS=linux GOARCH=amd64 CGO_ENABLED=0`。
 - `web/`：`npm --prefix web run build` 生成的静态文件。
+- `README.md` / `docs/`：自部署、API、数据模型、安全边界和发布工具文档。
 - `REVISION`：当前 Git short SHA 或 `--sha` 指定值。
 
 默认打包前会执行：

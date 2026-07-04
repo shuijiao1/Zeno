@@ -36,6 +36,8 @@ Zeno 是一个从零实现的轻量服务器探针 / 在线监控系统。
 
 ## 安装 Controller
 
+完整自部署流程见 [`docs/SELF_HOSTING.md`](docs/SELF_HOSTING.md)。
+
 先在构建机打包：
 
 ```bash
