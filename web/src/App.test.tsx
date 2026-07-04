@@ -347,6 +347,8 @@ describe('AdminDashboard', () => {
     const html = renderAdmin('maintenance')
 
     expect(html).toContain('数据维护')
+    expect(html).toContain('启用自动清理')
+    expect(html).toContain('Controller 会定期自动清理')
     expect(html).toContain('候选数据')
     expect(html).toContain('状态采样')
     expect(html).toContain('12 条')

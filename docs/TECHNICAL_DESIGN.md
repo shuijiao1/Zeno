@@ -188,6 +188,7 @@ Agent 使用 tokenless、可替换的轻量 HTTP provider 自动发现公网 IPv
 - candidate counts。
 - dry-run cleanup。
 - confirmed cleanup。
+- 自动清理：`maintenance_enabled=true` 时 Controller 按 `-maintenance-interval` 定期执行同一套确认清理逻辑，默认 24 小时检查一次；默认关闭，避免首次部署误删历史。
 
 默认安全：只统计和清理可再生历史样本/发送记录，不清理节点、token、规则、设置或正式配置。
 

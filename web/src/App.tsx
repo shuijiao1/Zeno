@@ -1784,7 +1784,7 @@ function AdminMaintenanceSection({ maintenance, onUpdate, onCleanup }: { mainten
         <div>
           <p className="eyebrow">Maintenance</p>
           <h3>数据维护</h3>
-          <p className="admin-overview-note">按保留期清理历史状态采样、探测结果和通知发送记录；清理前可以先预览候选数量。</p>
+          <p className="admin-overview-note">按保留期清理历史状态采样、探测结果和通知发送记录；启用后 Controller 会定期自动清理，也可以先手动预览候选数量。</p>
         </div>
       </header>
 
@@ -1801,7 +1801,7 @@ function AdminMaintenanceSection({ maintenance, onUpdate, onCleanup }: { mainten
       <form className="admin-maintenance-form admin-node-edit-form" aria-label="数据维护设置" onSubmit={handleSubmit}>
         <label className="admin-node-toggle">
           <input name="maintenance-enabled" type="checkbox" defaultChecked={settings.enabled} />
-          <span>启用数据维护配置</span>
+          <span>启用自动清理</span>
         </label>
         <label>
           <span>状态采样保留天数</span>

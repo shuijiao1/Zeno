@@ -692,7 +692,7 @@ Controller 会在 Agent 上报时实际使用这些规则：
 
 ### PATCH /api/admin/v1/maintenance
 
-部分更新数据维护设置。至少提交一个字段；保留天数必须是 `1..3650` 的整数。当前后台会保存该配置并据此计算候选数量；实际删除仍通过显式 cleanup 接口触发。
+部分更新数据维护设置。至少提交一个字段；保留天数必须是 `1..3650` 的整数。当前后台会保存该配置并据此计算候选数量；`enabled=true` 时 Controller 会按 `-maintenance-interval` 定期自动执行同一套清理逻辑，默认间隔 24 小时。手动删除仍可通过显式 cleanup 接口立即触发。
 
 请求：
 
@@ -709,7 +709,7 @@ Controller 会在 Agent 上报时实际使用这些规则：
 
 ### POST /api/admin/v1/maintenance/cleanup
 
-按当前保留期执行数据维护。建议先提交 `dry_run: true` 预览候选数量；真正删除必须提交 `confirm: true`，否则返回 `400`。删除范围仅限：过期 `state_samples`、过期 `probe_rounds`、这些过期轮次对应的 `probe_samples`、过期 `notification_deliveries`。
+按当前保留期立即执行数据维护。建议先提交 `dry_run: true` 预览候选数量；真正删除必须提交 `confirm: true`，否则返回 `400`。删除范围仅限：过期 `state_samples`、过期 `probe_rounds`、这些过期轮次对应的 `probe_samples`、过期 `notification_deliveries`。自动清理只在 `settings.enabled=true` 时运行，使用同样的删除范围。
 
 请求：
 

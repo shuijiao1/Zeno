@@ -87,6 +87,28 @@ func (s *SQLiteStore) RunAdminMaintenanceCleanup(ctx context.Context, request Ad
 	return AdminMaintenanceCleanupResponse{Settings: settings, Deleted: deleted, Candidates: after, DryRun: false}, nil
 }
 
+func (s *SQLiteStore) RunAutomaticAdminMaintenanceCleanup(ctx context.Context) (AdminMaintenanceCleanupResponse, bool, error) {
+	settings, err := s.adminMaintenanceSettings(ctx)
+	if err != nil {
+		return AdminMaintenanceCleanupResponse{}, false, err
+	}
+	if !settings.Enabled {
+		return AdminMaintenanceCleanupResponse{Settings: settings, DryRun: false}, false, nil
+	}
+	if _, err := s.adminMaintenanceCandidates(ctx, settings); err != nil {
+		return AdminMaintenanceCleanupResponse{}, true, err
+	}
+	deleted, err := s.deleteAdminMaintenanceCandidates(ctx, settings)
+	if err != nil {
+		return AdminMaintenanceCleanupResponse{}, true, err
+	}
+	after, err := s.adminMaintenanceCandidates(ctx, settings)
+	if err != nil {
+		return AdminMaintenanceCleanupResponse{}, true, err
+	}
+	return AdminMaintenanceCleanupResponse{Settings: settings, Deleted: deleted, Candidates: after, DryRun: false}, true, nil
+}
+
 func (s *SQLiteStore) adminMaintenanceSettings(ctx context.Context) (AdminMaintenanceSettings, error) {
 	settings := defaultAdminMaintenanceSettings()
 	rows, err := s.db.QueryContext(ctx, `

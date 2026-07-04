@@ -142,6 +142,52 @@ func TestAdminMaintenancePatchAndCleanupRequireExplicitConfirmation(t *testing.T
 	}
 }
 
+func TestAutomaticAdminMaintenanceCleanupRespectsEnabledSetting(t *testing.T) {
+	store, err := OpenSQLiteStore(filepath.Join(t.TempDir(), "zeno.db"))
+	if err != nil {
+		t.Fatalf("open sqlite store: %v", err)
+	}
+	defer store.Close()
+	seedMaintenanceFixture(t, store)
+	ctx := context.Background()
+
+	cleanup, ran, err := store.RunAutomaticAdminMaintenanceCleanup(ctx)
+	if err != nil {
+		t.Fatalf("automatic cleanup disabled: %v", err)
+	}
+	if ran || cleanup.Settings.Enabled {
+		t.Fatalf("automatic cleanup ran=%v settings=%+v, want skipped while disabled", ran, cleanup.Settings)
+	}
+	if got := countTableRows(t, store, "probe_rounds"); got != 2 {
+		t.Fatalf("probe round rows after skipped cleanup = %d, want 2", got)
+	}
+
+	if _, err := store.UpdateAdminMaintenance(ctx, AdminMaintenanceUpdateRequest{Enabled: adminMaintenanceBoolPtr(true), StateRetentionDays: adminMaintenanceIntPtr(30), ProbeRetentionDays: adminMaintenanceIntPtr(30), NotificationRetentionDays: adminMaintenanceIntPtr(90)}); err != nil {
+		t.Fatalf("enable maintenance: %v", err)
+	}
+	cleanup, ran, err = store.RunAutomaticAdminMaintenanceCleanup(ctx)
+	if err != nil {
+		t.Fatalf("automatic cleanup enabled: %v", err)
+	}
+	if !ran || !cleanup.Settings.Enabled {
+		t.Fatalf("automatic cleanup ran=%v settings=%+v, want enabled run", ran, cleanup.Settings)
+	}
+	if cleanup.Deleted.StateSamples != 1 || cleanup.Deleted.ProbeRounds != 1 || cleanup.Deleted.ProbeSamples != 2 || cleanup.Deleted.NotificationDeliveries != 1 {
+		t.Fatalf("automatic cleanup deleted = %+v, want old fixture rows", cleanup.Deleted)
+	}
+	if got := countTableRows(t, store, "probe_rounds"); got != 1 {
+		t.Fatalf("probe round rows after automatic cleanup = %d, want 1", got)
+	}
+}
+
+func adminMaintenanceBoolPtr(value bool) *bool {
+	return &value
+}
+
+func adminMaintenanceIntPtr(value int) *int {
+	return &value
+}
+
 func seedMaintenanceFixture(t *testing.T, store *SQLiteStore) {
 	t.Helper()
 	ctx := context.Background()
