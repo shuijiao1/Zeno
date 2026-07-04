@@ -284,6 +284,13 @@ func (s *SQLiteStore) EnabledNotificationChannelsForEvent(ctx context.Context, e
 	if !ok {
 		return "", nil, errNotificationTypeNotFound
 	}
+	var enabledRuleCount int
+	if err := s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM alert_rules WHERE notification_event_type = ? AND enabled = 1`, eventType).Scan(&enabledRuleCount); err != nil {
+		return "", nil, err
+	}
+	if enabledRuleCount == 0 {
+		return label, nil, nil
+	}
 	var enabled int
 	err := s.db.QueryRowContext(ctx, `SELECT enabled FROM notification_types WHERE event_type = ?`, eventType).Scan(&enabled)
 	if errors.Is(err, sql.ErrNoRows) {

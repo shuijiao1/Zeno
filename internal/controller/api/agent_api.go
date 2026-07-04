@@ -122,9 +122,16 @@ func (h *handler) handleAgentProbeResults(w http.ResponseWriter, r *http.Request
 			return
 		}
 	}
-	probeStatus := probeHealthStatus(prepared)
 	probeTS := latestPreparedProbeTS(prepared)
-	if transitionStore, ok := store.(probeHealthTransitionStore); ok {
+	if transitionStore, ok := store.(probeAlertRuleTransitionStore); ok {
+		transition, err := transitionStore.RecordAgentProbeAlertRuleTransition(r.Context(), nodeID, probeTS, prepared)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, "internal error")
+			return
+		}
+		h.dispatchAgentStatusNotification(store, transition, probeTS)
+	} else if transitionStore, ok := store.(probeHealthTransitionStore); ok {
+		probeStatus := probeHealthStatus(prepared)
 		transition, err := transitionStore.RecordAgentProbeHealthTransition(r.Context(), nodeID, probeTS, probeStatus)
 		if err != nil {
 			writeError(w, http.StatusInternalServerError, "internal error")
@@ -270,6 +277,15 @@ func (h *handler) handleAgentState(w http.ResponseWriter, r *http.Request) {
 	if err := store.InsertAgentState(r.Context(), nodeID, request); err != nil {
 		writeError(w, http.StatusInternalServerError, "internal error")
 		return
+	}
+	stateTS := time.Unix(request.TS, 0).UTC()
+	if transitionStore, ok := store.(stateAlertRuleTransitionStore); ok {
+		transition, err := transitionStore.RecordAgentStateAlertRuleTransition(r.Context(), nodeID, stateTS, request)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, "internal error")
+			return
+		}
+		h.dispatchAgentStatusNotification(store, transition, stateTS)
 	}
 	writeJSON(w, http.StatusAccepted, map[string]any{"ok": true})
 }

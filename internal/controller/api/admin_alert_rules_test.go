@@ -2,6 +2,7 @@ package api
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -133,6 +134,41 @@ func TestAdminAlertRulesRejectUnauthorizedUnknownAndInvalidRequests(t *testing.T
 			}
 			assertNoSensitiveAlertRuleLeak(t, recorder.Body.String())
 		})
+	}
+}
+
+func TestNotificationDispatchRequiresEnabledAlertRuleForEvent(t *testing.T) {
+	store, err := OpenSQLiteStore(filepath.Join(t.TempDir(), "zeno.db"))
+	if err != nil {
+		t.Fatalf("open sqlite store: %v", err)
+	}
+	defer store.Close()
+	ctx := context.Background()
+	enabled := true
+	if _, err := store.CreateAdminNotificationChannel(ctx, AdminNotificationChannelCreateRequest{ID: "ops-webhook", Name: "Ops Webhook", Type: "webhook", Destination: "https://example.com/hook", Credential: "dispatch-credential-value", Enabled: &enabled}); err != nil {
+		t.Fatalf("create notification channel: %v", err)
+	}
+	if _, err := store.UpdateAdminNotificationType(ctx, "node_online", AdminNotificationTypeUpdateRequest{Enabled: &enabled}); err != nil {
+		t.Fatalf("enable node_online notification type: %v", err)
+	}
+	label, channels, err := store.EnabledNotificationChannelsForEvent(ctx, "node_online")
+	if err != nil {
+		t.Fatalf("enabled channels before disabling rule: %v", err)
+	}
+	if label != "上线" || len(channels) != 1 {
+		t.Fatalf("channels before disabling rule label=%q len=%d, want one node_online channel", label, len(channels))
+	}
+
+	disabled := false
+	if _, err := store.UpdateAdminAlertRule(ctx, "node_recovered", AdminAlertRuleUpdateRequest{Enabled: &disabled}); err != nil {
+		t.Fatalf("disable node recovered rule: %v", err)
+	}
+	label, channels, err = store.EnabledNotificationChannelsForEvent(ctx, "node_online")
+	if err != nil {
+		t.Fatalf("enabled channels after disabling rule: %v", err)
+	}
+	if label != "上线" || len(channels) != 0 {
+		t.Fatalf("channels after disabling node_recovered rule label=%q len=%d, want no dispatch channels", label, len(channels))
 	}
 }
 

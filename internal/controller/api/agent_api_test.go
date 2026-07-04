@@ -240,6 +240,183 @@ func TestAgentProbeResultsMarksNodeWarningAndDispatchesProbeUnhealthy(t *testing
 	}
 }
 
+func TestAgentProbeResultsUsesAlertRuleThresholdsForSuccessfulHighLatency(t *testing.T) {
+	store, err := OpenSQLiteStore(filepath.Join(t.TempDir(), "zeno.db"))
+	if err != nil {
+		t.Fatalf("open sqlite store: %v", err)
+	}
+	defer store.Close()
+	ctx := context.Background()
+	if err := store.SeedPreviewData(ctx, PreviewSeedOptions{NodeID: "hytron", DisplayName: "Hytron", CountryCode: "HK", AgentToken: "test-agent-token"}); err != nil {
+		t.Fatalf("seed preview data: %v", err)
+	}
+
+	handler := NewHandler(HandlerOptions{Store: store})
+	now := time.Now().UTC().Truncate(time.Second)
+	postAgentHeartbeat(t, handler, now.Unix(), "online")
+
+	payload := []byte(`{"rounds":[{"target_id":"google-dns","ts":` + strconv.FormatInt(now.Add(time.Second).Unix(), 10) + `,"type":"tcping","samples":[{"seq":1,"success":true,"latency_ms":900},{"seq":2,"success":true,"latency_ms":950},{"seq":3,"success":true,"latency_ms":1000}]}]}`)
+	recorder := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodPost, "/api/agent/v1/probe-results", bytes.NewReader(payload))
+	request.Header.Set("X-Node-ID", "hytron")
+	request.Header.Set("Authorization", "Bearer test-agent-token")
+	request.Header.Set("Content-Type", "application/json")
+	handler.ServeHTTP(recorder, request)
+	if recorder.Code != http.StatusAccepted {
+		t.Fatalf("probe results status = %d, want 202; body=%s", recorder.Code, recorder.Body.String())
+	}
+
+	var status string
+	if err := store.db.QueryRowContext(ctx, `SELECT status FROM nodes WHERE id = 'hytron'`).Scan(&status); err != nil {
+		t.Fatalf("query node status: %v", err)
+	}
+	if status != "warning" {
+		t.Fatalf("node status = %q, want warning when enabled probe latency rule threshold is exceeded", status)
+	}
+}
+
+func TestAgentProbeResultsDisabledProbeRulesDoNotWarnOnFailedSamples(t *testing.T) {
+	store, err := OpenSQLiteStore(filepath.Join(t.TempDir(), "zeno.db"))
+	if err != nil {
+		t.Fatalf("open sqlite store: %v", err)
+	}
+	defer store.Close()
+	ctx := context.Background()
+	if err := store.SeedPreviewData(ctx, PreviewSeedOptions{NodeID: "hytron", DisplayName: "Hytron", CountryCode: "HK", AgentToken: "test-agent-token"}); err != nil {
+		t.Fatalf("seed preview data: %v", err)
+	}
+	disabled := false
+	if _, err := store.UpdateAdminAlertRule(ctx, "probe_latency_high", AdminAlertRuleUpdateRequest{Enabled: &disabled}); err != nil {
+		t.Fatalf("disable probe latency rule: %v", err)
+	}
+	if _, err := store.UpdateAdminAlertRule(ctx, "probe_loss_high", AdminAlertRuleUpdateRequest{Enabled: &disabled}); err != nil {
+		t.Fatalf("disable probe loss rule: %v", err)
+	}
+
+	handler := NewHandler(HandlerOptions{Store: store})
+	now := time.Now().UTC().Truncate(time.Second)
+	postAgentHeartbeat(t, handler, now.Unix(), "online")
+
+	payload := []byte(`{"rounds":[{"target_id":"google-dns","ts":` + strconv.FormatInt(now.Add(time.Second).Unix(), 10) + `,"type":"tcping","samples":[{"seq":1,"success":false,"error":"timeout"},{"seq":2,"success":false,"error":"timeout"}]}]}`)
+	recorder := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodPost, "/api/agent/v1/probe-results", bytes.NewReader(payload))
+	request.Header.Set("X-Node-ID", "hytron")
+	request.Header.Set("Authorization", "Bearer test-agent-token")
+	request.Header.Set("Content-Type", "application/json")
+	handler.ServeHTTP(recorder, request)
+	if recorder.Code != http.StatusAccepted {
+		t.Fatalf("probe results status = %d, want 202; body=%s", recorder.Code, recorder.Body.String())
+	}
+
+	var status string
+	if err := store.db.QueryRowContext(ctx, `SELECT status FROM nodes WHERE id = 'hytron'`).Scan(&status); err != nil {
+		t.Fatalf("query node status: %v", err)
+	}
+	if status != "online" {
+		t.Fatalf("node status = %q, want online when probe warning rules are disabled", status)
+	}
+}
+
+func TestAgentStateResourceRuleMarksWarningAndDispatchesProbeUnhealthy(t *testing.T) {
+	store, err := OpenSQLiteStore(filepath.Join(t.TempDir(), "zeno.db"))
+	if err != nil {
+		t.Fatalf("open sqlite store: %v", err)
+	}
+	defer store.Close()
+	ctx := context.Background()
+	if err := store.SeedPreviewData(ctx, PreviewSeedOptions{NodeID: "hytron", DisplayName: "Hytron", CountryCode: "HK", AgentToken: "test-agent-token"}); err != nil {
+		t.Fatalf("seed preview data: %v", err)
+	}
+
+	var captureMu sync.Mutex
+	var webhookBodies []string
+	var webhookErrors []error
+	webhook := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, err := io.ReadAll(r.Body)
+		captureMu.Lock()
+		defer captureMu.Unlock()
+		if err != nil {
+			webhookErrors = append(webhookErrors, err)
+			w.WriteHeader(http.StatusInternalServerError)
+			return
+		}
+		webhookBodies = append(webhookBodies, string(body))
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer webhook.Close()
+	enabled := true
+	if _, err := store.CreateAdminNotificationChannel(ctx, AdminNotificationChannelCreateRequest{ID: "ops-webhook", Name: "Ops Webhook", Type: "webhook", Destination: webhook.URL, Credential: "dispatch-credential-value", Enabled: &enabled}); err != nil {
+		t.Fatalf("create notification channel: %v", err)
+	}
+	if _, err := store.UpdateAdminNotificationType(ctx, "probe_unhealthy", AdminNotificationTypeUpdateRequest{Enabled: &enabled}); err != nil {
+		t.Fatalf("enable probe_unhealthy notification type: %v", err)
+	}
+
+	handler := NewHandler(HandlerOptions{Store: store})
+	now := time.Now().UTC().Truncate(time.Second)
+	postAgentHeartbeat(t, handler, now.Unix(), "online")
+	body := map[string]any{
+		"ts":                  now.Add(time.Second).Unix(),
+		"cpu_percent":         96.5,
+		"memory_used_bytes":   int64(4 * 1024 * 1024 * 1024),
+		"memory_total_bytes":  int64(8 * 1024 * 1024 * 1024),
+		"disk_used_bytes":     int64(40 * 1024 * 1024 * 1024),
+		"disk_total_bytes":    int64(160 * 1024 * 1024 * 1024),
+		"net_in_total_bytes":  int64(1_000_000),
+		"net_out_total_bytes": int64(2_000_000),
+		"net_in_speed_bps":    2048.5,
+		"net_out_speed_bps":   1024.25,
+		"uptime_seconds":      int64(3600),
+	}
+	payload, err := json.Marshal(body)
+	if err != nil {
+		t.Fatalf("marshal state body: %v", err)
+	}
+	recorder := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodPost, "/api/agent/v1/state", bytes.NewReader(payload))
+	request.Header.Set("X-Node-ID", "hytron")
+	request.Header.Set("Authorization", "Bearer test-agent-token")
+	request.Header.Set("Content-Type", "application/json")
+	handler.ServeHTTP(recorder, request)
+	if recorder.Code != http.StatusAccepted {
+		t.Fatalf("state status = %d, want 202; body=%s", recorder.Code, recorder.Body.String())
+	}
+
+	var status string
+	if err := store.db.QueryRowContext(ctx, `SELECT status FROM nodes WHERE id = 'hytron'`).Scan(&status); err != nil {
+		t.Fatalf("query node status: %v", err)
+	}
+	if status != "warning" {
+		t.Fatalf("node status = %q, want warning after enabled CPU rule threshold is exceeded", status)
+	}
+	waitUntil(t, time.Second, func() bool {
+		captureMu.Lock()
+		defer captureMu.Unlock()
+		return len(webhookBodies)+len(webhookErrors) == 1
+	})
+	captureMu.Lock()
+	capturedBodies := append([]string(nil), webhookBodies...)
+	capturedErrors := append([]error(nil), webhookErrors...)
+	captureMu.Unlock()
+	if len(capturedErrors) != 0 {
+		t.Fatalf("webhook handler errors = %+v", capturedErrors)
+	}
+	if len(capturedBodies) != 1 {
+		t.Fatalf("webhook calls = %d, want one resource threshold notification", len(capturedBodies))
+	}
+	var event struct {
+		EventType      string `json:"event_type"`
+		PreviousStatus string `json:"previous_status"`
+		Status         string `json:"status"`
+	}
+	if err := json.Unmarshal([]byte(capturedBodies[0]), &event); err != nil {
+		t.Fatalf("decode webhook event: %v", err)
+	}
+	if event.EventType != "probe_unhealthy" || event.PreviousStatus != "online" || event.Status != "warning" {
+		t.Fatalf("event = %+v, want online -> warning probe_unhealthy payload", event)
+	}
+}
+
 func TestAgentHeartbeatDoesNotClearExistingProbeWarning(t *testing.T) {
 	store, err := OpenSQLiteStore(filepath.Join(t.TempDir(), "zeno.db"))
 	if err != nil {

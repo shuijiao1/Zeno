@@ -391,6 +391,13 @@ HTTP GET 示例：
 
 默认规则覆盖：CPU、内存、磁盘、探测延迟、探测丢包、离线判定、恢复判定。资源/探测类规则映射到 `probe_unhealthy` / 异常；离线规则映射到 `node_offline` / 离线；恢复规则映射到 `node_online` / 上线。
 
+Controller 会在 Agent 上报时实际使用这些规则：
+
+- `/api/agent/v1/state` 会按启用的资源规则评估 `cpu_percent`、内存使用率、磁盘使用率，超过阈值时把节点公共状态置为 `warning` 并进入 `probe_unhealthy` 通知链路。
+- `/api/agent/v1/probe-results` 会按启用的探测规则评估最高中位延迟和最高丢包率；成功但高延迟的探测也能触发 `warning`，禁用对应规则后不会因为该指标触发异常。
+- 资源/探测规则命中状态会记录在 Controller 内部的 `alert_rule_states` 表，用来避免某一类健康上报误清另一类仍活跃的异常；该表不通过 Admin/Public API 暴露。
+- 通知发送同时要求：状态转换存在、对应通知类型启用、至少一条映射到该事件类型的状态规则启用、且存在启用并配置好的通知渠道。
+
 ```json
 {
   "rules": [
@@ -605,14 +612,16 @@ HTTP GET 示例：
 
 ## 通知发送
 
-当前发送逻辑挂在 Agent 心跳状态变化上：
+发送逻辑挂在 Agent 状态变化、资源状态上报和探测结果上报之后：
 
 - `no_data` / `offline` / `warning` → `online`：触发 `node_online`。
 - 非 `offline` → `offline`：触发 `node_offline`。
 - 非 `warning` → `warning`：触发 `probe_unhealthy`。
+- `/api/agent/v1/state` 会依据启用的 CPU/内存/磁盘状态规则触发或保持 `warning`。
+- `/api/agent/v1/probe-results` 会依据启用的探测延迟/丢包规则触发或清除探测类 `warning`。
 - 状态未变化时不重复发送。
 
-发送前同时要求：对应 `notification_types.enabled = 1`，且至少一个 `notification_channels.enabled = 1`。
+发送前同时要求：对应 `alert_rules.enabled = 1`、对应 `notification_types.enabled = 1`，且至少一个 `notification_channels.enabled = 1` 并已配置凭据。显式 `POST /notification-channels/{channel_id}/test` 是管理员手动测试，不受状态规则启用状态影响。
 
 渠道语义：
 

@@ -195,6 +195,16 @@ func (s *SQLiteStore) ensureSchema(ctx context.Context) error {
 			updated_at INTEGER NOT NULL
 		);`,
 		`CREATE INDEX IF NOT EXISTS idx_alert_rules_sort_order ON alert_rules(sort_order ASC, id ASC);`,
+		`CREATE TABLE IF NOT EXISTS alert_rule_states (
+			node_id TEXT NOT NULL REFERENCES nodes(id),
+			rule_id TEXT NOT NULL REFERENCES alert_rules(id),
+			active INTEGER NOT NULL DEFAULT 0,
+			first_seen_at INTEGER,
+			last_seen_at INTEGER,
+			updated_at INTEGER NOT NULL,
+			PRIMARY KEY (node_id, rule_id)
+		);`,
+		`CREATE INDEX IF NOT EXISTS idx_alert_rule_states_node_active ON alert_rule_states(node_id, active);`,
 		`CREATE TABLE IF NOT EXISTS settings (
 			key TEXT PRIMARY KEY,
 			value TEXT NOT NULL,
