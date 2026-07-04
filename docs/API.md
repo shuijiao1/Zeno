@@ -387,7 +387,7 @@ X-Admin-Token: <admin-token>
 
 ### POST /api/admin/v1/nodes
 
-新增服务器。Zeno 的服务器接入流程是先在后台添加服务器并编辑名称/地区/配额等管理字段，然后在该服务器编辑区获取并复制 Agent 安装命令。
+新增服务器。Zeno 的服务器接入流程是先在后台添加服务器并编辑名称/地区/配额等管理字段，然后在该服务器编辑区轮换并复制 Agent 安装命令。
 
 请求：
 
@@ -408,6 +408,8 @@ X-Admin-Token: <admin-token>
 ```
 
 响应返回新节点 DTO，但不会返回 Agent token 原文或 token hash。新节点默认 `status=no_data`，并自动分配当前启用的探针目标。`billing_mode` 可选 `both`、`in`、`out`、`max`，默认 `both`；`monthly_reset_day` 范围 1–31，默认 1。`expiry_date` 为空时清空到期日；非空时必须是 `YYYY-MM-DD`。`display_order` 必须是非负整数；`public_ipv4` / `public_ipv6` 为空可省略，非空时会校验 IP 版本。
+
+安装命令生成会轮换该服务器的 Agent token；已在线服务器必须执行新命令后才会继续上报。后台 UI 对在线服务器生成命令前会二次确认，并提供复制按钮。
 
 ### PATCH /api/admin/v1/nodes/{node_id}
 

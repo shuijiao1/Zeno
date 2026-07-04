@@ -1218,6 +1218,11 @@ function AdminNodeEditModal({ node, onUpdate, onInstallCommand, onClose }: { nod
   }
 
   const handleInstallCommand = () => {
+    const shouldConfirmRotation = !node.disabled && node.status !== 'no_data'
+    if (shouldConfirmRotation) {
+      const ok = typeof window === 'undefined' ? true : window.confirm('生成安装命令会轮换该服务器的 Agent Token；当前 Agent 需要用新命令重新安装后才会继续上报。确认继续？')
+      if (!ok) return
+    }
     setInstallCommandState({ kind: 'loading' })
     setInstallCopyState({ kind: 'idle' })
     onInstallCommand(node.id)
@@ -1299,10 +1304,11 @@ function AdminNodeEditModal({ node, onUpdate, onInstallCommand, onClose }: { nod
         </label>
         <div className="admin-modal-actions">
           <button type="submit">保存服务器</button>
-          <button type="button" onClick={handleInstallCommand} disabled={installCommandState.kind === 'loading'}>{installCommandState.kind === 'loading' ? '生成中…' : '获取安装命令'}</button>
+          <button type="button" onClick={handleInstallCommand} disabled={installCommandState.kind === 'loading'}>{installCommandState.kind === 'loading' ? '生成中…' : '轮换并生成安装命令'}</button>
           <button type="button" onClick={handleCopyInstallCommand} disabled={installCommandState.kind !== 'ready'}>复制安装命令</button>
         </div>
       </form>
+      <p className="admin-overview-note">安装命令会轮换该服务器的 Agent Token；已在线服务器执行新命令前会停止上报。</p>
       {installCommandState.kind === 'ready' && (
         <textarea className="admin-install-command" aria-label={`${node.displayName} Agent 安装命令`} readOnly value={installCommandState.command} />
       )}
