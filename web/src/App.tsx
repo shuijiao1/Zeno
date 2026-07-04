@@ -1196,6 +1196,7 @@ function AdminNodeCreateModal({ onCreate, onClose }: { onCreate: (input: AdminNo
 
 function AdminNodeEditModal({ node, onUpdate, onInstallCommand, onClose }: { node: AdminNode; onUpdate: (nodeId: string, input: AdminNodeUpdateInput) => void; onInstallCommand: (nodeId: string) => Promise<string>; onClose: () => void }) {
   const [installCommandState, setInstallCommandState] = useState<{ kind: 'idle' } | { kind: 'loading' } | { kind: 'ready'; command: string } | { kind: 'error'; message: string }>({ kind: 'idle' })
+  const [installCopyState, setInstallCopyState] = useState<{ kind: 'idle' } | { kind: 'ready'; message: string } | { kind: 'error'; message: string }>({ kind: 'idle' })
 
   const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
@@ -1218,9 +1219,17 @@ function AdminNodeEditModal({ node, onUpdate, onInstallCommand, onClose }: { nod
 
   const handleInstallCommand = () => {
     setInstallCommandState({ kind: 'loading' })
+    setInstallCopyState({ kind: 'idle' })
     onInstallCommand(node.id)
       .then((command) => setInstallCommandState({ kind: 'ready', command }))
       .catch((error: unknown) => setInstallCommandState({ kind: 'error', message: error instanceof Error ? error.message : 'unknown error' }))
+  }
+
+  const handleCopyInstallCommand = () => {
+    if (installCommandState.kind !== 'ready') return
+    copyTextToClipboard(installCommandState.command)
+      .then(() => setInstallCopyState({ kind: 'ready', message: '安装命令已复制。' }))
+      .catch((error: unknown) => setInstallCopyState({ kind: 'error', message: error instanceof Error ? error.message : '复制失败，请手动选中复制。' }))
   }
 
   return (
@@ -1291,11 +1300,13 @@ function AdminNodeEditModal({ node, onUpdate, onInstallCommand, onClose }: { nod
         <div className="admin-modal-actions">
           <button type="submit">保存服务器</button>
           <button type="button" onClick={handleInstallCommand} disabled={installCommandState.kind === 'loading'}>{installCommandState.kind === 'loading' ? '生成中…' : '获取安装命令'}</button>
+          <button type="button" onClick={handleCopyInstallCommand} disabled={installCommandState.kind !== 'ready'}>复制安装命令</button>
         </div>
       </form>
       {installCommandState.kind === 'ready' && (
         <textarea className="admin-install-command" aria-label={`${node.displayName} Agent 安装命令`} readOnly value={installCommandState.command} />
       )}
+      {installCopyState.kind !== 'idle' && <div className={`admin-install-error${installCopyState.kind === 'ready' ? ' is-success' : ''}`}>{installCopyState.message}</div>}
       {installCommandState.kind === 'error' && <div className="admin-install-error">安装命令生成失败：{installCommandState.message}</div>}
     </AdminModal>
   )
@@ -2209,6 +2220,13 @@ function parseNonNegativeInt(value: string): number | null {
   const parsed = Number(trimmed)
   if (!Number.isInteger(parsed) || parsed < 0) return null
   return parsed
+}
+
+function copyTextToClipboard(text: string): Promise<void> {
+  if (typeof navigator === 'undefined' || !navigator.clipboard?.writeText) {
+    return Promise.reject(new Error('当前浏览器不支持自动复制，请手动选中复制。'))
+  }
+  return navigator.clipboard.writeText(text)
 }
 
 function parseMonthlyResetDay(value: string): number | null {

@@ -670,6 +670,7 @@ svg { display: block; }
   resize: vertical;
 }
 .admin-install-error { margin-top: 10px; color: var(--red); font-size: 13px; font-weight: 600; }
+.admin-install-error.is-success { color: var(--green); }
 .admin-notification-block { margin-top: 14px; }
 .admin-notification-block h4 { margin: 0 0 10px; font-size: 15px; font-weight: 600; }
 .admin-notification-type-grid {
