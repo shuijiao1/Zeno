@@ -737,6 +737,12 @@ export function AdminDashboard({
   const ruleCount = adminState.kind === 'ready' ? adminState.alertRules.length : 0
   const enabledRuleCount = adminState.kind === 'ready' ? adminState.alertRules.filter((rule) => rule.enabled).length : 0
   const activeIssueCount = adminState.kind === 'ready' ? adminState.alertRuleStates.filter((state) => state.active).length : 0
+  const notificationChannelCount = adminState.kind === 'ready' ? adminState.notificationChannels.length : 0
+  const enabledNotificationChannelCount = adminState.kind === 'ready' ? adminState.notificationChannels.filter((channel) => channel.enabled).length : 0
+  const notificationTypeCount = adminState.kind === 'ready' ? adminState.notificationTypes.length : 0
+  const enabledNotificationTypeCount = adminState.kind === 'ready' ? adminState.notificationTypes.filter((notificationType) => notificationType.enabled).length : 0
+  const notificationDeliveryCount = adminState.kind === 'ready' ? adminState.notificationDeliveries.length : 0
+  const failedNotificationDeliveryCount = adminState.kind === 'ready' ? adminState.notificationDeliveries.filter((delivery) => !delivery.success).length : 0
   const maintenanceCandidateCount = adminState.kind === 'ready' ? totalMaintenanceCandidates(adminState.maintenance.candidates) : 0
 
   return (
@@ -821,6 +827,12 @@ export function AdminDashboard({
                 ruleCount={ruleCount}
                 enabledRuleCount={enabledRuleCount}
                 activeIssueCount={activeIssueCount}
+                notificationChannelCount={notificationChannelCount}
+                enabledNotificationChannelCount={enabledNotificationChannelCount}
+                notificationTypeCount={notificationTypeCount}
+                enabledNotificationTypeCount={enabledNotificationTypeCount}
+                notificationDeliveryCount={notificationDeliveryCount}
+                failedNotificationDeliveryCount={failedNotificationDeliveryCount}
               />
             )}
 
@@ -911,7 +923,7 @@ function AdminSectionNav({ activeSection, onSectionChange, nodeCount, targetCoun
   )
 }
 
-function AdminOverviewPanel({ nodeCount, onlineNodeCount, targetCount, enabledTargetCount, ruleCount, enabledRuleCount, activeIssueCount }: { nodeCount: number; onlineNodeCount: number; targetCount: number; enabledTargetCount: number; ruleCount: number; enabledRuleCount: number; activeIssueCount: number }) {
+function AdminOverviewPanel({ nodeCount, onlineNodeCount, targetCount, enabledTargetCount, ruleCount, enabledRuleCount, activeIssueCount, notificationChannelCount, enabledNotificationChannelCount, notificationTypeCount, enabledNotificationTypeCount, notificationDeliveryCount, failedNotificationDeliveryCount }: { nodeCount: number; onlineNodeCount: number; targetCount: number; enabledTargetCount: number; ruleCount: number; enabledRuleCount: number; activeIssueCount: number; notificationChannelCount: number; enabledNotificationChannelCount: number; notificationTypeCount: number; enabledNotificationTypeCount: number; notificationDeliveryCount: number; failedNotificationDeliveryCount: number }) {
   return (
     <section className="admin-overview-panel" aria-label="admin overview">
       <div className="admin-action-grid" aria-label="admin modules">
@@ -934,11 +946,18 @@ function AdminOverviewPanel({ nodeCount, onlineNodeCount, targetCount, enabledTa
         </article>
         <article className="admin-action-card">
           <p>通知渠道</p>
-          <strong>Telegram-only</strong>
+          <strong>{enabledNotificationChannelCount} / {notificationChannelCount} 启用</strong>
+          <small>Telegram-only</small>
         </article>
         <article className="admin-action-card">
           <p>通知类型</p>
-          <strong>上线 / 离线 / 异常</strong>
+          <strong>{enabledNotificationTypeCount} / {notificationTypeCount} 启用</strong>
+          <small>上线 / 离线 / 异常</small>
+        </article>
+        <article className={`admin-action-card ${failedNotificationDeliveryCount > 0 ? 'is-warning' : 'is-good'}`}>
+          <p>最近通知</p>
+          <strong>{failedNotificationDeliveryCount} 失败 / {notificationDeliveryCount} 记录</strong>
+          <small>{failedNotificationDeliveryCount > 0 ? '进入通知页查看发送结果' : '最近发送没有失败记录'}</small>
         </article>
       </div>
       <p className="admin-overview-note">从上方导航进入具体模块；列表页只显示关键状态，所有编辑动作都在弹窗中完成。</p>
