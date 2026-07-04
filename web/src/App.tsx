@@ -1,5 +1,5 @@
 import { type CSSProperties, type FormEvent, type ReactNode, useEffect, useState } from 'react'
-import { createAdminNode, createAdminNotificationChannel, createAdminProbeTarget, deleteAdminNotificationChannel, deleteAdminProbeTarget, fetchAdminAlertRules, fetchAdminAlertRuleStates, fetchAdminNodes, fetchAdminNotificationChannels, fetchAdminNotificationDeliveries, fetchAdminNotificationTypes, fetchAdminProbeTargets, fetchAdminSettings, fetchNodeLatency, fetchNodeState, fetchPublicSettings, fetchServiceLatency, fetchSummary, loginAdmin, logoutAdmin, requestAdminNodeInstallCommand, testAdminNotificationChannel, updateAdminAlertRule, updateAdminNode, updateAdminNotificationChannel, updateAdminNotificationType, updateAdminPassword, updateAdminProbeTarget, updateAdminSettings, type AdminAlertRuleUpdateInput, type AdminNodeCreateInput, type AdminNodeUpdateInput, type AdminNotificationChannelCreateInput, type AdminNotificationChannelUpdateInput, type AdminProbeTargetInput, type AdminProbeTargetUpdateInput, type AdminSettingsUpdateInput, type NodeLatencyData, type NodeStateData, type ServiceLatencyData, type SummaryData } from './api/client'
+import { createAdminNode, createAdminNotificationChannel, createAdminProbeTarget, deleteAdminNotificationChannel, deleteAdminProbeTarget, fetchAdminAccount, fetchAdminAlertRules, fetchAdminAlertRuleStates, fetchAdminNodes, fetchAdminNotificationChannels, fetchAdminNotificationDeliveries, fetchAdminNotificationTypes, fetchAdminProbeTargets, fetchAdminSettings, fetchNodeLatency, fetchNodeState, fetchPublicSettings, fetchServiceLatency, fetchSummary, loginAdmin, logoutAdmin, requestAdminNodeInstallCommand, testAdminNotificationChannel, updateAdminAccount, updateAdminAlertRule, updateAdminNode, updateAdminNotificationChannel, updateAdminNotificationType, updateAdminProbeTarget, updateAdminSettings, type AdminAccountData, type AdminAlertRuleUpdateInput, type AdminNodeCreateInput, type AdminNodeUpdateInput, type AdminNotificationChannelCreateInput, type AdminNotificationChannelUpdateInput, type AdminProbeTargetInput, type AdminProbeTargetUpdateInput, type AdminSettingsUpdateInput, type NodeLatencyData, type NodeStateData, type ServiceLatencyData, type SummaryData } from './api/client'
 import { LatencyDetail } from './components/LatencyDetail'
 import { LatencyChart } from './components/LatencyChart'
 import { ServerCard } from './components/ServerCard'
@@ -33,7 +33,7 @@ type ServiceLatencyLoadState =
 type AdminLoadState =
   | { kind: 'idle' }
   | { kind: 'loading' }
-  | { kind: 'ready'; nodes: AdminNode[]; targets: AdminProbeTarget[]; notificationChannels: AdminNotificationChannel[]; notificationTypes: AdminNotificationType[]; notificationDeliveries: AdminNotificationDelivery[]; alertRules: AdminAlertRule[]; alertRuleStates: AdminAlertRuleState[] }
+  | { kind: 'ready'; account: AdminAccountData; nodes: AdminNode[]; targets: AdminProbeTarget[]; notificationChannels: AdminNotificationChannel[]; notificationTypes: AdminNotificationType[]; notificationDeliveries: AdminNotificationDelivery[]; alertRules: AdminAlertRule[]; alertRuleStates: AdminAlertRuleState[] }
   | { kind: 'error'; message: string }
 
 type AdminAuthState =
@@ -41,7 +41,7 @@ type AdminAuthState =
   | { kind: 'loading' }
   | { kind: 'error'; message: string }
 
-type AdminSection = 'nodes' | 'targets' | 'settings' | 'notifications'
+type AdminSection = 'nodes' | 'targets' | 'notifications' | 'account' | 'settings'
 type AdminTargetSort = 'order' | 'name' | 'status' | 'type' | 'assignments'
 
 function sum(values: Array<number | null | undefined>): number {
@@ -306,12 +306,12 @@ export function App() {
     let loadedOnce = false
     const loadAdminNodes = () => {
       if (!loadedOnce) setAdminState({ kind: 'loading' })
-      Promise.all([fetchAdminSettings(adminToken), fetchAdminNodes(adminToken), fetchAdminProbeTargets(adminToken), fetchAdminNotificationChannels(adminToken), fetchAdminNotificationTypes(adminToken), fetchAdminNotificationDeliveries(adminToken), fetchAdminAlertRules(adminToken), fetchAdminAlertRuleStates(adminToken)])
-        .then(([settingsData, nodesData, targetsData, channelsData, typesData, deliveriesData, alertRulesData, alertRuleStatesData]) => {
+      Promise.all([fetchAdminSettings(adminToken), fetchAdminAccount(adminToken), fetchAdminNodes(adminToken), fetchAdminProbeTargets(adminToken), fetchAdminNotificationChannels(adminToken), fetchAdminNotificationTypes(adminToken), fetchAdminNotificationDeliveries(adminToken), fetchAdminAlertRules(adminToken), fetchAdminAlertRuleStates(adminToken)])
+        .then(([settingsData, accountData, nodesData, targetsData, channelsData, typesData, deliveriesData, alertRulesData, alertRuleStatesData]) => {
           loadedOnce = true
           if (!cancelled) {
             setSettings(settingsData)
-            setAdminState({ kind: 'ready', nodes: nodesData.nodes, targets: targetsData.targets, notificationChannels: channelsData.channels, notificationTypes: typesData.types, notificationDeliveries: deliveriesData.deliveries, alertRules: alertRulesData.rules, alertRuleStates: alertRuleStatesData.states })
+            setAdminState({ kind: 'ready', account: accountData, nodes: nodesData.nodes, targets: targetsData.targets, notificationChannels: channelsData.channels, notificationTypes: typesData.types, notificationDeliveries: deliveriesData.deliveries, alertRules: alertRulesData.rules, alertRuleStates: alertRuleStatesData.states })
           }
         })
         .catch((error: unknown) => {
@@ -354,21 +354,22 @@ export function App() {
     setAdminState({ kind: 'idle' })
   }
 
-  const updateAdminPasswordDetails = (currentPassword: string, newPassword: string): Promise<void> => {
+  const updateAdminAccountDetails = (username: string, currentPassword: string, newPassword: string): Promise<void> => {
     if (adminToken === '') return Promise.reject(new Error('missing admin token'))
-    return updateAdminPassword(adminToken, currentPassword, newPassword).then((session) => {
+    return updateAdminAccount(adminToken, username, currentPassword, newPassword).then((session) => {
       window.sessionStorage.setItem('zeno_admin_token', session.token)
       setAdminToken(session.token)
+      setAdminState((current) => current.kind === 'ready' ? { ...current, account: { username: session.username } } : current)
     })
   }
 
   const refreshAdminNodes = () => {
     if (adminToken === '') return
     setAdminState({ kind: 'loading' })
-    Promise.all([fetchAdminSettings(adminToken), fetchAdminNodes(adminToken), fetchAdminProbeTargets(adminToken), fetchAdminNotificationChannels(adminToken), fetchAdminNotificationTypes(adminToken), fetchAdminNotificationDeliveries(adminToken), fetchAdminAlertRules(adminToken), fetchAdminAlertRuleStates(adminToken)])
-      .then(([settingsData, nodesData, targetsData, channelsData, typesData, deliveriesData, alertRulesData, alertRuleStatesData]) => {
+    Promise.all([fetchAdminSettings(adminToken), fetchAdminAccount(adminToken), fetchAdminNodes(adminToken), fetchAdminProbeTargets(adminToken), fetchAdminNotificationChannels(adminToken), fetchAdminNotificationTypes(adminToken), fetchAdminNotificationDeliveries(adminToken), fetchAdminAlertRules(adminToken), fetchAdminAlertRuleStates(adminToken)])
+      .then(([settingsData, accountData, nodesData, targetsData, channelsData, typesData, deliveriesData, alertRulesData, alertRuleStatesData]) => {
         setSettings(settingsData)
-        setAdminState({ kind: 'ready', nodes: nodesData.nodes, targets: targetsData.targets, notificationChannels: channelsData.channels, notificationTypes: typesData.types, notificationDeliveries: deliveriesData.deliveries, alertRules: alertRulesData.rules, alertRuleStates: alertRuleStatesData.states })
+        setAdminState({ kind: 'ready', account: accountData, nodes: nodesData.nodes, targets: targetsData.targets, notificationChannels: channelsData.channels, notificationTypes: typesData.types, notificationDeliveries: deliveriesData.deliveries, alertRules: alertRulesData.rules, alertRuleStates: alertRuleStatesData.states })
       })
       .catch((error: unknown) => setAdminState({ kind: 'error', message: error instanceof Error ? error.message : 'unknown error' }))
   }
@@ -381,7 +382,7 @@ export function App() {
           if (current.kind === 'ready') {
             return { ...current, nodes: sortAdminNodes([...current.nodes, createdNode]) }
           }
-          return { kind: 'ready', nodes: [createdNode], targets: [], notificationChannels: [], notificationTypes: [], notificationDeliveries: [], alertRules: [], alertRuleStates: [] }
+          return { kind: 'ready', account: { username: 'admin' }, nodes: [createdNode], targets: [], notificationChannels: [], notificationTypes: [], notificationDeliveries: [], alertRules: [], alertRuleStates: [] }
         })
       })
       .catch((error: unknown) => setAdminState({ kind: 'error', message: error instanceof Error ? error.message : 'unknown error' }))
@@ -404,7 +405,7 @@ export function App() {
               alertRuleStates: reconcileAlertRuleStatesForNode(updatedNode, current.alertRuleStates, current.alertRules),
             }
           }
-          return { kind: 'ready', nodes: [updatedNode], targets: [], notificationChannels: [], notificationTypes: [], notificationDeliveries: [], alertRules: [], alertRuleStates: [] }
+          return { kind: 'ready', account: { username: 'admin' }, nodes: [updatedNode], targets: [], notificationChannels: [], notificationTypes: [], notificationDeliveries: [], alertRules: [], alertRuleStates: [] }
         })
       })
       .catch((error: unknown) => setAdminState({ kind: 'error', message: error instanceof Error ? error.message : 'unknown error' }))
@@ -418,7 +419,7 @@ export function App() {
           if (current.kind === 'ready') {
             return { ...current, targets: sortAdminProbeTargets([...current.targets, createdTarget], 'order') }
           }
-          return { kind: 'ready', nodes: [], targets: [createdTarget], notificationChannels: [], notificationTypes: [], notificationDeliveries: [], alertRules: [], alertRuleStates: [] }
+          return { kind: 'ready', account: { username: 'admin' }, nodes: [], targets: [createdTarget], notificationChannels: [], notificationTypes: [], notificationDeliveries: [], alertRules: [], alertRuleStates: [] }
         })
       })
       .catch((error: unknown) => setAdminState({ kind: 'error', message: error instanceof Error ? error.message : 'unknown error' }))
@@ -432,7 +433,7 @@ export function App() {
           if (current.kind === 'ready') {
             return { ...current, targets: sortAdminProbeTargets(current.targets.map((target) => target.id === updatedTarget.id ? updatedTarget : target), 'order') }
           }
-          return { kind: 'ready', nodes: [], targets: [updatedTarget], notificationChannels: [], notificationTypes: [], notificationDeliveries: [], alertRules: [], alertRuleStates: [] }
+          return { kind: 'ready', account: { username: 'admin' }, nodes: [], targets: [updatedTarget], notificationChannels: [], notificationTypes: [], notificationDeliveries: [], alertRules: [], alertRuleStates: [] }
         })
       })
       .catch((error: unknown) => setAdminState({ kind: 'error', message: error instanceof Error ? error.message : 'unknown error' }))
@@ -459,7 +460,7 @@ export function App() {
           if (current.kind === 'ready') {
             return { ...current, notificationChannels: [...current.notificationChannels, createdChannel] }
           }
-          return { kind: 'ready', nodes: [], targets: [], notificationChannels: [createdChannel], notificationTypes: [], notificationDeliveries: [], alertRules: [], alertRuleStates: [] }
+          return { kind: 'ready', account: { username: 'admin' }, nodes: [], targets: [], notificationChannels: [createdChannel], notificationTypes: [], notificationDeliveries: [], alertRules: [], alertRuleStates: [] }
         })
       })
       .catch((error: unknown) => setAdminState({ kind: 'error', message: error instanceof Error ? error.message : 'unknown error' }))
@@ -473,7 +474,7 @@ export function App() {
           if (current.kind === 'ready') {
             return { ...current, notificationChannels: current.notificationChannels.map((channel) => channel.id === updatedChannel.id ? updatedChannel : channel) }
           }
-          return { kind: 'ready', nodes: [], targets: [], notificationChannels: [updatedChannel], notificationTypes: [], notificationDeliveries: [], alertRules: [], alertRuleStates: [] }
+          return { kind: 'ready', account: { username: 'admin' }, nodes: [], targets: [], notificationChannels: [updatedChannel], notificationTypes: [], notificationDeliveries: [], alertRules: [], alertRuleStates: [] }
         })
       })
       .catch((error: unknown) => setAdminState({ kind: 'error', message: error instanceof Error ? error.message : 'unknown error' }))
@@ -511,7 +512,7 @@ export function App() {
           if (current.kind === 'ready') {
             return { ...current, notificationTypes: current.notificationTypes.map((notificationType) => notificationType.eventType === updatedType.eventType ? updatedType : notificationType) }
           }
-          return { kind: 'ready', nodes: [], targets: [], notificationChannels: [], notificationTypes: [updatedType], notificationDeliveries: [], alertRules: [], alertRuleStates: [] }
+          return { kind: 'ready', account: { username: 'admin' }, nodes: [], targets: [], notificationChannels: [], notificationTypes: [updatedType], notificationDeliveries: [], alertRules: [], alertRuleStates: [] }
         })
       })
       .catch((error: unknown) => setAdminState({ kind: 'error', message: error instanceof Error ? error.message : 'unknown error' }))
@@ -529,7 +530,7 @@ export function App() {
               alertRuleStates: reconcileAlertRuleStates(updatedRule, current.alertRuleStates),
             }
           }
-          return { kind: 'ready', nodes: [], targets: [], notificationChannels: [], notificationTypes: [], notificationDeliveries: [], alertRules: [updatedRule], alertRuleStates: [] }
+          return { kind: 'ready', account: { username: 'admin' }, nodes: [], targets: [], notificationChannels: [], notificationTypes: [], notificationDeliveries: [], alertRules: [updatedRule], alertRuleStates: [] }
         })
       })
       .catch((error: unknown) => setAdminState({ kind: 'error', message: error instanceof Error ? error.message : 'unknown error' }))
@@ -589,7 +590,7 @@ export function App() {
           adminState={adminState}
           onAdminLogin={submitAdminLogin}
           onAdminTokenClear={clearAdminToken}
-          onAdminPasswordUpdate={updateAdminPasswordDetails}
+          onAdminAccountUpdate={updateAdminAccountDetails}
           onAdminRefresh={refreshAdminNodes}
           onAdminNodeCreate={createAdminNodeDetails}
           onAdminNodeUpdate={updateAdminNodeDetails}
@@ -816,7 +817,7 @@ interface AdminDashboardProps {
   initialSection?: AdminSection
   onAdminLogin?: (username: string, password: string) => void
   onAdminTokenClear?: () => void
-  onAdminPasswordUpdate?: (currentPassword: string, newPassword: string) => Promise<void>
+  onAdminAccountUpdate?: (username: string, currentPassword: string, newPassword: string) => Promise<void>
   onAdminRefresh?: () => void
   onAdminNodeCreate?: (input: AdminNodeCreateInput) => void
   onAdminNodeUpdate?: (nodeId: string, input: AdminNodeUpdateInput) => void
@@ -842,7 +843,7 @@ export function AdminDashboard({
   initialSection = 'nodes',
   onAdminLogin = () => {},
   onAdminTokenClear = () => {},
-  onAdminPasswordUpdate = () => Promise.reject(new Error('password update unavailable')),
+  onAdminAccountUpdate = () => Promise.reject(new Error('account update unavailable')),
   onAdminRefresh = () => {},
   onAdminNodeCreate = () => {},
   onAdminNodeUpdate = () => {},
@@ -859,8 +860,6 @@ export function AdminDashboard({
   onAdminSettingsUpdate = () => {},
 }: AdminDashboardProps) {
   const [activeSection, setActiveSection] = useState<AdminSection>(initialSection)
-  const [passwordModalOpen, setPasswordModalOpen] = useState(false)
-
   const handleTokenSubmit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
     const form = event.currentTarget
@@ -912,17 +911,9 @@ export function AdminDashboard({
               />
               <div className="admin-section-actions">
                 <button type="button" onClick={onAdminRefresh}>刷新</button>
-                <button type="button" onClick={() => setPasswordModalOpen(true)}>修改密码</button>
                 <button type="button" onClick={onAdminTokenClear}>退出</button>
               </div>
             </div>
-
-            {passwordModalOpen && (
-              <AdminPasswordModal
-                onClose={() => setPasswordModalOpen(false)}
-                onUpdate={onAdminPasswordUpdate}
-              />
-            )}
 
             {adminState.kind === 'loading' && <div className="admin-state-card">正在读取 Admin API…</div>}
             {adminState.kind === 'error' && <div className="admin-state-card is-error">Admin API 读取失败：{adminState.message}</div>}
@@ -944,6 +935,10 @@ export function AdminDashboard({
                 onUpdate={onAdminProbeTargetUpdate}
                 onDelete={onAdminProbeTargetDelete}
               />
+            )}
+
+            {adminState.kind === 'ready' && activeSection === 'account' && (
+              <AdminAccountSection account={adminState.account} onUpdate={onAdminAccountUpdate} />
             )}
 
             {adminState.kind === 'ready' && activeSection === 'settings' && (
@@ -978,6 +973,7 @@ function AdminSectionNav({ activeSection, onSectionChange, nodeCount, targetCoun
     { id: 'nodes', label: '服务器', meta: `${nodeCount} 台` },
     { id: 'targets', label: '延迟监控', meta: `${targetCount} 个目标` },
     { id: 'notifications', label: '通知', meta: activeIssueCount > 0 ? `${activeIssueCount} 异常 / ${ruleCount} 类型` : 'Channels' },
+    { id: 'account', label: '账户', meta: 'Account' },
     { id: 'settings', label: '设置', meta: 'Appearance' },
   ]
 
@@ -998,18 +994,27 @@ function AdminSectionNav({ activeSection, onSectionChange, nodeCount, targetCoun
   )
 }
 
-function AdminPasswordModal({ onClose, onUpdate }: { onClose: () => void; onUpdate: (currentPassword: string, newPassword: string) => Promise<void> }) {
+function AdminAccountSection({ account, onUpdate }: { account: AdminAccountData; onUpdate: (username: string, currentPassword: string, newPassword: string) => Promise<void> }) {
   const [message, setMessage] = useState<{ kind: 'error' | 'success'; text: string } | null>(null)
   const [submitting, setSubmitting] = useState(false)
 
   const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
     const formData = new FormData(event.currentTarget)
+    const username = String(formData.get('account-username') ?? '').trim()
     const currentPassword = String(formData.get('current-password') ?? '').trim()
     const newPassword = String(formData.get('new-password') ?? '').trim()
     const confirmPassword = String(formData.get('confirm-password') ?? '').trim()
-    if (newPassword.length < 8) {
-      setMessage({ kind: 'error', text: '新密码至少 8 位。' })
+    if (!validAdminAccountUsername(username)) {
+      setMessage({ kind: 'error', text: '账号只能使用 3-64 位字母、数字、点、短横线或下划线。' })
+      return
+    }
+    if (currentPassword === '') {
+      setMessage({ kind: 'error', text: '请输入当前密码确认修改。' })
+      return
+    }
+    if (newPassword !== '' && newPassword.length < 8) {
+      setMessage({ kind: 'error', text: '新密码至少 8 位；不改密码可留空。' })
       return
     }
     if (newPassword !== confirmPassword) {
@@ -1018,37 +1023,48 @@ function AdminPasswordModal({ onClose, onUpdate }: { onClose: () => void; onUpda
     }
     setSubmitting(true)
     setMessage(null)
-    onUpdate(currentPassword, newPassword)
-      .then(() => {
-        setMessage({ kind: 'success', text: '密码已更新。' })
-        setTimeout(onClose, 650)
-      })
-      .catch((error: unknown) => setMessage({ kind: 'error', text: error instanceof Error ? error.message : '密码更新失败。' }))
+    onUpdate(username, currentPassword, newPassword)
+      .then(() => setMessage({ kind: 'success', text: '账户已更新。' }))
+      .catch((error: unknown) => setMessage({ kind: 'error', text: error instanceof Error ? error.message : '账户更新失败。' }))
       .finally(() => setSubmitting(false))
   }
 
   return (
-    <AdminModal title="修改密码" eyebrow="Account" onClose={onClose}>
-      <form className="admin-password-form admin-node-edit-form" aria-label="修改后台密码" onSubmit={handleSubmit}>
+    <section className="admin-account-section admin-workspace-panel" aria-label="账户设置">
+      <header className="admin-section-heading">
+        <div>
+          <p className="eyebrow">Account</p>
+          <h3>账户</h3>
+        </div>
+      </header>
+      <form className="admin-account-form admin-node-edit-form" aria-label="修改账号和密码" onSubmit={handleSubmit}>
+        <label>
+          <span>账号</span>
+          <input name="account-username" autoComplete="username" defaultValue={account.username} />
+        </label>
         <label>
           <span>当前密码</span>
           <input name="current-password" type="password" autoComplete="current-password" />
         </label>
         <label>
           <span>新密码</span>
-          <input name="new-password" type="password" autoComplete="new-password" />
+          <input name="new-password" type="password" autoComplete="new-password" placeholder="留空则不修改" />
         </label>
         <label>
           <span>确认新密码</span>
-          <input name="confirm-password" type="password" autoComplete="new-password" />
+          <input name="confirm-password" type="password" autoComplete="new-password" placeholder="留空则不修改" />
         </label>
         <div className="admin-modal-actions">
-          <button type="submit" disabled={submitting}>{submitting ? '保存中…' : '保存密码'}</button>
+          <button type="submit" disabled={submitting}>{submitting ? '保存中…' : '保存账户'}</button>
         </div>
         {message && <p className={`admin-install-error${message.kind === 'success' ? ' is-success' : ''}`}>{message.text}</p>}
       </form>
-    </AdminModal>
+    </section>
   )
+}
+
+function validAdminAccountUsername(username: string): boolean {
+  return /^[A-Za-z0-9._-]{3,64}$/.test(username.trim())
 }
 
 function AdminSettingsSection({ settings, onUpdate }: { settings: AdminSettings; onUpdate: (input: AdminSettingsUpdateInput) => void }) {
@@ -2380,8 +2396,16 @@ export function HomeOverviewPanel({ settings = defaultSettings, totalCount, onli
           <p className="eyebrow">Zeno Overview</p>
           <h1>服务器运行概览</h1>
           {settings.siteSubtitle && settings.siteSubtitle !== '服务器运行概览' && <p className="home-summary__subtitle">{settings.siteSubtitle}</p>}
+          <div className="home-summary__meta" aria-label="服务器在线摘要">
+            <span>{totalCount} 台服务器</span>
+            <span>{onlineRatio}% 在线率</span>
+            <span>{nonOnlineCount} 台未在线</span>
+          </div>
         </div>
-        <span className={`home-health-pill ${healthTone}`}>{healthLabel}</span>
+        <div className="home-summary__status">
+          <span className={`home-health-pill ${healthTone}`}>{healthLabel}</span>
+          <small>实时上报</small>
+        </div>
       </div>
 
       <div className="home-summary__compact">
@@ -2393,7 +2417,10 @@ export function HomeOverviewPanel({ settings = defaultSettings, totalCount, onli
           <div className="home-health-bar" aria-label={`在线率 ${onlineRatio}%`}>
             <span style={{ transform: `scaleX(${onlineRatio / 100})` }} />
           </div>
-          <p>{healthLabel} · 在线率 {onlineRatio}%</p>
+          <div className="home-health-breakdown">
+            <span>在线 {onlineCount}</span>
+            <span>未在线 {nonOnlineCount}</span>
+          </div>
         </div>
 
         <dl className="home-network-grid" aria-label="traffic totals and speeds">

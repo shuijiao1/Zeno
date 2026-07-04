@@ -21,9 +21,11 @@ X-Agent-Version: <version>
 
 Admin 登录：
 
-- `POST /api/admin/v1/login` 使用单管理员账号 `admin` + 密码换取 opaque session token。
+- `POST /api/admin/v1/login` 使用单管理员账号（默认 `admin`，可在后台账户页修改）+ 密码换取 opaque session token。
 - 后续 Admin API 继续通过 `X-Admin-Token: <session-token>` 调用；兼容首次部署时的 bootstrap admin token。
-- `POST /api/admin/v1/password` 修改密码后会轮换 session，并让旧 bootstrap token 不再作为后台 API 凭据使用。
+- `GET /api/admin/v1/account` 返回当前单管理员账号。
+- `POST /api/admin/v1/account` 修改账号和可选新密码，会轮换 session；改过账号或密码后，旧 bootstrap token 不再作为后台 API 凭据使用。
+- `POST /api/admin/v1/password` 保留为只改密码接口，同样会轮换 session。
 - `POST /api/admin/v1/logout` 注销当前 session。
 - 登录失败有内存限速，避免暴力尝试。
 
@@ -44,6 +46,44 @@ Admin 登录：
   "token": "opaque-session-token"
 }
 ```
+
+### GET /api/admin/v1/account
+
+请求头：
+
+```http
+X-Admin-Token: <session-token>
+```
+
+响应：
+
+```json
+{
+  "account": {
+    "username": "admin"
+  }
+}
+```
+
+### POST /api/admin/v1/account
+
+请求头：
+
+```http
+X-Admin-Token: <session-token>
+```
+
+请求：
+
+```json
+{
+  "username": "admin",
+  "current_password": "current-password",
+  "new_password": "new-password-or-empty"
+}
+```
+
+响应同登录，会返回新的 session token。`new_password` 留空时只修改账号。
 
 ### POST /api/admin/v1/password
 

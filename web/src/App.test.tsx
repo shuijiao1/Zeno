@@ -210,7 +210,7 @@ const settings: AdminSettings = {
   updatedAt: '2026-07-04T12:00:00Z',
 }
 
-function renderAdmin(section: 'nodes' | 'targets' | 'notifications' | 'settings' = 'nodes') {
+function renderAdmin(section: 'nodes' | 'targets' | 'notifications' | 'account' | 'settings' = 'nodes') {
   return renderToStaticMarkup(
     <AdminDashboard
       onHome={() => {}}
@@ -219,6 +219,7 @@ function renderAdmin(section: 'nodes' | 'targets' | 'notifications' | 'settings'
       initialSection={section}
       adminState={{
         kind: 'ready',
+        account: { username: 'admin' },
         nodes: [hytronNode, backupNode],
         targets: [hytronTarget, pingTarget, httpTarget],
         notificationChannels: [telegramChannel],
@@ -229,7 +230,7 @@ function renderAdmin(section: 'nodes' | 'targets' | 'notifications' | 'settings'
       }}
       onAdminLogin={() => {}}
       onAdminTokenClear={() => {}}
-      onAdminPasswordUpdate={async () => {}}
+      onAdminAccountUpdate={async () => {}}
       onAdminRefresh={() => {}}
       onAdminNodeCreate={() => {}}
       onAdminNodeUpdate={() => {}}
@@ -322,12 +323,26 @@ describe('AdminDashboard', () => {
     expect(html).toContain('服务器')
     expect(html).toContain('延迟监控')
     expect(html).toContain('1 异常 / 2 类型')
+    expect(html).toContain('账户')
     expect(html).toContain('设置')
     expect(html).toContain('通知')
-    expect(html).toContain('修改密码')
+    expect(html).not.toContain('修改密码</button>')
     expect(html).toContain('服务器列表')
     expect(html).toContain('Hytron')
     expect(html).not.toContain('admin-overview-panel')
+  })
+
+  it('renders account settings as a dedicated account page', () => {
+    const html = renderAdmin('account')
+
+    expect(html).toContain('账户')
+    expect(html).toContain('修改账号和密码')
+    expect(html).toContain('name="account-username"')
+    expect(html).toContain('value="admin"')
+    expect(html).toContain('name="current-password"')
+    expect(html).toContain('name="new-password"')
+    expect(html).toContain('保存账户')
+    expect(html).not.toContain('服务器列表')
   })
 
   it('renders settings as a lightweight appearance configuration page', () => {

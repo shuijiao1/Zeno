@@ -50,6 +50,20 @@ func hashAdminPasswordWithSalt(password, salt string) string {
 	return fmt.Sprintf("sha256:%s:%s", salt, hex.EncodeToString(sum[:]))
 }
 
+func validAdminUsername(username string) bool {
+	username = strings.TrimSpace(username)
+	if len([]rune(username)) < 3 || len([]rune(username)) > 64 {
+		return false
+	}
+	for _, char := range username {
+		if char >= 'a' && char <= 'z' || char >= 'A' && char <= 'Z' || char >= '0' && char <= '9' || char == '_' || char == '-' || char == '.' {
+			continue
+		}
+		return false
+	}
+	return true
+}
+
 func adminPasswordMatches(storedHash, fallbackHash, password string) bool {
 	password = strings.TrimSpace(password)
 	if password == "" {

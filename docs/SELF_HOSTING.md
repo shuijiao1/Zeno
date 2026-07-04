@@ -63,7 +63,7 @@ sudo scripts/deploy-local-release.sh \
 sudo cat /opt/zeno/data/admin-token
 ```
 
-打开 `/dashboard`，使用账号 `admin` 和上面的 bootstrap 密码登录。登录后建议在后台右上角“修改密码”，修改后旧 bootstrap token 不再作为后台 API 凭据，系统会使用数据库里的新密码和 session。
+打开 `/dashboard`，使用账号 `admin` 和上面的 bootstrap 密码登录。登录后建议进入后台“账户”页修改账号和密码；修改后旧 bootstrap token 不再作为后台 API 凭据，系统会使用数据库里的账号/密码和 session。
 
 Admin API 只接受请求头：
 

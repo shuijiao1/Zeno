@@ -37,8 +37,10 @@ type adminAuthStore interface {
 	AdminLogin(ctx context.Context, username, password, fallbackHash string) (AdminSession, error)
 	AuthorizeAdminSession(ctx context.Context, token string) (bool, error)
 	RevokeAdminSession(ctx context.Context, token string) error
+	AdminAccount(ctx context.Context) (AdminAccount, error)
+	UpdateAdminAccount(ctx context.Context, username, currentPassword, newPassword, fallbackHash string) (AdminSession, error)
 	UpdateAdminPassword(ctx context.Context, currentPassword, newPassword, fallbackHash string) (AdminSession, error)
-	AdminPasswordConfigured(ctx context.Context) (bool, error)
+	AdminAccountConfigured(ctx context.Context) (bool, error)
 }
 
 func (h *handler) handleAdminLogin(w http.ResponseWriter, r *http.Request) {
@@ -103,6 +105,42 @@ func (h *handler) handleAdminLogout(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	w.WriteHeader(http.StatusNoContent)
+}
+
+func (h *handler) handleAdminAccount(w http.ResponseWriter, r *http.Request) {
+	if _, ok := h.authorizeAdminRequest(w, r); !ok {
+		return
+	}
+	authStore, ok := h.store.(adminAuthStore)
+	if !ok {
+		writeError(w, http.StatusNotFound, "not found")
+		return
+	}
+	switch r.Method {
+	case http.MethodGet:
+		account, err := authStore.AdminAccount(r.Context())
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, "internal error")
+			return
+		}
+		writeJSON(w, http.StatusOK, AdminAccountResponse{Account: account})
+	case http.MethodPost:
+		var request AdminAccountUpdateRequest
+		decoder := json.NewDecoder(r.Body)
+		decoder.DisallowUnknownFields()
+		if err := decoder.Decode(&request); err != nil {
+			writeError(w, http.StatusBadRequest, "bad request")
+			return
+		}
+		session, err := authStore.UpdateAdminAccount(r.Context(), request.Username, request.CurrentPassword, request.NewPassword, h.adminTokenHash)
+		if err != nil {
+			writeAdminError(w, err)
+			return
+		}
+		writeJSON(w, http.StatusOK, AdminLoginResponse{Username: session.Username, Token: session.Token})
+	default:
+		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+	}
 }
 
 func (h *handler) handleAdminPassword(w http.ResponseWriter, r *http.Request) {
@@ -348,7 +386,7 @@ func (h *handler) authorizeAdminRequest(w http.ResponseWriter, r *http.Request) 
 		if authorized {
 			return store, true
 		}
-		configured, err := authStore.AdminPasswordConfigured(r.Context())
+		configured, err := authStore.AdminAccountConfigured(r.Context())
 		if err != nil {
 			writeError(w, http.StatusInternalServerError, "internal error")
 			return nil, false

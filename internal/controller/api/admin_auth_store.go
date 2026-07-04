@@ -8,7 +8,10 @@ import (
 	"time"
 )
 
-const settingKeyAdminPasswordHash = "admin_password_hash"
+const (
+	settingKeyAdminUsername     = "admin_username"
+	settingKeyAdminPasswordHash = "admin_password_hash"
+)
 
 var (
 	errInvalidAdminLogin          = errors.New("invalid admin login")
@@ -20,8 +23,16 @@ type AdminSession struct {
 	Token    string `json:"token"`
 }
 
+type AdminAccount struct {
+	Username string `json:"username"`
+}
+
 func (s *SQLiteStore) AdminLogin(ctx context.Context, username, password, fallbackHash string) (AdminSession, error) {
-	if strings.TrimSpace(username) != "admin" || !s.adminPasswordMatches(ctx, password, fallbackHash) {
+	account, err := s.AdminAccount(ctx)
+	if err != nil {
+		return AdminSession{}, err
+	}
+	if strings.TrimSpace(username) != account.Username || !s.adminPasswordMatches(ctx, password, fallbackHash) {
 		return AdminSession{}, errInvalidAdminLogin
 	}
 	token, err := randomToken()
@@ -31,7 +42,7 @@ func (s *SQLiteStore) AdminLogin(ctx context.Context, username, password, fallba
 	if err := s.createAdminSession(ctx, token); err != nil {
 		return AdminSession{}, err
 	}
-	return AdminSession{Username: "admin", Token: token}, nil
+	return AdminSession{Username: account.Username, Token: token}, nil
 }
 
 func (s *SQLiteStore) AuthorizeAdminSession(ctx context.Context, token string) (bool, error) {
@@ -64,19 +75,103 @@ func (s *SQLiteStore) RevokeAdminSession(ctx context.Context, token string) erro
 	return err
 }
 
-func (s *SQLiteStore) AdminPasswordConfigured(ctx context.Context) (bool, error) {
-	var value string
-	err := s.db.QueryRowContext(ctx, `SELECT value FROM settings WHERE key = ?`, settingKeyAdminPasswordHash).Scan(&value)
+func (s *SQLiteStore) AdminAccount(ctx context.Context) (AdminAccount, error) {
+	var username string
+	err := s.db.QueryRowContext(ctx, `SELECT value FROM settings WHERE key = ?`, settingKeyAdminUsername).Scan(&username)
 	if err != nil {
 		if err == sql.ErrNoRows {
-			return false, nil
+			return AdminAccount{Username: "admin"}, nil
 		}
+		return AdminAccount{}, err
+	}
+	username = strings.TrimSpace(username)
+	if username == "" {
+		username = "admin"
+	}
+	return AdminAccount{Username: username}, nil
+}
+
+func (s *SQLiteStore) AdminAccountConfigured(ctx context.Context) (bool, error) {
+	var count int
+	err := s.db.QueryRowContext(ctx, `
+		SELECT COUNT(*)
+		FROM settings
+		WHERE key IN (?, ?) AND TRIM(value) <> ''
+	`, settingKeyAdminUsername, settingKeyAdminPasswordHash).Scan(&count)
+	if err != nil {
 		return false, err
 	}
-	return strings.TrimSpace(value) != "", nil
+	return count > 0, nil
+}
+
+func (s *SQLiteStore) UpdateAdminAccount(ctx context.Context, username, currentPassword, newPassword, fallbackHash string) (AdminSession, error) {
+	username = strings.TrimSpace(username)
+	currentPassword = strings.TrimSpace(currentPassword)
+	newPassword = strings.TrimSpace(newPassword)
+	if !validAdminUsername(username) || currentPassword == "" {
+		return AdminSession{}, errInvalidAdminPasswordUpdate
+	}
+	if newPassword != "" && (len([]rune(newPassword)) < 8 || len([]rune(newPassword)) > 128) {
+		return AdminSession{}, errInvalidAdminPasswordUpdate
+	}
+	if !s.adminPasswordMatches(ctx, currentPassword, fallbackHash) {
+		return AdminSession{}, errInvalidAdminPasswordUpdate
+	}
+	passwordHash := ""
+	var err error
+	if newPassword != "" {
+		passwordHash, err = hashAdminPassword(newPassword)
+		if err != nil {
+			return AdminSession{}, err
+		}
+	}
+	token, err := randomToken()
+	if err != nil {
+		return AdminSession{}, err
+	}
+	now := time.Now().UTC().Unix()
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return AdminSession{}, err
+	}
+	defer rollbackUnlessCommitted(tx)
+	if _, err := tx.ExecContext(ctx, `
+		INSERT INTO settings (key, value, updated_at)
+		VALUES (?, ?, ?)
+		ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at
+	`, settingKeyAdminUsername, username, now); err != nil {
+		return AdminSession{}, err
+	}
+	if passwordHash != "" {
+		if _, err := tx.ExecContext(ctx, `
+			INSERT INTO settings (key, value, updated_at)
+			VALUES (?, ?, ?)
+			ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at
+		`, settingKeyAdminPasswordHash, passwordHash, now); err != nil {
+			return AdminSession{}, err
+		}
+	}
+	if _, err := tx.ExecContext(ctx, `DELETE FROM admin_sessions`); err != nil {
+		return AdminSession{}, err
+	}
+	if _, err := tx.ExecContext(ctx, `
+		INSERT INTO admin_sessions (token_hash, created_at, last_seen_at)
+		VALUES (?, ?, ?)
+	`, HashAdminToken(token), now, now); err != nil {
+		return AdminSession{}, err
+	}
+	if err := tx.Commit(); err != nil {
+		return AdminSession{}, err
+	}
+	tx = nil
+	return AdminSession{Username: username, Token: token}, nil
 }
 
 func (s *SQLiteStore) UpdateAdminPassword(ctx context.Context, currentPassword, newPassword, fallbackHash string) (AdminSession, error) {
+	account, err := s.AdminAccount(ctx)
+	if err != nil {
+		return AdminSession{}, err
+	}
 	currentPassword = strings.TrimSpace(currentPassword)
 	newPassword = strings.TrimSpace(newPassword)
 	if currentPassword == "" || len([]rune(newPassword)) < 8 || len([]rune(newPassword)) > 128 {
@@ -119,7 +214,7 @@ func (s *SQLiteStore) UpdateAdminPassword(ctx context.Context, currentPassword, 
 		return AdminSession{}, err
 	}
 	tx = nil
-	return AdminSession{Username: "admin", Token: token}, nil
+	return AdminSession{Username: account.Username, Token: token}, nil
 }
 
 func (s *SQLiteStore) adminPasswordMatches(ctx context.Context, password, fallbackHash string) bool {

@@ -42,6 +42,16 @@ type AdminLoginResponse struct {
 	Token    string `json:"token"`
 }
 
+type AdminAccountResponse struct {
+	Account AdminAccount `json:"account"`
+}
+
+type AdminAccountUpdateRequest struct {
+	Username        string `json:"username"`
+	CurrentPassword string `json:"current_password"`
+	NewPassword     string `json:"new_password"`
+}
+
 type AdminPasswordUpdateRequest struct {
 	CurrentPassword string `json:"current_password"`
 	NewPassword     string `json:"new_password"`

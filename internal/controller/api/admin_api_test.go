@@ -106,6 +106,47 @@ func TestAdminLoginCreatesSessionAndPasswordUpdateInvalidatesOldPassword(t *test
 	if newLoginRecorder.Code != http.StatusOK {
 		t.Fatalf("new password status = %d, want 200; body=%s", newLoginRecorder.Code, newLoginRecorder.Body.String())
 	}
+	var newLoginResponse AdminLoginResponse
+	if err := json.NewDecoder(newLoginRecorder.Body).Decode(&newLoginResponse); err != nil {
+		t.Fatalf("decode new login response: %v", err)
+	}
+
+	accountRecorder := httptest.NewRecorder()
+	accountRequest := httptest.NewRequest(http.MethodPost, "/api/admin/v1/account", strings.NewReader(`{"username":"zeno-admin","current_password":"new-admin-pass","new_password":""}`))
+	accountRequest.Header.Set("X-Admin-Token", newLoginResponse.Token)
+	handler.ServeHTTP(accountRecorder, accountRequest)
+	if accountRecorder.Code != http.StatusOK {
+		t.Fatalf("account status = %d, want 200; body=%s", accountRecorder.Code, accountRecorder.Body.String())
+	}
+	var accountResponse AdminLoginResponse
+	if err := json.NewDecoder(accountRecorder.Body).Decode(&accountResponse); err != nil {
+		t.Fatalf("decode account response: %v", err)
+	}
+	if accountResponse.Username != "zeno-admin" || accountResponse.Token == "" || accountResponse.Token == newLoginResponse.Token {
+		t.Fatalf("account response = %+v, want renamed admin and rotated session", accountResponse)
+	}
+
+	oldUsernameRecorder := httptest.NewRecorder()
+	oldUsernameRequest := httptest.NewRequest(http.MethodPost, "/api/admin/v1/login", strings.NewReader(`{"username":"admin","password":"new-admin-pass"}`))
+	handler.ServeHTTP(oldUsernameRecorder, oldUsernameRequest)
+	if oldUsernameRecorder.Code != http.StatusUnauthorized {
+		t.Fatalf("old username status = %d, want 401", oldUsernameRecorder.Code)
+	}
+
+	accountGetRecorder := httptest.NewRecorder()
+	accountGetRequest := httptest.NewRequest(http.MethodGet, "/api/admin/v1/account", nil)
+	accountGetRequest.Header.Set("X-Admin-Token", accountResponse.Token)
+	handler.ServeHTTP(accountGetRecorder, accountGetRequest)
+	if accountGetRecorder.Code != http.StatusOK {
+		t.Fatalf("account get status = %d, want 200; body=%s", accountGetRecorder.Code, accountGetRecorder.Body.String())
+	}
+	var accountGetResponse AdminAccountResponse
+	if err := json.NewDecoder(accountGetRecorder.Body).Decode(&accountGetResponse); err != nil {
+		t.Fatalf("decode account get response: %v", err)
+	}
+	if accountGetResponse.Account.Username != "zeno-admin" {
+		t.Fatalf("account get = %+v, want zeno-admin", accountGetResponse)
+	}
 }
 
 func TestAdminNodesListsEnabledAndDisabledNodesWithoutTokenHashes(t *testing.T) {

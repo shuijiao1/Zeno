@@ -236,9 +236,17 @@ interface ApiAdminLoginResponse {
   token: string
 }
 
+interface ApiAdminAccountResponse {
+  account: { username: string }
+}
+
 export interface AdminLoginData {
   username: string
   token: string
+}
+
+export interface AdminAccountData {
+  username: string
 }
 
 export interface ApiSummaryResponse {
@@ -522,6 +530,18 @@ export async function loginAdmin(username: string, password: string): Promise<Ad
   return { username: data.username, token: data.token }
 }
 
+export async function fetchAdminAccount(adminToken: string): Promise<AdminAccountData> {
+  const response = await fetch('/api/admin/v1/account', {
+    headers: {
+      Accept: 'application/json',
+      'X-Admin-Token': adminToken,
+    },
+  })
+  if (!response.ok) throw new Error(`admin account failed: ${response.status}`)
+  const data = await response.json() as ApiAdminAccountResponse
+  return { username: data.account.username }
+}
+
 export async function logoutAdmin(adminToken: string): Promise<void> {
   await fetch('/api/admin/v1/logout', {
     method: 'POST',
@@ -529,6 +549,23 @@ export async function logoutAdmin(adminToken: string): Promise<void> {
       'X-Admin-Token': adminToken,
     },
   })
+}
+
+export async function updateAdminAccount(adminToken: string, username: string, currentPassword: string, newPassword: string): Promise<AdminLoginData> {
+  const response = await fetch('/api/admin/v1/account', {
+    method: 'POST',
+    headers: {
+      Accept: 'application/json',
+      'Content-Type': 'application/json',
+      'X-Admin-Token': adminToken,
+    },
+    body: JSON.stringify({ username, current_password: currentPassword, new_password: newPassword }),
+  })
+  if (!response.ok) {
+    throw new Error(`admin account update failed: ${response.status}`)
+  }
+  const data = await response.json() as ApiAdminLoginResponse
+  return { username: data.username, token: data.token }
 }
 
 export async function updateAdminPassword(adminToken: string, currentPassword: string, newPassword: string): Promise<AdminLoginData> {

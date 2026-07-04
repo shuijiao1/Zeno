@@ -113,6 +113,7 @@ func NewHandler(options ...HandlerOptions) http.Handler {
 	mux.HandleFunc("/api/public/v1/nodes/", h.handlePublicNodeResource)
 	mux.HandleFunc("/api/admin/v1/login", h.handleAdminLogin)
 	mux.HandleFunc("/api/admin/v1/logout", h.handleAdminLogout)
+	mux.HandleFunc("/api/admin/v1/account", h.handleAdminAccount)
 	mux.HandleFunc("/api/admin/v1/password", h.handleAdminPassword)
 	mux.HandleFunc("/api/admin/v1/settings", h.handleAdminSettings)
 	mux.HandleFunc("/api/admin/v1/notification-channels", h.handleAdminNotificationChannels)
