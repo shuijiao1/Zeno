@@ -412,6 +412,45 @@ func TestAdminNodeInstallCommandRotatesAgentCredentialAndUsesRequestHost(t *test
 	}
 }
 
+func TestAdminNodeInstallCommandPrefersConfiguredAgentControllerURL(t *testing.T) {
+	store, err := OpenSQLiteStore(filepath.Join(t.TempDir(), "zeno.db"))
+	if err != nil {
+		t.Fatalf("open sqlite store: %v", err)
+	}
+	defer store.Close()
+	ctx := context.Background()
+	if err := store.SeedPreviewData(ctx, PreviewSeedOptions{NodeID: "hytron", DisplayName: "Hytron", CountryCode: "HK", AgentToken: "old-agent-token"}); err != nil {
+		t.Fatalf("seed preview data: %v", err)
+	}
+	publicURL := "https://zeno.example.com"
+	if _, err := store.UpdateAdminSettings(ctx, AdminSettingsUpdateRequest{AgentControllerURL: &publicURL}); err != nil {
+		t.Fatalf("set agent controller URL: %v", err)
+	}
+
+	recorder := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodPost, "/api/admin/v1/nodes/hytron/install-command", nil)
+	request.Host = "admin.localhost:18980"
+	request.Header.Set("X-Forwarded-Proto", "http")
+	request.Header.Set("X-Admin-Token", "admin-pass")
+	NewHandler(HandlerOptions{Store: store, AdminTokenHash: HashAdminToken("admin-pass"), AgentBinaryPath: "/opt/zeno/current/bin/zeno-agent"}).ServeHTTP(recorder, request)
+
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200; body=%s", recorder.Code, recorder.Body.String())
+	}
+	var response struct {
+		Command string `json:"command"`
+	}
+	if err := json.NewDecoder(bytes.NewBufferString(recorder.Body.String())).Decode(&response); err != nil {
+		t.Fatalf("decode install command: %v", err)
+	}
+	if !strings.Contains(response.Command, "https://zeno.example.com/api/public/v1/agent/linux-amd64") || !strings.Contains(response.Command, "-controller-url 'https://zeno.example.com'") {
+		t.Fatalf("install command should use configured agent controller URL: %s", response.Command)
+	}
+	if strings.Contains(response.Command, "admin.localhost") {
+		t.Fatalf("install command should not fall back to request host when configured URL exists: %s", response.Command)
+	}
+}
+
 func extractQuotedInstallCredential(t *testing.T, command string) string {
 	t.Helper()
 	marker := "printf '%s\\n' '"

@@ -58,6 +58,7 @@ const defaultSettings: AdminSettings = {
   siteSubtitle: '服务器运行概览',
   logoUrl: '/assets/logo/id.png',
   theme: 'system',
+  agentControllerUrl: '',
   backgroundUrl: '',
   desktopBackgroundUrl: '',
   mobileBackgroundUrl: '',
@@ -911,6 +912,7 @@ function AdminSettingsSection({ settings, onUpdate }: { settings: AdminSettings;
       siteSubtitle: String(formData.get('site-subtitle') ?? '').trim(),
       logoUrl: String(formData.get('logo-url') ?? '').trim(),
       theme,
+      agentControllerUrl: String(formData.get('agent-controller-url') ?? '').trim(),
       backgroundUrl: String(formData.get('desktop-background-url') ?? '').trim(),
       desktopBackgroundUrl: String(formData.get('desktop-background-url') ?? '').trim(),
       mobileBackgroundUrl: String(formData.get('mobile-background-url') ?? '').trim(),
@@ -946,6 +948,11 @@ function AdminSettingsSection({ settings, onUpdate }: { settings: AdminSettings;
             <option value="light">浅色</option>
           </select>
         </label>
+        <label>
+          <span>Agent 接入 URL</span>
+          <input name="agent-controller-url" autoComplete="off" defaultValue={settings.agentControllerUrl} placeholder="留空则使用当前后台访问地址" />
+        </label>
+        <p className="admin-overview-note">生成 Agent 安装命令时优先使用这个 URL；准备公网 HTTPS 入口后填入，例如 https://zeno.example.com。</p>
         <label>
           <span>电脑端背景图 URL</span>
           <input name="desktop-background-url" autoComplete="off" defaultValue={settings.desktopBackgroundUrl || settings.backgroundUrl} placeholder="可留空" />

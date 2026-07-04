@@ -281,7 +281,7 @@ CREATE INDEX idx_alert_rule_states_node_active ON alert_rule_states(node_id, act
 
 ## settings
 
-全局设置，包含站点标题、Logo、主题、桌面/手机背景图配置。
+全局设置，包含站点标题、Logo、主题、Agent 接入 URL、桌面/手机背景图配置。
 
 ```sql
 CREATE TABLE settings (
@@ -297,6 +297,7 @@ CREATE TABLE settings (
 - `site_subtitle`
 - `logo_url`
 - `theme`
+- `agent_controller_url`
 - `background_url`（兼容）
 - `desktop_background_url`
 - `mobile_background_url`

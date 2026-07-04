@@ -5,6 +5,7 @@ interface ApiSettings {
   site_subtitle: string
   logo_url: string
   theme: AdminTheme
+  agent_controller_url?: string
   background_url: string
   desktop_background_url?: string
   mobile_background_url?: string
@@ -335,6 +336,7 @@ export interface AdminSettingsUpdateInput {
   siteSubtitle?: string
   logoUrl?: string
   theme?: AdminTheme
+  agentControllerUrl?: string
   backgroundUrl?: string
   desktopBackgroundUrl?: string
   mobileBackgroundUrl?: string
@@ -773,6 +775,7 @@ export function normalizeSettings(input: ApiSettings): AdminSettings {
     siteSubtitle: input.site_subtitle,
     logoUrl,
     theme: input.theme ?? 'system',
+    agentControllerUrl: input.agent_controller_url ?? '',
     backgroundUrl: desktopBackgroundUrl,
     desktopBackgroundUrl,
     mobileBackgroundUrl: input.mobile_background_url ?? '',
@@ -852,6 +855,7 @@ function serializeAdminSettingsUpdate(input: AdminSettingsUpdateInput) {
     ...(input.siteSubtitle !== undefined ? { site_subtitle: input.siteSubtitle } : {}),
     ...(input.logoUrl !== undefined ? { logo_url: input.logoUrl } : {}),
     ...(input.theme !== undefined ? { theme: input.theme } : {}),
+    ...(input.agentControllerUrl !== undefined ? { agent_controller_url: input.agentControllerUrl } : {}),
     ...(input.backgroundUrl !== undefined ? { background_url: input.backgroundUrl } : {}),
     ...(input.desktopBackgroundUrl !== undefined ? { desktop_background_url: input.desktopBackgroundUrl } : {}),
     ...(input.mobileBackgroundUrl !== undefined ? { mobile_background_url: input.mobileBackgroundUrl } : {}),

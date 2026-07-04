@@ -334,6 +334,7 @@ describe('normalizeSettings', () => {
       site_subtitle: 'VPS 状态总览',
       logo_url: '/assets/logo/custom.png',
       theme: 'dark',
+      agent_controller_url: 'https://zeno.example.com',
       background_url: 'https://example.com/bg.webp',
       updated_at: '2026-07-04T12:00:00Z',
     })
@@ -342,6 +343,7 @@ describe('normalizeSettings', () => {
     expect(settings.siteSubtitle).toBe('VPS 状态总览')
     expect(settings.logoUrl).toBe('/assets/logo/custom.png')
     expect(settings.theme).toBe('dark')
+    expect(settings.agentControllerUrl).toBe('https://zeno.example.com')
     expect(settings.backgroundUrl).toBe('https://example.com/bg.webp')
     expect(settings.updatedAt).toBe('2026-07-04T12:00:00Z')
   })
@@ -407,6 +409,7 @@ describe('fetchSettings', () => {
       site_subtitle: 'VPS 状态总览',
       logo_url: '/assets/logo/custom.png',
       theme: 'dark',
+      agent_controller_url: 'https://zeno.example.com',
       background_url: 'https://example.com/desktop-bg.webp',
       desktop_background_url: 'https://example.com/desktop-bg.webp',
       mobile_background_url: 'https://example.com/mobile-bg.webp',
@@ -433,6 +436,7 @@ describe('fetchSettings', () => {
         site_subtitle: 'VPS 状态总览',
         logo_url: '/assets/logo/custom.png',
         theme: 'dark',
+        agent_controller_url: 'https://zeno.example.com',
         background_url: 'https://example.com/desktop-bg.webp',
         desktop_background_url: 'https://example.com/desktop-bg.webp',
         mobile_background_url: 'https://example.com/mobile-bg.webp',
@@ -447,6 +451,7 @@ describe('fetchSettings', () => {
       siteSubtitle: 'VPS 状态总览',
       logoUrl: '/assets/logo/custom.png',
       theme: 'dark',
+      agentControllerUrl: 'https://zeno.example.com',
       backgroundUrl: 'https://example.com/desktop-bg.webp',
       desktopBackgroundUrl: 'https://example.com/desktop-bg.webp',
       mobileBackgroundUrl: 'https://example.com/mobile-bg.webp',
@@ -454,6 +459,7 @@ describe('fetchSettings', () => {
 
     expect(settings.backgroundUrl).toBe('https://example.com/desktop-bg.webp')
     expect(settings.logoUrl).toBe('/assets/logo/custom.png')
+    expect(settings.agentControllerUrl).toBe('https://zeno.example.com')
     expect(settings).not.toHaveProperty('avatarUrl')
     expect(settings.desktopBackgroundUrl).toBe('https://example.com/desktop-bg.webp')
     expect(settings.mobileBackgroundUrl).toBe('https://example.com/mobile-bg.webp')
@@ -475,6 +481,7 @@ describe('fetchSettings', () => {
         site_subtitle: 'VPS 状态总览',
         logo_url: '/assets/logo/custom.png',
         theme: 'dark',
+        agent_controller_url: 'https://zeno.example.com',
         background_url: 'https://example.com/desktop-bg.webp',
         desktop_background_url: 'https://example.com/desktop-bg.webp',
         mobile_background_url: 'https://example.com/mobile-bg.webp',

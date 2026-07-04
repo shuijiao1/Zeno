@@ -7,6 +7,7 @@ export interface AdminSettings {
   siteSubtitle: string
   logoUrl: string
   theme: AdminTheme
+  agentControllerUrl: string
   backgroundUrl: string
   desktopBackgroundUrl: string
   mobileBackgroundUrl: string

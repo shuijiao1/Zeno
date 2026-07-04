@@ -42,6 +42,7 @@ func TestPublicSettingsDefaultsAndReflectsAdminPatch(t *testing.T) {
 		"site_subtitle": "  VPS 状态总览  ",
 		"logo_url": "/assets/logo/custom.png",
 		"theme": "dark",
+		"agent_controller_url": "  https://zeno.example.com/  ",
 		"background_url": "https://example.com/legacy-bg.webp",
 		"desktop_background_url": "https://example.com/desktop-bg.webp",
 		"mobile_background_url": "https://example.com/mobile-bg.webp"
@@ -58,7 +59,7 @@ func TestPublicSettingsDefaultsAndReflectsAdminPatch(t *testing.T) {
 	if err := json.NewDecoder(bytes.NewBufferString(patchRecorder.Body.String())).Decode(&patchResponse); err != nil {
 		t.Fatalf("decode patched settings: %v", err)
 	}
-	if patchResponse.Settings.SiteTitle != "水饺监控" || patchResponse.Settings.SiteSubtitle != "VPS 状态总览" || patchResponse.Settings.LogoURL != "/assets/logo/custom.png" || patchResponse.Settings.Theme != "dark" || patchResponse.Settings.BackgroundURL != "https://example.com/desktop-bg.webp" || patchResponse.Settings.DesktopBackgroundURL != "https://example.com/desktop-bg.webp" || patchResponse.Settings.MobileBackgroundURL != "https://example.com/mobile-bg.webp" {
+	if patchResponse.Settings.SiteTitle != "水饺监控" || patchResponse.Settings.SiteSubtitle != "VPS 状态总览" || patchResponse.Settings.LogoURL != "/assets/logo/custom.png" || patchResponse.Settings.Theme != "dark" || patchResponse.Settings.AgentControllerURL != "https://zeno.example.com" || patchResponse.Settings.BackgroundURL != "https://example.com/desktop-bg.webp" || patchResponse.Settings.DesktopBackgroundURL != "https://example.com/desktop-bg.webp" || patchResponse.Settings.MobileBackgroundURL != "https://example.com/mobile-bg.webp" {
 		t.Fatalf("patched settings = %+v, want trimmed persisted settings", patchResponse.Settings)
 	}
 	if strings.Contains(patchRecorder.Body.String(), `"avatar_url"`) {
@@ -70,7 +71,7 @@ func TestPublicSettingsDefaultsAndReflectsAdminPatch(t *testing.T) {
 	if publicRecorder.Code != http.StatusOK {
 		t.Fatalf("public settings after patch status = %d, want 200; body=%s", publicRecorder.Code, publicRecorder.Body.String())
 	}
-	if !strings.Contains(publicRecorder.Body.String(), `"site_title":"水饺监控"`) || !strings.Contains(publicRecorder.Body.String(), `"logo_url":"/assets/logo/custom.png"`) || !strings.Contains(publicRecorder.Body.String(), `"desktop_background_url":"https://example.com/desktop-bg.webp"`) || !strings.Contains(publicRecorder.Body.String(), `"mobile_background_url":"https://example.com/mobile-bg.webp"`) {
+	if !strings.Contains(publicRecorder.Body.String(), `"site_title":"水饺监控"`) || !strings.Contains(publicRecorder.Body.String(), `"logo_url":"/assets/logo/custom.png"`) || !strings.Contains(publicRecorder.Body.String(), `"agent_controller_url":"https://zeno.example.com"`) || !strings.Contains(publicRecorder.Body.String(), `"desktop_background_url":"https://example.com/desktop-bg.webp"`) || !strings.Contains(publicRecorder.Body.String(), `"mobile_background_url":"https://example.com/mobile-bg.webp"`) {
 		t.Fatalf("public settings after patch did not reflect admin update: %s", publicRecorder.Body.String())
 	}
 	if strings.Contains(publicRecorder.Body.String(), `"avatar_url"`) {
@@ -101,6 +102,9 @@ func TestAdminSettingsRequiresTokenAndRejectsInvalidValues(t *testing.T) {
 		{name: "unsupported theme", body: `{"theme":"neon"}`},
 		{name: "javascript logo", body: `{"logo_url":"javascript:alert(1)"}`},
 		{name: "retired avatar field", body: `{"avatar_url":"/assets/avatar/custom.webp"}`},
+		{name: "agent controller URL with credentials", body: `{"agent_controller_url":"https://user:pass@example.com"}`},
+		{name: "agent controller URL with query", body: `{"agent_controller_url":"https://example.com/?token=1"}`},
+		{name: "agent controller URL unsupported scheme", body: `{"agent_controller_url":"javascript:alert(1)"}`},
 		{name: "javascript background", body: `{"background_url":"data:text/html,<script>alert(1)</script>"}`},
 		{name: "javascript desktop background", body: `{"desktop_background_url":"data:text/html,<script>alert(1)</script>"}`},
 		{name: "javascript mobile background", body: `{"mobile_background_url":"//evil.example/bg.webp"}`},

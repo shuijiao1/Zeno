@@ -203,6 +203,7 @@ const settings: AdminSettings = {
   siteSubtitle: 'VPS 状态总览',
   logoUrl: '/assets/logo/custom.png',
   theme: 'dark',
+  agentControllerUrl: 'https://zeno.example.com',
   backgroundUrl: 'https://example.com/desktop-bg.webp',
   desktopBackgroundUrl: 'https://example.com/desktop-bg.webp',
   mobileBackgroundUrl: 'https://example.com/mobile-bg.webp',
@@ -351,6 +352,9 @@ describe('AdminDashboard', () => {
     expect(html).not.toContain('name="avatar-url"')
     expect(html).toContain('name="theme"')
     expect(html).toContain('深色')
+    expect(html).toContain('Agent 接入 URL')
+    expect(html).toContain('name="agent-controller-url"')
+    expect(html).toContain('https://zeno.example.com')
     expect(html).toContain('name="desktop-background-url"')
     expect(html).toContain('https://example.com/desktop-bg.webp')
     expect(html).toContain('name="mobile-background-url"')

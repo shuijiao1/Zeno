@@ -113,6 +113,8 @@ sudo scripts/install-agent.sh \
   --token <agent-token>
 ```
 
+后台“设置”里的 `Agent 接入 URL` 会影响后台生成的安装命令。Controller 暂时只在本机或内网访问时可以留空；准备给其它服务器安装 Agent 前，应先把它设为可被目标服务器访问的公网 HTTPS Controller 地址。
+
 或使用已存在 token 文件：
 
 ```bash

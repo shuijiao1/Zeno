@@ -37,6 +37,7 @@ type SiteSettings struct {
 	SiteSubtitle         string `json:"site_subtitle"`
 	LogoURL              string `json:"logo_url"`
 	Theme                string `json:"theme"`
+	AgentControllerURL   string `json:"agent_controller_url"`
 	BackgroundURL        string `json:"background_url"`
 	DesktopBackgroundURL string `json:"desktop_background_url"`
 	MobileBackgroundURL  string `json:"mobile_background_url"`
@@ -48,6 +49,7 @@ type AdminSettingsUpdateRequest struct {
 	SiteSubtitle         *string `json:"site_subtitle,omitempty"`
 	LogoURL              *string `json:"logo_url,omitempty"`
 	Theme                *string `json:"theme,omitempty"`
+	AgentControllerURL   *string `json:"agent_controller_url,omitempty"`
 	BackgroundURL        *string `json:"background_url,omitempty"`
 	DesktopBackgroundURL *string `json:"desktop_background_url,omitempty"`
 	MobileBackgroundURL  *string `json:"mobile_background_url,omitempty"`
@@ -59,6 +61,7 @@ func defaultSiteSettings() SiteSettings {
 		SiteSubtitle:         "服务器运行概览",
 		LogoURL:              "/assets/logo/id.png",
 		Theme:                "system",
+		AgentControllerURL:   "",
 		BackgroundURL:        "",
 		DesktopBackgroundURL: "",
 		MobileBackgroundURL:  "",
@@ -98,6 +101,14 @@ func (request *AdminSettingsUpdateRequest) normalize() error {
 			return errInvalidAdminSettingsUpdate
 		}
 		request.Theme = &trimmed
+	}
+	if request.AgentControllerURL != nil {
+		changed = true
+		trimmed := strings.TrimRight(strings.TrimSpace(*request.AgentControllerURL), "/")
+		if trimmed != "" && !validAgentControllerURL(trimmed) {
+			return errInvalidAdminSettingsUpdate
+		}
+		request.AgentControllerURL = &trimmed
 	}
 	if request.BackgroundURL != nil {
 		changed = true
@@ -147,6 +158,17 @@ func validSettingsAssetURL(value string) bool {
 		return false
 	}
 	return parsed.Scheme == "https"
+}
+
+func validAgentControllerURL(value string) bool {
+	parsed, err := url.ParseRequestURI(value)
+	if err != nil || parsed.Host == "" {
+		return false
+	}
+	if parsed.Scheme != "http" && parsed.Scheme != "https" {
+		return false
+	}
+	return parsed.User == nil && parsed.RawQuery == "" && parsed.Fragment == ""
 }
 
 func normalizeAdminNodeDate(value string) (string, error) {

@@ -11,6 +11,7 @@ const (
 	settingKeySiteSubtitle         = "site_subtitle"
 	settingKeyLogoURL              = "logo_url"
 	settingKeyTheme                = "theme"
+	settingKeyAgentControllerURL   = "agent_controller_url"
 	settingKeyBackgroundURL        = "background_url"
 	settingKeyDesktopBackgroundURL = "desktop_background_url"
 	settingKeyMobileBackgroundURL  = "mobile_background_url"
@@ -44,6 +45,9 @@ func (s *SQLiteStore) UpdateAdminSettings(ctx context.Context, update AdminSetti
 	if update.Theme != nil {
 		settings.Theme = *update.Theme
 	}
+	if update.AgentControllerURL != nil {
+		settings.AgentControllerURL = *update.AgentControllerURL
+	}
 	if update.BackgroundURL != nil {
 		settings.BackgroundURL = *update.BackgroundURL
 		if update.DesktopBackgroundURL == nil {
@@ -69,6 +73,7 @@ func (s *SQLiteStore) UpdateAdminSettings(ctx context.Context, update AdminSetti
 		settingKeySiteSubtitle:         settings.SiteSubtitle,
 		settingKeyLogoURL:              settings.LogoURL,
 		settingKeyTheme:                settings.Theme,
+		settingKeyAgentControllerURL:   settings.AgentControllerURL,
 		settingKeyBackgroundURL:        settings.BackgroundURL,
 		settingKeyDesktopBackgroundURL: settings.DesktopBackgroundURL,
 		settingKeyMobileBackgroundURL:  settings.MobileBackgroundURL,
@@ -95,8 +100,8 @@ func (s *SQLiteStore) siteSettings(ctx context.Context) (SiteSettings, error) {
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT key, value, updated_at
 		FROM settings
-		WHERE key IN (?, ?, ?, ?, ?, ?, ?)
-	`, settingKeySiteTitle, settingKeySiteSubtitle, settingKeyLogoURL, settingKeyTheme, settingKeyBackgroundURL, settingKeyDesktopBackgroundURL, settingKeyMobileBackgroundURL)
+		WHERE key IN (?, ?, ?, ?, ?, ?, ?, ?)
+	`, settingKeySiteTitle, settingKeySiteSubtitle, settingKeyLogoURL, settingKeyTheme, settingKeyAgentControllerURL, settingKeyBackgroundURL, settingKeyDesktopBackgroundURL, settingKeyMobileBackgroundURL)
 	if err != nil {
 		return SiteSettings{}, err
 	}
@@ -117,6 +122,8 @@ func (s *SQLiteStore) siteSettings(ctx context.Context) (SiteSettings, error) {
 			settings.LogoURL = value
 		case settingKeyTheme:
 			settings.Theme = value
+		case settingKeyAgentControllerURL:
+			settings.AgentControllerURL = value
 		case settingKeyBackgroundURL:
 			settings.BackgroundURL = value
 		case settingKeyDesktopBackgroundURL:

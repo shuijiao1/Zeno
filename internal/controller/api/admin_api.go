@@ -211,7 +211,16 @@ func (h *handler) handleAdminNodeInstallCommand(w http.ResponseWriter, r *http.R
 	if !ok {
 		return
 	}
-	command, err := store.AdminNodeInstallCommand(r.Context(), nodeID, requestBaseURL(r), h.agentVersion)
+	controllerURL := requestBaseURL(r)
+	settings, err := store.AdminSettings(r.Context())
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "internal error")
+		return
+	}
+	if strings.TrimSpace(settings.AgentControllerURL) != "" {
+		controllerURL = settings.AgentControllerURL
+	}
+	command, err := store.AdminNodeInstallCommand(r.Context(), nodeID, controllerURL, h.agentVersion)
 	if err != nil {
 		writeAdminError(w, err)
 		return
