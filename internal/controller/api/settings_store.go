@@ -10,7 +10,6 @@ const (
 	settingKeySiteTitle            = "site_title"
 	settingKeySiteSubtitle         = "site_subtitle"
 	settingKeyLogoURL              = "logo_url"
-	settingKeyAvatarURL            = "avatar_url"
 	settingKeyTheme                = "theme"
 	settingKeyBackgroundURL        = "background_url"
 	settingKeyDesktopBackgroundURL = "desktop_background_url"
@@ -41,12 +40,6 @@ func (s *SQLiteStore) UpdateAdminSettings(ctx context.Context, update AdminSetti
 	}
 	if update.LogoURL != nil {
 		settings.LogoURL = *update.LogoURL
-		if update.AvatarURL == nil {
-			settings.AvatarURL = *update.LogoURL
-		}
-	}
-	if update.AvatarURL != nil {
-		settings.AvatarURL = *update.AvatarURL
 	}
 	if update.Theme != nil {
 		settings.Theme = *update.Theme
@@ -75,7 +68,6 @@ func (s *SQLiteStore) UpdateAdminSettings(ctx context.Context, update AdminSetti
 		settingKeySiteTitle:            settings.SiteTitle,
 		settingKeySiteSubtitle:         settings.SiteSubtitle,
 		settingKeyLogoURL:              settings.LogoURL,
-		settingKeyAvatarURL:            settings.AvatarURL,
 		settingKeyTheme:                settings.Theme,
 		settingKeyBackgroundURL:        settings.BackgroundURL,
 		settingKeyDesktopBackgroundURL: settings.DesktopBackgroundURL,
@@ -103,8 +95,8 @@ func (s *SQLiteStore) siteSettings(ctx context.Context) (SiteSettings, error) {
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT key, value, updated_at
 		FROM settings
-		WHERE key IN (?, ?, ?, ?, ?, ?, ?, ?)
-	`, settingKeySiteTitle, settingKeySiteSubtitle, settingKeyLogoURL, settingKeyAvatarURL, settingKeyTheme, settingKeyBackgroundURL, settingKeyDesktopBackgroundURL, settingKeyMobileBackgroundURL)
+		WHERE key IN (?, ?, ?, ?, ?, ?, ?)
+	`, settingKeySiteTitle, settingKeySiteSubtitle, settingKeyLogoURL, settingKeyTheme, settingKeyBackgroundURL, settingKeyDesktopBackgroundURL, settingKeyMobileBackgroundURL)
 	if err != nil {
 		return SiteSettings{}, err
 	}
@@ -123,8 +115,6 @@ func (s *SQLiteStore) siteSettings(ctx context.Context) (SiteSettings, error) {
 			settings.SiteSubtitle = value
 		case settingKeyLogoURL:
 			settings.LogoURL = value
-		case settingKeyAvatarURL:
-			settings.AvatarURL = value
 		case settingKeyTheme:
 			settings.Theme = value
 		case settingKeyBackgroundURL:
@@ -140,12 +130,6 @@ func (s *SQLiteStore) siteSettings(ctx context.Context) (SiteSettings, error) {
 	}
 	if err := rows.Err(); err != nil {
 		return SiteSettings{}, err
-	}
-	if settings.AvatarURL == "" {
-		settings.AvatarURL = settings.LogoURL
-	}
-	if settings.LogoURL == "" {
-		settings.LogoURL = settings.AvatarURL
 	}
 	if settings.DesktopBackgroundURL == "" {
 		settings.DesktopBackgroundURL = settings.BackgroundURL

@@ -110,7 +110,6 @@ type SiteSettings struct {
 	SiteTitle            string `json:"site_title"`
 	SiteSubtitle         string `json:"site_subtitle"`
 	LogoURL              string `json:"logo_url"`
-	AvatarURL            string `json:"avatar_url"`
 	Theme                string `json:"theme"`
 	BackgroundURL        string `json:"background_url"`
 	DesktopBackgroundURL string `json:"desktop_background_url"`
@@ -122,7 +121,6 @@ type AdminSettingsUpdateRequest struct {
 	SiteTitle            *string `json:"site_title,omitempty"`
 	SiteSubtitle         *string `json:"site_subtitle,omitempty"`
 	LogoURL              *string `json:"logo_url,omitempty"`
-	AvatarURL            *string `json:"avatar_url,omitempty"`
 	Theme                *string `json:"theme,omitempty"`
 	BackgroundURL        *string `json:"background_url,omitempty"`
 	DesktopBackgroundURL *string `json:"desktop_background_url,omitempty"`
@@ -134,7 +132,6 @@ func defaultSiteSettings() SiteSettings {
 		SiteTitle:            "Zeno",
 		SiteSubtitle:         "服务器运行概览",
 		LogoURL:              "/assets/logo/id.png",
-		AvatarURL:            "/assets/logo/id.png",
 		Theme:                "system",
 		BackgroundURL:        "",
 		DesktopBackgroundURL: "",
@@ -167,14 +164,6 @@ func (request *AdminSettingsUpdateRequest) normalize() error {
 			return errInvalidAdminSettingsUpdate
 		}
 		request.LogoURL = &trimmed
-	}
-	if request.AvatarURL != nil {
-		changed = true
-		trimmed := strings.TrimSpace(*request.AvatarURL)
-		if trimmed == "" || !validSettingsAssetURL(trimmed) {
-			return errInvalidAdminSettingsUpdate
-		}
-		request.AvatarURL = &trimmed
 	}
 	if request.Theme != nil {
 		changed = true

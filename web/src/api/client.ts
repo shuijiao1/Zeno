@@ -4,7 +4,6 @@ interface ApiSettings {
   site_title: string
   site_subtitle: string
   logo_url: string
-  avatar_url?: string
   theme: AdminTheme
   background_url: string
   desktop_background_url?: string
@@ -357,7 +356,6 @@ export interface AdminSettingsUpdateInput {
   siteTitle?: string
   siteSubtitle?: string
   logoUrl?: string
-  avatarUrl?: string
   theme?: AdminTheme
   backgroundUrl?: string
   desktopBackgroundUrl?: string
@@ -843,13 +841,11 @@ export async function updateAdminNode(adminToken: string, nodeId: string, input:
 
 export function normalizeSettings(input: ApiSettings): AdminSettings {
   const logoUrl = input.logo_url
-  const avatarUrl = input.avatar_url ?? logoUrl
   const desktopBackgroundUrl = input.desktop_background_url ?? input.background_url
   return {
     siteTitle: input.site_title,
     siteSubtitle: input.site_subtitle,
     logoUrl,
-    avatarUrl,
     theme: input.theme ?? 'system',
     backgroundUrl: desktopBackgroundUrl,
     desktopBackgroundUrl,
@@ -964,7 +960,6 @@ function serializeAdminSettingsUpdate(input: AdminSettingsUpdateInput) {
     ...(input.siteTitle !== undefined ? { site_title: input.siteTitle } : {}),
     ...(input.siteSubtitle !== undefined ? { site_subtitle: input.siteSubtitle } : {}),
     ...(input.logoUrl !== undefined ? { logo_url: input.logoUrl } : {}),
-    ...(input.avatarUrl !== undefined ? { avatar_url: input.avatarUrl } : {}),
     ...(input.theme !== undefined ? { theme: input.theme } : {}),
     ...(input.backgroundUrl !== undefined ? { background_url: input.backgroundUrl } : {}),
     ...(input.desktopBackgroundUrl !== undefined ? { desktop_background_url: input.desktopBackgroundUrl } : {}),

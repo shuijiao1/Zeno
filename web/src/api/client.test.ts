@@ -442,7 +442,6 @@ describe('fetchSettings', () => {
       site_title: '水饺监控',
       site_subtitle: 'VPS 状态总览',
       logo_url: '/assets/logo/custom.png',
-      avatar_url: '/assets/avatar/custom.webp',
       theme: 'dark',
       background_url: 'https://example.com/desktop-bg.webp',
       desktop_background_url: 'https://example.com/desktop-bg.webp',
@@ -455,7 +454,7 @@ describe('fetchSettings', () => {
 
     expect(settings.siteTitle).toBe('水饺监控')
     expect(settings.logoUrl).toBe('/assets/logo/custom.png')
-    expect(settings.avatarUrl).toBe('/assets/avatar/custom.webp')
+    expect(settings).not.toHaveProperty('avatarUrl')
     expect(settings.desktopBackgroundUrl).toBe('https://example.com/desktop-bg.webp')
     expect(settings.mobileBackgroundUrl).toBe('https://example.com/mobile-bg.webp')
     expect(fetchMock).toHaveBeenCalledWith('/api/public/v1/settings', {
@@ -469,7 +468,6 @@ describe('fetchSettings', () => {
         site_title: String(url).includes('admin') ? '水饺监控' : 'Zeno',
         site_subtitle: 'VPS 状态总览',
         logo_url: '/assets/logo/custom.png',
-        avatar_url: '/assets/avatar/custom.webp',
         theme: 'dark',
         background_url: 'https://example.com/desktop-bg.webp',
         desktop_background_url: 'https://example.com/desktop-bg.webp',
@@ -484,7 +482,6 @@ describe('fetchSettings', () => {
       siteTitle: '水饺监控',
       siteSubtitle: 'VPS 状态总览',
       logoUrl: '/assets/logo/custom.png',
-      avatarUrl: '/assets/avatar/custom.webp',
       theme: 'dark',
       backgroundUrl: 'https://example.com/desktop-bg.webp',
       desktopBackgroundUrl: 'https://example.com/desktop-bg.webp',
@@ -493,7 +490,7 @@ describe('fetchSettings', () => {
 
     expect(settings.backgroundUrl).toBe('https://example.com/desktop-bg.webp')
     expect(settings.logoUrl).toBe('/assets/logo/custom.png')
-    expect(settings.avatarUrl).toBe('/assets/avatar/custom.webp')
+    expect(settings).not.toHaveProperty('avatarUrl')
     expect(settings.desktopBackgroundUrl).toBe('https://example.com/desktop-bg.webp')
     expect(settings.mobileBackgroundUrl).toBe('https://example.com/mobile-bg.webp')
     expect(fetchMock).toHaveBeenNthCalledWith(1, '/api/admin/v1/settings', {
@@ -513,7 +510,6 @@ describe('fetchSettings', () => {
         site_title: '水饺监控',
         site_subtitle: 'VPS 状态总览',
         logo_url: '/assets/logo/custom.png',
-        avatar_url: '/assets/avatar/custom.webp',
         theme: 'dark',
         background_url: 'https://example.com/desktop-bg.webp',
         desktop_background_url: 'https://example.com/desktop-bg.webp',

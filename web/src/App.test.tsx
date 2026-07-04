@@ -198,7 +198,6 @@ const settings: AdminSettings = {
   siteTitle: '水饺监控',
   siteSubtitle: 'VPS 状态总览',
   logoUrl: '/assets/logo/custom.png',
-  avatarUrl: '/assets/avatar/custom.webp',
   theme: 'dark',
   backgroundUrl: 'https://example.com/desktop-bg.webp',
   desktopBackgroundUrl: 'https://example.com/desktop-bg.webp',
@@ -284,7 +283,8 @@ describe('HomeTopPanel', () => {
     expect(html).toContain('dashboard actions')
     expect(html).toContain('Zeno')
     expect(html).toContain('水饺监控')
-    expect(html).toContain('/assets/avatar/custom.webp')
+    expect(html).toContain('/assets/logo/custom.png')
+    expect(html).not.toContain('/assets/avatar/custom.webp')
     expect(html).toContain('VPS 状态总览')
     expect(html).toContain('home-summary')
     expect(html).toContain('home-summary__compact')
@@ -373,9 +373,9 @@ describe('AdminDashboard', () => {
     expect(html).toContain('VPS 状态总览')
     expect(html).toContain('name="logo-url"')
     expect(html).toContain('/assets/logo/custom.png')
-    expect(html).toContain('/assets/avatar/custom.webp')
-    expect(html).toContain('name="avatar-url"')
-    expect(html).toContain('头像 URL')
+    expect(html).toContain('头像 / Logo URL')
+    expect(html).not.toContain('/assets/avatar/custom.webp')
+    expect(html).not.toContain('name="avatar-url"')
     expect(html).toContain('name="theme"')
     expect(html).toContain('深色')
     expect(html).toContain('name="desktop-background-url"')

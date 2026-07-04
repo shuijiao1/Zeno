@@ -57,7 +57,6 @@ const defaultSettings: AdminSettings = {
   siteTitle: 'Zeno',
   siteSubtitle: '服务器运行概览',
   logoUrl: '/assets/logo/id.png',
-  avatarUrl: '/assets/logo/id.png',
   theme: 'system',
   backgroundUrl: '',
   desktopBackgroundUrl: '',
@@ -646,7 +645,7 @@ function DashboardHeader({ settings = defaultSettings, onHome, onAdmin, adminLab
   return (
     <header className="kulin-nav">
       <button className="brand" type="button" onClick={onHome}>
-        <span className="brand-logo"><img src={settings.avatarUrl || settings.logoUrl || defaultSettings.avatarUrl} alt={`${settings.siteTitle || 'Zeno'} avatar`} /></span>
+        <span className="brand-logo"><img src={settings.logoUrl || defaultSettings.logoUrl} alt={`${settings.siteTitle || 'Zeno'} logo`} /></span>
         <span>{settings.siteTitle || 'Zeno'}</span>
       </button>
       <nav className="nav-actions" aria-label="dashboard actions">
@@ -939,7 +938,6 @@ function AdminSettingsSection({ settings, onUpdate }: { settings: AdminSettings;
       siteTitle: String(formData.get('site-title') ?? '').trim(),
       siteSubtitle: String(formData.get('site-subtitle') ?? '').trim(),
       logoUrl: String(formData.get('logo-url') ?? '').trim(),
-      avatarUrl: String(formData.get('avatar-url') ?? '').trim(),
       theme,
       backgroundUrl: String(formData.get('desktop-background-url') ?? '').trim(),
       desktopBackgroundUrl: String(formData.get('desktop-background-url') ?? '').trim(),
@@ -965,12 +963,8 @@ function AdminSettingsSection({ settings, onUpdate }: { settings: AdminSettings;
           <input name="site-subtitle" autoComplete="off" defaultValue={settings.siteSubtitle} />
         </label>
         <label>
-          <span>Logo URL（兼容旧字段）</span>
+          <span>头像 / Logo URL</span>
           <input name="logo-url" autoComplete="off" defaultValue={settings.logoUrl} />
-        </label>
-        <label>
-          <span>头像 URL</span>
-          <input name="avatar-url" autoComplete="off" defaultValue={settings.avatarUrl || settings.logoUrl} />
         </label>
         <label>
           <span>主题</span>
