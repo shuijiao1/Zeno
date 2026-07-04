@@ -561,11 +561,6 @@ svg { display: block; }
   background: color-mix(in srgb, var(--background) 58%, transparent);
 }
 .admin-workspace-panel .admin-list {
-  max-height: calc(100dvh - 300px);
-  overflow-y: auto;
-  scrollbar-gutter: stable;
-}
-.admin-node-section .admin-list {
   max-height: none;
   overflow: visible;
   scrollbar-gutter: auto;
@@ -1303,8 +1298,8 @@ svg { display: block; }
   .admin-section-nav button { min-width: 0; }
   .admin-section-actions { width: 100%; justify-content: flex-end; }
   .admin-list-head { display: none; }
-  .admin-workspace-panel .admin-list { max-height: calc(100dvh - 260px); overflow-y: auto; padding-right: 2px; scrollbar-gutter: stable; }
-  .admin-node-section .admin-list { height: auto; max-height: none; overflow: visible; padding-right: 0; scrollbar-gutter: auto; }
+  .admin-workspace-panel .admin-list { max-height: none; overflow: visible; padding-right: 0; scrollbar-gutter: auto; }
+  .admin-node-section .admin-list { height: auto; }
   .admin-list { border: 0; background: transparent; display: grid; gap: 4px; }
   .admin-list-row {
     grid-template-columns: 1fr;
