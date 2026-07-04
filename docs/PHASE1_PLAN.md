@@ -32,10 +32,10 @@ Zeno 当前已经具备完整预览闭环：
 - Agent 主机状态、完整资源历史（CPU/内存/磁盘/网络速率/负载/Swap/进程/TCP/网络累计）、月流量（含首页计费周期范围）、延迟/服务探测和服务多节点历史。
 - `tcping`、`ping`/ICMP、`http_get` 探针目标。
 - Public 服务详情页；首页只保留服务器卡片和优化后的整体概览，不单独展示监控服务列表。
-- Admin 单管理员登录、账户页修改账号/密码、退出登录、服务器、服务器排序、Agent 安装命令复制、Agent 接入 URL、探针目标、探针目标排序、节点分配、通知、外观设置和当前异常；外观 / Agent 接入 URL 保存前会先校验格式。
+- Admin 单管理员登录、账户页修改账号/密码、退出登录、服务器、服务器排序、Agent 安装命令复制、Agent 接入 URL、探针目标、探针目标排序、节点分配、通知和外观设置；外观 / Agent 接入 URL 保存前会先校验格式。
 - Admin 手机端按卡片化列表和双列导航展示；后台各列表都按内容自然撑开并交给页面滚动；服务器行距保持紧凑但不过度贴合，避免宽表格挤压。
 - Telegram-only 通知 dispatch、测试发送和 sanitized delivery history。
-- 服务器元数据：到期日、账单周期、显示顺序（后台可上移/下移/整理）、国家码/国旗、公网 IPv4、公网 IPv6，Agent 可自动识别公网 IP / GeoIP。
+- 服务器元数据：到期日、账单周期、显示顺序（后台可整理，也可在编辑里调整）、国家码/国旗、公网 IPv4、公网 IPv6，Agent 可自动识别公网 IP / GeoIP。
 - 通知类型触发条件支持按服务器范围生效。
 - Linux amd64 发布包（含 README/docs）、systemd 模板、本机 Controller 更新脚本、单独 Agent 安装脚本、GUKO 服务器清单导入脚本和自部署指南。
 - Hytron 预览部署：`/opt/zeno`，`zeno-controller.service`，`zeno-agent.service`。

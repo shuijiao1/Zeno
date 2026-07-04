@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { createAdminNode, createAdminNotificationChannel, createAdminProbeTarget, deleteAdminNotificationChannel, deleteAdminProbeTarget, fetchAdminAccount, fetchAdminAlertRules, fetchAdminAlertRuleStates, fetchAdminNodes, fetchAdminNotificationChannels, fetchAdminNotificationDeliveries, fetchAdminNotificationTypes, fetchAdminProbeTargets, fetchAdminSettings, fetchPublicSettings, fetchServiceLatency, loginAdmin, logoutAdmin, normalizeAdminAlertRules, normalizeAdminAlertRuleStates, normalizeAdminNodes, normalizeAdminNotificationChannels, normalizeAdminNotificationDeliveries, normalizeAdminNotificationTypes, normalizeAdminProbeTargets, normalizeSettings, normalizeNodeLatency, normalizeNodeState, normalizeServiceLatency, normalizeSummary, requestAdminNodeInstallCommand, testAdminNotificationChannel, updateAdminAccount, updateAdminAlertRule, updateAdminNode, updateAdminNotificationChannel, updateAdminNotificationType, updateAdminPassword, updateAdminProbeTarget, updateAdminSettings } from './client'
+import { createAdminNode, createAdminNotificationChannel, createAdminProbeTarget, deleteAdminNotificationChannel, deleteAdminProbeTarget, fetchAdminAccount, fetchAdminAlertRules, fetchAdminAlertRuleStates, fetchAdminNodes, fetchAdminNotificationChannels, fetchAdminNotificationTypes, fetchAdminProbeTargets, fetchAdminSettings, fetchPublicSettings, fetchServiceLatency, loginAdmin, logoutAdmin, normalizeAdminAlertRules, normalizeAdminAlertRuleStates, normalizeAdminNodes, normalizeAdminNotificationChannels, normalizeAdminNotificationTypes, normalizeAdminProbeTargets, normalizeSettings, normalizeNodeLatency, normalizeNodeState, normalizeServiceLatency, normalizeSummary, requestAdminNodeInstallCommand, testAdminNotificationChannel, updateAdminAccount, updateAdminAlertRule, updateAdminNode, updateAdminNotificationChannel, updateAdminNotificationType, updateAdminPassword, updateAdminProbeTarget, updateAdminSettings } from './client'
 
 describe('normalizeSummary', () => {
   it('maps controller snake_case JSON into frontend camelCase models', () => {
@@ -1171,53 +1171,6 @@ describe('admin alert rules', () => {
     })
     const calls = fetchMock.mock.calls as unknown as Array<[RequestInfo | URL, RequestInit?]>
     expect(String(calls[0]?.[0])).not.toContain('admin-pass')
-  })
-})
-
-
-describe('admin notification deliveries', () => {
-  const originalFetch = globalThis.fetch
-
-  afterEach(() => {
-    globalThis.fetch = originalFetch
-    vi.restoreAllMocks()
-  })
-
-  it('normalizes delivery history and fetches it with X-Admin-Token only', async () => {
-    const apiPayload = {
-      deliveries: [
-        {
-          id: 7,
-          event_type: 'node_online',
-          label: '上线',
-          node_id: 'hytron',
-          node_name: 'Hytron',
-          previous_status: 'no_data',
-          status: 'online',
-          channel_id: 'zeno-telegram',
-          channel_name: 'Zeno Telegram',
-            success: false,
-          error: 'telegram returned status 500',
-          created_at: '2026-07-03T00:05:00Z',
-        },
-      ],
-    }
-    const normalized = normalizeAdminNotificationDeliveries(apiPayload)
-    expect(normalized.deliveries[0].nodeName).toBe('Hytron')
-    expect(normalized.deliveries[0].success).toBe(false)
-    expect(normalized.deliveries[0].error).toBe('telegram returned status 500')
-
-    const fetchMock = vi.fn(async () => new Response(JSON.stringify(apiPayload), { status: 200, headers: { 'Content-Type': 'application/json' } }))
-    globalThis.fetch = fetchMock as unknown as typeof fetch
-
-    const fetched = await fetchAdminNotificationDeliveries('admin-pass')
-    expect(fetched.deliveries[0].channelName).toBe('Zeno Telegram')
-    expect(fetchMock).toHaveBeenCalledWith('/api/admin/v1/notification-deliveries', {
-      headers: {
-        Accept: 'application/json',
-        'X-Admin-Token': 'admin-pass',
-      },
-    })
   })
 })
 

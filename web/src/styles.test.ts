@@ -50,6 +50,8 @@ describe('homepage and admin shell layout', () => {
     expect(styles).toContain('overflow: visible')
     expect(styles).toContain('scrollbar-gutter: auto')
     expect(styles).toContain('padding: 7px 10px')
+    expect(styles).toContain('min-height: 58px')
+    expect(styles).toContain('.admin-ip-stack')
     expect(styles).toContain('height: 28px')
     expect(styles).not.toContain('max-height: calc(100dvh - 300px)')
     expect(styles).not.toContain('max-height: calc(100dvh - 260px)')

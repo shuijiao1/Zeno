@@ -306,10 +306,6 @@ export interface ApiAdminNotificationTypesResponse {
   types: ApiAdminNotificationType[]
 }
 
-export interface ApiAdminNotificationDeliveriesResponse {
-  deliveries: ApiAdminNotificationDelivery[]
-}
-
 export interface ApiAdminNotificationTestResponse {
   delivery: ApiAdminNotificationDelivery
 }
@@ -369,10 +365,6 @@ export interface AdminNotificationChannelsData {
 
 export interface AdminNotificationTypesData {
   types: AdminNotificationType[]
-}
-
-export interface AdminNotificationDeliveriesData {
-  deliveries: AdminNotificationDelivery[]
 }
 
 export interface AdminAlertRulesData {
@@ -649,19 +641,6 @@ export async function fetchAdminNotificationTypes(adminToken: string): Promise<A
     throw new Error(`admin notification types request failed: ${response.status}`)
   }
   return normalizeAdminNotificationTypes(await response.json() as ApiAdminNotificationTypesResponse)
-}
-
-export async function fetchAdminNotificationDeliveries(adminToken: string): Promise<AdminNotificationDeliveriesData> {
-  const response = await fetch('/api/admin/v1/notification-deliveries', {
-    headers: {
-      Accept: 'application/json',
-      'X-Admin-Token': adminToken,
-    },
-  })
-  if (!response.ok) {
-    throw new Error(`admin notification deliveries request failed: ${response.status}`)
-  }
-  return normalizeAdminNotificationDeliveries(await response.json() as ApiAdminNotificationDeliveriesResponse)
 }
 
 export async function fetchAdminAlertRules(adminToken: string): Promise<AdminAlertRulesData> {
@@ -968,12 +947,6 @@ export function normalizeAdminNotificationChannels(input: ApiAdminNotificationCh
 export function normalizeAdminNotificationTypes(input: ApiAdminNotificationTypesResponse): AdminNotificationTypesData {
   return {
     types: input.types.map(normalizeAdminNotificationType),
-  }
-}
-
-export function normalizeAdminNotificationDeliveries(input: ApiAdminNotificationDeliveriesResponse): AdminNotificationDeliveriesData {
-  return {
-    deliveries: (input.deliveries ?? []).map(normalizeAdminNotificationDelivery),
   }
 }
 

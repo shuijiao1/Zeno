@@ -188,7 +188,7 @@ CREATE TABLE probe_samples (
 );
 ```
 
-## notification_channels / notification_types / notification_deliveries
+## notification_channels / notification_types
 
 通知当前是 Telegram-only 产品路径。SQLite 内部仍保留 `type` / `channel_type` 兼容列，但 Admin API/UI 不暴露多渠道概念。
 
@@ -210,30 +210,13 @@ CREATE TABLE notification_types (
   updated_at INTEGER NOT NULL
 );
 
-CREATE TABLE notification_deliveries (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  event_type TEXT NOT NULL,
-  label TEXT NOT NULL,
-  node_id TEXT NOT NULL,
-  node_name TEXT NOT NULL,
-  previous_status TEXT NOT NULL,
-  status TEXT NOT NULL,
-  channel_id TEXT NOT NULL,
-  channel_name TEXT NOT NULL,
-  channel_type TEXT NOT NULL,
-  success INTEGER NOT NULL,
-  error TEXT NOT NULL DEFAULT '',
-  created_at INTEGER NOT NULL
-);
-
-CREATE INDEX idx_notification_deliveries_created_at ON notification_deliveries(created_at DESC, id DESC);
 ```
 
-`credential` 不通过 Admin API 响应返回；发送记录只返回脱敏字段。
+`credential` 不通过 Admin API 响应返回。
 
 ## alert_rules / alert_rule_node_scopes / alert_rule_states
 
-通知类型触发条件和当前异常。
+通知类型触发条件和内部命中状态。
 
 ```sql
 CREATE TABLE alert_rules (

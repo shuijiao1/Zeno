@@ -27,9 +27,8 @@ Go 单二进制，当前职责：
 - 提供 Public API 给前端。
 - 提供 Admin API 给后台。
 - 执行 Telegram 通知 dispatch。
-- 记录 sanitized notification delivery history。
 - 提供 Agent binary 下载和 install command 生成。
-- 执行通知类型 evaluator，维护当前异常状态。
+- 执行通知类型 evaluator，维护内部规则命中状态。
 
 Controller 不暴露 Agent token、admin token hash、通知凭据或 bearer secret。即使 Admin API 已鉴权，响应也必须走 explicit DTO。
 
@@ -60,8 +59,8 @@ Vite + React + TypeScript。
 1. 前台主页：服务器卡片、流量/资源概览、延迟摘要、外观设置应用；不单独展示监控服务列表。
 2. 节点详情页：延迟目标按钮、延迟图、资源历史图；资源历史包含 CPU、内存、磁盘、网络速率、系统负载、Swap、进程/TCP 连接和网络累计。
 3. 服务详情页：同一监控服务在所有节点上的历史延迟曲线。
-4. Admin 后台：单管理员登录、账户页修改账号/密码、退出登录、服务器、延迟监控、通知、当前异常、外观设置；异常和发送明细都集中在通知页。
-5. Admin 管理动作：服务器创建/编辑/安装命令复制、Agent 接入 URL、目标创建/编辑/删除/排序/分配、通知渠道/类型/测试发送/发送记录、通知类型作用范围。
+4. Admin 后台：单管理员登录、账户页修改账号/密码、退出登录、服务器、延迟监控、通知和外观设置；通知页只保留通知渠道和通知类型。
+5. Admin 管理动作：服务器创建/编辑/安装命令复制、Agent 接入 URL、目标创建/编辑/删除/排序/分配、通知渠道/类型、通知类型作用范围。
 
 UI 规则：保持已确认主页卡片、详情页密度和 Admin 分区结构；后台参考 Kulin 的清爽布局，但使用 Zeno 自己的视觉语言，不恢复旧介绍区。
 
@@ -139,10 +138,9 @@ Public summary 会返回 `services`，按后台探针目标显示顺序列出已
 - 渠道：Telegram-only。
 - 事件：`node_online`、`node_offline`、`probe_unhealthy`、手动 `test_notification`。
 - Agent heartbeat 触发的通知异步发送，不能阻塞 Agent 上报。
-- Admin 手动测试发送同步返回 sanitized delivery，方便操作员立即验证配置。
-- Delivery history 只记录事件、节点、渠道、状态和 sanitized 错误，不记录 chat id、Bot Token 或凭据原文。
+- Admin 手动测试发送同步返回本次 sanitized 结果，方便操作员立即验证配置。
 
-## 通知类型 / 当前异常
+## 通知类型
 
 通知类型触发条件持久化为 `alert_rules`，Admin 文案统一放在“通知”下。
 
@@ -163,7 +161,7 @@ Public summary 会返回 `services`，按后台探针目标显示顺序列出已
 - `duration_sec`。
 - `scope_node_ids`：为空表示全部服务器；非空时只作用于指定服务器。
 
-当前异常由 `alert_rule_states` 记录，但展示时会结合规则是否启用、节点是否禁用、当前阈值、当前 scope 重新计算，避免阈值或范围调整后留下 stale active。
+`alert_rule_states` 用于 Controller 内部合并不同规则命中状态，避免某一类健康上报误清另一类仍活跃状态。
 
 ## 公网 IP / GeoIP
 

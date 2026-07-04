@@ -1,11 +1,11 @@
 import { type CSSProperties, type FormEvent, type ReactNode, useEffect, useState } from 'react'
-import { createAdminNode, createAdminNotificationChannel, createAdminProbeTarget, deleteAdminNotificationChannel, deleteAdminProbeTarget, fetchAdminAccount, fetchAdminAlertRules, fetchAdminAlertRuleStates, fetchAdminNodes, fetchAdminNotificationChannels, fetchAdminNotificationDeliveries, fetchAdminNotificationTypes, fetchAdminProbeTargets, fetchAdminSettings, fetchNodeLatency, fetchNodeState, fetchPublicSettings, fetchServiceLatency, fetchSummary, loginAdmin, logoutAdmin, requestAdminNodeInstallCommand, testAdminNotificationChannel, updateAdminAccount, updateAdminAlertRule, updateAdminNode, updateAdminNotificationChannel, updateAdminNotificationType, updateAdminProbeTarget, updateAdminSettings, type AdminAccountData, type AdminAlertRuleUpdateInput, type AdminNodeCreateInput, type AdminNodeUpdateInput, type AdminNotificationChannelCreateInput, type AdminNotificationChannelUpdateInput, type AdminProbeTargetInput, type AdminProbeTargetUpdateInput, type AdminSettingsUpdateInput, type NodeLatencyData, type NodeStateData, type ServiceLatencyData, type SummaryData } from './api/client'
+import { createAdminNode, createAdminNotificationChannel, createAdminProbeTarget, deleteAdminNotificationChannel, fetchAdminAccount, fetchAdminAlertRules, fetchAdminNodes, fetchAdminNotificationChannels, fetchAdminNotificationTypes, fetchAdminProbeTargets, fetchAdminSettings, fetchNodeLatency, fetchNodeState, fetchPublicSettings, fetchServiceLatency, fetchSummary, loginAdmin, logoutAdmin, requestAdminNodeInstallCommand, testAdminNotificationChannel, updateAdminAccount, updateAdminAlertRule, updateAdminNode, updateAdminNotificationChannel, updateAdminNotificationType, updateAdminProbeTarget, updateAdminSettings, type AdminAccountData, type AdminAlertRuleUpdateInput, type AdminNodeCreateInput, type AdminNodeUpdateInput, type AdminNotificationChannelCreateInput, type AdminNotificationChannelUpdateInput, type AdminProbeTargetInput, type AdminProbeTargetUpdateInput, type AdminSettingsUpdateInput, type NodeLatencyData, type NodeStateData, type ServiceLatencyData, type SummaryData } from './api/client'
 import { LatencyDetail } from './components/LatencyDetail'
 import { LatencyChart } from './components/LatencyChart'
 import { ServerCard } from './components/ServerCard'
 import { startLiveRefresh } from './lib/liveRefresh'
 import { nodePath, parseDashboardRoute, servicePath, type DashboardRoute } from './lib/route'
-import type { AdminAlertRule, AdminAlertRuleState, AdminNode, AdminNotificationChannel, AdminNotificationDelivery, AdminNotificationType, AdminProbeTarget, AdminSettings, LatencyPoint, ProbeType, ServiceTarget } from './types'
+import type { AdminAlertRule, AdminAlertRuleState, AdminNode, AdminNotificationChannel, AdminNotificationType, AdminProbeTarget, AdminSettings, LatencyPoint, ProbeType, ServiceTarget } from './types'
 
 type LoadState =
   | { kind: 'loading' }
@@ -33,7 +33,7 @@ type ServiceLatencyLoadState =
 type AdminLoadState =
   | { kind: 'idle' }
   | { kind: 'loading' }
-  | { kind: 'ready'; account: AdminAccountData; nodes: AdminNode[]; targets: AdminProbeTarget[]; notificationChannels: AdminNotificationChannel[]; notificationTypes: AdminNotificationType[]; notificationDeliveries: AdminNotificationDelivery[]; alertRules: AdminAlertRule[]; alertRuleStates: AdminAlertRuleState[] }
+  | { kind: 'ready'; account: AdminAccountData; nodes: AdminNode[]; targets: AdminProbeTarget[]; notificationChannels: AdminNotificationChannel[]; notificationTypes: AdminNotificationType[]; alertRules: AdminAlertRule[] }
   | { kind: 'error'; message: string }
 
 type AdminAuthState =
@@ -306,12 +306,12 @@ export function App() {
     let loadedOnce = false
     const loadAdminNodes = () => {
       if (!loadedOnce) setAdminState({ kind: 'loading' })
-      Promise.all([fetchAdminSettings(adminToken), fetchAdminAccount(adminToken), fetchAdminNodes(adminToken), fetchAdminProbeTargets(adminToken), fetchAdminNotificationChannels(adminToken), fetchAdminNotificationTypes(adminToken), fetchAdminNotificationDeliveries(adminToken), fetchAdminAlertRules(adminToken), fetchAdminAlertRuleStates(adminToken)])
-        .then(([settingsData, accountData, nodesData, targetsData, channelsData, typesData, deliveriesData, alertRulesData, alertRuleStatesData]) => {
+      Promise.all([fetchAdminSettings(adminToken), fetchAdminAccount(adminToken), fetchAdminNodes(adminToken), fetchAdminProbeTargets(adminToken), fetchAdminNotificationChannels(adminToken), fetchAdminNotificationTypes(adminToken), fetchAdminAlertRules(adminToken)])
+        .then(([settingsData, accountData, nodesData, targetsData, channelsData, typesData, alertRulesData]) => {
           loadedOnce = true
           if (!cancelled) {
             setSettings(settingsData)
-            setAdminState({ kind: 'ready', account: accountData, nodes: nodesData.nodes, targets: targetsData.targets, notificationChannels: channelsData.channels, notificationTypes: typesData.types, notificationDeliveries: deliveriesData.deliveries, alertRules: alertRulesData.rules, alertRuleStates: alertRuleStatesData.states })
+            setAdminState({ kind: 'ready', account: accountData, nodes: nodesData.nodes, targets: targetsData.targets, notificationChannels: channelsData.channels, notificationTypes: typesData.types, alertRules: alertRulesData.rules })
           }
         })
         .catch((error: unknown) => {
@@ -366,10 +366,10 @@ export function App() {
   const refreshAdminNodes = () => {
     if (adminToken === '') return
     setAdminState({ kind: 'loading' })
-    Promise.all([fetchAdminSettings(adminToken), fetchAdminAccount(adminToken), fetchAdminNodes(adminToken), fetchAdminProbeTargets(adminToken), fetchAdminNotificationChannels(adminToken), fetchAdminNotificationTypes(adminToken), fetchAdminNotificationDeliveries(adminToken), fetchAdminAlertRules(adminToken), fetchAdminAlertRuleStates(adminToken)])
-      .then(([settingsData, accountData, nodesData, targetsData, channelsData, typesData, deliveriesData, alertRulesData, alertRuleStatesData]) => {
+    Promise.all([fetchAdminSettings(adminToken), fetchAdminAccount(adminToken), fetchAdminNodes(adminToken), fetchAdminProbeTargets(adminToken), fetchAdminNotificationChannels(adminToken), fetchAdminNotificationTypes(adminToken), fetchAdminAlertRules(adminToken)])
+      .then(([settingsData, accountData, nodesData, targetsData, channelsData, typesData, alertRulesData]) => {
         setSettings(settingsData)
-        setAdminState({ kind: 'ready', account: accountData, nodes: nodesData.nodes, targets: targetsData.targets, notificationChannels: channelsData.channels, notificationTypes: typesData.types, notificationDeliveries: deliveriesData.deliveries, alertRules: alertRulesData.rules, alertRuleStates: alertRuleStatesData.states })
+        setAdminState({ kind: 'ready', account: accountData, nodes: nodesData.nodes, targets: targetsData.targets, notificationChannels: channelsData.channels, notificationTypes: typesData.types, alertRules: alertRulesData.rules })
       })
       .catch((error: unknown) => setAdminState({ kind: 'error', message: error instanceof Error ? error.message : 'unknown error' }))
   }
@@ -382,7 +382,7 @@ export function App() {
           if (current.kind === 'ready') {
             return { ...current, nodes: sortAdminNodes([...current.nodes, createdNode]) }
           }
-          return { kind: 'ready', account: { username: 'admin' }, nodes: [createdNode], targets: [], notificationChannels: [], notificationTypes: [], notificationDeliveries: [], alertRules: [], alertRuleStates: [] }
+          return { kind: 'ready', account: { username: 'admin' }, nodes: [createdNode], targets: [], notificationChannels: [], notificationTypes: [], alertRules: [] }
         })
       })
       .catch((error: unknown) => setAdminState({ kind: 'error', message: error instanceof Error ? error.message : 'unknown error' }))
@@ -402,10 +402,9 @@ export function App() {
             return {
               ...current,
               nodes: sortAdminNodes(current.nodes.map((node) => node.id === updatedNode.id ? updatedNode : node)),
-              alertRuleStates: reconcileAlertRuleStatesForNode(updatedNode, current.alertRuleStates, current.alertRules),
             }
           }
-          return { kind: 'ready', account: { username: 'admin' }, nodes: [updatedNode], targets: [], notificationChannels: [], notificationTypes: [], notificationDeliveries: [], alertRules: [], alertRuleStates: [] }
+          return { kind: 'ready', account: { username: 'admin' }, nodes: [updatedNode], targets: [], notificationChannels: [], notificationTypes: [], alertRules: [] }
         })
       })
       .catch((error: unknown) => setAdminState({ kind: 'error', message: error instanceof Error ? error.message : 'unknown error' }))
@@ -419,7 +418,7 @@ export function App() {
           if (current.kind === 'ready') {
             return { ...current, targets: sortAdminProbeTargets([...current.targets, createdTarget], 'order') }
           }
-          return { kind: 'ready', account: { username: 'admin' }, nodes: [], targets: [createdTarget], notificationChannels: [], notificationTypes: [], notificationDeliveries: [], alertRules: [], alertRuleStates: [] }
+          return { kind: 'ready', account: { username: 'admin' }, nodes: [], targets: [createdTarget], notificationChannels: [], notificationTypes: [], alertRules: [] }
         })
       })
       .catch((error: unknown) => setAdminState({ kind: 'error', message: error instanceof Error ? error.message : 'unknown error' }))
@@ -433,24 +432,11 @@ export function App() {
           if (current.kind === 'ready') {
             return { ...current, targets: sortAdminProbeTargets(current.targets.map((target) => target.id === updatedTarget.id ? updatedTarget : target), 'order') }
           }
-          return { kind: 'ready', account: { username: 'admin' }, nodes: [], targets: [updatedTarget], notificationChannels: [], notificationTypes: [], notificationDeliveries: [], alertRules: [], alertRuleStates: [] }
+          return { kind: 'ready', account: { username: 'admin' }, nodes: [], targets: [updatedTarget], notificationChannels: [], notificationTypes: [], alertRules: [] }
         })
       })
       .catch((error: unknown) => setAdminState({ kind: 'error', message: error instanceof Error ? error.message : 'unknown error' }))
   }
-
-  const deleteAdminProbeTargetDetails = (targetId: string) => {
-    if (adminToken === '') return
-    deleteAdminProbeTarget(adminToken, targetId)
-      .then(() => {
-        setAdminState((current) => {
-          if (current.kind !== 'ready') return current
-          return { ...current, targets: current.targets.filter((target) => target.id !== targetId) }
-        })
-      })
-      .catch((error: unknown) => setAdminState({ kind: 'error', message: error instanceof Error ? error.message : 'unknown error' }))
-  }
-
 
   const createAdminNotificationChannelDetails = (input: AdminNotificationChannelCreateInput) => {
     if (adminToken === '') return
@@ -460,7 +446,7 @@ export function App() {
           if (current.kind === 'ready') {
             return { ...current, notificationChannels: [...current.notificationChannels, createdChannel] }
           }
-          return { kind: 'ready', account: { username: 'admin' }, nodes: [], targets: [], notificationChannels: [createdChannel], notificationTypes: [], notificationDeliveries: [], alertRules: [], alertRuleStates: [] }
+          return { kind: 'ready', account: { username: 'admin' }, nodes: [], targets: [], notificationChannels: [createdChannel], notificationTypes: [], alertRules: [] }
         })
       })
       .catch((error: unknown) => setAdminState({ kind: 'error', message: error instanceof Error ? error.message : 'unknown error' }))
@@ -474,7 +460,7 @@ export function App() {
           if (current.kind === 'ready') {
             return { ...current, notificationChannels: current.notificationChannels.map((channel) => channel.id === updatedChannel.id ? updatedChannel : channel) }
           }
-          return { kind: 'ready', account: { username: 'admin' }, nodes: [], targets: [], notificationChannels: [updatedChannel], notificationTypes: [], notificationDeliveries: [], alertRules: [], alertRuleStates: [] }
+          return { kind: 'ready', account: { username: 'admin' }, nodes: [], targets: [], notificationChannels: [updatedChannel], notificationTypes: [], alertRules: [] }
         })
       })
       .catch((error: unknown) => setAdminState({ kind: 'error', message: error instanceof Error ? error.message : 'unknown error' }))
@@ -495,12 +481,7 @@ export function App() {
   const testAdminNotificationChannelDetails = (channelId: string) => {
     if (adminToken === '') return
     testAdminNotificationChannel(adminToken, channelId)
-      .then((delivery) => {
-        setAdminState((current) => {
-          if (current.kind !== 'ready') return current
-          return { ...current, notificationDeliveries: [delivery, ...current.notificationDeliveries].slice(0, 50) }
-        })
-      })
+      .then(() => {})
       .catch((error: unknown) => setAdminState({ kind: 'error', message: error instanceof Error ? error.message : 'unknown error' }))
   }
 
@@ -512,7 +493,7 @@ export function App() {
           if (current.kind === 'ready') {
             return { ...current, notificationTypes: current.notificationTypes.map((notificationType) => notificationType.eventType === updatedType.eventType ? updatedType : notificationType) }
           }
-          return { kind: 'ready', account: { username: 'admin' }, nodes: [], targets: [], notificationChannels: [], notificationTypes: [updatedType], notificationDeliveries: [], alertRules: [], alertRuleStates: [] }
+          return { kind: 'ready', account: { username: 'admin' }, nodes: [], targets: [], notificationChannels: [], notificationTypes: [updatedType], alertRules: [] }
         })
       })
       .catch((error: unknown) => setAdminState({ kind: 'error', message: error instanceof Error ? error.message : 'unknown error' }))
@@ -527,10 +508,9 @@ export function App() {
             return {
               ...current,
               alertRules: current.alertRules.map((rule) => rule.id === updatedRule.id ? updatedRule : rule),
-              alertRuleStates: reconcileAlertRuleStates(updatedRule, current.alertRuleStates),
             }
           }
-          return { kind: 'ready', account: { username: 'admin' }, nodes: [], targets: [], notificationChannels: [], notificationTypes: [], notificationDeliveries: [], alertRules: [updatedRule], alertRuleStates: [] }
+          return { kind: 'ready', account: { username: 'admin' }, nodes: [], targets: [], notificationChannels: [], notificationTypes: [], alertRules: [updatedRule] }
         })
       })
       .catch((error: unknown) => setAdminState({ kind: 'error', message: error instanceof Error ? error.message : 'unknown error' }))
@@ -597,7 +577,6 @@ export function App() {
           onAdminInstallCommand={requestAdminInstallCommand}
           onAdminProbeTargetCreate={createAdminProbeTargetDetails}
           onAdminProbeTargetUpdate={updateAdminProbeTargetDetails}
-          onAdminProbeTargetDelete={deleteAdminProbeTargetDetails}
           onAdminNotificationChannelCreate={createAdminNotificationChannelDetails}
           onAdminNotificationChannelUpdate={updateAdminNotificationChannelDetails}
           onAdminNotificationChannelDelete={deleteAdminNotificationChannelDetails}
@@ -824,7 +803,6 @@ interface AdminDashboardProps {
   onAdminInstallCommand?: (nodeId: string) => Promise<string>
   onAdminProbeTargetCreate?: (input: AdminProbeTargetInput) => void
   onAdminProbeTargetUpdate?: (targetId: string, input: AdminProbeTargetUpdateInput) => void
-  onAdminProbeTargetDelete?: (targetId: string) => void
   onAdminNotificationChannelCreate?: (input: AdminNotificationChannelCreateInput) => void
   onAdminNotificationChannelUpdate?: (channelId: string, input: AdminNotificationChannelUpdateInput) => void
   onAdminNotificationChannelDelete?: (channelId: string) => void
@@ -850,7 +828,6 @@ export function AdminDashboard({
   onAdminInstallCommand = () => Promise.reject(new Error('install command unavailable')),
   onAdminProbeTargetCreate = () => {},
   onAdminProbeTargetUpdate = () => {},
-  onAdminProbeTargetDelete = () => {},
   onAdminNotificationChannelCreate = () => {},
   onAdminNotificationChannelUpdate = () => {},
   onAdminNotificationChannelDelete = () => {},
@@ -873,7 +850,6 @@ export function AdminDashboard({
   const nodeCount = adminState.kind === 'ready' ? adminState.nodes.length : 0
   const targetCount = adminState.kind === 'ready' ? adminState.targets.length : 0
   const ruleCount = adminState.kind === 'ready' ? adminState.alertRules.length : 0
-  const activeIssueCount = adminState.kind === 'ready' ? adminState.alertRuleStates.filter((state) => state.active).length : 0
 
   return (
     <div className="kulin-container admin-container">
@@ -907,7 +883,6 @@ export function AdminDashboard({
                 nodeCount={nodeCount}
                 targetCount={targetCount}
                 ruleCount={ruleCount}
-                activeIssueCount={activeIssueCount}
               />
               <div className="admin-section-actions">
                 <button type="button" onClick={onAdminRefresh}>刷新</button>
@@ -933,7 +908,6 @@ export function AdminDashboard({
                 nodes={adminState.nodes}
                 onCreate={onAdminProbeTargetCreate}
                 onUpdate={onAdminProbeTargetUpdate}
-                onDelete={onAdminProbeTargetDelete}
               />
             )}
 
@@ -949,14 +923,12 @@ export function AdminDashboard({
               <AdminNotificationsSection
                 channels={adminState.notificationChannels}
                 types={adminState.notificationTypes}
-                deliveries={adminState.notificationDeliveries}
                 onChannelCreate={onAdminNotificationChannelCreate}
                 onChannelUpdate={onAdminNotificationChannelUpdate}
                 onChannelDelete={onAdminNotificationChannelDelete}
                 onChannelTest={onAdminNotificationChannelTest}
                 onTypeUpdate={onAdminNotificationTypeUpdate}
                 rules={adminState.alertRules}
-                states={adminState.alertRuleStates}
                 nodes={adminState.nodes}
                 onRuleUpdate={onAdminAlertRuleUpdate}
               />
@@ -968,11 +940,11 @@ export function AdminDashboard({
   )
 }
 
-function AdminSectionNav({ activeSection, onSectionChange, nodeCount, targetCount, ruleCount, activeIssueCount }: { activeSection: AdminSection; onSectionChange: (section: AdminSection) => void; nodeCount: number; targetCount: number; ruleCount: number; activeIssueCount: number }) {
+function AdminSectionNav({ activeSection, onSectionChange, nodeCount, targetCount, ruleCount }: { activeSection: AdminSection; onSectionChange: (section: AdminSection) => void; nodeCount: number; targetCount: number; ruleCount: number }) {
   const sections: Array<{ id: AdminSection; label: string; meta: string }> = [
     { id: 'nodes', label: '服务器', meta: `${nodeCount} 台` },
     { id: 'targets', label: '延迟监控', meta: `${targetCount} 个目标` },
-    { id: 'notifications', label: '通知', meta: activeIssueCount > 0 ? `${activeIssueCount} 异常 / ${ruleCount} 类型` : 'Channels' },
+    { id: 'notifications', label: '通知', meta: `${ruleCount} 类型` },
     { id: 'account', label: '账户', meta: 'Account' },
     { id: 'settings', label: '设置', meta: 'Appearance' },
   ]
@@ -1196,7 +1168,7 @@ function AdminNodeSection({ nodes, onCreate, onUpdate, onInstallCommand }: { nod
       </header>
 
       {nodes.length === 0 && <div className="admin-state-card">还没有节点。</div>}
-      {nodes.length > 0 && <AdminNodeList nodes={nodes} onEdit={setEditingNodeId} onReorder={(nodeId, direction) => applyOrderPatches(buildAdminNodeOrderPatches(nodes, nodeId, direction))} />}
+      {nodes.length > 0 && <AdminNodeList nodes={nodes} onEdit={setEditingNodeId} />}
 
       {creatingNode && (
         <AdminNodeCreateModal
@@ -1227,7 +1199,7 @@ function AdminNodeSection({ nodes, onCreate, onUpdate, onInstallCommand }: { nod
 type AdminNodeOrderDirection = 'up' | 'down'
 type AdminNodeOrderPatch = { nodeId: string; displayOrder: number }
 
-function AdminNodeList({ nodes, onEdit, onReorder }: { nodes: AdminNode[]; onEdit: (nodeId: string) => void; onReorder: (nodeId: string, direction: AdminNodeOrderDirection) => void }) {
+function AdminNodeList({ nodes, onEdit }: { nodes: AdminNode[]; onEdit: (nodeId: string) => void }) {
   const orderedNodes = sortAdminNodes(nodes)
   return (
     <div className="admin-list" role="list" aria-label="服务器列表">
@@ -1235,27 +1207,23 @@ function AdminNodeList({ nodes, onEdit, onReorder }: { nodes: AdminNode[]; onEdi
         <span>服务器</span>
         <span>状态</span>
         <span>公网 IP</span>
-        <span>账单</span>
-        <span>系统</span>
-        <span>最近在线</span>
         <span>Agent</span>
         <span>操作</span>
       </div>
-      {orderedNodes.map((node, index) => (
+      {orderedNodes.map((node) => (
         <article className="admin-list-row" role="listitem" key={node.id}>
           <div className="admin-list-main">
             <strong>{node.displayName}</strong>
             <small>{node.id} · {countryCodeToFlag(node.countryCode)} {formatAdminLocation(node)} · 顺序 {node.displayOrder}</small>
           </div>
           <span data-label="状态" className={`admin-node-status status-${node.disabled ? 'disabled' : node.status}`}>{node.disabled ? 'disabled' : node.status}</span>
-          <span data-label="公网 IP">{formatAdminPublicIPs(node)}</span>
-          <span data-label="账单">{formatAdminBilling(node)}</span>
-          <span data-label="系统">{formatAdminSystem(node)}</span>
-          <span data-label="最近在线">{formatAdminDate(node.lastSeenAt)}</span>
+          <span data-label="公网 IP" className={`admin-ip-stack${node.publicIPv6 ? '' : ' is-single'}`}>
+            {node.publicIPv4 && <span>v4 {node.publicIPv4}</span>}
+            {node.publicIPv6 && <span>v6 {node.publicIPv6}</span>}
+            {!node.publicIPv4 && !node.publicIPv6 && <span>—</span>}
+          </span>
           <span data-label="Agent">{node.agentVersion || '—'}</span>
           <div className="admin-row-actions">
-            <button className="admin-row-action" type="button" onClick={() => onReorder(node.id, 'up')} disabled={index === 0}>上移</button>
-            <button className="admin-row-action" type="button" onClick={() => onReorder(node.id, 'down')} disabled={index === orderedNodes.length - 1}>下移</button>
             <button className="admin-row-action" type="button" onClick={() => onEdit(node.id)}>编辑服务器</button>
           </div>
         </article>
@@ -1494,7 +1462,7 @@ function AdminNodeEditModal({ node, onUpdate, onInstallCommand, onClose }: { nod
   )
 }
 
-function AdminTargetSection({ targets, nodes, onCreate, onUpdate, onDelete }: { targets: AdminProbeTarget[]; nodes: AdminNode[]; onCreate: (input: AdminProbeTargetInput) => void; onUpdate: (targetId: string, input: AdminProbeTargetUpdateInput) => void; onDelete: (targetId: string) => void }) {
+function AdminTargetSection({ targets, nodes, onCreate, onUpdate }: { targets: AdminProbeTarget[]; nodes: AdminNode[]; onCreate: (input: AdminProbeTargetInput) => void; onUpdate: (targetId: string, input: AdminProbeTargetUpdateInput) => void }) {
   const [creatingTarget, setCreatingTarget] = useState(false)
   const [editingTargetId, setEditingTargetId] = useState<string | null>(null)
   const [targetSort, setTargetSort] = useState<AdminTargetSort>('order')
@@ -1529,7 +1497,7 @@ function AdminTargetSection({ targets, nodes, onCreate, onUpdate, onDelete }: { 
       </header>
 
       {targets.length === 0 && <div className="admin-state-card">还没有探针目标。</div>}
-      {targets.length > 0 && <AdminTargetList targets={sortedTargets} nodes={nodes} onEdit={setEditingTargetId} onUpdate={onUpdate} onDelete={onDelete} onReorder={(targetId, direction) => applyOrderPatches(buildAdminProbeTargetOrderPatches(sortedTargets, targetId, direction))} />}
+      {targets.length > 0 && <AdminTargetList targets={sortedTargets} onEdit={setEditingTargetId} />}
 
       {creatingTarget && (
         <AdminTargetCreateModal
@@ -1560,46 +1528,26 @@ function AdminTargetSection({ targets, nodes, onCreate, onUpdate, onDelete }: { 
 type AdminProbeTargetOrderDirection = 'up' | 'down'
 type AdminProbeTargetOrderPatch = { targetId: string; displayOrder: number }
 
-function AdminTargetList({ targets, nodes, onEdit, onUpdate, onDelete, onReorder }: { targets: AdminProbeTarget[]; nodes: AdminNode[]; onEdit: (targetId: string) => void; onUpdate: (targetId: string, input: AdminProbeTargetUpdateInput) => void; onDelete: (targetId: string) => void; onReorder: (targetId: string, direction: AdminProbeTargetOrderDirection) => void }) {
-  const confirmDelete = (target: AdminProbeTarget) => {
-    const ok = typeof window === 'undefined' ? true : window.confirm(`确认删除延迟监控目标「${target.name}」？`)
-    if (ok) onDelete(target.id)
-  }
-  const updateAllAssignments = (target: AdminProbeTarget, enabled: boolean) => {
-    const assignments = targetAssignmentRows(target, nodes).map((assignment) => ({ nodeId: assignment.nodeId, enabled }))
-    if (assignments.length > 0) onUpdate(target.id, { assignments })
-  }
-
+function AdminTargetList({ targets, onEdit }: { targets: AdminProbeTarget[]; onEdit: (targetId: string) => void }) {
   return (
     <div className="admin-list admin-target-list" role="list" aria-label="延迟监控目标列表">
       <div className="admin-list-head" aria-hidden="true">
         <span>目标</span>
         <span>状态</span>
         <span>地址</span>
-        <span>参数</span>
         <span>节点</span>
         <span>操作</span>
       </div>
-      {targets.map((target, index) => (
+      {targets.map((target) => (
         <article className="admin-list-row" role="listitem" key={target.id}>
           <div className="admin-list-main">
             <strong>{target.name}</strong>
-            <small>{target.id} · 顺序 {target.displayOrder}</small>
           </div>
           <span data-label="状态" className={`admin-node-status status-${target.enabled ? 'online' : 'disabled'}`}>{target.enabled ? 'enabled' : 'disabled'}</span>
           <span data-label="地址">{formatTargetEndpoint(target)}</span>
-          <span data-label="参数">{formatTargetTypeLabel(target.type)} · {target.count} 次 / {target.timeoutMs}ms / {target.intervalSec}s</span>
           <span data-label="节点">{formatTargetAssignmentSummary(target)}</span>
           <div className="admin-row-actions">
-            <button className="admin-row-action" type="button" onClick={() => onReorder(target.id, 'up')} disabled={index === 0}>上移</button>
-            <button className="admin-row-action" type="button" onClick={() => onReorder(target.id, 'down')} disabled={index === targets.length - 1}>下移</button>
             <button className="admin-row-action" type="button" onClick={() => onEdit(target.id)}>编辑目标</button>
-            <button className="admin-row-action" type="button" onClick={() => onUpdate(target.id, { enabled: !target.enabled })}>
-              {target.enabled ? '停用目标' : '启用目标'}
-            </button>
-            <button className="admin-row-action" type="button" onClick={() => updateAllAssignments(target, true)}>全节点启用</button>
-            <button className="admin-row-action" type="button" onClick={() => updateAllAssignments(target, false)}>全节点停用</button>
-            <button className="admin-row-action is-danger" type="button" onClick={() => confirmDelete(target)}>删除目标</button>
           </div>
         </article>
       ))}
@@ -1778,26 +1726,27 @@ function AdminTargetEditModal({ target, nodes, onUpdate, onClose }: { target: Ad
   )
 }
 
-function AdminAlertRulesSection({ rules, states, nodes, onUpdate }: { rules: AdminAlertRule[]; states: AdminAlertRuleState[]; nodes: AdminNode[]; onUpdate: (ruleId: string, input: AdminAlertRuleUpdateInput) => void }) {
+function AdminAlertRulesSection({ types, rules, nodes, onTypeUpdate, onUpdate }: { types: AdminNotificationType[]; rules: AdminAlertRule[]; nodes: AdminNode[]; onTypeUpdate: (eventType: string, enabled: boolean) => void; onUpdate: (ruleId: string, input: AdminAlertRuleUpdateInput) => void }) {
   const [editingRule, setEditingRule] = useState<AdminAlertRule | null>(null)
-  const activeStates = states.filter((state) => state.active)
 
   return (
     <section className="admin-notification-block admin-alert-rule-section" aria-label="通知类型规则">
       <h4>通知类型</h4>
       <p className="admin-help-note">资源、探测和在线状态会按这里的条件映射到上线、离线或异常通知。</p>
-
-      <section className="admin-notification-block" aria-label="当前异常">
-        <h4>当前异常</h4>
-        {activeStates.length === 0 && <div className="admin-state-card">当前没有命中的通知类型。</div>}
-        {activeStates.length > 0 && <AdminAlertRuleStateList states={activeStates} />}
-      </section>
-
-      <section className="admin-notification-block" aria-label="通知类型列表">
-        <h4>触发条件</h4>
-        {rules.length === 0 && <div className="admin-state-card">还没有通知类型。</div>}
-        {rules.length > 0 && <AdminAlertRuleList rules={rules} nodes={nodes} onEdit={setEditingRule} onUpdate={onUpdate} />}
-      </section>
+      <div className="admin-notification-type-grid">
+        {types.map((notificationType) => (
+          <article className="admin-action-card admin-notification-type-card" key={notificationType.eventType}>
+            <p>{notificationType.label}</p>
+            <strong>{notificationType.eventType}</strong>
+            <span className={`admin-node-status status-${notificationType.enabled ? 'online' : 'disabled'}`}>{notificationType.enabled ? '启用中' : '已停用'}</span>
+            <button className="admin-row-action" type="button" onClick={() => onTypeUpdate(notificationType.eventType, !notificationType.enabled)}>
+              {notificationType.enabled ? '停用通知类型' : '启用通知类型'}
+            </button>
+          </article>
+        ))}
+      </div>
+      {rules.length === 0 && <div className="admin-state-card">还没有通知类型。</div>}
+      {rules.length > 0 && <AdminAlertRuleList rules={rules} nodes={nodes} onEdit={setEditingRule} onUpdate={onUpdate} />}
 
       {editingRule && (
         <AdminAlertRuleEditModal
@@ -1814,37 +1763,6 @@ function AdminAlertRulesSection({ rules, states, nodes, onUpdate }: { rules: Adm
   )
 }
 
-function AdminAlertRuleStateList({ states }: { states: AdminAlertRuleState[] }) {
-  return (
-    <div className="admin-list admin-alert-rule-state-list" role="list" aria-label="当前异常列表">
-      <div className="admin-list-head" aria-hidden="true">
-        <span>节点</span>
-        <span>命中类型</span>
-        <span>当前值</span>
-        <span>条件</span>
-        <span>通知</span>
-        <span>最近命中</span>
-      </div>
-      {states.map((state) => (
-        <article className="admin-list-row" role="listitem" key={`${state.nodeId}:${state.ruleId}`}>
-          <div className="admin-list-main">
-            <strong>{state.nodeName || state.nodeId}</strong>
-            <small>{state.nodeId}</small>
-          </div>
-          <div className="admin-list-main">
-            <strong>{state.ruleName}</strong>
-            <small>{state.ruleId} · {formatRuleCategory(state.category)} · {state.metric}</small>
-          </div>
-          <span data-label="当前值">{formatAlertRuleStateValue(state)}</span>
-          <span data-label="条件" className="admin-rule-condition">{formatAlertRuleStateCondition(state)}</span>
-          <span data-label="通知">通知：{state.notificationLabel || state.notificationEventType}<small> · {state.notificationEventType}</small></span>
-          <span data-label="最近命中">{state.nodeStatus} · {formatAdminDate(state.lastSeenAt)}</span>
-        </article>
-      ))}
-    </div>
-  )
-}
-
 function AdminAlertRuleList({ rules, nodes, onEdit, onUpdate }: { rules: AdminAlertRule[]; nodes: AdminNode[]; onEdit: (rule: AdminAlertRule) => void; onUpdate: (ruleId: string, input: AdminAlertRuleUpdateInput) => void }) {
   return (
     <div className="admin-list admin-alert-rule-list" role="list" aria-label="通知类型列表">
@@ -1852,7 +1770,6 @@ function AdminAlertRuleList({ rules, nodes, onEdit, onUpdate }: { rules: AdminAl
         <span>通知类型</span>
         <span>条件</span>
         <span>持续时间</span>
-        <span>通知</span>
         <span>范围</span>
         <span>状态</span>
         <span>操作</span>
@@ -1865,7 +1782,6 @@ function AdminAlertRuleList({ rules, nodes, onEdit, onUpdate }: { rules: AdminAl
           </div>
           <span data-label="条件" className="admin-rule-condition">{formatAlertRuleCondition(rule)}</span>
           <span data-label="持续时间">持续 {rule.durationSec}s</span>
-          <span data-label="通知">通知：{rule.notificationLabel || rule.notificationEventType}<small> · {rule.notificationEventType}</small></span>
           <span data-label="范围">{formatAlertRuleScope(rule, nodes)}</span>
           <span data-label="状态" className={`admin-node-status status-${rule.enabled ? 'online' : 'disabled'}`}>{rule.enabled ? '启用中' : '已停用'}</span>
           <div className="admin-row-actions">
@@ -1936,7 +1852,7 @@ function AdminAlertRuleEditModal({ rule, nodes, onUpdate, onClose }: { rule: Adm
   )
 }
 
-function AdminNotificationsSection({ channels, types, deliveries, rules, states, nodes, onChannelCreate, onChannelUpdate, onChannelDelete, onChannelTest, onTypeUpdate, onRuleUpdate }: { channels: AdminNotificationChannel[]; types: AdminNotificationType[]; deliveries: AdminNotificationDelivery[]; rules: AdminAlertRule[]; states: AdminAlertRuleState[]; nodes: AdminNode[]; onChannelCreate: (input: AdminNotificationChannelCreateInput) => void; onChannelUpdate: (channelId: string, input: AdminNotificationChannelUpdateInput) => void; onChannelDelete: (channelId: string) => void; onChannelTest: (channelId: string) => void; onTypeUpdate: (eventType: string, enabled: boolean) => void; onRuleUpdate: (ruleId: string, input: AdminAlertRuleUpdateInput) => void }) {
+function AdminNotificationsSection({ channels, types, rules, nodes, onChannelCreate, onChannelUpdate, onChannelDelete, onChannelTest, onTypeUpdate, onRuleUpdate }: { channels: AdminNotificationChannel[]; types: AdminNotificationType[]; rules: AdminAlertRule[]; nodes: AdminNode[]; onChannelCreate: (input: AdminNotificationChannelCreateInput) => void; onChannelUpdate: (channelId: string, input: AdminNotificationChannelUpdateInput) => void; onChannelDelete: (channelId: string) => void; onChannelTest: (channelId: string) => void; onTypeUpdate: (eventType: string, enabled: boolean) => void; onRuleUpdate: (ruleId: string, input: AdminAlertRuleUpdateInput) => void }) {
   const [creatingChannel, setCreatingChannel] = useState(false)
   const [editingChannel, setEditingChannel] = useState<AdminNotificationChannel | null>(null)
 
@@ -1956,29 +1872,7 @@ function AdminNotificationsSection({ channels, types, deliveries, rules, states,
         {channels.length > 0 && <AdminNotificationChannelList channels={channels} onUpdate={onChannelUpdate} onDelete={onChannelDelete} onTest={onChannelTest} onEdit={setEditingChannel} />}
       </section>
 
-      <section className="admin-notification-block" aria-label="通知事件开关">
-        <h4>事件开关</h4>
-        <div className="admin-notification-type-grid">
-          {types.map((notificationType) => (
-            <article className="admin-action-card admin-notification-type-card" key={notificationType.eventType}>
-              <p>{notificationType.label}</p>
-              <strong>{notificationType.eventType}</strong>
-              <span className={`admin-node-status status-${notificationType.enabled ? 'online' : 'disabled'}`}>{notificationType.enabled ? '启用中' : '已停用'}</span>
-              <button className="admin-row-action" type="button" onClick={() => onTypeUpdate(notificationType.eventType, !notificationType.enabled)}>
-                {notificationType.enabled ? '停用通知类型' : '启用通知类型'}
-              </button>
-            </article>
-          ))}
-        </div>
-      </section>
-
-      <AdminAlertRulesSection rules={rules} states={states} nodes={nodes} onUpdate={onRuleUpdate} />
-
-      <section className="admin-notification-block" aria-label="最近发送">
-        <h4>最近发送</h4>
-        {deliveries.length === 0 && <div className="admin-state-card">还没有通知发送记录。</div>}
-        {deliveries.length > 0 && <AdminNotificationDeliveryList deliveries={deliveries} />}
-      </section>
+      <AdminAlertRulesSection types={types} rules={rules} nodes={nodes} onTypeUpdate={onTypeUpdate} onUpdate={onRuleUpdate} />
 
       {creatingChannel && (
         <AdminNotificationChannelCreateModal
@@ -2000,34 +1894,6 @@ function AdminNotificationsSection({ channels, types, deliveries, rules, states,
         />
       )}
     </section>
-  )
-}
-
-function AdminNotificationDeliveryList({ deliveries }: { deliveries: AdminNotificationDelivery[] }) {
-  return (
-    <div className="admin-list admin-notification-delivery-list" role="list" aria-label="通知发送记录">
-      <div className="admin-list-head" aria-hidden="true">
-        <span>事件</span>
-        <span>节点</span>
-        <span>渠道</span>
-        <span>状态</span>
-        <span>时间</span>
-        <span>结果</span>
-      </div>
-      {deliveries.map((delivery) => (
-        <article className="admin-list-row" role="listitem" key={delivery.id}>
-          <div className="admin-list-main">
-            <strong>{delivery.label}</strong>
-            <small>{delivery.eventType}</small>
-          </div>
-          <span data-label="节点">{delivery.nodeName || delivery.nodeId}</span>
-          <span data-label="渠道">{delivery.channelName || delivery.channelId}</span>
-          <span data-label="状态">{delivery.previousStatus} → {delivery.status}</span>
-          <span data-label="时间">{formatAdminDate(delivery.createdAt)}</span>
-          <span data-label="结果" className={`admin-node-status status-${delivery.success ? 'online' : 'disabled'}`}>{delivery.success ? '发送成功' : '发送失败'}{delivery.error ? ` · ${delivery.error}` : ''}</span>
-        </article>
-      ))}
-    </div>
   )
 }
 
@@ -2267,17 +2133,6 @@ function formatAlertRuleScope(rule: AdminAlertRule, nodes: AdminNode[]): string 
     return node?.displayName ? `${node.displayName} (${nodeId})` : nodeId
   })
   return labels.join('、')
-}
-
-function formatAlertRuleStateCondition(state: AdminAlertRuleState): string {
-  const threshold = Number.isInteger(state.threshold) ? state.threshold.toFixed(0) : String(state.threshold)
-  return `${state.metric} ${state.comparator} ${threshold}${state.thresholdUnit}`
-}
-
-function formatAlertRuleStateValue(state: AdminAlertRuleState): string {
-  if (state.lastValue === null || !Number.isFinite(state.lastValue)) return '当前值 —'
-  const value = Number.isInteger(state.lastValue) ? state.lastValue.toFixed(0) : String(state.lastValue)
-  return `当前值 ${value}${state.thresholdUnit}`
 }
 
 function formatRuleCategory(category: string): string {

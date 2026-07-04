@@ -1,7 +1,7 @@
 import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it } from 'vitest'
 import { AdminDashboard, HomeTopPanel, reconcileAlertRuleStates, reconcileAlertRuleStatesForNode, shellStyleForSettings, validateAdminSettingsInput } from './App'
-import type { AdminAlertRule, AdminAlertRuleState, AdminNode, AdminNotificationChannel, AdminNotificationDelivery, AdminNotificationType, AdminProbeTarget, AdminSettings } from './types'
+import type { AdminAlertRule, AdminAlertRuleState, AdminNode, AdminNotificationChannel, AdminNotificationType, AdminProbeTarget, AdminSettings } from './types'
 
 const overviewProps = {
   totalCount: 11,
@@ -157,23 +157,6 @@ const alertRules: AdminAlertRule[] = [
   },
 ]
 
-const notificationDeliveries: AdminNotificationDelivery[] = [
-  {
-    id: 7,
-    eventType: 'node_online',
-    label: '上线',
-    nodeId: 'hytron',
-    nodeName: 'Hytron',
-    previousStatus: 'no_data',
-    status: 'online',
-    channelId: 'zeno-telegram',
-    channelName: 'Zeno Telegram',
-    success: false,
-    error: 'telegram returned status 500',
-    createdAt: '2026-07-03T00:05:00Z',
-  },
-]
-
 const alertRuleStates: AdminAlertRuleState[] = [
   {
     nodeId: 'hytron',
@@ -224,9 +207,7 @@ function renderAdmin(section: 'nodes' | 'targets' | 'notifications' | 'account' 
         targets: [hytronTarget, pingTarget, httpTarget],
         notificationChannels: [telegramChannel],
         notificationTypes,
-        notificationDeliveries,
         alertRules,
-        alertRuleStates,
       }}
       onAdminLogin={() => {}}
       onAdminTokenClear={() => {}}
@@ -322,7 +303,8 @@ describe('AdminDashboard', () => {
     expect(html).toContain('后台导航')
     expect(html).toContain('服务器')
     expect(html).toContain('延迟监控')
-    expect(html).toContain('1 异常 / 2 类型')
+    expect(html).toContain('2 类型')
+    expect(html).not.toContain('1 异常 / 2 类型')
     expect(html).toContain('账户')
     expect(html).toContain('设置')
     expect(html).toContain('通知')
@@ -412,35 +394,32 @@ describe('AdminDashboard', () => {
     expect(html).toContain('编辑渠道')
     expect(html).toContain('删除渠道')
     expect(html).toContain('测试发送')
-    expect(html).toContain('最近发送')
-    expect(html).toContain('Hytron')
-    expect(html).toContain('发送失败')
-    expect(html).toContain('telegram returned status 500')
+    expect(html).not.toContain('最近发送')
+    expect(html).not.toContain('发送失败')
+    expect(html).not.toContain('telegram returned status 500')
     expect(html).not.toContain('后续再接入')
     expect(html).not.toContain('telegram-bot-secret')
     expect(html).not.toContain('告警')
   })
 
-  it('renders notification type triggers inside the notifications page with current active hits', () => {
+  it('renders notification type triggers without current-hit or delivery history sections', () => {
     const html = renderAdmin('notifications')
 
     expect(html).toContain('通知类型')
-    expect(html).toContain('触发条件')
-    expect(html).toContain('当前异常')
-    expect(html).toContain('Hytron')
-    expect(html).toContain('warning')
-    expect(html).toContain('当前值 95.25%')
     expect(html).toContain('CPU 使用率')
     expect(html).toContain('cpu_percent')
     expect(html).toContain('&gt;= 90%')
     expect(html).toContain('持续 300s')
-    expect(html).toContain('通知：异常')
     expect(html).toContain('全部服务器')
     expect(html).toContain('Backup (backup)')
     expect(html).toContain('离线判定')
     expect(html).toContain('node_offline')
     expect(html).toContain('编辑通知类型')
     expect(html).toContain('停用通知类型')
+    expect(html).not.toContain('触发条件</h4>')
+    expect(html).not.toContain('当前异常')
+    expect(html).not.toContain('当前值 95.25%')
+    expect(html).not.toContain('通知：异常')
     expect(html).not.toContain('告警')
     expect(html).not.toContain('telegram-bot-secret')
   })
@@ -506,16 +485,17 @@ describe('AdminDashboard', () => {
     expect(html).toContain('Hytron')
     expect(html).toContain('online')
     expect(html).toContain('agent-test')
-    expect(html).toContain('debian 13')
-    expect(html).toContain('198.51.100.8')
-    expect(html).toContain('2001:db8::8')
-    expect(html).toContain('2026-08-01')
-    expect(html).toContain('月付')
+    expect(html).toContain('v4 198.51.100.8')
+    expect(html).toContain('v6 2001:db8::8')
+    expect(html).toContain('admin-ip-stack')
+    expect(html).not.toContain('debian 13')
+    expect(html).not.toContain('2026-08-01')
+    expect(html).not.toContain('月付')
     expect(html).toContain('顺序 10')
     expect(html).toContain('🇭🇰')
     expect(html).toContain('整理顺序')
-    expect(html).toContain('上移')
-    expect(html).toContain('下移')
+    expect(html).not.toContain('上移')
+    expect(html).not.toContain('下移')
     expect(html).toContain('编辑服务器')
     expect(html).not.toContain('admin-node-card')
     expect(html).not.toContain('name="display-name"')
@@ -532,18 +512,18 @@ describe('AdminDashboard', () => {
     expect(html).toContain('按手动顺序')
     expect(html).toContain('按名称排序')
     expect(html).toContain('整理顺序')
-    expect(html).toContain('hytron-local')
-    expect(html).toContain('顺序 20')
+    expect(html).not.toContain('hytron-local')
+    expect(html).not.toContain('顺序 20')
     expect(html).toContain('127.0.0.1:18980')
-    expect(html).toContain('3 次 / 1200ms / 60s')
+    expect(html).not.toContain('3 次 / 1200ms / 60s')
     expect(html).toContain('1 / 2 节点启用')
     expect(html).toContain('编辑目标')
-    expect(html).toContain('停用目标')
-    expect(html).toContain('删除目标')
-    expect(html).toContain('全节点启用')
-    expect(html).toContain('全节点停用')
-    expect(html).toContain('上移')
-    expect(html).toContain('下移')
+    expect(html).not.toContain('停用目标')
+    expect(html).not.toContain('删除目标')
+    expect(html).not.toContain('全节点启用')
+    expect(html).not.toContain('全节点停用')
+    expect(html).not.toContain('上移')
+    expect(html).not.toContain('下移')
     expect(html.indexOf('Example ICMP')).toBeLessThan(html.indexOf('Hytron'))
     expect(html).not.toContain('admin-target-card')
     expect(html).not.toContain('name="target-name"')
@@ -555,9 +535,9 @@ describe('AdminDashboard', () => {
     const html = renderAdmin('targets')
 
     expect(html).toContain('Example ICMP')
-    expect(html).toContain('ICMP Ping')
+    expect(html).not.toContain('ICMP Ping')
     expect(html).toContain('8.8.8.8')
-    expect(html).toContain('4 次 / 900ms / 45s')
+    expect(html).not.toContain('4 次 / 900ms / 45s')
     expect(html).toContain('1 / 1 节点启用')
     expect(html).not.toContain('8.8.8.8:')
   })
@@ -566,9 +546,9 @@ describe('AdminDashboard', () => {
     const html = renderAdmin('targets')
 
     expect(html).toContain('Zeno Health HTTP')
-    expect(html).toContain('HTTP GET')
+    expect(html).not.toContain('HTTP GET')
     expect(html).toContain('https://example.com/health')
-    expect(html).toContain('2 次 / 1500ms / 60s')
+    expect(html).not.toContain('2 次 / 1500ms / 60s')
     expect(html).toContain('1 / 1 节点启用')
     expect(html).not.toContain('https://example.com/health:')
   })
