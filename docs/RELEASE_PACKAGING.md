@@ -120,7 +120,7 @@ sudo scripts/install-agent.sh \
   --token-file /opt/zeno/data/agent-token
 ```
 
-`install-agent.sh` 只安装/重启 `zeno-agent.service`，不创建 Controller，不修改 `/opt/zeno/current`。
+`install-agent.sh` 只安装/重启 `zeno-agent.service`，不创建 Controller，不修改 `/opt/zeno/current`。Agent 默认每 6 小时 best-effort 刷新公网 IPv4 / IPv6 / GeoIP，可在手工 unit 或启动参数中用 `-identity-refresh-interval` 调整。
 
 ## 本地 dry-run
 

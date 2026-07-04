@@ -57,9 +57,14 @@ X-Agent-Version: <version>
   "memory_total_bytes": 2147483648,
   "disk_total_bytes": 42949672960,
   "boot_time": 1782900000,
-  "agent_version": "0.1.0"
+  "agent_version": "0.1.0",
+  "public_ipv4": "198.51.100.8",
+  "public_ipv6": "2001:db8::8",
+  "country_code": "JP"
 }
 ```
+
+`public_ipv4`、`public_ipv6`、`country_code` 由 Agent 轻量自动识别后 best-effort 上报。字段可省略；Controller 只用非空且合法的值更新节点元数据，识别失败不会清空后台已有 IPv4 / IPv6 / 国家码。
 
 ### POST /api/agent/v1/state
 

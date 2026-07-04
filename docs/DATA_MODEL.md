@@ -34,7 +34,7 @@ CREATE TABLE nodes (
 - `country_code` 用于国旗展示。
 - `expiry_date` / `billing_cycle` 用于后台和首页展示到期/账单信息。
 - `display_order` 控制首页卡片和后台列表排序。
-- `public_ipv4` / `public_ipv6` 当前可由后台编辑，后续可接自动识别。
+- `public_ipv4` / `public_ipv6` 可由后台编辑，也会由新 Agent best-effort 自动识别后上报；识别失败不会清空已有值。
 - `token_hash` 只存 hash，不通过 API 返回。
 
 ## host_info

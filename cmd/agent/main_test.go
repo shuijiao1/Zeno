@@ -10,6 +10,44 @@ import (
 	"github.com/shuijiao1/zeno/internal/agent"
 )
 
+type staticIdentityDiscoverer struct {
+	identity agent.NetworkIdentity
+}
+
+func (d staticIdentityDiscoverer) Discover(context.Context) agent.NetworkIdentity {
+	return d.identity
+}
+
+func TestReportOnceAddsDiscoveredNetworkIdentityToHost(t *testing.T) {
+	var hostPayload agent.HostInfo
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/agent/v1/heartbeat", "/api/agent/v1/state":
+			w.WriteHeader(http.StatusAccepted)
+		case "/api/agent/v1/host":
+			if err := json.NewDecoder(r.Body).Decode(&hostPayload); err != nil {
+				t.Fatalf("decode host: %v", err)
+			}
+			w.WriteHeader(http.StatusAccepted)
+		case "/api/agent/v1/probe-targets":
+			_ = json.NewEncoder(w).Encode(agent.ProbeTargetsResponse{})
+		default:
+			t.Fatalf("unexpected path %s", r.URL.Path)
+		}
+	}))
+	defer server.Close()
+
+	client := agent.NewClient(server.URL, "hytron", "token")
+	collector := agent.NewMetricsCollector()
+	identity := staticIdentityDiscoverer{identity: agent.NetworkIdentity{PublicIPv4: "198.51.100.8", PublicIPv6: "2001:db8::8", CountryCode: "JP"}}
+	if err := reportOnce(context.Background(), client, collector, "identity-test", true, nil, identity); err != nil {
+		t.Fatalf("reportOnce: %v", err)
+	}
+	if hostPayload.PublicIPv4 != "198.51.100.8" || hostPayload.PublicIPv6 != "2001:db8::8" || hostPayload.CountryCode != "JP" {
+		t.Fatalf("host identity = %+v, want discovered network identity", hostPayload)
+	}
+}
+
 func TestReportOnceSkipsProbeResultsWhenNoTargetsAreDue(t *testing.T) {
 	var probePosts [][]string
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -45,10 +83,10 @@ func TestReportOnceSkipsProbeResultsWhenNoTargetsAreDue(t *testing.T) {
 	client := agent.NewClient(server.URL, "hytron", "token")
 	collector := agent.NewMetricsCollector()
 	scheduler := agent.NewProbeScheduler()
-	if err := reportOnce(context.Background(), client, collector, "scheduler-test", false, scheduler); err != nil {
+	if err := reportOnce(context.Background(), client, collector, "scheduler-test", false, scheduler, nil); err != nil {
 		t.Fatalf("first reportOnce: %v", err)
 	}
-	if err := reportOnce(context.Background(), client, collector, "scheduler-test", false, scheduler); err != nil {
+	if err := reportOnce(context.Background(), client, collector, "scheduler-test", false, scheduler, nil); err != nil {
 		t.Fatalf("second reportOnce: %v", err)
 	}
 

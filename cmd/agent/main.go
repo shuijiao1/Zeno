@@ -14,13 +14,14 @@ import (
 const defaultVersion = "zeno-agent-dev"
 
 type config struct {
-	ControllerURL string
-	NodeID        string
-	Token         string
-	TokenFile     string
-	Interval      time.Duration
-	Once          bool
-	Version       string
+	ControllerURL           string
+	NodeID                  string
+	Token                   string
+	TokenFile               string
+	Interval                time.Duration
+	Once                    bool
+	Version                 string
+	IdentityRefreshInterval time.Duration
 }
 
 func main() {
@@ -32,6 +33,7 @@ func main() {
 	flag.DurationVar(&cfg.Interval, "interval", time.Minute, "host/state/probe report interval")
 	flag.BoolVar(&cfg.Once, "once", false, "collect and report once, then exit")
 	flag.StringVar(&cfg.Version, "version", defaultVersion, "agent version string reported to controller")
+	flag.DurationVar(&cfg.IdentityRefreshInterval, "identity-refresh-interval", 6*time.Hour, "public IPv4/IPv6 and GeoIP refresh interval; best-effort and cached")
 	flag.Parse()
 
 	token, err := readToken(cfg.Token, cfg.TokenFile)
@@ -48,7 +50,8 @@ func run(ctx context.Context, cfg config) error {
 	client := agent.NewClient(cfg.ControllerURL, cfg.NodeID, cfg.Token)
 	collector := agent.NewMetricsCollector()
 	scheduler := agent.NewProbeScheduler()
-	if err := reportOnce(ctx, client, collector, cfg.Version, true, scheduler); err != nil {
+	identityDiscoverer := agent.NewCachedNetworkIdentityDiscoverer(agent.NewNetworkIdentityDiscoverer(), cfg.IdentityRefreshInterval)
+	if err := reportOnce(ctx, client, collector, cfg.Version, true, scheduler, identityDiscoverer); err != nil {
 		return err
 	}
 	if cfg.Once {
@@ -64,20 +67,31 @@ func run(ctx context.Context, cfg config) error {
 		case <-ctx.Done():
 			return ctx.Err()
 		case <-ticker.C:
-			if err := reportOnce(ctx, client, collector, cfg.Version, true, scheduler); err != nil {
+			if err := reportOnce(ctx, client, collector, cfg.Version, true, scheduler, identityDiscoverer); err != nil {
 				log.Printf("report failed: %v", err)
 			}
 		}
 	}
 }
 
-func reportOnce(ctx context.Context, client *agent.Client, collector *agent.MetricsCollector, version string, includeHost bool, scheduler *agent.ProbeScheduler) error {
+type networkIdentityDiscoverer interface {
+	Discover(context.Context) agent.NetworkIdentity
+}
+
+func reportOnce(ctx context.Context, client *agent.Client, collector *agent.MetricsCollector, version string, includeHost bool, scheduler *agent.ProbeScheduler, identityDiscoverer networkIdentityDiscoverer) error {
 	now := time.Now().UTC()
 	if err := client.PostHeartbeat(ctx, "online", version, now); err != nil {
 		return err
 	}
 	if includeHost {
-		if err := client.PostHost(ctx, collector.CollectHost(version)); err != nil {
+		host := collector.CollectHost(version)
+		if identityDiscoverer != nil {
+			identity := identityDiscoverer.Discover(ctx)
+			host.PublicIPv4 = identity.PublicIPv4
+			host.PublicIPv6 = identity.PublicIPv6
+			host.CountryCode = identity.CountryCode
+		}
+		if err := client.PostHost(ctx, host); err != nil {
 			return err
 		}
 	}

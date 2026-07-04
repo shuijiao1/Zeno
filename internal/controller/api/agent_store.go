@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"database/sql"
+	"net"
 	"strings"
 	"time"
 )
@@ -143,11 +144,19 @@ func (s *SQLiteStore) UpsertAgentHost(ctx context.Context, nodeID string, host A
 	`, nodeID, strings.TrimSpace(host.Hostname), strings.TrimSpace(host.OSName), strings.TrimSpace(host.OSVersion), strings.TrimSpace(host.Kernel), strings.TrimSpace(host.Arch), strings.TrimSpace(host.Virtualization), strings.TrimSpace(host.CPUModel), host.CPUCores, host.MemoryTotalBytes, host.DiskTotalBytes, nullableUnix(host.BootTime), strings.TrimSpace(host.AgentVersion), now); err != nil {
 		return err
 	}
+	publicIPv4 := normalizeAgentPublicIP(host.PublicIPv4, 4)
+	publicIPv6 := normalizeAgentPublicIP(host.PublicIPv6, 6)
+	countryCode := normalizeAgentCountryCode(host.CountryCode)
 	if _, err := tx.ExecContext(ctx, `
 		UPDATE nodes
-		SET status = CASE WHEN status = 'warning' THEN 'warning' ELSE 'online' END, last_seen_at = ?, updated_at = ?
+		SET status = CASE WHEN status = 'warning' THEN 'warning' ELSE 'online' END,
+		    last_seen_at = ?,
+		    updated_at = ?,
+		    public_ipv4 = CASE WHEN ? <> '' THEN ? ELSE public_ipv4 END,
+		    public_ipv6 = CASE WHEN ? <> '' THEN ? ELSE public_ipv6 END,
+		    country_code = CASE WHEN ? <> '' THEN ? ELSE country_code END
 		WHERE id = ? AND disabled = 0
-	`, now, now, nodeID); err != nil {
+	`, now, now, publicIPv4, publicIPv4, publicIPv6, publicIPv6, countryCode, countryCode, nodeID); err != nil {
 		return err
 	}
 
@@ -200,6 +209,40 @@ func (s *SQLiteStore) InsertAgentState(ctx context.Context, nodeID string, state
 	}
 	tx = nil
 	return nil
+}
+
+func normalizeAgentPublicIP(value string, family int) string {
+	ip := net.ParseIP(strings.TrimSpace(value))
+	if ip == nil {
+		return ""
+	}
+	if family == 4 {
+		ipv4 := ip.To4()
+		if ipv4 == nil {
+			return ""
+		}
+		return ipv4.String()
+	}
+	if family == 6 {
+		if ip.To4() != nil || ip.To16() == nil {
+			return ""
+		}
+		return ip.String()
+	}
+	return ""
+}
+
+func normalizeAgentCountryCode(value string) string {
+	trimmed := strings.ToUpper(strings.TrimSpace(value))
+	if len(trimmed) != 2 {
+		return ""
+	}
+	for _, r := range trimmed {
+		if r < 'A' || r > 'Z' {
+			return ""
+		}
+	}
+	return trimmed
 }
 
 func upsertMonthlyTraffic(ctx context.Context, tx *sql.Tx, nodeID, month, billingMode string, inTotal, outTotal int64, now int64) error {

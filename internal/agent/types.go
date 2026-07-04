@@ -21,6 +21,9 @@ type HostInfo struct {
 	DiskTotalBytes   int64  `json:"disk_total_bytes"`
 	BootTime         int64  `json:"boot_time"`
 	AgentVersion     string `json:"agent_version"`
+	PublicIPv4       string `json:"public_ipv4,omitempty"`
+	PublicIPv6       string `json:"public_ipv6,omitempty"`
+	CountryCode      string `json:"country_code,omitempty"`
 }
 
 type StateSample struct {
