@@ -37,6 +37,13 @@ describe('homepage and admin shell layout', () => {
     expect(styles).toContain('background: var(--card)')
   })
 
+  it('keeps the homepage backend entry visible on phones', () => {
+    expect(styles).toContain('@media (max-width: 767px)')
+    expect(styles).toContain('.login-link {')
+    expect(styles).toContain('min-height: 32px')
+    expect(styles).not.toContain('.login-link { display: none; }')
+  })
+
   it('keeps authenticated node management in compact lists without old card shells', () => {
     expect(styles).toContain('.admin-login-card')
     expect(styles).toContain('.admin-node-section')

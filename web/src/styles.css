@@ -1222,7 +1222,15 @@ svg { display: block; }
   .home-top-card .kulin-nav { padding: 0 0 9px; }
   .nav-actions { flex-wrap: nowrap; gap: 5px; }
   .nav-icon-button { width: 32px; height: 32px; padding: 8px; }
-  .login-link { display: none; }
+  .login-link {
+    min-height: 32px;
+    padding: 0 10px;
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    background: color-mix(in srgb, var(--metric-bg) 88%, transparent);
+    opacity: 1;
+    font-size: 12px;
+  }
   .server-card-list { margin-top: 18px; gap: 14px; }
   .home-summary { padding: 10px; gap: 10px; }
   .home-summary__intro { align-items: center; gap: 8px; }
