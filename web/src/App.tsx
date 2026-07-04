@@ -1,4 +1,4 @@
-import { type CSSProperties, type FormEvent, type ReactNode, useEffect, useState } from 'react'
+import { type CSSProperties, type DragEvent, type FormEvent, type ReactNode, useEffect, useState } from 'react'
 import { createAdminNode, createAdminNotificationChannel, createAdminProbeTarget, deleteAdminNotificationChannel, fetchAdminAccount, fetchAdminAlertRules, fetchAdminNodes, fetchAdminNotificationChannels, fetchAdminProbeTargets, fetchAdminSettings, fetchNodeLatency, fetchNodeState, fetchPublicSettings, fetchServiceLatency, fetchSummary, loginAdmin, logoutAdmin, requestAdminNodeInstallCommand, testAdminNotificationChannel, updateAdminAccount, updateAdminAlertRule, updateAdminNode, updateAdminNotificationChannel, updateAdminNotificationType, updateAdminProbeTarget, updateAdminSettings, type AdminAccountData, type AdminAlertRuleUpdateInput, type AdminNodeCreateInput, type AdminNodeUpdateInput, type AdminNotificationChannelCreateInput, type AdminNotificationChannelUpdateInput, type AdminProbeTargetInput, type AdminProbeTargetUpdateInput, type AdminSettingsUpdateInput, type NodeLatencyData, type NodeStateData, type ServiceLatencyData, type SummaryData } from './api/client'
 import { LatencyDetail } from './components/LatencyDetail'
 import { LatencyChart } from './components/LatencyChart'
@@ -42,7 +42,6 @@ type AdminAuthState =
   | { kind: 'error'; message: string }
 
 type AdminSection = 'nodes' | 'targets' | 'notifications' | 'account' | 'settings'
-type AdminNodeSort = 'order' | 'name' | 'status' | 'agent' | 'ip'
 type AdminTargetSort = 'order' | 'name' | 'status' | 'type' | 'assignments'
 
 function sum(values: Array<number | null | undefined>): number {
@@ -1080,12 +1079,12 @@ function validAgentControllerURL(value: string): boolean {
 function AdminNodeSection({ nodes, onCreate, onUpdate, onInstallCommand }: { nodes: AdminNode[]; onCreate: (input: AdminNodeCreateInput) => void; onUpdate: (nodeId: string, input: AdminNodeUpdateInput) => void; onInstallCommand: (nodeId: string) => Promise<string> }) {
   const [creatingNode, setCreatingNode] = useState(false)
   const [editingNodeId, setEditingNodeId] = useState<string | null>(null)
-  const [nodeSort, setNodeSort] = useState<AdminNodeSort>('order')
+  const [sortingNodes, setSortingNodes] = useState(false)
   const editingNode = editingNodeId ? nodes.find((node) => node.id === editingNodeId) : undefined
-  const sortedNodes = sortAdminNodes(nodes, nodeSort)
-  const applyOrderPatches = (patches: AdminNodeOrderPatch[]) => {
+  const orderedNodes = sortAdminNodes(nodes)
+  const applyOrderPatches = (orderedNodes: AdminNode[]) => {
+    const patches = buildAdminNodeOrderPatches(orderedNodes)
     patches.forEach((patch) => onUpdate(patch.nodeId, { displayOrder: patch.displayOrder }))
-    if (patches.length > 0) setNodeSort('order')
   }
 
   return (
@@ -1096,23 +1095,13 @@ function AdminNodeSection({ nodes, onCreate, onUpdate, onInstallCommand }: { nod
           <h3>服务器列表</h3>
         </div>
         <div className="admin-section-actions">
-          <label className="admin-sort-control">
-            <span>排序</span>
-            <select name="node-sort" value={nodeSort} onChange={(event) => setNodeSort(event.currentTarget.value as AdminNodeSort)}>
-              <option value="order">按手动顺序</option>
-              <option value="name">按名称排序</option>
-              <option value="status">按状态排序</option>
-              <option value="agent">按 Agent 排序</option>
-              <option value="ip">按公网 IP 排序</option>
-            </select>
-          </label>
-          <button type="button" onClick={() => applyOrderPatches(buildAdminNodeOrderPatches(sortedNodes))}>整理顺序</button>
+          <button type="button" onClick={() => setSortingNodes(true)}>服务器排序</button>
           <button className="admin-primary-action" type="button" onClick={() => setCreatingNode(true)}>添加服务器</button>
         </div>
       </header>
 
       {nodes.length === 0 && <div className="admin-state-card">还没有节点。</div>}
-      {nodes.length > 0 && <AdminNodeList nodes={sortedNodes} onEdit={setEditingNodeId} />}
+      {nodes.length > 0 && <AdminNodeList nodes={orderedNodes} onEdit={setEditingNodeId} />}
 
       {creatingNode && (
         <AdminNodeCreateModal
@@ -1136,11 +1125,21 @@ function AdminNodeSection({ nodes, onCreate, onUpdate, onInstallCommand }: { nod
           onInstallCommand={onInstallCommand}
         />
       )}
+
+      {sortingNodes && (
+        <AdminNodeSortModal
+          nodes={orderedNodes}
+          onClose={() => setSortingNodes(false)}
+          onSave={(nextNodes) => {
+            applyOrderPatches(nextNodes)
+            setSortingNodes(false)
+          }}
+        />
+      )}
     </section>
   )
 }
 
-type AdminNodeOrderDirection = 'up' | 'down'
 type AdminNodeOrderPatch = { nodeId: string; displayOrder: number }
 
 function AdminNodeList({ nodes, onEdit }: { nodes: AdminNode[]; onEdit: (nodeId: string) => void }) {
@@ -1174,40 +1173,85 @@ function AdminNodeList({ nodes, onEdit }: { nodes: AdminNode[]; onEdit: (nodeId:
   )
 }
 
-function sortAdminNodes(nodes: AdminNode[], sort: AdminNodeSort = 'order'): AdminNode[] {
-  return [...nodes].sort((left, right) => {
-    const byName = left.displayName.localeCompare(right.displayName, 'zh-CN') || left.id.localeCompare(right.id, 'zh-CN')
-    if (sort === 'order') {
-      return left.displayOrder - right.displayOrder || left.id.localeCompare(right.id, 'zh-CN')
-    }
-    if (sort === 'status') {
-      return adminNodeStatusRank(left) - adminNodeStatusRank(right) || byName
-    }
-    if (sort === 'agent') {
-      return (left.agentVersion || '').localeCompare(right.agentVersion || '', 'zh-CN') || byName
-    }
-    if (sort === 'ip') {
-      return adminNodeIPSortValue(left).localeCompare(adminNodeIPSortValue(right), 'zh-CN') || byName
-    }
-    return byName
-  })
+function sortAdminNodes(nodes: AdminNode[]): AdminNode[] {
+  return [...nodes].sort((left, right) => left.displayOrder - right.displayOrder || left.id.localeCompare(right.id, 'zh-CN'))
 }
 
-function buildAdminNodeOrderPatches(nodes: AdminNode[], nodeId?: string, direction?: AdminNodeOrderDirection): AdminNodeOrderPatch[] {
+function buildAdminNodeOrderPatches(nodes: AdminNode[]): AdminNodeOrderPatch[] {
   const orderedNodes = [...nodes]
-  const reorderedNodes = [...orderedNodes]
-  if (nodeId && direction) {
-    const index = reorderedNodes.findIndex((node) => node.id === nodeId)
-    if (index < 0) return []
-    const targetIndex = direction === 'up' ? index - 1 : index + 1
-    if (targetIndex < 0 || targetIndex >= reorderedNodes.length) return []
-    const current = reorderedNodes[index]
-    reorderedNodes[index] = reorderedNodes[targetIndex]
-    reorderedNodes[targetIndex] = current
-  }
-  return reorderedNodes
+  return orderedNodes
     .map((node, index) => ({ nodeId: node.id, displayOrder: (index + 1) * 10 }))
     .filter((patch) => orderedNodes.find((node) => node.id === patch.nodeId)?.displayOrder !== patch.displayOrder)
+}
+
+function moveAdminNodeInOrder(nodeIds: string[], sourceId: string, targetId: string): string[] {
+  const sourceIndex = nodeIds.indexOf(sourceId)
+  const targetIndex = nodeIds.indexOf(targetId)
+  if (sourceIndex < 0 || targetIndex < 0 || sourceIndex === targetIndex) return nodeIds
+  const nextIds = [...nodeIds]
+  const [source] = nextIds.splice(sourceIndex, 1)
+  nextIds.splice(targetIndex, 0, source)
+  return nextIds
+}
+
+function AdminNodeSortModal({ nodes, onSave, onClose }: { nodes: AdminNode[]; onSave: (nodes: AdminNode[]) => void; onClose: () => void }) {
+  const [orderedIds, setOrderedIds] = useState(() => nodes.map((node) => node.id))
+  const [draggedNodeId, setDraggedNodeId] = useState<string | null>(null)
+  const nodeById = new Map(nodes.map((node) => [node.id, node]))
+  const orderedNodes = orderedIds.map((nodeId) => nodeById.get(nodeId)).filter((node): node is AdminNode => Boolean(node))
+  const moveNode = (sourceId: string, targetId: string) => {
+    setOrderedIds((currentIds) => moveAdminNodeInOrder(currentIds, sourceId, targetId))
+  }
+  const handleDragStart = (event: DragEvent<HTMLElement>, nodeId: string) => {
+    setDraggedNodeId(nodeId)
+    event.dataTransfer.effectAllowed = 'move'
+    event.dataTransfer.setData('text/plain', nodeId)
+  }
+  const handleDragOver = (event: DragEvent<HTMLElement>, targetId: string) => {
+    event.preventDefault()
+    const sourceId = draggedNodeId || event.dataTransfer.getData('text/plain')
+    if (!sourceId || sourceId === targetId) return
+    moveNode(sourceId, targetId)
+    setDraggedNodeId(sourceId)
+  }
+
+  return (
+    <div className="admin-modal-backdrop" role="presentation">
+      <div className="admin-modal" role="dialog" aria-modal="true" aria-label="服务器排序">
+        <header className="admin-modal-header">
+          <div>
+            <p className="eyebrow">Servers</p>
+            <h3>服务器排序</h3>
+          </div>
+          <button className="admin-modal-close" type="button" aria-label="关闭" onClick={onClose}>×</button>
+        </header>
+        <p className="admin-help-note">按住服务器拖动调整顺序；保存后这里的顺序就是前台显示顺序。</p>
+        <div className="admin-server-sort-list" role="list" aria-label="拖动排序服务器">
+          {orderedNodes.map((node, index) => (
+            <article
+              className={`admin-server-sort-item${draggedNodeId === node.id ? ' is-dragging' : ''}`}
+              role="listitem"
+              draggable
+              key={node.id}
+              onDragStart={(event) => handleDragStart(event, node.id)}
+              onDragOver={(event) => handleDragOver(event, node.id)}
+              onDrop={(event) => event.preventDefault()}
+              onDragEnd={() => setDraggedNodeId(null)}
+            >
+              <span className="admin-drag-handle" aria-hidden="true">⋮⋮</span>
+              <span className="admin-server-sort-index">{index + 1}</span>
+              <strong>{node.displayName}</strong>
+              <span>{formatAdminNodeStatusLabel(node)}</span>
+            </article>
+          ))}
+        </div>
+        <div className="admin-modal-actions">
+          <button type="button" onClick={onClose}>取消</button>
+          <button className="admin-primary-action" type="button" onClick={() => onSave(orderedNodes)}>保存排序</button>
+        </div>
+      </div>
+    </div>
+  )
 }
 
 function AdminNodeCreateModal({ onCreate, onClose }: { onCreate: (input: AdminNodeCreateInput) => void; onClose: () => void }) {
@@ -2239,19 +2283,6 @@ function formatAdminNodeStatusLabel(node: AdminNode): string {
   if (node.status === 'warning') return '异常'
   if (node.status === 'no_data') return '暂无数据'
   return node.status
-}
-
-function adminNodeStatusRank(node: AdminNode): number {
-  if (node.disabled) return 4
-  if (node.status === 'online') return 0
-  if (node.status === 'warning') return 1
-  if (node.status === 'offline') return 2
-  if (node.status === 'no_data') return 3
-  return 5
-}
-
-function adminNodeIPSortValue(node: AdminNode): string {
-  return node.publicIPv4 || node.publicIPv6 || '~'
 }
 
 function formatAdminEnabledStatusLabel(enabled: boolean): string {

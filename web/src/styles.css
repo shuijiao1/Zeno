@@ -729,6 +729,58 @@ svg { display: block; }
   align-items: center;
   gap: 10px;
 }
+.admin-server-sort-list {
+  display: grid;
+  gap: 8px;
+  margin: 14px 0;
+}
+.admin-server-sort-item {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: auto auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  padding: 11px 12px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--background) 60%, transparent);
+  cursor: grab;
+  user-select: none;
+}
+.admin-server-sort-item:active { cursor: grabbing; }
+.admin-server-sort-item.is-dragging {
+  border-color: color-mix(in srgb, var(--green) 58%, var(--border));
+  background: color-mix(in srgb, var(--green) 10%, var(--background));
+}
+.admin-server-sort-item strong {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.admin-server-sort-item span:last-child {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 600;
+}
+.admin-drag-handle {
+  color: var(--muted);
+  font-size: 18px;
+  letter-spacing: -6px;
+  line-height: 1;
+}
+.admin-server-sort-index {
+  width: 24px;
+  height: 24px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  background: var(--secondary);
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 600;
+}
 .admin-state-card {
   padding: 18px;
   border: 1px solid var(--border);
@@ -1309,6 +1361,8 @@ svg { display: block; }
   .admin-modal { max-height: 90vh; border-radius: 18px; padding: 14px; }
   .admin-modal-summary { grid-template-columns: 1fr; gap: 8px; }
   .admin-modal-summary div { padding: 10px; }
+  .admin-server-sort-item { grid-template-columns: auto auto minmax(0, 1fr); }
+  .admin-server-sort-item span:last-child { grid-column: 3; }
   .admin-node-edit-form,
   .admin-form-grid { grid-template-columns: 1fr; }
   .admin-section-heading { flex-direction: column; }
