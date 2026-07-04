@@ -9,6 +9,7 @@ var errNodeNotFound = errors.New("node not found")
 
 type Store interface {
 	Summary(ctx context.Context) (SummaryResponse, error)
+	PublicSettings(ctx context.Context) (SiteSettings, error)
 	NodeLatency(ctx context.Context, nodeID string, window latencyWindow) (LatencyResponse, error)
 	NodeState(ctx context.Context, nodeID string, window latencyWindow) (StateResponse, error)
 }
@@ -17,6 +18,10 @@ type mockStore struct{}
 
 func (mockStore) Summary(ctx context.Context) (SummaryResponse, error) {
 	return SummaryResponse{Nodes: mockNodes(), LatencyPoints: mockLatencyPoints("hytron", "1h")}, nil
+}
+
+func (mockStore) PublicSettings(ctx context.Context) (SiteSettings, error) {
+	return defaultSiteSettings(), nil
 }
 
 func (mockStore) NodeLatency(ctx context.Context, nodeID string, window latencyWindow) (LatencyResponse, error) {

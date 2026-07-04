@@ -1,10 +1,10 @@
-import { type FormEvent, type ReactNode, useEffect, useState } from 'react'
-import { createAdminNode, createAdminNotificationChannel, createAdminProbeTarget, deleteAdminNotificationChannel, deleteAdminProbeTarget, fetchAdminAlertRules, fetchAdminAlertRuleStates, fetchAdminNodes, fetchAdminNotificationChannels, fetchAdminNotificationDeliveries, fetchAdminNotificationTypes, fetchAdminProbeTargets, fetchNodeLatency, fetchNodeState, fetchSummary, requestAdminNodeInstallCommand, testAdminNotificationChannel, updateAdminAlertRule, updateAdminNode, updateAdminNotificationChannel, updateAdminNotificationType, updateAdminProbeTarget, type AdminAlertRuleUpdateInput, type AdminNodeCreateInput, type AdminNodeUpdateInput, type AdminNotificationChannelCreateInput, type AdminNotificationChannelUpdateInput, type AdminProbeTargetInput, type AdminProbeTargetUpdateInput, type NodeLatencyData, type NodeStateData, type SummaryData } from './api/client'
+import { type CSSProperties, type FormEvent, type ReactNode, useEffect, useState } from 'react'
+import { createAdminNode, createAdminNotificationChannel, createAdminProbeTarget, deleteAdminNotificationChannel, deleteAdminProbeTarget, fetchAdminAlertRules, fetchAdminAlertRuleStates, fetchAdminNodes, fetchAdminNotificationChannels, fetchAdminNotificationDeliveries, fetchAdminNotificationTypes, fetchAdminProbeTargets, fetchAdminSettings, fetchNodeLatency, fetchNodeState, fetchPublicSettings, fetchSummary, requestAdminNodeInstallCommand, testAdminNotificationChannel, updateAdminAlertRule, updateAdminNode, updateAdminNotificationChannel, updateAdminNotificationType, updateAdminProbeTarget, updateAdminSettings, type AdminAlertRuleUpdateInput, type AdminNodeCreateInput, type AdminNodeUpdateInput, type AdminNotificationChannelCreateInput, type AdminNotificationChannelUpdateInput, type AdminProbeTargetInput, type AdminProbeTargetUpdateInput, type AdminSettingsUpdateInput, type NodeLatencyData, type NodeStateData, type SummaryData } from './api/client'
 import { LatencyDetail } from './components/LatencyDetail'
 import { ServerCard } from './components/ServerCard'
 import { startLiveRefresh } from './lib/liveRefresh'
 import { nodePath, parseDashboardRoute, type DashboardRoute } from './lib/route'
-import type { AdminAlertRule, AdminAlertRuleState, AdminNode, AdminNotificationChannel, AdminNotificationDelivery, AdminNotificationType, AdminProbeTarget, ProbeType } from './types'
+import type { AdminAlertRule, AdminAlertRuleState, AdminNode, AdminNotificationChannel, AdminNotificationDelivery, AdminNotificationType, AdminProbeTarget, AdminSettings, ProbeType } from './types'
 
 type LoadState =
   | { kind: 'loading' }
@@ -29,7 +29,7 @@ type AdminLoadState =
   | { kind: 'ready'; nodes: AdminNode[]; targets: AdminProbeTarget[]; notificationChannels: AdminNotificationChannel[]; notificationTypes: AdminNotificationType[]; notificationDeliveries: AdminNotificationDelivery[]; alertRules: AdminAlertRule[]; alertRuleStates: AdminAlertRuleState[] }
   | { kind: 'error'; message: string }
 
-type AdminSection = 'overview' | 'nodes' | 'targets' | 'rules' | 'notifications'
+type AdminSection = 'overview' | 'nodes' | 'targets' | 'rules' | 'settings' | 'notifications'
 type AdminTargetSort = 'name' | 'status' | 'type' | 'assignments'
 
 function sum(values: Array<number | null | undefined>): number {
@@ -51,6 +51,24 @@ function compactBytes(value: number): string {
 
 function compactRate(value: number): string {
   return `${compactBytes(value)}/s`
+}
+
+const defaultSettings: AdminSettings = {
+  siteTitle: 'Zeno',
+  siteSubtitle: '服务器运行概览',
+  logoUrl: '/assets/logo/id.png',
+  theme: 'system',
+  backgroundUrl: '',
+}
+
+export function shellStyleForSettings(settings: AdminSettings): CSSProperties | undefined {
+  const backgroundUrl = settings.backgroundUrl.trim()
+  if (backgroundUrl === '') return undefined
+  return {
+    backgroundImage: `linear-gradient(rgba(24, 21, 18, 0.78), rgba(24, 21, 18, 0.78)), url("${backgroundUrl.replaceAll('"', '%22')}")`,
+    backgroundSize: 'cover',
+    backgroundAttachment: 'fixed',
+  }
 }
 
 export function reconcileAlertRuleStates(updatedRule: AdminAlertRule, states: AdminAlertRuleState[]): AdminAlertRuleState[] {
@@ -119,6 +137,19 @@ export function App() {
   const [stateHistoryState, setStateHistoryState] = useState<StateHistoryLoadState>({ kind: 'idle' })
   const [adminToken, setAdminToken] = useState(() => window.sessionStorage.getItem('zeno_admin_token') ?? '')
   const [adminState, setAdminState] = useState<AdminLoadState>({ kind: 'idle' })
+  const [settings, setSettings] = useState<AdminSettings>(defaultSettings)
+
+  useEffect(() => {
+    let cancelled = false
+    fetchPublicSettings()
+      .then((loadedSettings) => {
+        if (!cancelled) setSettings(loadedSettings)
+      })
+      .catch(() => {})
+    return () => {
+      cancelled = true
+    }
+  }, [])
 
   useEffect(() => {
     let cancelled = false
@@ -215,10 +246,13 @@ export function App() {
     let loadedOnce = false
     const loadAdminNodes = () => {
       if (!loadedOnce) setAdminState({ kind: 'loading' })
-      Promise.all([fetchAdminNodes(adminToken), fetchAdminProbeTargets(adminToken), fetchAdminNotificationChannels(adminToken), fetchAdminNotificationTypes(adminToken), fetchAdminNotificationDeliveries(adminToken), fetchAdminAlertRules(adminToken), fetchAdminAlertRuleStates(adminToken)])
-        .then(([nodesData, targetsData, channelsData, typesData, deliveriesData, alertRulesData, alertRuleStatesData]) => {
+      Promise.all([fetchAdminSettings(adminToken), fetchAdminNodes(adminToken), fetchAdminProbeTargets(adminToken), fetchAdminNotificationChannels(adminToken), fetchAdminNotificationTypes(adminToken), fetchAdminNotificationDeliveries(adminToken), fetchAdminAlertRules(adminToken), fetchAdminAlertRuleStates(adminToken)])
+        .then(([settingsData, nodesData, targetsData, channelsData, typesData, deliveriesData, alertRulesData, alertRuleStatesData]) => {
           loadedOnce = true
-          if (!cancelled) setAdminState({ kind: 'ready', nodes: nodesData.nodes, targets: targetsData.targets, notificationChannels: channelsData.channels, notificationTypes: typesData.types, notificationDeliveries: deliveriesData.deliveries, alertRules: alertRulesData.rules, alertRuleStates: alertRuleStatesData.states })
+          if (!cancelled) {
+            setSettings(settingsData)
+            setAdminState({ kind: 'ready', nodes: nodesData.nodes, targets: targetsData.targets, notificationChannels: channelsData.channels, notificationTypes: typesData.types, notificationDeliveries: deliveriesData.deliveries, alertRules: alertRulesData.rules, alertRuleStates: alertRuleStatesData.states })
+          }
         })
         .catch((error: unknown) => {
           loadedOnce = true
@@ -250,8 +284,11 @@ export function App() {
   const refreshAdminNodes = () => {
     if (adminToken === '') return
     setAdminState({ kind: 'loading' })
-    Promise.all([fetchAdminNodes(adminToken), fetchAdminProbeTargets(adminToken), fetchAdminNotificationChannels(adminToken), fetchAdminNotificationTypes(adminToken), fetchAdminNotificationDeliveries(adminToken), fetchAdminAlertRules(adminToken), fetchAdminAlertRuleStates(adminToken)])
-      .then(([nodesData, targetsData, channelsData, typesData, deliveriesData, alertRulesData, alertRuleStatesData]) => setAdminState({ kind: 'ready', nodes: nodesData.nodes, targets: targetsData.targets, notificationChannels: channelsData.channels, notificationTypes: typesData.types, notificationDeliveries: deliveriesData.deliveries, alertRules: alertRulesData.rules, alertRuleStates: alertRuleStatesData.states }))
+    Promise.all([fetchAdminSettings(adminToken), fetchAdminNodes(adminToken), fetchAdminProbeTargets(adminToken), fetchAdminNotificationChannels(adminToken), fetchAdminNotificationTypes(adminToken), fetchAdminNotificationDeliveries(adminToken), fetchAdminAlertRules(adminToken), fetchAdminAlertRuleStates(adminToken)])
+      .then(([settingsData, nodesData, targetsData, channelsData, typesData, deliveriesData, alertRulesData, alertRuleStatesData]) => {
+        setSettings(settingsData)
+        setAdminState({ kind: 'ready', nodes: nodesData.nodes, targets: targetsData.targets, notificationChannels: channelsData.channels, notificationTypes: typesData.types, notificationDeliveries: deliveriesData.deliveries, alertRules: alertRulesData.rules, alertRuleStates: alertRuleStatesData.states })
+      })
       .catch((error: unknown) => setAdminState({ kind: 'error', message: error instanceof Error ? error.message : 'unknown error' }))
   }
 
@@ -422,6 +459,13 @@ export function App() {
       .catch((error: unknown) => setAdminState({ kind: 'error', message: error instanceof Error ? error.message : 'unknown error' }))
   }
 
+  const updateAdminSettingsDetails = (input: AdminSettingsUpdateInput) => {
+    if (adminToken === '') return
+    updateAdminSettings(adminToken, input)
+      .then((updatedSettings) => setSettings(updatedSettings))
+      .catch((error: unknown) => setAdminState({ kind: 'error', message: error instanceof Error ? error.message : 'unknown error' }))
+  }
+
   const navigateHome = () => {
     window.history.pushState(null, '', '/')
     setRoute({ kind: 'home' })
@@ -449,12 +493,13 @@ export function App() {
   const downSpeed = sum(nodes.map((node) => node.netInSpeedBps))
 
   return (
-    <main className="kulin-shell">
-      {route.kind === 'node' && <DashboardHeader onHome={navigateHome} onAdmin={navigateAdmin} />}
+    <main className="kulin-shell" data-theme={settings.theme} style={shellStyleForSettings(settings)}>
+      {route.kind === 'node' && <DashboardHeader settings={settings} onHome={navigateHome} onAdmin={navigateAdmin} />}
 
       {route.kind === 'admin' && (
         <AdminDashboard
           onHome={navigateHome}
+          settings={settings}
           hasAdminToken={adminToken !== ''}
           adminState={adminState}
           onAdminTokenSubmit={submitAdminToken}
@@ -472,6 +517,7 @@ export function App() {
           onAdminNotificationChannelTest={testAdminNotificationChannelDetails}
           onAdminNotificationTypeUpdate={updateAdminNotificationTypeDetails}
           onAdminAlertRuleUpdate={updateAdminAlertRuleDetails}
+          onAdminSettingsUpdate={updateAdminSettingsDetails}
         />
       )}
 
@@ -500,6 +546,7 @@ export function App() {
       {state.kind === 'ready' && route.kind === 'home' && (
         <div className="kulin-container">
           <HomeTopPanel
+            settings={settings}
             totalCount={totalCount}
             onlineCount={onlineCount}
             offlineCount={offlineCount}
@@ -521,6 +568,7 @@ export function App() {
 }
 
 interface HomeOverviewPanelProps {
+  settings?: AdminSettings
   totalCount: number
   onlineCount: number
   offlineCount: number
@@ -531,6 +579,7 @@ interface HomeOverviewPanelProps {
 }
 
 interface DashboardHeaderProps {
+  settings?: AdminSettings
   onHome: () => void
   onAdmin: () => void
   adminLabel?: string
@@ -541,21 +590,21 @@ interface HomeTopPanelProps extends HomeOverviewPanelProps {
   onAdmin: () => void
 }
 
-export function HomeTopPanel({ onHome, onAdmin, ...overview }: HomeTopPanelProps) {
+export function HomeTopPanel({ settings = defaultSettings, onHome, onAdmin, ...overview }: HomeTopPanelProps) {
   return (
     <section className="home-top-card" aria-label="homepage control panel">
-      <DashboardHeader onHome={onHome} onAdmin={onAdmin} />
-      <HomeOverviewPanel {...overview} />
+      <DashboardHeader settings={settings} onHome={onHome} onAdmin={onAdmin} />
+      <HomeOverviewPanel settings={settings} {...overview} />
     </section>
   )
 }
 
-function DashboardHeader({ onHome, onAdmin, adminLabel = '后台' }: DashboardHeaderProps) {
+function DashboardHeader({ settings = defaultSettings, onHome, onAdmin, adminLabel = '后台' }: DashboardHeaderProps) {
   return (
     <header className="kulin-nav">
       <button className="brand" type="button" onClick={onHome}>
-        <span className="brand-logo"><img src="/assets/logo/id.png" alt="apple-touch-icon" /></span>
-        <span>Zeno</span>
+        <span className="brand-logo"><img src={settings.logoUrl || defaultSettings.logoUrl} alt={`${settings.siteTitle || 'Zeno'} logo`} /></span>
+        <span>{settings.siteTitle || 'Zeno'}</span>
       </button>
       <nav className="nav-actions" aria-label="dashboard actions">
         <button className="login-link" type="button" onClick={onAdmin}>{adminLabel}</button>
@@ -569,6 +618,7 @@ function DashboardHeader({ onHome, onAdmin, adminLabel = '后台' }: DashboardHe
 
 interface AdminDashboardProps {
   onHome: () => void
+  settings?: AdminSettings
   hasAdminToken?: boolean
   adminState?: AdminLoadState
   initialSection?: AdminSection
@@ -587,10 +637,12 @@ interface AdminDashboardProps {
   onAdminNotificationChannelTest?: (channelId: string) => void
   onAdminNotificationTypeUpdate?: (eventType: string, enabled: boolean) => void
   onAdminAlertRuleUpdate?: (ruleId: string, input: AdminAlertRuleUpdateInput) => void
+  onAdminSettingsUpdate?: (input: AdminSettingsUpdateInput) => void
 }
 
 export function AdminDashboard({
   onHome,
+  settings = defaultSettings,
   hasAdminToken = false,
   adminState = { kind: 'idle' },
   initialSection = 'overview',
@@ -609,6 +661,7 @@ export function AdminDashboard({
   onAdminNotificationChannelTest = () => {},
   onAdminNotificationTypeUpdate = () => {},
   onAdminAlertRuleUpdate = () => {},
+  onAdminSettingsUpdate = () => {},
 }: AdminDashboardProps) {
   const [activeSection, setActiveSection] = useState<AdminSection>(initialSection)
 
@@ -633,7 +686,7 @@ export function AdminDashboard({
   return (
     <div className="kulin-container admin-container">
       <section className="home-top-card admin-panel" aria-label="admin dashboard">
-        <DashboardHeader onHome={onHome} onAdmin={onHome} adminLabel="前台" />
+        <DashboardHeader settings={settings} onHome={onHome} onAdmin={onHome} adminLabel="前台" />
         <div className="admin-hero">
           <p className="eyebrow">Zeno 后台</p>
           <h2>控制台</h2>
@@ -739,6 +792,10 @@ export function AdminDashboard({
               />
             )}
 
+            {adminState.kind === 'ready' && activeSection === 'settings' && (
+              <AdminSettingsSection settings={settings} onUpdate={onAdminSettingsUpdate} />
+            )}
+
             {adminState.kind === 'ready' && activeSection === 'notifications' && (
               <AdminNotificationsSection
                 channels={adminState.notificationChannels}
@@ -764,6 +821,7 @@ function AdminSectionNav({ activeSection, onSectionChange, nodeCount, targetCoun
     { id: 'nodes', label: '服务器', meta: `${nodeCount} 台` },
     { id: 'targets', label: '延迟监控', meta: `${targetCount} 个目标` },
     { id: 'rules', label: '状态规则', meta: `${ruleCount} 条` },
+    { id: 'settings', label: '设置', meta: 'Appearance' },
     { id: 'notifications', label: '通知', meta: 'Channels' },
   ]
 
@@ -810,6 +868,60 @@ function AdminOverviewPanel({ nodeCount, onlineNodeCount, targetCount, enabledTa
         </article>
       </div>
       <p className="admin-overview-note">从上方导航进入具体模块；列表页只显示关键状态，所有编辑动作都在弹窗中完成。</p>
+    </section>
+  )
+}
+
+function AdminSettingsSection({ settings, onUpdate }: { settings: AdminSettings; onUpdate: (input: AdminSettingsUpdateInput) => void }) {
+  const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    const formData = new FormData(event.currentTarget)
+    const theme = String(formData.get('theme') ?? 'system') as AdminSettings['theme']
+    onUpdate({
+      siteTitle: String(formData.get('site-title') ?? '').trim(),
+      siteSubtitle: String(formData.get('site-subtitle') ?? '').trim(),
+      logoUrl: String(formData.get('logo-url') ?? '').trim(),
+      theme,
+      backgroundUrl: String(formData.get('background-url') ?? '').trim(),
+    })
+  }
+
+  return (
+    <section className="admin-settings-section admin-workspace-panel" aria-label="admin settings">
+      <header className="admin-section-heading">
+        <div>
+          <p className="eyebrow">Appearance</p>
+          <h3>站点设置</h3>
+        </div>
+      </header>
+      <form className="admin-settings-form admin-node-edit-form" aria-label="外观配置" onSubmit={handleSubmit}>
+        <label>
+          <span>站点标题</span>
+          <input name="site-title" autoComplete="off" defaultValue={settings.siteTitle} />
+        </label>
+        <label>
+          <span>站点副标题</span>
+          <input name="site-subtitle" autoComplete="off" defaultValue={settings.siteSubtitle} />
+        </label>
+        <label>
+          <span>Logo URL</span>
+          <input name="logo-url" autoComplete="off" defaultValue={settings.logoUrl} />
+        </label>
+        <label>
+          <span>主题</span>
+          <select name="theme" defaultValue={settings.theme}>
+            <option value="system">跟随系统</option>
+            <option value="dark">深色</option>
+            <option value="light">浅色</option>
+          </select>
+        </label>
+        <label>
+          <span>背景图 URL</span>
+          <input name="background-url" autoComplete="off" defaultValue={settings.backgroundUrl} placeholder="可留空" />
+        </label>
+        {settings.updatedAt && <p className="admin-overview-note">最近更新：{formatAdminDate(settings.updatedAt)}</p>}
+        <button type="submit">保存设置</button>
+      </form>
     </section>
   )
 }
@@ -1787,7 +1899,7 @@ function formatAdminDate(value?: string): string {
   return date.toLocaleString('zh-CN', { hour12: false })
 }
 
-export function HomeOverviewPanel({ totalCount, onlineCount, offlineCount, totalUp, totalDown, upSpeed, downSpeed }: HomeOverviewPanelProps) {
+export function HomeOverviewPanel({ settings = defaultSettings, totalCount, onlineCount, offlineCount, totalUp, totalDown, upSpeed, downSpeed }: HomeOverviewPanelProps) {
   const onlineRatio = totalCount > 0 ? Math.round((onlineCount / totalCount) * 100) : 0
   const nonOnlineCount = Math.max(totalCount - onlineCount, offlineCount, 0)
   const healthLabel = totalCount === 0 ? '等待接入' : nonOnlineCount === 0 ? '全部在线' : `${nonOnlineCount} 台未在线`
@@ -1799,6 +1911,7 @@ export function HomeOverviewPanel({ totalCount, onlineCount, offlineCount, total
         <div>
           <p className="eyebrow">Zeno Overview</p>
           <h1>服务器运行概览</h1>
+          {settings.siteSubtitle && settings.siteSubtitle !== '服务器运行概览' && <p className="home-summary__subtitle">{settings.siteSubtitle}</p>}
         </div>
         <span className={`home-health-pill ${healthTone}`}>{healthLabel}</span>
       </div>

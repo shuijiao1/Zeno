@@ -1,4 +1,4 @@
-# API 草案
+# Zeno API
 
 Zeno API 全新设计，不兼容旧系统。
 
@@ -165,6 +165,22 @@ X-Agent-Version: <version>
 
 ## Public API
 
+### GET /api/public/v1/settings
+
+读取公开站点外观配置。首页启动时会先读取该接口，用于品牌标题、Logo、副标题、主题和背景图。响应只包含公开展示字段，不包含 Admin token、Agent token、token hash、通知渠道凭据、secret 或 credential 原文。
+
+默认值：
+
+```json
+{
+  "site_title": "Zeno",
+  "site_subtitle": "服务器运行概览",
+  "logo_url": "/assets/logo/id.png",
+  "theme": "system",
+  "background_url": ""
+}
+```
+
 ### GET /api/public/v1/summary
 
 首页使用，返回节点卡片所需数据。
@@ -253,6 +269,48 @@ X-Admin-Token: <admin-token>
 - admin token 不放 query string。
 - Controller 启动时通过 `-admin-token` 或 `-admin-token-file` 配置，内部只比较 hash。
 - Admin API 也必须使用显式 DTO，不能返回 `token_hash`、token 原文或 secret 字段。
+
+### GET /api/admin/v1/settings
+
+读取后台可编辑的站点外观配置。响应包装在 `settings` 字段下，只返回公开可展示字段，不返回任何凭据或 hash。
+
+```json
+{
+  "settings": {
+    "site_title": "Zeno",
+    "site_subtitle": "服务器运行概览",
+    "logo_url": "/assets/logo/id.png",
+    "theme": "system",
+    "background_url": "",
+    "updated_at": "2026-07-04T12:00:00Z"
+  }
+}
+```
+
+### PATCH /api/admin/v1/settings
+
+部分更新站点外观配置。所有字段均可省略，提交后 Controller 会 trim 文本并持久化到 SQLite `settings` 表。
+
+请求：
+
+```json
+{
+  "site_title": "水饺监控",
+  "site_subtitle": "VPS 状态总览",
+  "logo_url": "/assets/logo/custom.png",
+  "theme": "dark",
+  "background_url": "https://example.com/bg.webp"
+}
+```
+
+约束：
+
+- `site_title` 不能为空，最长 64 个字符。
+- `site_subtitle` 可为空，最长 140 个字符。
+- `theme` 只能是 `system`、`dark` 或 `light`。
+- `logo_url` 必须是站内绝对路径（如 `/assets/logo/id.png`）或 `https://` URL。
+- `background_url` 可为空；非空时也必须是站内绝对路径或 `https://` URL。
+- 响应仍只返回公开展示字段，不返回 Admin token、Agent token、token hash、secret、credential 或任何凭据值。
 
 ### GET /api/admin/v1/nodes
 

@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { createAdminNode, createAdminNotificationChannel, createAdminProbeTarget, deleteAdminNotificationChannel, deleteAdminProbeTarget, fetchAdminAlertRules, fetchAdminAlertRuleStates, fetchAdminNodes, fetchAdminNotificationChannels, fetchAdminNotificationDeliveries, fetchAdminNotificationTypes, fetchAdminProbeTargets, normalizeAdminAlertRules, normalizeAdminAlertRuleStates, normalizeAdminNodes, normalizeAdminNotificationChannels, normalizeAdminNotificationDeliveries, normalizeAdminNotificationTypes, normalizeAdminProbeTargets, normalizeNodeLatency, normalizeNodeState, normalizeSummary, requestAdminNodeInstallCommand, testAdminNotificationChannel, updateAdminAlertRule, updateAdminNode, updateAdminNotificationChannel, updateAdminNotificationType, updateAdminProbeTarget } from './client'
+import { createAdminNode, createAdminNotificationChannel, createAdminProbeTarget, deleteAdminNotificationChannel, deleteAdminProbeTarget, fetchAdminAlertRules, fetchAdminAlertRuleStates, fetchAdminNodes, fetchAdminNotificationChannels, fetchAdminNotificationDeliveries, fetchAdminNotificationTypes, fetchAdminProbeTargets, fetchAdminSettings, fetchPublicSettings, normalizeAdminAlertRules, normalizeAdminAlertRuleStates, normalizeAdminNodes, normalizeAdminNotificationChannels, normalizeAdminNotificationDeliveries, normalizeAdminNotificationTypes, normalizeAdminProbeTargets, normalizeSettings, normalizeNodeLatency, normalizeNodeState, normalizeSummary, requestAdminNodeInstallCommand, testAdminNotificationChannel, updateAdminAlertRule, updateAdminNode, updateAdminNotificationChannel, updateAdminNotificationType, updateAdminProbeTarget, updateAdminSettings } from './client'
 
 describe('normalizeSummary', () => {
   it('maps controller snake_case JSON into frontend camelCase models', () => {
@@ -304,6 +304,26 @@ describe('normalizeAdminNotifications', () => {
   })
 })
 
+describe('normalizeSettings', () => {
+  it('maps public/admin settings into frontend camelCase models', () => {
+    const settings = normalizeSettings({
+      site_title: '水饺监控',
+      site_subtitle: 'VPS 状态总览',
+      logo_url: '/assets/logo/custom.png',
+      theme: 'dark',
+      background_url: 'https://example.com/bg.webp',
+      updated_at: '2026-07-04T12:00:00Z',
+    })
+
+    expect(settings.siteTitle).toBe('水饺监控')
+    expect(settings.siteSubtitle).toBe('VPS 状态总览')
+    expect(settings.logoUrl).toBe('/assets/logo/custom.png')
+    expect(settings.theme).toBe('dark')
+    expect(settings.backgroundUrl).toBe('https://example.com/bg.webp')
+    expect(settings.updatedAt).toBe('2026-07-04T12:00:00Z')
+  })
+})
+
 describe('fetchAdminNodes', () => {
   const originalFetch = globalThis.fetch
 
@@ -346,6 +366,80 @@ describe('fetchAdminProbeTargets', () => {
         Accept: 'application/json',
         'X-Admin-Token': 'admin-pass',
       },
+    })
+  })
+})
+
+describe('fetchSettings', () => {
+  const originalFetch = globalThis.fetch
+
+  afterEach(() => {
+    globalThis.fetch = originalFetch
+    vi.restoreAllMocks()
+  })
+
+  it('fetches public settings without admin credentials', async () => {
+    const fetchMock = vi.fn(async () => new Response(JSON.stringify({
+      site_title: '水饺监控',
+      site_subtitle: 'VPS 状态总览',
+      logo_url: '/assets/logo/custom.png',
+      theme: 'dark',
+      background_url: '',
+      updated_at: '2026-07-04T12:00:00Z',
+    }), { status: 200, headers: { 'Content-Type': 'application/json' } }))
+    globalThis.fetch = fetchMock as unknown as typeof fetch
+
+    const settings = await fetchPublicSettings()
+
+    expect(settings.siteTitle).toBe('水饺监控')
+    expect(fetchMock).toHaveBeenCalledWith('/api/public/v1/settings', {
+      headers: { Accept: 'application/json' },
+    })
+  })
+
+  it('fetches and updates admin settings with X-Admin-Token only', async () => {
+    const fetchMock = vi.fn(async (url: string | URL | Request) => new Response(JSON.stringify({
+      settings: {
+        site_title: String(url).includes('admin') ? '水饺监控' : 'Zeno',
+        site_subtitle: 'VPS 状态总览',
+        logo_url: '/assets/logo/custom.png',
+        theme: 'dark',
+        background_url: 'https://example.com/bg.webp',
+        updated_at: '2026-07-04T12:00:00Z',
+      },
+    }), { status: 200, headers: { 'Content-Type': 'application/json' } }))
+    globalThis.fetch = fetchMock as unknown as typeof fetch
+
+    await fetchAdminSettings('admin-pass')
+    const settings = await updateAdminSettings('admin-pass', {
+      siteTitle: '水饺监控',
+      siteSubtitle: 'VPS 状态总览',
+      logoUrl: '/assets/logo/custom.png',
+      theme: 'dark',
+      backgroundUrl: 'https://example.com/bg.webp',
+    })
+
+    expect(settings.backgroundUrl).toBe('https://example.com/bg.webp')
+    expect(fetchMock).toHaveBeenNthCalledWith(1, '/api/admin/v1/settings', {
+      headers: {
+        Accept: 'application/json',
+        'X-Admin-Token': 'admin-pass',
+      },
+    })
+    expect(fetchMock).toHaveBeenNthCalledWith(2, '/api/admin/v1/settings', {
+      method: 'PATCH',
+      headers: {
+        Accept: 'application/json',
+        'Content-Type': 'application/json',
+        'X-Admin-Token': 'admin-pass',
+      },
+      body: JSON.stringify({
+        site_title: '水饺监控',
+        site_subtitle: 'VPS 状态总览',
+        logo_url: '/assets/logo/custom.png',
+        theme: 'dark',
+        background_url: 'https://example.com/bg.webp',
+      }),
     })
   })
 })

@@ -9,6 +9,8 @@ import (
 )
 
 type adminStore interface {
+	AdminSettings(ctx context.Context) (SiteSettings, error)
+	UpdateAdminSettings(ctx context.Context, update AdminSettingsUpdateRequest) (SiteSettings, error)
 	AdminNodes(ctx context.Context) ([]AdminNode, error)
 	AdminProbeTargets(ctx context.Context) ([]AdminProbeTarget, error)
 	AdminNotificationChannels(ctx context.Context) ([]AdminNotificationChannel, error)
@@ -29,6 +31,38 @@ type adminStore interface {
 	DeleteAdminNotificationChannel(ctx context.Context, channelID string) error
 	UpdateAdminNotificationType(ctx context.Context, eventType string, update AdminNotificationTypeUpdateRequest) (AdminNotificationType, error)
 	UpdateAdminAlertRule(ctx context.Context, ruleID string, update AdminAlertRuleUpdateRequest) (AdminAlertRule, error)
+}
+
+func (h *handler) handleAdminSettings(w http.ResponseWriter, r *http.Request) {
+	store, ok := h.authorizeAdminRequest(w, r)
+	if !ok {
+		return
+	}
+	switch r.Method {
+	case http.MethodGet:
+		settings, err := store.AdminSettings(r.Context())
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, "internal error")
+			return
+		}
+		writeJSON(w, http.StatusOK, AdminSettingsResponse{Settings: settings})
+	case http.MethodPatch:
+		var update AdminSettingsUpdateRequest
+		decoder := json.NewDecoder(r.Body)
+		decoder.DisallowUnknownFields()
+		if err := decoder.Decode(&update); err != nil {
+			writeError(w, http.StatusBadRequest, "bad request")
+			return
+		}
+		settings, err := store.UpdateAdminSettings(r.Context(), update)
+		if err != nil {
+			writeAdminError(w, err)
+			return
+		}
+		writeJSON(w, http.StatusOK, AdminSettingsResponse{Settings: settings})
+	default:
+		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+	}
 }
 
 func (h *handler) handleAdminProbeTargets(w http.ResponseWriter, r *http.Request) {
@@ -208,7 +242,7 @@ func writeAdminError(w http.ResponseWriter, err error) {
 		writeError(w, http.StatusNotFound, "not found")
 		return
 	}
-	if errors.Is(err, errInvalidAdminNodeUpdate) || errors.Is(err, errInvalidAdminNodeCreate) || errors.Is(err, errInvalidAdminTargetWrite) || errors.Is(err, errInvalidAdminNotificationChannelWrite) || errors.Is(err, errInvalidAdminNotificationTypeWrite) || errors.Is(err, errInvalidAdminAlertRuleUpdate) {
+	if errors.Is(err, errInvalidAdminSettingsUpdate) || errors.Is(err, errInvalidAdminNodeUpdate) || errors.Is(err, errInvalidAdminNodeCreate) || errors.Is(err, errInvalidAdminTargetWrite) || errors.Is(err, errInvalidAdminNotificationChannelWrite) || errors.Is(err, errInvalidAdminNotificationTypeWrite) || errors.Is(err, errInvalidAdminAlertRuleUpdate) {
 		writeError(w, http.StatusBadRequest, "bad request")
 		return
 	}

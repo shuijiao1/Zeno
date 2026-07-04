@@ -1,7 +1,7 @@
 import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it } from 'vitest'
-import { AdminDashboard, HomeTopPanel, reconcileAlertRuleStates, reconcileAlertRuleStatesForNode } from './App'
-import type { AdminAlertRule, AdminAlertRuleState, AdminNode, AdminNotificationChannel, AdminNotificationDelivery, AdminNotificationType, AdminProbeTarget } from './types'
+import { AdminDashboard, HomeTopPanel, reconcileAlertRuleStates, reconcileAlertRuleStatesForNode, shellStyleForSettings } from './App'
+import type { AdminAlertRule, AdminAlertRuleState, AdminNode, AdminNotificationChannel, AdminNotificationDelivery, AdminNotificationType, AdminProbeTarget, AdminSettings } from './types'
 
 const overviewProps = {
   totalCount: 11,
@@ -189,10 +189,20 @@ const alertRuleStates: AdminAlertRuleState[] = [
   },
 ]
 
-function renderAdmin(section: 'overview' | 'nodes' | 'targets' | 'notifications' | 'rules' = 'overview') {
+const settings: AdminSettings = {
+  siteTitle: '水饺监控',
+  siteSubtitle: 'VPS 状态总览',
+  logoUrl: '/assets/logo/custom.png',
+  theme: 'dark',
+  backgroundUrl: 'https://example.com/bg.webp',
+  updatedAt: '2026-07-04T12:00:00Z',
+}
+
+function renderAdmin(section: 'overview' | 'nodes' | 'targets' | 'notifications' | 'rules' | 'settings' = 'overview') {
   return renderToStaticMarkup(
     <AdminDashboard
       onHome={() => {}}
+      settings={settings}
       hasAdminToken
       initialSection={section}
       adminState={{
@@ -217,15 +227,26 @@ function renderAdmin(section: 'overview' | 'nodes' | 'targets' | 'notifications'
       onAdminNotificationChannelUpdate={() => {}}
       onAdminNotificationTypeUpdate={() => {}}
       onAdminAlertRuleUpdate={() => {}}
+      onAdminSettingsUpdate={() => {}}
     />,
   )
 }
 
 describe('HomeTopPanel', () => {
+  it('turns a configured background image into a safe shell style', () => {
+    expect(shellStyleForSettings(settings)).toEqual({
+      backgroundImage: 'linear-gradient(rgba(24, 21, 18, 0.78), rgba(24, 21, 18, 0.78)), url("https://example.com/bg.webp")',
+      backgroundSize: 'cover',
+      backgroundAttachment: 'fixed',
+    })
+    expect(shellStyleForSettings({ ...settings, backgroundUrl: '' })).toBeUndefined()
+  })
+
   it('keeps the homepage top controls inside one card with a simple custom overview', () => {
     const html = renderToStaticMarkup(
       <HomeTopPanel
         {...overviewProps}
+        settings={settings}
         onHome={() => {}}
         onAdmin={() => {}}
       />,
@@ -234,6 +255,9 @@ describe('HomeTopPanel', () => {
     expect(html).toContain('home-top-card')
     expect(html).toContain('dashboard actions')
     expect(html).toContain('Zeno')
+    expect(html).toContain('水饺监控')
+    expect(html).toContain('/assets/logo/custom.png')
+    expect(html).toContain('VPS 状态总览')
     expect(html).toContain('home-summary')
     expect(html).toContain('home-summary__compact')
     expect(html).toContain('Zeno Overview')
@@ -256,6 +280,7 @@ describe('HomeTopPanel', () => {
         {...overviewProps}
         onlineCount={0}
         offlineCount={0}
+        settings={settings}
         onHome={() => {}}
         onAdmin={() => {}}
       />,
@@ -281,7 +306,30 @@ describe('AdminDashboard', () => {
     expect(html).toContain('服务器')
     expect(html).toContain('延迟监控')
     expect(html).toContain('状态规则')
+    expect(html).toContain('设置')
     expect(html).toContain('通知')
+  })
+
+  it('renders settings as a lightweight appearance configuration page', () => {
+    const html = renderAdmin('settings')
+
+    expect(html).toContain('站点设置')
+    expect(html).toContain('外观配置')
+    expect(html).toContain('admin-settings-form')
+    expect(html).toContain('name="site-title"')
+    expect(html).toContain('水饺监控')
+    expect(html).toContain('name="site-subtitle"')
+    expect(html).toContain('VPS 状态总览')
+    expect(html).toContain('name="logo-url"')
+    expect(html).toContain('/assets/logo/custom.png')
+    expect(html).toContain('name="theme"')
+    expect(html).toContain('深色')
+    expect(html).toContain('name="background-url"')
+    expect(html).toContain('https://example.com/bg.webp')
+    expect(html).not.toContain('token')
+    expect(html).not.toContain('secret')
+    expect(html).not.toContain('credential')
+    expect(html).not.toContain('hash')
   })
 
   it('renders real notification channels and types instead of a placeholder', () => {

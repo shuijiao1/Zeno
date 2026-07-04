@@ -1,5 +1,15 @@
 export type NodeStatus = 'online' | 'warning' | 'offline' | 'no_data'
 export type ProbeType = 'ping' | 'tcping' | 'http_get'
+export type AdminTheme = 'system' | 'dark' | 'light'
+
+export interface AdminSettings {
+  siteTitle: string
+  siteSubtitle: string
+  logoUrl: string
+  theme: AdminTheme
+  backgroundUrl: string
+  updatedAt?: string
+}
 
 export interface LatencySummary {
   targetId: string

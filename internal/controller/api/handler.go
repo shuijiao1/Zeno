@@ -47,8 +47,10 @@ func NewHandler(options ...HandlerOptions) http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/health", handleHealth)
 	mux.HandleFunc("/api/public/v1/agent/linux-amd64", h.handleAgentBinary)
+	mux.HandleFunc("/api/public/v1/settings", h.handlePublicSettings)
 	mux.HandleFunc("/api/public/v1/summary", h.handleSummary)
 	mux.HandleFunc("/api/public/v1/nodes/", h.handlePublicNodeResource)
+	mux.HandleFunc("/api/admin/v1/settings", h.handleAdminSettings)
 	mux.HandleFunc("/api/admin/v1/notification-channels", h.handleAdminNotificationChannels)
 	mux.HandleFunc("/api/admin/v1/notification-channels/", h.handleAdminNotificationChannelResource)
 	mux.HandleFunc("/api/admin/v1/notification-deliveries", h.handleAdminNotificationDeliveries)
@@ -115,6 +117,19 @@ func requestBaseURL(r *http.Request) string {
 		host = "127.0.0.1:18980"
 	}
 	return strings.TrimRight(proto+"://"+host, "/")
+}
+
+func (h *handler) handlePublicSettings(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+	settings, err := h.store.PublicSettings(r.Context())
+	if err != nil {
+		writeStoreError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, settings)
 }
 
 func (h *handler) handleSummary(w http.ResponseWriter, r *http.Request) {

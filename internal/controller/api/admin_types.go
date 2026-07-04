@@ -10,6 +10,7 @@ import (
 )
 
 var (
+	errInvalidAdminSettingsUpdate           = errors.New("invalid admin settings update")
 	errInvalidAdminNodeUpdate               = errors.New("invalid admin node update")
 	errInvalidAdminNodeCreate               = errors.New("invalid admin node create")
 	errNodeAlreadyExists                    = errors.New("node already exists")
@@ -24,6 +25,105 @@ var (
 	errInvalidAdminAlertRuleUpdate          = errors.New("invalid admin alert rule update")
 	errAlertRuleNotFound                    = errors.New("alert rule not found")
 )
+
+type AdminSettingsResponse struct {
+	Settings SiteSettings `json:"settings"`
+}
+
+type SiteSettings struct {
+	SiteTitle     string `json:"site_title"`
+	SiteSubtitle  string `json:"site_subtitle"`
+	LogoURL       string `json:"logo_url"`
+	Theme         string `json:"theme"`
+	BackgroundURL string `json:"background_url"`
+	UpdatedAt     string `json:"updated_at,omitempty"`
+}
+
+type AdminSettingsUpdateRequest struct {
+	SiteTitle     *string `json:"site_title,omitempty"`
+	SiteSubtitle  *string `json:"site_subtitle,omitempty"`
+	LogoURL       *string `json:"logo_url,omitempty"`
+	Theme         *string `json:"theme,omitempty"`
+	BackgroundURL *string `json:"background_url,omitempty"`
+}
+
+func defaultSiteSettings() SiteSettings {
+	return SiteSettings{
+		SiteTitle:     "Zeno",
+		SiteSubtitle:  "服务器运行概览",
+		LogoURL:       "/assets/logo/id.png",
+		Theme:         "system",
+		BackgroundURL: "",
+	}
+}
+
+func (request *AdminSettingsUpdateRequest) normalize() error {
+	changed := false
+	if request.SiteTitle != nil {
+		changed = true
+		trimmed := strings.TrimSpace(*request.SiteTitle)
+		if trimmed == "" || len([]rune(trimmed)) > 64 {
+			return errInvalidAdminSettingsUpdate
+		}
+		request.SiteTitle = &trimmed
+	}
+	if request.SiteSubtitle != nil {
+		changed = true
+		trimmed := strings.TrimSpace(*request.SiteSubtitle)
+		if len([]rune(trimmed)) > 140 {
+			return errInvalidAdminSettingsUpdate
+		}
+		request.SiteSubtitle = &trimmed
+	}
+	if request.LogoURL != nil {
+		changed = true
+		trimmed := strings.TrimSpace(*request.LogoURL)
+		if trimmed == "" || !validSettingsAssetURL(trimmed) {
+			return errInvalidAdminSettingsUpdate
+		}
+		request.LogoURL = &trimmed
+	}
+	if request.Theme != nil {
+		changed = true
+		trimmed := strings.ToLower(strings.TrimSpace(*request.Theme))
+		if !validSettingsTheme(trimmed) {
+			return errInvalidAdminSettingsUpdate
+		}
+		request.Theme = &trimmed
+	}
+	if request.BackgroundURL != nil {
+		changed = true
+		trimmed := strings.TrimSpace(*request.BackgroundURL)
+		if trimmed != "" && !validSettingsAssetURL(trimmed) {
+			return errInvalidAdminSettingsUpdate
+		}
+		request.BackgroundURL = &trimmed
+	}
+	if !changed {
+		return errInvalidAdminSettingsUpdate
+	}
+	return nil
+}
+
+func validSettingsTheme(theme string) bool {
+	switch theme {
+	case "system", "dark", "light":
+		return true
+	default:
+		return false
+	}
+}
+
+func validSettingsAssetURL(value string) bool {
+	if strings.HasPrefix(value, "/") && !strings.HasPrefix(value, "//") {
+		return true
+	}
+	parsed, err := url.ParseRequestURI(value)
+	if err != nil || parsed.Host == "" {
+		return false
+	}
+	return parsed.Scheme == "https"
+}
 
 // AdminNodesResponse is the authenticated management view for node inventory.
 // It intentionally omits token hashes and other credentials.

@@ -1,4 +1,13 @@
-import type { AdminAlertRule, AdminAlertRuleState, AdminNode, AdminNodeInstallCommand, AdminNotificationChannel, AdminNotificationDelivery, AdminNotificationType, AdminProbeTarget, HomeCardNode, LatencyPoint, ProbeType, StatePoint } from '../types'
+import type { AdminAlertRule, AdminAlertRuleState, AdminNode, AdminNodeInstallCommand, AdminNotificationChannel, AdminNotificationDelivery, AdminNotificationType, AdminProbeTarget, AdminSettings, AdminTheme, HomeCardNode, LatencyPoint, ProbeType, StatePoint } from '../types'
+
+interface ApiSettings {
+  site_title: string
+  site_subtitle: string
+  logo_url: string
+  theme: AdminTheme
+  background_url: string
+  updated_at?: string
+}
 
 interface ApiLatencySummary {
   target_id: string
@@ -184,6 +193,10 @@ interface ApiAdminAlertRuleState {
   updated_at: string
 }
 
+export interface ApiAdminSettingsResponse {
+  settings: ApiSettings
+}
+
 export interface ApiSummaryResponse {
   nodes: ApiNode[] | null
   latency_points: ApiLatencyPoint[] | null
@@ -305,6 +318,14 @@ export interface AdminAlertRuleStatesData {
   activeCount: number
 }
 
+export interface AdminSettingsUpdateInput {
+  siteTitle?: string
+  siteSubtitle?: string
+  logoUrl?: string
+  theme?: AdminTheme
+  backgroundUrl?: string
+}
+
 export interface AdminNodeUpdateInput {
   displayName?: string
   countryCode?: string
@@ -369,6 +390,14 @@ export interface AdminAlertRuleUpdateInput {
   durationSec?: number
 }
 
+export async function fetchPublicSettings(): Promise<AdminSettings> {
+  const response = await fetch('/api/public/v1/settings', { headers: { Accept: 'application/json' } })
+  if (!response.ok) {
+    throw new Error(`settings request failed: ${response.status}`)
+  }
+  return normalizeSettings(await response.json() as ApiSettings)
+}
+
 export async function fetchSummary(): Promise<SummaryData> {
   const response = await fetch('/api/public/v1/summary', { headers: { Accept: 'application/json' } })
   if (!response.ok) {
@@ -391,6 +420,20 @@ export async function fetchNodeState(nodeId: string, range = '1h'): Promise<Node
     throw new Error(`state request failed: ${response.status}`)
   }
   return normalizeNodeState(await response.json() as ApiStateResponse)
+}
+
+export async function fetchAdminSettings(adminToken: string): Promise<AdminSettings> {
+  const response = await fetch('/api/admin/v1/settings', {
+    headers: {
+      Accept: 'application/json',
+      'X-Admin-Token': adminToken,
+    },
+  })
+  if (!response.ok) {
+    throw new Error(`admin settings request failed: ${response.status}`)
+  }
+  const data = await response.json() as ApiAdminSettingsResponse
+  return normalizeSettings(data.settings)
 }
 
 export async function fetchAdminNodes(adminToken: string): Promise<AdminNodesData> {
@@ -482,6 +525,23 @@ export async function fetchAdminAlertRuleStates(adminToken: string): Promise<Adm
     throw new Error(`admin alert rule states request failed: ${response.status}`)
   }
   return normalizeAdminAlertRuleStates(await response.json() as ApiAdminAlertRuleStatesResponse)
+}
+
+export async function updateAdminSettings(adminToken: string, input: AdminSettingsUpdateInput): Promise<AdminSettings> {
+  const response = await fetch('/api/admin/v1/settings', {
+    method: 'PATCH',
+    headers: {
+      Accept: 'application/json',
+      'Content-Type': 'application/json',
+      'X-Admin-Token': adminToken,
+    },
+    body: JSON.stringify(serializeAdminSettingsUpdate(input)),
+  })
+  if (!response.ok) {
+    throw new Error(`admin settings update failed: ${response.status}`)
+  }
+  const data = await response.json() as ApiAdminSettingsResponse
+  return normalizeSettings(data.settings)
 }
 
 export async function createAdminNode(adminToken: string, input: AdminNodeCreateInput): Promise<AdminNode> {
@@ -676,6 +736,17 @@ export async function updateAdminNode(adminToken: string, nodeId: string, input:
   return normalizeAdminNode(data.node)
 }
 
+export function normalizeSettings(input: ApiSettings): AdminSettings {
+  return {
+    siteTitle: input.site_title,
+    siteSubtitle: input.site_subtitle,
+    logoUrl: input.logo_url,
+    theme: input.theme ?? 'system',
+    backgroundUrl: input.background_url,
+    updatedAt: input.updated_at,
+  }
+}
+
 export function normalizeSummary(input: ApiSummaryResponse): SummaryData {
   return {
     nodes: (input.nodes ?? []).map(normalizeNode),
@@ -739,6 +810,16 @@ export function normalizeAdminAlertRuleStates(input: ApiAdminAlertRuleStatesResp
   return {
     states: (input.states ?? []).map(normalizeAdminAlertRuleState),
     activeCount: input.active_count ?? 0,
+  }
+}
+
+function serializeAdminSettingsUpdate(input: AdminSettingsUpdateInput) {
+  return {
+    ...(input.siteTitle !== undefined ? { site_title: input.siteTitle } : {}),
+    ...(input.siteSubtitle !== undefined ? { site_subtitle: input.siteSubtitle } : {}),
+    ...(input.logoUrl !== undefined ? { logo_url: input.logoUrl } : {}),
+    ...(input.theme !== undefined ? { theme: input.theme } : {}),
+    ...(input.backgroundUrl !== undefined ? { background_url: input.backgroundUrl } : {}),
   }
 }
 
