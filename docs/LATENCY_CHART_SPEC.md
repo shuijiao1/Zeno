@@ -80,7 +80,7 @@ lossPercent=100
 
 ## 验收样例
 
-mock 数据必须包含：
+验收数据必须覆盖：
 
 - 稳定低延迟 target。
 - 高延迟 target。

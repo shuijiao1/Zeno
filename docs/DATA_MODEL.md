@@ -1,6 +1,6 @@
-# Data Model / 第一版 SQLite 数据模型
+# Data Model / SQLite 数据模型
 
-Zeno 第一版使用 SQLite。schema 不兼容任何旧系统。
+Zeno 使用 SQLite。schema 不兼容任何旧系统。
 
 ## nodes
 
@@ -14,6 +14,11 @@ CREATE TABLE nodes (
   status TEXT NOT NULL DEFAULT 'no_data',
   country_code TEXT,
   region TEXT,
+  expiry_date TEXT,
+  billing_cycle TEXT,
+  display_order INTEGER NOT NULL DEFAULT 0,
+  public_ipv4 TEXT,
+  public_ipv6 TEXT,
   billing_mode TEXT NOT NULL DEFAULT 'both',
   monthly_quota_bytes INTEGER,
   monthly_reset_day INTEGER NOT NULL DEFAULT 1,
@@ -23,6 +28,14 @@ CREATE TABLE nodes (
   last_seen_at INTEGER
 );
 ```
+
+说明：
+
+- `country_code` 用于国旗展示。
+- `expiry_date` / `billing_cycle` 用于后台和首页展示到期/账单信息。
+- `display_order` 控制首页卡片和后台列表排序。
+- `public_ipv4` / `public_ipv6` 当前可由后台编辑，后续可接自动识别。
+- `token_hash` 只存 hash，不通过 API 返回。
 
 ## host_info
 
@@ -57,14 +70,21 @@ CREATE TABLE state_samples (
   node_id TEXT NOT NULL REFERENCES nodes(id),
   ts INTEGER NOT NULL,
   cpu_percent REAL,
+  load1 REAL,
+  load5 REAL,
+  load15 REAL,
   memory_used_bytes INTEGER,
   memory_total_bytes INTEGER,
+  swap_used_bytes INTEGER,
+  swap_total_bytes INTEGER,
   disk_used_bytes INTEGER,
   disk_total_bytes INTEGER,
   net_in_total_bytes INTEGER,
   net_out_total_bytes INTEGER,
   net_in_speed_bps REAL,
   net_out_speed_bps REAL,
+  process_count INTEGER,
+  tcp_connection_count INTEGER,
   uptime_seconds INTEGER
 );
 
@@ -89,8 +109,6 @@ CREATE TABLE traffic_monthly (
 );
 ```
 
-计算规则见 `LATENCY_STATS_SPEC.md` 和技术设计文档中的流量章节。
-
 ## probe_targets
 
 探测目标。
@@ -99,7 +117,7 @@ CREATE TABLE traffic_monthly (
 CREATE TABLE probe_targets (
   id TEXT PRIMARY KEY,
   name TEXT NOT NULL,
-  type TEXT NOT NULL, -- ping | tcping
+  type TEXT NOT NULL,
   address TEXT NOT NULL,
   port INTEGER,
   count INTEGER NOT NULL,
@@ -110,6 +128,12 @@ CREATE TABLE probe_targets (
   updated_at INTEGER NOT NULL
 );
 ```
+
+`type` 当前支持：
+
+- `tcping`：TCP connect，必须带 `port`。
+- `ping`：ICMP ping，不带 `port`。
+- `http_get`：HTTP/HTTPS GET，不带 `port`。
 
 ## node_probe_targets
 
@@ -124,9 +148,9 @@ CREATE TABLE node_probe_targets (
 );
 ```
 
-## probe_rounds
+## probe_rounds / probe_samples
 
-每轮探测摘要。
+每轮探测摘要和 raw samples。
 
 ```sql
 CREATE TABLE probe_rounds (
@@ -147,13 +171,7 @@ CREATE TABLE probe_rounds (
 );
 
 CREATE INDEX idx_probe_rounds_node_target_ts ON probe_rounds(node_id, target_id, ts);
-```
 
-## probe_samples
-
-每轮 raw samples。
-
-```sql
 CREATE TABLE probe_samples (
   round_id INTEGER NOT NULL REFERENCES probe_rounds(id) ON DELETE CASCADE,
   seq INTEGER NOT NULL,
@@ -164,38 +182,101 @@ CREATE TABLE probe_samples (
 );
 ```
 
-## notification_channels
+## notification_channels / notification_types / notification_deliveries
 
-通知渠道。`credential` 用于后续发送，不通过 Admin API 响应返回；展示层只能看到 `credential_set`。
+通知当前是 Telegram-only 产品路径。SQLite 内部仍保留 `type` / `channel_type` 兼容列，但 Admin API/UI 不暴露多渠道概念。
 
 ```sql
 CREATE TABLE notification_channels (
   id TEXT PRIMARY KEY,
   name TEXT NOT NULL,
-  type TEXT NOT NULL, -- fixed to telegram; kept as an internal compatibility column
+  type TEXT NOT NULL,
   destination TEXT NOT NULL,
   credential TEXT NOT NULL,
   enabled INTEGER NOT NULL DEFAULT 1,
   created_at INTEGER NOT NULL,
   updated_at INTEGER NOT NULL
 );
-```
 
-## notification_types
-
-通知类型开关。
-
-```sql
 CREATE TABLE notification_types (
-  event_type TEXT PRIMARY KEY, -- node_online | node_offline | probe_unhealthy
+  event_type TEXT PRIMARY KEY,
   enabled INTEGER NOT NULL DEFAULT 0,
   updated_at INTEGER NOT NULL
 );
+
+CREATE TABLE notification_deliveries (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  event_type TEXT NOT NULL,
+  label TEXT NOT NULL,
+  node_id TEXT NOT NULL,
+  node_name TEXT NOT NULL,
+  previous_status TEXT NOT NULL,
+  status TEXT NOT NULL,
+  channel_id TEXT NOT NULL,
+  channel_name TEXT NOT NULL,
+  channel_type TEXT NOT NULL,
+  success INTEGER NOT NULL,
+  error TEXT NOT NULL DEFAULT '',
+  created_at INTEGER NOT NULL
+);
+
+CREATE INDEX idx_notification_deliveries_created_at ON notification_deliveries(created_at DESC, id DESC);
 ```
+
+`credential` 不通过 Admin API 响应返回；发送记录只返回脱敏字段。
+
+## alert_rules / alert_rule_node_scopes / alert_rule_states
+
+状态规则和当前异常。
+
+```sql
+CREATE TABLE alert_rules (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  category TEXT NOT NULL,
+  metric TEXT NOT NULL,
+  comparator TEXT NOT NULL,
+  threshold REAL NOT NULL,
+  threshold_unit TEXT NOT NULL,
+  duration_sec INTEGER NOT NULL,
+  enabled INTEGER NOT NULL DEFAULT 1,
+  notification_event_type TEXT NOT NULL,
+  description TEXT NOT NULL DEFAULT '',
+  sort_order INTEGER NOT NULL DEFAULT 0,
+  created_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL
+);
+
+CREATE INDEX idx_alert_rules_sort_order ON alert_rules(sort_order ASC, id ASC);
+
+CREATE TABLE alert_rule_node_scopes (
+  rule_id TEXT NOT NULL REFERENCES alert_rules(id) ON DELETE CASCADE,
+  node_id TEXT NOT NULL REFERENCES nodes(id) ON DELETE CASCADE,
+  created_at INTEGER NOT NULL,
+  PRIMARY KEY (rule_id, node_id)
+);
+
+CREATE INDEX idx_alert_rule_node_scopes_node ON alert_rule_node_scopes(node_id, rule_id);
+
+CREATE TABLE alert_rule_states (
+  node_id TEXT NOT NULL REFERENCES nodes(id),
+  rule_id TEXT NOT NULL REFERENCES alert_rules(id),
+  active INTEGER NOT NULL DEFAULT 0,
+  first_seen_at INTEGER,
+  last_seen_at INTEGER,
+  last_value REAL,
+  updated_at INTEGER NOT NULL,
+  PRIMARY KEY (node_id, rule_id)
+);
+
+CREATE INDEX idx_alert_rule_states_node_active ON alert_rule_states(node_id, active);
+```
+
+`alert_rule_node_scopes` 没有记录时表示规则作用于全部服务器；有记录时只作用于指定服务器。
 
 ## settings
 
-全局设置。
+全局设置，包含站点标题、Logo、主题、桌面/手机背景图和数据维护 retention 配置。
 
 ```sql
 CREATE TABLE settings (
@@ -204,3 +285,21 @@ CREATE TABLE settings (
   updated_at INTEGER NOT NULL
 );
 ```
+
+当前主要 key：
+
+- `site_title`
+- `site_subtitle`
+- `logo_url`
+- `theme`
+- `background_url`（兼容）
+- `desktop_background_url`
+- `mobile_background_url`
+- `maintenance_enabled`
+- `maintenance_state_retention_days`
+- `maintenance_probe_retention_days`
+- `maintenance_notification_retention_days`
+
+## 迁移策略
+
+`ensureSchema` 会在启动时创建缺失表，并通过 additive `ALTER TABLE ... ADD COLUMN` 补齐新增列。现阶段只做向前兼容 additive migration，不兼容旧系统 DB。

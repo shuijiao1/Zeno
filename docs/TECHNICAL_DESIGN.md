@@ -7,10 +7,9 @@ Agent on VPS  ----HTTPS JSON---->  Controller API  ----SQLite----> Web UI
       |                                  |
       |                                  +--> Public API
       |                                  +--> Admin API
-      |                                  +--> Notification dispatch
+      |                                  +--> Telegram notification dispatch
       +--> local collectors
       +--> tcping / ping / http_get probes
-      +--> local retry cache (later)
 ```
 
 Zeno 是全新实现，不兼容 Kulin / Nezha / Komari 的 API、数据库、Agent 协议或安装方式。
@@ -30,6 +29,7 @@ Go 单二进制，当前职责：
 - 执行 Telegram 通知 dispatch。
 - 记录 sanitized notification delivery history。
 - 提供 Agent binary 下载和 install command 生成。
+- 执行状态规则 evaluator，维护当前异常状态。
 
 Controller 不暴露 Agent token、admin token hash、通知凭据或 bearer secret。即使 Admin API 已鉴权，响应也必须走 explicit DTO。
 
@@ -46,7 +46,7 @@ Go 单二进制，当前职责：
 - 按每个 target 的 `interval_sec` 调度探测。
 - 执行 `tcping`、`ping`/ICMP、`http_get` 多样本探测。
 - 上报 probe results。
-- 后续加入本地 cache/replay。
+- 后续可以加入本地 cache/replay。
 
 Agent 不做远控，不接受命令执行。
 
@@ -56,10 +56,10 @@ Vite + React + TypeScript。
 
 当前页面：
 
-1. 前台主页：服务器卡片、流量/资源概览、延迟摘要。
-2. 节点详情页：延迟目标按钮、Kulin-like 延迟图、资源历史图。
-3. Admin 后台：概览、服务器、延迟监控、通知四个分区。
-4. Admin 管理动作：服务器创建/编辑/安装命令、目标创建/编辑/删除/排序/分配、通知渠道/类型/测试发送/发送记录。
+1. 前台主页：服务器卡片、流量/资源概览、延迟摘要、外观设置应用。
+2. 节点详情页：延迟目标按钮、延迟图、资源历史图。
+3. Admin 后台：概览、服务器、延迟监控、通知、状态规则、当前异常、数据维护、外观设置。
+4. Admin 管理动作：服务器创建/编辑/安装命令、目标创建/编辑/删除/排序/分配、通知渠道/类型/测试发送/发送记录、状态规则范围、维护清理。
 
 UI 规则：保持已确认主页卡片、详情页密度和 Admin 分区结构，不因数据/API 改动顺手重设计。
 
@@ -128,12 +128,61 @@ delta_out = current_out_total - last_out_total
 - Admin 手动测试发送同步返回 sanitized delivery，方便操作员立即验证配置。
 - Delivery history 只记录事件、节点、渠道、状态和 sanitized 错误，不记录 chat id、Bot Token 或凭据原文。
 
+## 状态规则 / 当前异常
+
+状态规则持久化为 `alert_rules`，但 Admin 文案使用中性词“状态规则”。
+
+当前规则覆盖：
+
+- CPU 使用率。
+- 内存使用率。
+- 磁盘使用率。
+- 探测延迟。
+- 探测丢包。
+- 离线。
+- 恢复。
+
+规则支持：
+
+- `enabled`。
+- `threshold` / `threshold_unit`。
+- `duration_sec`。
+- `scope_node_ids`：为空表示全部服务器；非空时只作用于指定服务器。
+
+当前异常由 `alert_rule_states` 记录，但展示时会结合规则是否启用、节点是否禁用、当前阈值、当前 scope 重新计算，避免阈值或范围调整后留下 stale active。
+
+## 设置 / 外观
+
+设置保存在通用 `settings` 表中。
+
+当前公开展示字段：
+
+- `site_title`
+- `site_subtitle`
+- `logo_url`
+- `theme`
+- `desktop_background_url`
+- `mobile_background_url`
+
+兼容字段：`background_url` 会映射到 desktop background。不要重新拆出 `avatar_url`。
+
+## 数据维护
+
+数据维护通过 Admin API 暴露：
+
+- retention 设置：state samples、probe rounds/samples、notification deliveries。
+- candidate counts。
+- dry-run cleanup。
+- confirmed cleanup。
+
+默认安全：只统计和清理可再生历史样本/发送记录，不清理节点、token、规则、设置或正式配置。
+
 ## 部署
 
 Hytron 预览部署：
 
 ```text
-/opt/zeno/current -> /opt/zeno/releases/zeno-<timestamp>-<sha>
+/opt/zeno/current -> /opt/zeno/releases/zeno-<sha>-linux-amd64
 /opt/zeno/data/zeno.db
 /opt/zeno/data/agent-token
 /opt/zeno/data/admin-token
@@ -142,22 +191,27 @@ zeno-agent.service
 port 18980
 ```
 
-部署顺序：
+发布包由 `scripts/package-release.sh` 生成，目标机由 `scripts/deploy-local-release.sh` 安装/更新。
+
+安全更新顺序：
 
 1. 本地测试和 build。
 2. 打包 release。
-3. 上传 Hytron `/tmp`。
-4. 解压到 `/opt/zeno/releases/` 并切换 `current`。
-5. `systemctl daemon-reload`。
-6. 停 Agent。
-7. 重启 Controller 并等待 `/health` OK。
-8. 重启 Agent。
-9. smoke Admin API / browser / services。
-10. 清理本地 build 和远端 `/tmp`。
+3. 上传目标机 `/tmp`。
+4. 解压到 `/opt/zeno/releases/`。
+5. 停 Agent。
+6. 切 `/opt/zeno/current`。
+7. 渲染 unit 并 `systemctl daemon-reload`。
+8. 重启 Controller 并等待 `/health` OK。
+9. Controller 健康后启动 Agent。
+10. smoke Admin API / Agent journal / services。
+11. 清理远端 `/tmp/zeno-*.tar.gz`。
+
+Controller health 失败时必须回滚 symlink 和 unit，重启旧 Controller；不要在 Controller 不健康时启动 Agent。
 
 ## 下一步设计重点
 
-1. 小型告警规则引擎：资源/延迟阈值、持续时间、节点范围、通知渠道绑定。
-2. 设置/外观配置：站点标题、头像、主题、背景，保持轻量。
-3. 数据保留与维护：SQLite 样本保留策略和安全清理入口。
-4. 安装/发布工具：固化 release/deploy/rollback，不依赖手工命令。
+1. 自动 GeoIP / 公网 IPv4 / 公网 IPv6 识别：简单可替换，失败不影响 Agent 心跳。
+2. 多节点铺 Agent / 从现有服务器清单同步节点。
+3. 安装文档和自部署说明打磨。
+4. 后续服务监控状态页 / 历史页：暂缓。

@@ -65,7 +65,7 @@ export function LatencyChart({
           <h2>{title}</h2>
         </div>
         {!compactHeader && (
-          <div className="range-tabs" aria-label="range selector mock">
+          <div className="range-tabs" aria-label="range selector">
             <button className="is-active">1h</button>
             <button>6h</button>
             <button>24h</button>
@@ -74,7 +74,7 @@ export function LatencyChart({
         )}
       </div>
 
-      <svg className="latency-chart" viewBox={`0 0 ${width} ${height}`} role="img" aria-label="mock latency chart">
+      <svg className="latency-chart" viewBox={`0 0 ${width} ${height}`} role="img" aria-label="latency chart">
         {[0, 0.25, 0.5, 0.75, 1].map((ratio) => {
           const yy = pad.top + ratio * plotHeight
           const value = domain.max - ratio * (domain.max - domain.min)
