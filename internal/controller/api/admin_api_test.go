@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
@@ -1070,6 +1071,58 @@ func TestAdminProbeTargetPatchUpdatesNodeAssignments(t *testing.T) {
 	}
 	if !backupHasTarget {
 		t.Fatalf("hytron-local should remain enabled for backup agent targets")
+	}
+}
+
+func TestAdminProbeTargetDisplayOrderControlsInventoryAndAgentOrder(t *testing.T) {
+	store, err := OpenSQLiteStore(filepath.Join(t.TempDir(), "zeno.db"))
+	if err != nil {
+		t.Fatalf("open sqlite store: %v", err)
+	}
+	defer store.Close()
+	ctx := context.Background()
+	if err := store.SeedPreviewData(ctx, PreviewSeedOptions{NodeID: "hytron", DisplayName: "Hytron", CountryCode: "HK", AgentToken: "agent-super-secret"}); err != nil {
+		t.Fatalf("seed preview data: %v", err)
+	}
+
+	handler := NewHandler(HandlerOptions{Store: store, AdminTokenHash: HashAdminToken("admin-pass")})
+	for targetID, order := range map[string]int{"google-dns": 5, "hytron-local": 250} {
+		recorder := httptest.NewRecorder()
+		request := httptest.NewRequest(http.MethodPatch, "/api/admin/v1/probe-targets/"+targetID, bytes.NewBufferString(fmt.Sprintf(`{"display_order": %d}`, order)))
+		request.Header.Set("X-Admin-Token", "admin-pass")
+		handler.ServeHTTP(recorder, request)
+		if recorder.Code != http.StatusOK {
+			t.Fatalf("patch %s status = %d, want 200; body=%s", targetID, recorder.Code, recorder.Body.String())
+		}
+		assertNoSensitiveAdminProbeTargetLeak(t, recorder.Body.String())
+	}
+
+	listRecorder := httptest.NewRecorder()
+	listRequest := httptest.NewRequest(http.MethodGet, "/api/admin/v1/probe-targets", nil)
+	listRequest.Header.Set("X-Admin-Token", "admin-pass")
+	handler.ServeHTTP(listRecorder, listRequest)
+	if listRecorder.Code != http.StatusOK {
+		t.Fatalf("list status = %d, want 200; body=%s", listRecorder.Code, listRecorder.Body.String())
+	}
+	var listResponse struct {
+		Targets []struct {
+			ID           string `json:"id"`
+			DisplayOrder int    `json:"display_order"`
+		} `json:"targets"`
+	}
+	if err := json.NewDecoder(bytes.NewBufferString(listRecorder.Body.String())).Decode(&listResponse); err != nil {
+		t.Fatalf("decode target list: %v", err)
+	}
+	if len(listResponse.Targets) == 0 || listResponse.Targets[0].ID != "google-dns" || listResponse.Targets[0].DisplayOrder != 5 {
+		t.Fatalf("first admin target = %+v, want google-dns display_order 5", listResponse.Targets)
+	}
+
+	agentTargets, err := store.EnabledProbeTargets(ctx, "hytron")
+	if err != nil {
+		t.Fatalf("enabled probe targets: %v", err)
+	}
+	if len(agentTargets) == 0 || agentTargets[0].ID != "google-dns" {
+		t.Fatalf("first agent target = %+v, want google-dns by display_order", agentTargets)
 	}
 }
 

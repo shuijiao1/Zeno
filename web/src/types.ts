@@ -158,6 +158,7 @@ export interface AdminProbeTarget {
   count: number
   timeoutMs: number
   intervalSec: number
+  displayOrder: number
   enabled: boolean
   assignments: AdminProbeTargetAssignment[]
 }

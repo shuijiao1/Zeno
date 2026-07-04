@@ -139,6 +139,7 @@ interface ApiAdminProbeTarget {
   count: number
   timeout_ms: number
   interval_sec: number
+  display_order?: number
   enabled: boolean
   assignments: ApiAdminProbeTargetAssignment[] | null
 }
@@ -414,6 +415,7 @@ export interface AdminProbeTargetInput {
   count: number
   timeoutMs: number
   intervalSec: number
+  displayOrder?: number
   enabled?: boolean
 }
 
@@ -425,6 +427,7 @@ export interface AdminProbeTargetUpdateInput {
   count?: number
   timeoutMs?: number
   intervalSec?: number
+  displayOrder?: number
   enabled?: boolean
   assignments?: Array<{ nodeId: string; enabled: boolean }>
 }
@@ -1031,6 +1034,7 @@ function serializeAdminProbeTargetCreate(input: AdminProbeTargetInput) {
     count: input.count,
     timeout_ms: input.timeoutMs,
     interval_sec: input.intervalSec,
+    ...(input.displayOrder !== undefined ? { display_order: input.displayOrder } : {}),
     ...(input.enabled !== undefined ? { enabled: input.enabled } : {}),
   }
 }
@@ -1044,6 +1048,7 @@ function serializeAdminProbeTargetUpdate(input: AdminProbeTargetUpdateInput) {
     ...(input.count !== undefined ? { count: input.count } : {}),
     ...(input.timeoutMs !== undefined ? { timeout_ms: input.timeoutMs } : {}),
     ...(input.intervalSec !== undefined ? { interval_sec: input.intervalSec } : {}),
+    ...(input.displayOrder !== undefined ? { display_order: input.displayOrder } : {}),
     ...(input.enabled !== undefined ? { enabled: input.enabled } : {}),
     ...(input.assignments !== undefined ? {
       assignments: input.assignments.map((assignment) => ({
@@ -1197,6 +1202,7 @@ function normalizeAdminProbeTarget(target: ApiAdminProbeTarget): AdminProbeTarge
     count: target.count,
     timeoutMs: target.timeout_ms,
     intervalSec: target.interval_sec,
+    displayOrder: target.display_order ?? 0,
     enabled: target.enabled,
     assignments: (target.assignments ?? []).map((assignment) => ({
       nodeId: assignment.node_id,

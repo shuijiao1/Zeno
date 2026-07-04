@@ -396,15 +396,16 @@ type AdminProbeTargetResponse struct {
 }
 
 type AdminProbeTargetCreateRequest struct {
-	ID          string             `json:"id,omitempty"`
-	Name        string             `json:"name"`
-	Type        string             `json:"type"`
-	Address     string             `json:"address"`
-	Port        adminOptionalInt64 `json:"port,omitempty"`
-	Count       int                `json:"count"`
-	TimeoutMS   int                `json:"timeout_ms"`
-	IntervalSec int                `json:"interval_sec"`
-	Enabled     *bool              `json:"enabled,omitempty"`
+	ID           string             `json:"id,omitempty"`
+	Name         string             `json:"name"`
+	Type         string             `json:"type"`
+	Address      string             `json:"address"`
+	Port         adminOptionalInt64 `json:"port,omitempty"`
+	Count        int                `json:"count"`
+	TimeoutMS    int                `json:"timeout_ms"`
+	IntervalSec  int                `json:"interval_sec"`
+	DisplayOrder int                `json:"display_order,omitempty"`
+	Enabled      *bool              `json:"enabled,omitempty"`
 }
 
 func (request *AdminProbeTargetCreateRequest) normalize() error {
@@ -414,6 +415,9 @@ func (request *AdminProbeTargetCreateRequest) normalize() error {
 	request.Type = normalizedType
 	request.Address = strings.TrimSpace(request.Address)
 	if request.Name == "" || request.Address == "" || !ok || request.Count <= 0 || request.TimeoutMS <= 0 || request.IntervalSec <= 0 {
+		return errInvalidAdminTargetWrite
+	}
+	if request.DisplayOrder < 0 {
 		return errInvalidAdminTargetWrite
 	}
 	if request.Type == "tcping" {
@@ -435,15 +439,16 @@ func (request *AdminProbeTargetCreateRequest) normalize() error {
 }
 
 type AdminProbeTargetUpdateRequest struct {
-	Name        *string                            `json:"name,omitempty"`
-	Type        *string                            `json:"type,omitempty"`
-	Address     *string                            `json:"address,omitempty"`
-	Port        adminOptionalInt64                 `json:"port,omitempty"`
-	Count       *int                               `json:"count,omitempty"`
-	TimeoutMS   *int                               `json:"timeout_ms,omitempty"`
-	IntervalSec *int                               `json:"interval_sec,omitempty"`
-	Enabled     *bool                              `json:"enabled,omitempty"`
-	Assignments []AdminProbeTargetAssignmentUpdate `json:"assignments,omitempty"`
+	Name         *string                            `json:"name,omitempty"`
+	Type         *string                            `json:"type,omitempty"`
+	Address      *string                            `json:"address,omitempty"`
+	Port         adminOptionalInt64                 `json:"port,omitempty"`
+	Count        *int                               `json:"count,omitempty"`
+	TimeoutMS    *int                               `json:"timeout_ms,omitempty"`
+	IntervalSec  *int                               `json:"interval_sec,omitempty"`
+	DisplayOrder *int                               `json:"display_order,omitempty"`
+	Enabled      *bool                              `json:"enabled,omitempty"`
+	Assignments  []AdminProbeTargetAssignmentUpdate `json:"assignments,omitempty"`
 }
 
 type AdminProbeTargetAssignmentUpdate struct {
@@ -509,6 +514,12 @@ func (request *AdminProbeTargetUpdateRequest) normalize() error {
 			return errInvalidAdminTargetWrite
 		}
 	}
+	if request.DisplayOrder != nil {
+		changed = true
+		if *request.DisplayOrder < 0 {
+			return errInvalidAdminTargetWrite
+		}
+	}
 	if request.Enabled != nil {
 		changed = true
 	}
@@ -562,16 +573,17 @@ func validPort(port int64) bool {
 }
 
 type AdminProbeTarget struct {
-	ID          string                       `json:"id"`
-	Name        string                       `json:"name"`
-	Type        string                       `json:"type"`
-	Address     string                       `json:"address"`
-	Port        *int                         `json:"port"`
-	Count       int                          `json:"count"`
-	TimeoutMS   int                          `json:"timeout_ms"`
-	IntervalSec int                          `json:"interval_sec"`
-	Enabled     bool                         `json:"enabled"`
-	Assignments []AdminProbeTargetAssignment `json:"assignments"`
+	ID           string                       `json:"id"`
+	Name         string                       `json:"name"`
+	Type         string                       `json:"type"`
+	Address      string                       `json:"address"`
+	Port         *int                         `json:"port"`
+	Count        int                          `json:"count"`
+	TimeoutMS    int                          `json:"timeout_ms"`
+	IntervalSec  int                          `json:"interval_sec"`
+	DisplayOrder int                          `json:"display_order"`
+	Enabled      bool                         `json:"enabled"`
+	Assignments  []AdminProbeTargetAssignment `json:"assignments"`
 }
 
 type AdminProbeTargetAssignment struct {

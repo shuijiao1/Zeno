@@ -228,6 +228,7 @@ describe('normalizeAdminProbeTargets', () => {
           count: 3,
           timeout_ms: 1200,
           interval_sec: 60,
+          display_order: 20,
           enabled: true,
           assignments: [
             { node_id: 'hytron', node_display_name: 'Hytron', enabled: true },
@@ -239,6 +240,7 @@ describe('normalizeAdminProbeTargets', () => {
     expect(data.targets[0].id).toBe('hytron-local')
     expect(data.targets[0].timeoutMs).toBe(1200)
     expect(data.targets[0].intervalSec).toBe(60)
+    expect(data.targets[0].displayOrder).toBe(20)
     expect(data.targets[0].assignments[0].nodeDisplayName).toBe('Hytron')
   })
 
@@ -254,6 +256,7 @@ describe('normalizeAdminProbeTargets', () => {
           count: 2,
           timeout_ms: 1500,
           interval_sec: 60,
+          display_order: 30,
           enabled: true,
           assignments: [],
         },
@@ -277,6 +280,7 @@ describe('normalizeAdminProbeTargets', () => {
           count: 3,
           timeout_ms: 1200,
           interval_sec: 60,
+          display_order: 40,
           enabled: true,
           assignments: null as never,
         },
@@ -800,6 +804,7 @@ describe('createAdminProbeTarget', () => {
         count: 5,
         timeout_ms: 1500,
         interval_sec: 90,
+        display_order: 20,
         enabled: true,
         assignments: [{ node_id: 'hytron', node_display_name: 'Hytron', enabled: true }],
       },
@@ -814,6 +819,7 @@ describe('createAdminProbeTarget', () => {
       count: 5,
       timeoutMs: 1500,
       intervalSec: 90,
+      displayOrder: 20,
     })
 
     expect(target.id).toBe('example-https-a1b2c3d4')
@@ -833,6 +839,7 @@ describe('createAdminProbeTarget', () => {
         count: 5,
         timeout_ms: 1500,
         interval_sec: 90,
+        display_order: 20,
       }),
     })
   })
@@ -848,6 +855,7 @@ describe('createAdminProbeTarget', () => {
         count: 2,
         timeout_ms: 1500,
         interval_sec: 60,
+        display_order: 30,
         enabled: true,
         assignments: [],
       },
@@ -862,6 +870,7 @@ describe('createAdminProbeTarget', () => {
       count: 2,
       timeoutMs: 1500,
       intervalSec: 60,
+      displayOrder: 30,
     })
 
     expect(target.type).toBe('http_get')
@@ -881,6 +890,7 @@ describe('createAdminProbeTarget', () => {
         count: 2,
         timeout_ms: 1500,
         interval_sec: 60,
+        display_order: 30,
       }),
     })
   })
@@ -905,6 +915,7 @@ describe('updateAdminProbeTarget', () => {
         count: 4,
         timeout_ms: 900,
         interval_sec: 30,
+        display_order: 40,
         enabled: false,
         assignments: [{ node_id: 'hytron', node_display_name: 'Hytron', enabled: true }],
       },
@@ -918,6 +929,7 @@ describe('updateAdminProbeTarget', () => {
       count: 4,
       timeoutMs: 900,
       intervalSec: 30,
+      displayOrder: 40,
       enabled: false,
       assignments: [
         { nodeId: 'hytron', enabled: false },
@@ -941,6 +953,7 @@ describe('updateAdminProbeTarget', () => {
         count: 4,
         timeout_ms: 900,
         interval_sec: 30,
+        display_order: 40,
         enabled: false,
         assignments: [
           { node_id: 'hytron', enabled: false },
@@ -961,6 +974,7 @@ describe('updateAdminProbeTarget', () => {
         count: 2,
         timeout_ms: 1500,
         interval_sec: 60,
+        display_order: 50,
         enabled: true,
         assignments: [{ node_id: 'hytron', node_display_name: 'Hytron', enabled: true }],
       },
@@ -975,6 +989,7 @@ describe('updateAdminProbeTarget', () => {
       count: 2,
       timeoutMs: 1500,
       intervalSec: 60,
+      displayOrder: 50,
       enabled: true,
     })
 
@@ -995,6 +1010,7 @@ describe('updateAdminProbeTarget', () => {
         count: 2,
         timeout_ms: 1500,
         interval_sec: 60,
+        display_order: 50,
         enabled: true,
       }),
     })

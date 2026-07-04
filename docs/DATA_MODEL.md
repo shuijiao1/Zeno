@@ -125,6 +125,7 @@ CREATE TABLE probe_targets (
   count INTEGER NOT NULL,
   timeout_ms INTEGER NOT NULL,
   interval_sec INTEGER NOT NULL,
+  display_order INTEGER NOT NULL DEFAULT 0,
   enabled INTEGER NOT NULL DEFAULT 1,
   created_at INTEGER NOT NULL,
   updated_at INTEGER NOT NULL
@@ -136,6 +137,8 @@ CREATE TABLE probe_targets (
 - `tcping`：TCP connect，必须带 `port`。
 - `ping`：ICMP ping，不带 `port`。
 - `http_get`：HTTP/HTTPS GET，不带 `port`。
+
+`display_order` 控制后台延迟监控列表、Agent 目标下发顺序和同一时间点的 Public latency series 展示顺序。
 
 ## node_probe_targets
 

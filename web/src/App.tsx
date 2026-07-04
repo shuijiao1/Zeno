@@ -30,7 +30,7 @@ type AdminLoadState =
   | { kind: 'error'; message: string }
 
 type AdminSection = 'overview' | 'nodes' | 'targets' | 'rules' | 'maintenance' | 'settings' | 'notifications'
-type AdminTargetSort = 'name' | 'status' | 'type' | 'assignments'
+type AdminTargetSort = 'order' | 'name' | 'status' | 'type' | 'assignments'
 
 function sum(values: Array<number | null | undefined>): number {
   return values.reduce<number>((total, value) => total + (value ?? 0), 0)
@@ -366,7 +366,7 @@ export function App() {
       .then((createdTarget) => {
         setAdminState((current) => {
           if (current.kind === 'ready') {
-            return { ...current, targets: [...current.targets, createdTarget] }
+            return { ...current, targets: sortAdminProbeTargets([...current.targets, createdTarget], 'order') }
           }
           return { kind: 'ready', nodes: [], targets: [createdTarget], notificationChannels: [], notificationTypes: [], notificationDeliveries: [], alertRules: [], alertRuleStates: [], maintenance: emptyAdminMaintenance }
         })
@@ -380,7 +380,7 @@ export function App() {
       .then((updatedTarget) => {
         setAdminState((current) => {
           if (current.kind === 'ready') {
-            return { ...current, targets: current.targets.map((target) => target.id === updatedTarget.id ? updatedTarget : target) }
+            return { ...current, targets: sortAdminProbeTargets(current.targets.map((target) => target.id === updatedTarget.id ? updatedTarget : target), 'order') }
           }
           return { kind: 'ready', nodes: [], targets: [updatedTarget], notificationChannels: [], notificationTypes: [], notificationDeliveries: [], alertRules: [], alertRuleStates: [], maintenance: emptyAdminMaintenance }
         })
@@ -1304,9 +1304,13 @@ function AdminNodeEditModal({ node, onUpdate, onInstallCommand, onClose }: { nod
 function AdminTargetSection({ targets, nodes, onCreate, onUpdate, onDelete }: { targets: AdminProbeTarget[]; nodes: AdminNode[]; onCreate: (input: AdminProbeTargetInput) => void; onUpdate: (targetId: string, input: AdminProbeTargetUpdateInput) => void; onDelete: (targetId: string) => void }) {
   const [creatingTarget, setCreatingTarget] = useState(false)
   const [editingTargetId, setEditingTargetId] = useState<string | null>(null)
-  const [targetSort, setTargetSort] = useState<AdminTargetSort>('name')
+  const [targetSort, setTargetSort] = useState<AdminTargetSort>('order')
   const editingTarget = editingTargetId ? targets.find((target) => target.id === editingTargetId) : undefined
   const sortedTargets = sortAdminProbeTargets(targets, targetSort)
+  const applyOrderPatches = (patches: AdminProbeTargetOrderPatch[]) => {
+    patches.forEach((patch) => onUpdate(patch.targetId, { displayOrder: patch.displayOrder }))
+    if (patches.length > 0) setTargetSort('order')
+  }
 
   return (
     <section className="admin-target-section admin-workspace-panel" aria-label="admin probe target list">
@@ -1319,18 +1323,20 @@ function AdminTargetSection({ targets, nodes, onCreate, onUpdate, onDelete }: { 
           <label className="admin-sort-control">
             <span>排序</span>
             <select name="target-sort" value={targetSort} onChange={(event) => setTargetSort(event.currentTarget.value as AdminTargetSort)}>
+              <option value="order">按手动顺序</option>
               <option value="name">按名称排序</option>
               <option value="status">按启用状态排序</option>
               <option value="type">按类型排序</option>
               <option value="assignments">按节点分配排序</option>
             </select>
           </label>
+          <button type="button" onClick={() => applyOrderPatches(buildAdminProbeTargetOrderPatches(sortedTargets))}>整理顺序</button>
           <button className="admin-primary-action" type="button" onClick={() => setCreatingTarget(true)}>添加目标</button>
         </div>
       </header>
 
       {targets.length === 0 && <div className="admin-state-card">还没有探针目标。</div>}
-      {targets.length > 0 && <AdminTargetList targets={sortedTargets} nodes={nodes} onEdit={setEditingTargetId} onUpdate={onUpdate} onDelete={onDelete} />}
+      {targets.length > 0 && <AdminTargetList targets={sortedTargets} nodes={nodes} onEdit={setEditingTargetId} onUpdate={onUpdate} onDelete={onDelete} onReorder={(targetId, direction) => applyOrderPatches(buildAdminProbeTargetOrderPatches(sortedTargets, targetId, direction))} />}
 
       {creatingTarget && (
         <AdminTargetCreateModal
@@ -1358,7 +1364,10 @@ function AdminTargetSection({ targets, nodes, onCreate, onUpdate, onDelete }: { 
   )
 }
 
-function AdminTargetList({ targets, nodes, onEdit, onUpdate, onDelete }: { targets: AdminProbeTarget[]; nodes: AdminNode[]; onEdit: (targetId: string) => void; onUpdate: (targetId: string, input: AdminProbeTargetUpdateInput) => void; onDelete: (targetId: string) => void }) {
+type AdminProbeTargetOrderDirection = 'up' | 'down'
+type AdminProbeTargetOrderPatch = { targetId: string; displayOrder: number }
+
+function AdminTargetList({ targets, nodes, onEdit, onUpdate, onDelete, onReorder }: { targets: AdminProbeTarget[]; nodes: AdminNode[]; onEdit: (targetId: string) => void; onUpdate: (targetId: string, input: AdminProbeTargetUpdateInput) => void; onDelete: (targetId: string) => void; onReorder: (targetId: string, direction: AdminProbeTargetOrderDirection) => void }) {
   const confirmDelete = (target: AdminProbeTarget) => {
     const ok = typeof window === 'undefined' ? true : window.confirm(`确认删除延迟监控目标「${target.name}」？`)
     if (ok) onDelete(target.id)
@@ -1378,17 +1387,19 @@ function AdminTargetList({ targets, nodes, onEdit, onUpdate, onDelete }: { targe
         <span>节点</span>
         <span>操作</span>
       </div>
-      {targets.map((target) => (
+      {targets.map((target, index) => (
         <article className="admin-list-row" role="listitem" key={target.id}>
           <div className="admin-list-main">
             <strong>{target.name}</strong>
-            <small>{target.id}</small>
+            <small>{target.id} · 顺序 {target.displayOrder}</small>
           </div>
           <span className={`admin-node-status status-${target.enabled ? 'online' : 'disabled'}`}>{target.enabled ? 'enabled' : 'disabled'}</span>
           <span>{formatTargetEndpoint(target)}</span>
           <span>{formatTargetTypeLabel(target.type)} · {target.count} 次 / {target.timeoutMs}ms / {target.intervalSec}s</span>
           <span>{formatTargetAssignmentSummary(target)}</span>
           <div className="admin-row-actions">
+            <button className="admin-row-action" type="button" onClick={() => onReorder(target.id, 'up')} disabled={index === 0}>上移</button>
+            <button className="admin-row-action" type="button" onClick={() => onReorder(target.id, 'down')} disabled={index === targets.length - 1}>下移</button>
             <button className="admin-row-action" type="button" onClick={() => onEdit(target.id)}>编辑目标</button>
             <button className="admin-row-action" type="button" onClick={() => onUpdate(target.id, { enabled: !target.enabled })}>
               {target.enabled ? '停用目标' : '启用目标'}
@@ -1422,6 +1433,7 @@ function AdminTargetCreateModal({ onCreate, onClose }: { onCreate: (input: Admin
       count: parsePositiveInt(String(formData.get('new-target-count') ?? '')) ?? 3,
       timeoutMs: parsePositiveInt(String(formData.get('new-target-timeout-ms') ?? '')) ?? 1200,
       intervalSec: parsePositiveInt(String(formData.get('new-target-interval-sec') ?? '')) ?? 60,
+      displayOrder: parseNonNegativeInt(String(formData.get('new-target-display-order') ?? '')) ?? 0,
     })
   }
 
@@ -1462,6 +1474,10 @@ function AdminTargetCreateModal({ onCreate, onClose }: { onCreate: (input: Admin
           <span>间隔 s</span>
           <input name="new-target-interval-sec" type="number" min="1" defaultValue="60" />
         </label>
+        <label>
+          <span>显示顺序</span>
+          <input name="new-target-display-order" type="number" min="0" step="1" defaultValue="0" />
+        </label>
         <button type="submit">添加目标</button>
       </form>
     </AdminModal>
@@ -1486,6 +1502,7 @@ function AdminTargetEditModal({ target, nodes, onUpdate, onClose }: { target: Ad
       count: parsePositiveInt(String(formData.get('target-count') ?? '')) ?? target.count,
       timeoutMs: parsePositiveInt(String(formData.get('target-timeout-ms') ?? '')) ?? target.timeoutMs,
       intervalSec: parsePositiveInt(String(formData.get('target-interval-sec') ?? '')) ?? target.intervalSec,
+      displayOrder: parseNonNegativeInt(String(formData.get('target-display-order') ?? '')) ?? target.displayOrder,
       enabled: formData.get('target-enabled') === 'on',
       assignments: assignmentRows.length > 0
         ? assignmentRows.map((assignment) => ({
@@ -1503,6 +1520,7 @@ function AdminTargetEditModal({ target, nodes, onUpdate, onClose }: { target: Ad
         <div><dt>类型</dt><dd>{formatTargetTypeLabel(target.type)}</dd></div>
         <div><dt>地址</dt><dd>{formatTargetEndpoint(target)}</dd></div>
         <div><dt>参数</dt><dd>{target.count} 次 / {target.timeoutMs}ms / {target.intervalSec}s</dd></div>
+        <div><dt>顺序</dt><dd>{target.displayOrder}</dd></div>
         <div><dt>节点</dt><dd>{formatTargetAssignmentSummary(target)}</dd></div>
       </dl>
       <form className="admin-target-edit-form admin-node-edit-form" aria-label={`${target.name} 探针目标编辑`} onSubmit={handleSubmit}>
@@ -1539,6 +1557,10 @@ function AdminTargetEditModal({ target, nodes, onUpdate, onClose }: { target: Ad
         <label>
           <span>间隔 s</span>
           <input name="target-interval-sec" type="number" min="1" defaultValue={target.intervalSec} />
+        </label>
+        <label>
+          <span>显示顺序</span>
+          <input name="target-display-order" type="number" min="0" step="1" defaultValue={target.displayOrder} />
         </label>
         <label className="admin-node-toggle">
           <input name="target-enabled" type="checkbox" defaultChecked={target.enabled} />
@@ -2055,6 +2077,9 @@ function AdminModal({ title, eyebrow, onClose, children }: { title: string; eyeb
 function sortAdminProbeTargets(targets: AdminProbeTarget[], sort: AdminTargetSort): AdminProbeTarget[] {
   return [...targets].sort((left, right) => {
     const byName = left.name.localeCompare(right.name, 'zh-CN') || left.id.localeCompare(right.id, 'zh-CN')
+    if (sort === 'order') {
+      return left.displayOrder - right.displayOrder || left.id.localeCompare(right.id, 'zh-CN')
+    }
     if (sort === 'status') {
       return Number(right.enabled) - Number(left.enabled) || byName
     }
@@ -2068,6 +2093,22 @@ function sortAdminProbeTargets(targets: AdminProbeTarget[], sort: AdminTargetSor
     }
     return byName
   })
+}
+
+function buildAdminProbeTargetOrderPatches(targets: AdminProbeTarget[], targetId?: string, direction?: AdminProbeTargetOrderDirection): AdminProbeTargetOrderPatch[] {
+  const reorderedTargets = [...targets]
+  if (targetId && direction) {
+    const index = reorderedTargets.findIndex((target) => target.id === targetId)
+    if (index < 0) return []
+    const targetIndex = direction === 'up' ? index - 1 : index + 1
+    if (targetIndex < 0 || targetIndex >= reorderedTargets.length) return []
+    const current = reorderedTargets[index]
+    reorderedTargets[index] = reorderedTargets[targetIndex]
+    reorderedTargets[targetIndex] = current
+  }
+  return reorderedTargets
+    .map((target, index) => ({ targetId: target.id, displayOrder: (index + 1) * 10 }))
+    .filter((patch) => targets.find((target) => target.id === patch.targetId)?.displayOrder !== patch.displayOrder)
 }
 
 function targetAssignmentRows(target: AdminProbeTarget, nodes: AdminNode[]) {

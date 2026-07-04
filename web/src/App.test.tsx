@@ -64,6 +64,7 @@ const hytronTarget: AdminProbeTarget = {
   count: 3,
   timeoutMs: 1200,
   intervalSec: 60,
+  displayOrder: 20,
   enabled: true,
   assignments: [
     { nodeId: 'hytron', nodeDisplayName: 'Hytron', enabled: true },
@@ -80,6 +81,7 @@ const pingTarget: AdminProbeTarget = {
   count: 4,
   timeoutMs: 900,
   intervalSec: 45,
+  displayOrder: 10,
   enabled: true,
   assignments: [
     { nodeId: 'hytron', nodeDisplayName: 'Hytron', enabled: true },
@@ -95,6 +97,7 @@ const httpTarget: AdminProbeTarget = {
   count: 2,
   timeoutMs: 1500,
   intervalSec: 60,
+  displayOrder: 30,
   enabled: true,
   assignments: [
     { nodeId: 'hytron', nodeDisplayName: 'Hytron', enabled: true },
@@ -519,8 +522,11 @@ describe('AdminDashboard', () => {
     expect(html).toContain('延迟监控')
     expect(html).toContain('admin-target-list')
     expect(html).toContain('name="target-sort"')
+    expect(html).toContain('按手动顺序')
     expect(html).toContain('按名称排序')
+    expect(html).toContain('整理顺序')
     expect(html).toContain('hytron-local')
+    expect(html).toContain('顺序 20')
     expect(html).toContain('127.0.0.1:18980')
     expect(html).toContain('3 次 / 1200ms / 60s')
     expect(html).toContain('1 / 2 节点启用')
@@ -529,6 +535,8 @@ describe('AdminDashboard', () => {
     expect(html).toContain('删除目标')
     expect(html).toContain('全节点启用')
     expect(html).toContain('全节点停用')
+    expect(html).toContain('上移')
+    expect(html).toContain('下移')
     expect(html.indexOf('Example ICMP')).toBeLessThan(html.indexOf('Hytron'))
     expect(html).not.toContain('admin-target-card')
     expect(html).not.toContain('name="target-name"')

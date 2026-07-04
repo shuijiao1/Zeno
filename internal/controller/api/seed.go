@@ -14,14 +14,15 @@ type PreviewSeedOptions struct {
 }
 
 type ProbeTarget struct {
-	ID          string
-	Name        string
-	Type        string
-	Address     string
-	Port        *int
-	Count       int
-	TimeoutMS   int
-	IntervalSec int
+	ID           string
+	Name         string
+	Type         string
+	Address      string
+	Port         *int
+	Count        int
+	TimeoutMS    int
+	IntervalSec  int
+	DisplayOrder int
 }
 
 func (s *SQLiteStore) SeedPreviewData(ctx context.Context, options PreviewSeedOptions) error {
@@ -80,10 +81,13 @@ func (s *SQLiteStore) SeedPreviewData(ctx context.Context, options PreviewSeedOp
 		return err
 	}
 
-	for _, target := range DefaultPreviewProbeTargets() {
+	for index, target := range DefaultPreviewProbeTargets() {
+		if target.DisplayOrder == 0 {
+			target.DisplayOrder = (index + 1) * 10
+		}
 		if _, err := tx.ExecContext(ctx, `
-			INSERT INTO probe_targets (id, name, type, address, port, count, timeout_ms, interval_sec, enabled, created_at, updated_at)
-			VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)
+			INSERT INTO probe_targets (id, name, type, address, port, count, timeout_ms, interval_sec, display_order, enabled, created_at, updated_at)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)
 			ON CONFLICT(id) DO UPDATE SET
 				name = excluded.name,
 				type = excluded.type,
@@ -92,9 +96,10 @@ func (s *SQLiteStore) SeedPreviewData(ctx context.Context, options PreviewSeedOp
 				count = excluded.count,
 				timeout_ms = excluded.timeout_ms,
 				interval_sec = excluded.interval_sec,
+				display_order = CASE WHEN probe_targets.display_order = 0 THEN excluded.display_order ELSE probe_targets.display_order END,
 				enabled = 1,
 				updated_at = excluded.updated_at
-		`, target.ID, target.Name, target.Type, target.Address, nullablePort(target.Port), target.Count, target.TimeoutMS, target.IntervalSec, now, now); err != nil {
+		`, target.ID, target.Name, target.Type, target.Address, nullablePort(target.Port), target.Count, target.TimeoutMS, target.IntervalSec, target.DisplayOrder, now, now); err != nil {
 			return err
 		}
 		if _, err := tx.ExecContext(ctx, `
@@ -152,7 +157,7 @@ func (s *SQLiteStore) EnabledProbeTargets(ctx context.Context, nodeID string) ([
 		WHERE npt.node_id = ?
 		  AND pt.enabled = 1
 		  AND npt.enabled = 1
-		ORDER BY pt.id ASC
+		ORDER BY pt.display_order ASC, pt.id ASC
 	`, nodeID)
 	if err != nil {
 		return nil, err

@@ -460,7 +460,7 @@ X-Admin-Token: <admin-token>
 
 ### GET /api/admin/v1/probe-targets
 
-探针目标管理列表，返回 enabled + disabled 目标及分配到哪些节点。不会返回 Agent token、token hash 或 secret 字段。
+探针目标管理列表，返回 enabled + disabled 目标、显示顺序及分配到哪些节点。列表按 `display_order ASC, id ASC` 排序；后台提供上移 / 下移 / 整理顺序快捷操作，底层写回 `display_order`。不会返回 Agent token、token hash 或 secret 字段。
 
 响应：
 
@@ -476,6 +476,7 @@ X-Admin-Token: <admin-token>
       "count": 3,
       "timeout_ms": 1200,
       "interval_sec": 60,
+      "display_order": 10,
       "enabled": true,
       "assignments": [
         {
@@ -494,6 +495,7 @@ X-Admin-Token: <admin-token>
       "count": 2,
       "timeout_ms": 1500,
       "interval_sec": 60,
+      "display_order": 20,
       "enabled": true,
       "assignments": []
     }
@@ -517,13 +519,14 @@ HTTP GET 示例：
   "port": null,
   "count": 2,
   "timeout_ms": 1500,
-  "interval_sec": 60
+  "interval_sec": 60,
+  "display_order": 20
 }
 ```
 
 ### PATCH /api/admin/v1/probe-targets/{target_id}
 
-更新探针目标配置或节点分配。`assignments` 省略表示不改变分配；传入时按 `node_id` 更新启用状态。
+更新探针目标配置、显示顺序或节点分配。`display_order` 必须是非负整数；`assignments` 省略表示不改变分配，传入时按 `node_id` 更新启用状态。
 
 切换到 `http_get` 时必须同时保证最终 `address` 是完整 URL；Controller 会清空旧 TCP `port` 并以 `null` 返回。切回 `tcping` 时必须提交有效 `port`。
 
