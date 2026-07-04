@@ -44,13 +44,14 @@ describe('homepage and admin shell layout', () => {
     expect(styles).toContain('.admin-node-status')
   })
 
-  it('keeps every admin list internally scrollable and lets the server list adapt taller', () => {
+  it('keeps non-server admin lists internally scrollable while the server list sizes to content', () => {
     expect(styles).toContain('.admin-workspace-panel .admin-list')
     expect(styles).toContain('max-height: calc(100dvh - 300px)')
-    expect(styles).toContain('height: calc(100dvh - 185px)')
-    expect(styles).toContain('scrollbar-gutter: stable')
-    expect(styles).toContain('padding: 5px 9px')
-    expect(styles).toContain('height: 26px')
+    expect(styles).toContain('.admin-node-section .admin-list')
+    expect(styles).toContain('max-height: none')
+    expect(styles).toContain('overflow: visible')
+    expect(styles).toContain('padding: 7px 10px')
+    expect(styles).toContain('height: 28px')
   })
 })
 

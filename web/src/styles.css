@@ -566,16 +566,17 @@ svg { display: block; }
   scrollbar-gutter: stable;
 }
 .admin-node-section .admin-list {
-  height: calc(100dvh - 185px);
   max-height: none;
+  overflow: visible;
+  scrollbar-gutter: auto;
 }
 .admin-list-head,
 .admin-list-row {
   display: grid;
   grid-template-columns: minmax(170px, 1.25fr) minmax(92px, .62fr) minmax(130px, 1fr) minmax(140px, .95fr) minmax(90px, .65fr) auto;
   align-items: center;
-  gap: 6px;
-  padding: 5px 9px;
+  gap: 8px;
+  padding: 7px 10px;
 }
 .admin-node-section .admin-list-head,
 .admin-node-section .admin-list-row {
@@ -597,7 +598,7 @@ svg { display: block; }
 .admin-list-row {
   min-width: 0;
   border-top: 1px solid var(--border);
-  font-size: 11px;
+  font-size: 11.5px;
   font-weight: 500;
 }
 .admin-list-row > span {
@@ -606,18 +607,18 @@ svg { display: block; }
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.admin-list-main { min-width: 0; display: flex; flex-direction: column; gap: 0; }
-.admin-list-main strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; line-height: 1.2; font-weight: 600; }
-.admin-list-main small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--muted); font-size: 10px; line-height: 1.2; font-weight: 500; }
+.admin-list-main { min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+.admin-list-main strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12.5px; line-height: 1.24; font-weight: 600; }
+.admin-list-main small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--muted); font-size: 10.5px; line-height: 1.24; font-weight: 500; }
 .admin-row-action {
-  height: 26px;
+  height: 28px;
   justify-self: end;
-  padding: 0 8px;
-  border-radius: 8px;
+  padding: 0 10px;
+  border-radius: 9px;
   white-space: nowrap;
-  font-size: 11px;
+  font-size: 11.5px;
 }
-.admin-row-actions { justify-self: end; display: inline-flex; align-items: center; justify-content: flex-end; flex-wrap: nowrap; gap: 4px; }
+.admin-row-actions { justify-self: end; display: inline-flex; align-items: center; justify-content: flex-end; flex-wrap: nowrap; gap: 6px; }
 .admin-row-action.is-danger { color: var(--red); background: color-mix(in srgb, var(--red) 10%, var(--secondary)); border-color: color-mix(in srgb, var(--red) 28%, var(--border)); }
 .admin-node-edit-form {
   margin-top: 14px;
@@ -1303,19 +1304,19 @@ svg { display: block; }
   .admin-section-actions { width: 100%; justify-content: flex-end; }
   .admin-list-head { display: none; }
   .admin-workspace-panel .admin-list { max-height: calc(100dvh - 260px); overflow-y: auto; padding-right: 2px; scrollbar-gutter: stable; }
-  .admin-node-section .admin-list { height: calc(100dvh - 160px); max-height: none; }
-  .admin-list { border: 0; background: transparent; display: grid; gap: 2px; }
+  .admin-node-section .admin-list { height: auto; max-height: none; overflow: visible; padding-right: 0; scrollbar-gutter: auto; }
+  .admin-list { border: 0; background: transparent; display: grid; gap: 4px; }
   .admin-list-row {
     grid-template-columns: 1fr;
-    gap: 3px;
-    padding: 7px 8px;
+    gap: 4px;
+    padding: 9px 10px;
     border: 1px solid var(--border);
     border-radius: 14px;
     background: color-mix(in srgb, var(--background) 58%, transparent);
   }
   .admin-list-row > span { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; white-space: normal; }
   .admin-list-row > span[data-label]::before { content: attr(data-label); flex: none; color: var(--muted); font-size: 12px; font-weight: 600; }
-  .admin-row-actions { width: 100%; justify-self: stretch; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 4px; }
+  .admin-row-actions { width: 100%; justify-self: stretch; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; }
   .admin-row-action { justify-self: stretch; width: 100%; }
   .admin-modal-backdrop { align-items: flex-end; padding: 12px; }
   .admin-action-card { min-height: 72px; padding: 12px; }
