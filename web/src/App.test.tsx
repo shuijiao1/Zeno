@@ -181,7 +181,7 @@ function renderAdmin(section: 'nodes' | 'targets' | 'notifications' | 'account' 
       onAdminLogin={() => {}}
       onAdminTokenClear={() => {}}
       onAdminAccountUpdate={async () => {}}
-      onAdminNodeCreate={() => {}}
+      onAdminNodeCreate={async () => undefined}
       onAdminNodeUpdate={() => {}}
       onAdminInstallCommand={async () => 'install command'}
       onAdminProbeTargetCreate={() => {}}
@@ -271,7 +271,9 @@ describe('AdminDashboard', () => {
     expect(html).toContain('后台导航')
     expect(html).toContain('服务器')
     expect(html).toContain('延迟监控')
-    expect(html).toContain('2 类型')
+    expect(html).not.toContain('10 台')
+    expect(html).not.toContain('13 个目标')
+    expect(html).not.toContain('2 类型')
     expect(html).not.toContain('1 异常 / 2 类型')
     expect(html).toContain('账户')
     expect(html).toContain('设置')
@@ -453,11 +455,14 @@ describe('AdminDashboard', () => {
 
     expect(html).toContain('延迟监控')
     expect(html).toContain('admin-target-list')
-    expect(html).toContain('name="target-sort"')
-    expect(html).toContain('按手动顺序')
-    expect(html).toContain('按名称排序')
-    expect(html).toContain('整理顺序')
-    expect(html).toContain('>启用中<')
+    expect(html).not.toContain('name="target-sort"')
+    expect(html).not.toContain('按手动顺序')
+    expect(html).not.toContain('按名称排序')
+    expect(html).not.toContain('按启用状态排序')
+    expect(html).not.toContain('整理顺序')
+    expect(html).not.toContain('<span>状态</span>')
+    expect(html).not.toContain('data-label="状态"')
+    expect(html).not.toContain('>启用中<')
     expect(html).not.toContain('hytron-local')
     expect(html).not.toContain('顺序 20')
     expect(html).toContain('127.0.0.1:18980')

@@ -43,7 +43,6 @@ type AdminAuthState =
   | { kind: 'error'; message: string }
 
 type AdminSection = 'nodes' | 'targets' | 'notifications' | 'account' | 'settings'
-type AdminTargetSort = 'order' | 'name' | 'status' | 'type' | 'assignments'
 
 function sum(values: Array<number | null | undefined>): number {
   return values.reduce<number>((total, value) => total + (value ?? 0), 0)
@@ -302,9 +301,9 @@ export function App() {
     })
   }
 
-  const createAdminNodeDetails = (input: AdminNodeCreateInput) => {
-    if (adminToken === '') return
-    createAdminNode(adminToken, input)
+  const createAdminNodeDetails = (input: AdminNodeCreateInput): Promise<AdminNode> => {
+    if (adminToken === '') return Promise.reject(new Error('missing admin token'))
+    return createAdminNode(adminToken, input)
       .then((createdNode) => {
         setAdminState((current) => {
           if (current.kind === 'ready') {
@@ -312,8 +311,12 @@ export function App() {
           }
           return { kind: 'ready', account: { username: 'admin' }, nodes: [createdNode], targets: [], notificationChannels: [], alertRules: [] }
         })
+        return createdNode
       })
-      .catch((error: unknown) => setAdminState({ kind: 'error', message: error instanceof Error ? error.message : 'unknown error' }))
+      .catch((error: unknown) => {
+        setAdminState({ kind: 'error', message: error instanceof Error ? error.message : 'unknown error' })
+        throw error
+      })
   }
 
   const requestAdminInstallCommand = (nodeId: string): Promise<string> => {
@@ -344,7 +347,7 @@ export function App() {
       .then((createdTarget) => {
         setAdminState((current) => {
           if (current.kind === 'ready') {
-            return { ...current, targets: sortAdminProbeTargets([...current.targets, createdTarget], 'order') }
+            return { ...current, targets: sortAdminProbeTargets([...current.targets, createdTarget]) }
           }
           return { kind: 'ready', account: { username: 'admin' }, nodes: [], targets: [createdTarget], notificationChannels: [], alertRules: [] }
         })
@@ -358,7 +361,7 @@ export function App() {
       .then((updatedTarget) => {
         setAdminState((current) => {
           if (current.kind === 'ready') {
-            return { ...current, targets: sortAdminProbeTargets(current.targets.map((target) => target.id === updatedTarget.id ? updatedTarget : target), 'order') }
+            return { ...current, targets: sortAdminProbeTargets(current.targets.map((target) => target.id === updatedTarget.id ? updatedTarget : target)) }
           }
           return { kind: 'ready', account: { username: 'admin' }, nodes: [], targets: [updatedTarget], notificationChannels: [], alertRules: [] }
         })
@@ -714,7 +717,7 @@ interface AdminDashboardProps {
   onAdminLogin?: (username: string, password: string) => void
   onAdminTokenClear?: () => void
   onAdminAccountUpdate?: (username: string, currentPassword: string, newPassword: string) => Promise<void>
-  onAdminNodeCreate?: (input: AdminNodeCreateInput) => void
+  onAdminNodeCreate?: (input: AdminNodeCreateInput) => Promise<AdminNode | void>
   onAdminNodeUpdate?: (nodeId: string, input: AdminNodeUpdateInput) => void
   onAdminInstallCommand?: (nodeId: string) => Promise<string>
   onAdminProbeTargetCreate?: (input: AdminProbeTargetInput) => void
@@ -737,7 +740,7 @@ export function AdminDashboard({
   onAdminLogin = () => {},
   onAdminTokenClear = () => {},
   onAdminAccountUpdate = () => Promise.reject(new Error('account update unavailable')),
-  onAdminNodeCreate = () => {},
+  onAdminNodeCreate = () => Promise.resolve(),
   onAdminNodeUpdate = () => {},
   onAdminInstallCommand = () => Promise.reject(new Error('install command unavailable')),
   onAdminProbeTargetCreate = () => {},
@@ -759,10 +762,6 @@ export function AdminDashboard({
     if (username === '' || password === '') return
     onAdminLogin(username, password)
   }
-
-  const nodeCount = adminState.kind === 'ready' ? adminState.nodes.length : 0
-  const targetCount = adminState.kind === 'ready' ? adminState.targets.length : 0
-  const ruleCount = adminState.kind === 'ready' ? adminState.alertRules.filter((rule) => rule.enabled).length : 0
 
   return (
     <div className="kulin-container admin-container">
@@ -799,9 +798,6 @@ export function AdminDashboard({
               <AdminSectionNav
                 activeSection={activeSection}
                 onSectionChange={setActiveSection}
-                nodeCount={nodeCount}
-                targetCount={targetCount}
-                ruleCount={ruleCount}
               />
             </div>
 
@@ -853,13 +849,13 @@ export function AdminDashboard({
   )
 }
 
-function AdminSectionNav({ activeSection, onSectionChange, nodeCount, targetCount, ruleCount }: { activeSection: AdminSection; onSectionChange: (section: AdminSection) => void; nodeCount: number; targetCount: number; ruleCount: number }) {
-  const sections: Array<{ id: AdminSection; label: string; meta: string }> = [
-    { id: 'nodes', label: '服务器', meta: `${nodeCount} 台` },
-    { id: 'targets', label: '延迟监控', meta: `${targetCount} 个目标` },
-    { id: 'notifications', label: '通知', meta: `${ruleCount} 类型` },
-    { id: 'account', label: '账户', meta: '账号密码' },
-    { id: 'settings', label: '设置', meta: '外观' },
+function AdminSectionNav({ activeSection, onSectionChange }: { activeSection: AdminSection; onSectionChange: (section: AdminSection) => void }) {
+  const sections: Array<{ id: AdminSection; label: string }> = [
+    { id: 'nodes', label: '服务器' },
+    { id: 'targets', label: '延迟监控' },
+    { id: 'notifications', label: '通知' },
+    { id: 'account', label: '账户' },
+    { id: 'settings', label: '设置' },
   ]
 
   return (
@@ -872,7 +868,6 @@ function AdminSectionNav({ activeSection, onSectionChange, nodeCount, targetCoun
           onClick={() => onSectionChange(section.id)}
         >
           <span>{section.label}</span>
-          <em>{section.meta}</em>
         </button>
       ))}
     </nav>
@@ -1077,7 +1072,7 @@ function validAgentControllerURL(value: string): boolean {
   }
 }
 
-function AdminNodeSection({ nodes, onCreate, onUpdate, onInstallCommand }: { nodes: AdminNode[]; onCreate: (input: AdminNodeCreateInput) => void; onUpdate: (nodeId: string, input: AdminNodeUpdateInput) => void; onInstallCommand: (nodeId: string) => Promise<string> }) {
+function AdminNodeSection({ nodes, onCreate, onUpdate, onInstallCommand }: { nodes: AdminNode[]; onCreate: (input: AdminNodeCreateInput) => Promise<AdminNode | void>; onUpdate: (nodeId: string, input: AdminNodeUpdateInput) => void; onInstallCommand: (nodeId: string) => Promise<string> }) {
   const [creatingNode, setCreatingNode] = useState(false)
   const [editingNodeId, setEditingNodeId] = useState<string | null>(null)
   const [sortingNodes, setSortingNodes] = useState(false)
@@ -1107,10 +1102,8 @@ function AdminNodeSection({ nodes, onCreate, onUpdate, onInstallCommand }: { nod
       {creatingNode && (
         <AdminNodeCreateModal
           onClose={() => setCreatingNode(false)}
-          onCreate={(input) => {
-            onCreate(input)
-            setCreatingNode(false)
-          }}
+          onCreate={onCreate}
+          onInstallCommand={onInstallCommand}
         />
       )}
 
@@ -1252,81 +1245,78 @@ function AdminNodeSortModal({ nodes, onSave, onClose }: { nodes: AdminNode[]; on
   )
 }
 
-function AdminNodeCreateModal({ onCreate, onClose }: { onCreate: (input: AdminNodeCreateInput) => void; onClose: () => void }) {
+function AdminNodeCreateModal({ onCreate, onInstallCommand, onClose }: { onCreate: (input: AdminNodeCreateInput) => Promise<AdminNode | void>; onInstallCommand: (nodeId: string) => Promise<string>; onClose: () => void }) {
+  const [createdNode, setCreatedNode] = useState<AdminNode | null>(null)
+  const [submitting, setSubmitting] = useState(false)
+  const [formError, setFormError] = useState<string | null>(null)
+  const [installCommandState, setInstallCommandState] = useState<{ kind: 'idle' } | { kind: 'loading' } | { kind: 'ready'; command: string } | { kind: 'error'; message: string }>({ kind: 'idle' })
+  const [installCopyState, setInstallCopyState] = useState<{ kind: 'idle' } | { kind: 'ready'; message: string } | { kind: 'error'; message: string }>({ kind: 'idle' })
+
   const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
-    const form = event.currentTarget
-    const formData = new FormData(form)
+    const formData = new FormData(event.currentTarget)
     const displayName = String(formData.get('new-display-name') ?? '').trim()
-    if (displayName === '') return
+    if (displayName === '') {
+      setFormError('请先填写服务器名称。')
+      return
+    }
+    setSubmitting(true)
+    setFormError(null)
     onCreate({
-      id: String(formData.get('new-node-id') ?? '').trim() || undefined,
       displayName,
-      countryCode: String(formData.get('new-country-code') ?? ''),
-      region: String(formData.get('new-region') ?? ''),
       expiryDate: String(formData.get('new-expiry-date') ?? '').trim(),
       billingCycle: String(formData.get('new-billing-cycle') ?? '').trim(),
       billingMode: String(formData.get('new-billing-mode') ?? 'both'),
       monthlyResetDay: parseMonthlyResetDay(String(formData.get('new-monthly-reset-day') ?? '')) ?? 1,
-      displayOrder: parseNonNegativeInt(String(formData.get('new-display-order') ?? '')) ?? 0,
-      publicIPv4: String(formData.get('new-public-ipv4') ?? '').trim(),
-      publicIPv6: String(formData.get('new-public-ipv6') ?? '').trim(),
       monthlyQuotaBytes: parseQuotaGigabytes(String(formData.get('new-monthly-quota-gb') ?? '')),
     })
+      .then((node) => {
+        if (node) setCreatedNode(node)
+      })
+      .catch((error: unknown) => setFormError(error instanceof Error ? error.message : '添加服务器失败'))
+      .finally(() => setSubmitting(false))
+  }
+
+  const handleInstallCommand = () => {
+    if (!createdNode) return
+    setInstallCommandState({ kind: 'loading' })
+    setInstallCopyState({ kind: 'idle' })
+    onInstallCommand(createdNode.id)
+      .then((command) => setInstallCommandState({ kind: 'ready', command }))
+      .catch((error: unknown) => setInstallCommandState({ kind: 'error', message: error instanceof Error ? error.message : 'unknown error' }))
+  }
+
+  const handleCopyInstallCommand = () => {
+    if (installCommandState.kind !== 'ready') return
+    copyTextToClipboard(installCommandState.command)
+      .then(() => setInstallCopyState({ kind: 'ready', message: '安装命令已复制。' }))
+      .catch((error: unknown) => setInstallCopyState({ kind: 'error', message: error instanceof Error ? error.message : '复制失败，请手动选中复制。' }))
   }
 
   return (
     <AdminModal title="添加服务器" eyebrow="Servers" onClose={onClose}>
       <form className="admin-node-create-form admin-node-edit-form is-sectioned" aria-label="添加服务器" onSubmit={handleSubmit}>
-        <AdminFormSection title="基础信息">
+        <AdminFormSection title="服务器名称">
           <div className="admin-form-grid">
             <label>
               <span>服务器名称</span>
-              <input name="new-display-name" autoComplete="off" placeholder="New Server" />
-            </label>
-            <label>
-              <span>节点 ID（可选）</span>
-              <input name="new-node-id" autoComplete="off" placeholder="自动生成" />
-            </label>
-            <label>
-              <span>国家</span>
-              <input name="new-country-code" autoComplete="off" placeholder="HK" />
-            </label>
-            <label>
-              <span>地区</span>
-              <input name="new-region" autoComplete="off" placeholder="Hong Kong" />
-            </label>
-            <label>
-              <span>显示顺序</span>
-              <input name="new-display-order" type="number" min="0" step="1" defaultValue="0" />
+              <input name="new-display-name" autoComplete="off" placeholder="New Server" disabled={Boolean(createdNode)} />
             </label>
           </div>
         </AdminFormSection>
-        <AdminFormSection title="公网地址">
-          <div className="admin-form-grid">
-            <label>
-              <span>公网 IPv4</span>
-              <input name="new-public-ipv4" autoComplete="off" placeholder="198.51.100.8" />
-            </label>
-            <label>
-              <span>公网 IPv6</span>
-              <input name="new-public-ipv6" autoComplete="off" placeholder="2001:db8::8" />
-            </label>
-          </div>
-        </AdminFormSection>
-        <AdminFormSection title="账单与流量">
+        <AdminFormSection title="账单与流量" description="账单信息可以留空，后续再补。">
           <div className="admin-form-grid">
             <label>
               <span>到期日</span>
-              <input name="new-expiry-date" type="date" autoComplete="off" />
+              <input name="new-expiry-date" type="date" autoComplete="off" disabled={Boolean(createdNode)} />
             </label>
             <label>
               <span>账单周期</span>
-              <input name="new-billing-cycle" autoComplete="off" placeholder="月付 / 年付" />
+              <input name="new-billing-cycle" autoComplete="off" placeholder="月付 / 年付" disabled={Boolean(createdNode)} />
             </label>
             <label>
               <span>流量计费口径</span>
-              <select name="new-billing-mode" defaultValue="both">
+              <select name="new-billing-mode" defaultValue="both" disabled={Boolean(createdNode)}>
                 <option value="both">入站 + 出站</option>
                 <option value="in">只算入站</option>
                 <option value="out">只算出站</option>
@@ -1335,16 +1325,29 @@ function AdminNodeCreateModal({ onCreate, onClose }: { onCreate: (input: AdminNo
             </label>
             <label>
               <span>月流量重置日</span>
-              <input name="new-monthly-reset-day" type="number" min="1" max="31" step="1" defaultValue="1" />
+              <input name="new-monthly-reset-day" type="number" min="1" max="31" step="1" defaultValue="1" disabled={Boolean(createdNode)} />
             </label>
             <label>
               <span>月配额 GB</span>
-              <input name="new-monthly-quota-gb" type="number" min="0" step="0.01" />
+              <input name="new-monthly-quota-gb" type="number" min="0" step="0.01" disabled={Boolean(createdNode)} />
             </label>
           </div>
         </AdminFormSection>
+        <AdminFormSection title="Agent 接入" description={createdNode ? '服务器已添加，可以直接生成 Agent 安装命令。' : '先添加服务器，随后在这里生成 Agent 安装命令。'}>
+          {createdNode && <p className="admin-help-note">已添加：{createdNode.displayName}</p>}
+          <div className="admin-inline-actions">
+            <button type="button" onClick={handleInstallCommand} disabled={!createdNode || installCommandState.kind === 'loading'}>{installCommandState.kind === 'loading' ? '生成中…' : '生成安装命令'}</button>
+            <button type="button" onClick={handleCopyInstallCommand} disabled={installCommandState.kind !== 'ready'}>复制安装命令</button>
+          </div>
+          {installCommandState.kind === 'ready' && (
+            <textarea className="admin-install-command" aria-label="新服务器 Agent 安装命令" readOnly value={installCommandState.command} />
+          )}
+          {installCopyState.kind !== 'idle' && <div className={`admin-install-error${installCopyState.kind === 'ready' ? ' is-success' : ''}`}>{installCopyState.message}</div>}
+          {installCommandState.kind === 'error' && <div className="admin-install-error">安装命令生成失败：{installCommandState.message}</div>}
+        </AdminFormSection>
+        {formError && <div className="admin-install-error">{formError}</div>}
         <div className="admin-modal-actions">
-          <button type="submit">添加服务器</button>
+          <button type="submit" disabled={submitting || Boolean(createdNode)}>{submitting ? '添加中…' : createdNode ? '服务器已添加' : '添加服务器'}</button>
         </div>
       </form>
     </AdminModal>
@@ -1358,19 +1361,14 @@ function AdminNodeEditModal({ node, onUpdate, onInstallCommand, onClose }: { nod
   const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
     const formData = new FormData(event.currentTarget)
+    const displayName = String(formData.get('display-name') ?? '').trim()
     onUpdate(node.id, {
-      displayName: String(formData.get('display-name') ?? ''),
-      countryCode: String(formData.get('country-code') ?? ''),
-      region: String(formData.get('region') ?? ''),
+      displayName: displayName || node.displayName,
       expiryDate: String(formData.get('expiry-date') ?? '').trim(),
       billingCycle: String(formData.get('billing-cycle') ?? '').trim(),
       billingMode: String(formData.get('billing-mode') ?? node.billingMode),
       monthlyResetDay: parseMonthlyResetDay(String(formData.get('monthly-reset-day') ?? '')) ?? node.monthlyResetDay,
-      displayOrder: parseNonNegativeInt(String(formData.get('display-order') ?? '')) ?? node.displayOrder,
-      publicIPv4: String(formData.get('public-ipv4') ?? '').trim(),
-      publicIPv6: String(formData.get('public-ipv6') ?? '').trim(),
       monthlyQuotaBytes: parseQuotaGigabytes(String(formData.get('monthly-quota-gb') ?? '')),
-      disabled: formData.get('disabled') === 'on',
     })
   }
 
@@ -1396,51 +1394,16 @@ function AdminNodeEditModal({ node, onUpdate, onInstallCommand, onClose }: { nod
 
   return (
     <AdminModal title={`编辑服务器 · ${node.displayName}`} eyebrow={node.id} onClose={onClose}>
-      <dl className="admin-modal-summary">
-        <div><dt>状态</dt><dd>{formatAdminNodeStatusLabel(node)}</dd></div>
-        <div><dt>公网 IP</dt><dd>{formatAdminPublicIPs(node)}</dd></div>
-        <div><dt>顺序</dt><dd>{node.displayOrder}</dd></div>
-        <div><dt>系统</dt><dd>{formatAdminSystem(node)}</dd></div>
-        <div><dt>资源</dt><dd>{formatAdminResources(node)}</dd></div>
-      </dl>
       <form className="admin-node-edit-form is-sectioned" aria-label={`${node.displayName} 节点编辑`} onSubmit={handleSubmit}>
-        <AdminFormSection title="基础信息">
+        <AdminFormSection title="服务器名称">
           <div className="admin-form-grid">
             <label>
-              <span>显示名</span>
+              <span>服务器名称</span>
               <input name="display-name" defaultValue={node.displayName} autoComplete="off" />
             </label>
-            <label>
-              <span>国家</span>
-              <input name="country-code" defaultValue={node.countryCode ?? ''} autoComplete="off" />
-            </label>
-            <label>
-              <span>地区</span>
-              <input name="region" defaultValue={node.region ?? ''} autoComplete="off" />
-            </label>
-            <label>
-              <span>显示顺序</span>
-              <input name="display-order" type="number" min="0" step="1" defaultValue={node.displayOrder} />
-            </label>
-            <label className="admin-node-toggle">
-              <input name="disabled" type="checkbox" defaultChecked={node.disabled} />
-              <span>禁用节点</span>
-            </label>
           </div>
         </AdminFormSection>
-        <AdminFormSection title="公网地址">
-          <div className="admin-form-grid">
-            <label>
-              <span>公网 IPv4</span>
-              <input name="public-ipv4" defaultValue={node.publicIPv4 ?? ''} autoComplete="off" />
-            </label>
-            <label>
-              <span>公网 IPv6</span>
-              <input name="public-ipv6" defaultValue={node.publicIPv6 ?? ''} autoComplete="off" />
-            </label>
-          </div>
-        </AdminFormSection>
-        <AdminFormSection title="账单与流量">
+        <AdminFormSection title="账单与流量" description="账单信息可以留空，后续再补。">
           <div className="admin-form-grid">
             <label>
               <span>到期日</span>
@@ -1491,13 +1454,8 @@ function AdminNodeEditModal({ node, onUpdate, onInstallCommand, onClose }: { nod
 function AdminTargetSection({ targets, nodes, onCreate, onUpdate }: { targets: AdminProbeTarget[]; nodes: AdminNode[]; onCreate: (input: AdminProbeTargetInput) => void; onUpdate: (targetId: string, input: AdminProbeTargetUpdateInput) => void }) {
   const [creatingTarget, setCreatingTarget] = useState(false)
   const [editingTargetId, setEditingTargetId] = useState<string | null>(null)
-  const [targetSort, setTargetSort] = useState<AdminTargetSort>('order')
   const editingTarget = editingTargetId ? targets.find((target) => target.id === editingTargetId) : undefined
-  const sortedTargets = sortAdminProbeTargets(targets, targetSort)
-  const applyOrderPatches = (patches: AdminProbeTargetOrderPatch[]) => {
-    patches.forEach((patch) => onUpdate(patch.targetId, { displayOrder: patch.displayOrder }))
-    if (patches.length > 0) setTargetSort('order')
-  }
+  const sortedTargets = sortAdminProbeTargets(targets)
 
   return (
     <section className="admin-target-section admin-workspace-panel" aria-label="admin probe target list">
@@ -1507,17 +1465,6 @@ function AdminTargetSection({ targets, nodes, onCreate, onUpdate }: { targets: A
           <h3>延迟监控</h3>
         </div>
         <div className="admin-section-actions">
-          <label className="admin-sort-control">
-            <span>排序</span>
-            <select name="target-sort" value={targetSort} onChange={(event) => setTargetSort(event.currentTarget.value as AdminTargetSort)}>
-              <option value="order">按手动顺序</option>
-              <option value="name">按名称排序</option>
-              <option value="status">按启用状态排序</option>
-              <option value="type">按类型排序</option>
-              <option value="assignments">按节点分配排序</option>
-            </select>
-          </label>
-          <button type="button" onClick={() => applyOrderPatches(buildAdminProbeTargetOrderPatches(sortedTargets))}>整理顺序</button>
           <button className="admin-primary-action" type="button" onClick={() => setCreatingTarget(true)}>添加目标</button>
         </div>
       </header>
@@ -1551,15 +1498,11 @@ function AdminTargetSection({ targets, nodes, onCreate, onUpdate }: { targets: A
   )
 }
 
-type AdminProbeTargetOrderDirection = 'up' | 'down'
-type AdminProbeTargetOrderPatch = { targetId: string; displayOrder: number }
-
 function AdminTargetList({ targets, onEdit }: { targets: AdminProbeTarget[]; onEdit: (targetId: string) => void }) {
   return (
     <div className="admin-list admin-target-list" role="list" aria-label="延迟监控目标列表">
       <div className="admin-list-head" aria-hidden="true">
         <span>目标</span>
-        <span>状态</span>
         <span>地址</span>
         <span>节点</span>
         <span>操作</span>
@@ -1569,7 +1512,6 @@ function AdminTargetList({ targets, onEdit }: { targets: AdminProbeTarget[]; onE
           <div className="admin-list-main">
             <strong>{target.name}</strong>
           </div>
-          <span data-label="状态" className={`admin-node-status status-${target.enabled ? 'online' : 'disabled'}`}>{formatAdminEnabledStatusLabel(target.enabled)}</span>
           <span data-label="地址">{formatTargetEndpoint(target)}</span>
           <span data-label="节点">{formatTargetAssignmentSummary(target)}</span>
           <div className="admin-row-actions">
@@ -1600,7 +1542,6 @@ function AdminTargetCreateModal({ onCreate, onClose }: { onCreate: (input: Admin
       count: parsePositiveInt(String(formData.get('new-target-count') ?? '')) ?? 3,
       timeoutMs: parsePositiveInt(String(formData.get('new-target-timeout-ms') ?? '')) ?? 1200,
       intervalSec: parsePositiveInt(String(formData.get('new-target-interval-sec') ?? '')) ?? 60,
-      displayOrder: parseNonNegativeInt(String(formData.get('new-target-display-order') ?? '')) ?? 0,
     })
   }
 
@@ -1631,10 +1572,6 @@ function AdminTargetCreateModal({ onCreate, onClose }: { onCreate: (input: Admin
                 <input name="new-target-port" type="number" min="1" max="65535" defaultValue="443" />
               </label>
             )}
-            <label>
-              <span>显示顺序</span>
-              <input name="new-target-display-order" type="number" min="0" step="1" defaultValue="0" />
-            </label>
           </div>
         </AdminFormSection>
         <AdminFormSection title="探测参数">
@@ -1679,7 +1616,6 @@ function AdminTargetEditModal({ target, nodes, onUpdate, onClose }: { target: Ad
       count: parsePositiveInt(String(formData.get('target-count') ?? '')) ?? target.count,
       timeoutMs: parsePositiveInt(String(formData.get('target-timeout-ms') ?? '')) ?? target.timeoutMs,
       intervalSec: parsePositiveInt(String(formData.get('target-interval-sec') ?? '')) ?? target.intervalSec,
-      displayOrder: parseNonNegativeInt(String(formData.get('target-display-order') ?? '')) ?? target.displayOrder,
       enabled: formData.get('target-enabled') === 'on',
       assignments: assignmentRows.length > 0
         ? assignmentRows.map((assignment) => ({
@@ -1693,11 +1629,9 @@ function AdminTargetEditModal({ target, nodes, onUpdate, onClose }: { target: Ad
   return (
     <AdminModal title={`编辑延迟监控 · ${target.name}`} eyebrow={target.id} onClose={onClose}>
       <dl className="admin-modal-summary">
-        <div><dt>状态</dt><dd>{formatAdminEnabledStatusLabel(target.enabled)}</dd></div>
         <div><dt>类型</dt><dd>{formatTargetTypeLabel(target.type)}</dd></div>
         <div><dt>地址</dt><dd>{formatTargetEndpoint(target)}</dd></div>
         <div><dt>参数</dt><dd>{target.count} 次 / {target.timeoutMs}ms / {target.intervalSec}s</dd></div>
-        <div><dt>顺序</dt><dd>{target.displayOrder}</dd></div>
         <div><dt>节点</dt><dd>{formatTargetAssignmentSummary(target)}</dd></div>
       </dl>
       <form className="admin-target-edit-form admin-node-edit-form is-sectioned" aria-label={`${target.name} 探针目标编辑`} onSubmit={handleSubmit}>
@@ -1725,10 +1659,6 @@ function AdminTargetEditModal({ target, nodes, onUpdate, onClose }: { target: Ad
                 <input name="target-port" type="number" min="1" max="65535" defaultValue={target.port ?? ''} />
               </label>
             )}
-            <label>
-              <span>显示顺序</span>
-              <input name="target-display-order" type="number" min="0" step="1" defaultValue={target.displayOrder} />
-            </label>
             <label className="admin-node-toggle">
               <input name="target-enabled" type="checkbox" defaultChecked={target.enabled} />
               <span>启用目标</span>
@@ -2136,41 +2066,8 @@ function AdminFormSection({ title, description, children }: { title: string; des
   )
 }
 
-function sortAdminProbeTargets(targets: AdminProbeTarget[], sort: AdminTargetSort): AdminProbeTarget[] {
-  return [...targets].sort((left, right) => {
-    const byName = left.name.localeCompare(right.name, 'zh-CN') || left.id.localeCompare(right.id, 'zh-CN')
-    if (sort === 'order') {
-      return left.displayOrder - right.displayOrder || left.id.localeCompare(right.id, 'zh-CN')
-    }
-    if (sort === 'status') {
-      return Number(right.enabled) - Number(left.enabled) || byName
-    }
-    if (sort === 'type') {
-      return formatTargetTypeLabel(left.type).localeCompare(formatTargetTypeLabel(right.type), 'zh-CN') || byName
-    }
-    if (sort === 'assignments') {
-      const rightEnabled = right.assignments.filter((assignment) => assignment.enabled).length
-      const leftEnabled = left.assignments.filter((assignment) => assignment.enabled).length
-      return rightEnabled - leftEnabled || byName
-    }
-    return byName
-  })
-}
-
-function buildAdminProbeTargetOrderPatches(targets: AdminProbeTarget[], targetId?: string, direction?: AdminProbeTargetOrderDirection): AdminProbeTargetOrderPatch[] {
-  const reorderedTargets = [...targets]
-  if (targetId && direction) {
-    const index = reorderedTargets.findIndex((target) => target.id === targetId)
-    if (index < 0) return []
-    const targetIndex = direction === 'up' ? index - 1 : index + 1
-    if (targetIndex < 0 || targetIndex >= reorderedTargets.length) return []
-    const current = reorderedTargets[index]
-    reorderedTargets[index] = reorderedTargets[targetIndex]
-    reorderedTargets[targetIndex] = current
-  }
-  return reorderedTargets
-    .map((target, index) => ({ targetId: target.id, displayOrder: (index + 1) * 10 }))
-    .filter((patch) => targets.find((target) => target.id === patch.targetId)?.displayOrder !== patch.displayOrder)
+function sortAdminProbeTargets(targets: AdminProbeTarget[]): AdminProbeTarget[] {
+  return [...targets].sort((left, right) => left.displayOrder - right.displayOrder || left.id.localeCompare(right.id, 'zh-CN'))
 }
 
 function targetAssignmentRows(target: AdminProbeTarget, nodes: AdminNode[]) {
@@ -2279,35 +2176,6 @@ function parseQuotaGigabytes(value: string): number | null {
   const parsed = Number(trimmed)
   if (!Number.isFinite(parsed) || parsed < 0) return null
   return Math.round(parsed * (1024 ** 3))
-}
-
-function formatAdminNodeStatusLabel(node: AdminNode): string {
-  if (node.disabled) return '已禁用'
-  if (node.status === 'online') return '在线'
-  if (node.status === 'offline') return '离线'
-  if (node.status === 'warning') return '异常'
-  if (node.status === 'no_data') return '暂无数据'
-  return node.status
-}
-
-function formatAdminEnabledStatusLabel(enabled: boolean): string {
-  return enabled ? '启用中' : '已停用'
-}
-
-function formatAdminPublicIPs(node: AdminNode): string {
-  return [node.publicIPv4, node.publicIPv6].filter(Boolean).join(' / ') || '—'
-}
-
-function formatAdminSystem(node: AdminNode): string {
-  const system = [node.osName, node.osVersion].filter(Boolean).join(' ')
-  return system || node.arch || '—'
-}
-
-function formatAdminResources(node: AdminNode): string {
-  const cpu = node.cpuCores ? `${node.cpuCores}C` : '—'
-  const mem = node.memoryTotalBytes ? compactBytes(node.memoryTotalBytes) : '—'
-  const disk = node.diskTotalBytes ? compactBytes(node.diskTotalBytes) : '—'
-  return `${cpu} / ${mem} / ${disk}`
 }
 
 function formatAdminDate(value?: string): string {

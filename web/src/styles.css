@@ -374,21 +374,19 @@ svg { display: block; }
   background: color-mix(in srgb, var(--metric-bg) 88%, transparent);
 }
 .admin-section-nav button {
-  min-width: 108px;
+  min-width: 76px;
   display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 2px;
+  align-items: center;
+  justify-content: center;
   padding: 9px 12px;
   border: 0;
   border-radius: 13px;
   background: transparent;
   color: var(--foreground);
-  text-align: left;
+  text-align: center;
 }
 .admin-section-nav button[data-active='true'] { background: var(--secondary); }
 .admin-section-nav span { font-size: 14px; font-weight: 600; }
-.admin-section-nav em { color: var(--muted); font-size: 11px; font-style: normal; font-weight: 500; }
 .admin-help-note {
   margin: 12px 2px 0;
   color: var(--muted);
@@ -495,7 +493,7 @@ svg { display: block; }
 }
 .admin-target-list .admin-list-head,
 .admin-target-list .admin-list-row {
-  grid-template-columns: minmax(170px, 1.12fr) minmax(84px, .52fr) minmax(170px, 1fr) minmax(120px, .72fr) auto;
+  grid-template-columns: minmax(170px, 1.12fr) minmax(170px, 1fr) minmax(120px, .72fr) auto;
 }
 .admin-notification-list .admin-list-head,
 .admin-notification-list .admin-list-row {
@@ -1303,8 +1301,9 @@ svg { display: block; }
   .home-network-grid dd { font-size: 12px; }
   .home-network-grid svg { width: 12px; height: 12px; }
   .admin-toolbar { flex-direction: column; align-items: stretch; }
-  .admin-section-nav { width: 100%; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .admin-section-nav button { min-width: 0; }
+  .admin-section-nav { width: 100%; display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 4px; padding: 4px; border-radius: 14px; }
+  .admin-section-nav button { min-width: 0; min-height: 34px; padding: 0 4px; border-radius: 10px; }
+  .admin-section-nav span { font-size: 12px; }
   .admin-section-actions { width: 100%; justify-content: flex-end; }
   .admin-list-head { display: none; }
   .admin-workspace-panel .admin-list { max-height: none; overflow: visible; padding-right: 0; scrollbar-gutter: auto; }
