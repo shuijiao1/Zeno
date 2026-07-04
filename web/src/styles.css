@@ -60,6 +60,7 @@ svg { display: block; }
   flex-direction: column;
   gap: 16px;
   background-color: var(--background);
+  background-image: var(--zeno-desktop-background-image, none);
   background-position: center;
 }
 
@@ -1230,7 +1231,11 @@ svg { display: block; }
 .latency-legend i { width: 8px; height: 8px; border-radius: 3px; }
 
 @media (max-width: 767px) {
-  .kulin-shell { padding: 14px 10px 24px; gap: 12px; }
+  .kulin-shell {
+    padding: 14px 10px 24px;
+    gap: 12px;
+    background-image: var(--zeno-mobile-background-image, var(--zeno-desktop-background-image, none));
+  }
   .kulin-nav { align-items: center; height: auto; gap: 8px; }
   .brand { font-size: 15px; }
   .brand img { width: 28px; height: 28px; }

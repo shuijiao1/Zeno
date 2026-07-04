@@ -198,8 +198,11 @@ const settings: AdminSettings = {
   siteTitle: '水饺监控',
   siteSubtitle: 'VPS 状态总览',
   logoUrl: '/assets/logo/custom.png',
+  avatarUrl: '/assets/avatar/custom.webp',
   theme: 'dark',
-  backgroundUrl: 'https://example.com/bg.webp',
+  backgroundUrl: 'https://example.com/desktop-bg.webp',
+  desktopBackgroundUrl: 'https://example.com/desktop-bg.webp',
+  mobileBackgroundUrl: 'https://example.com/mobile-bg.webp',
   updatedAt: '2026-07-04T12:00:00Z',
 }
 
@@ -257,13 +260,14 @@ function renderAdmin(section: 'overview' | 'nodes' | 'targets' | 'notifications'
 }
 
 describe('HomeTopPanel', () => {
-  it('turns a configured background image into a safe shell style', () => {
+  it('turns configured desktop and mobile background images into safe shell variables', () => {
     expect(shellStyleForSettings(settings)).toEqual({
-      backgroundImage: 'linear-gradient(rgba(24, 21, 18, 0.78), rgba(24, 21, 18, 0.78)), url("https://example.com/bg.webp")',
+      '--zeno-desktop-background-image': 'linear-gradient(rgba(24, 21, 18, 0.78), rgba(24, 21, 18, 0.78)), url("https://example.com/desktop-bg.webp")',
+      '--zeno-mobile-background-image': 'linear-gradient(rgba(24, 21, 18, 0.78), rgba(24, 21, 18, 0.78)), url("https://example.com/mobile-bg.webp")',
       backgroundSize: 'cover',
       backgroundAttachment: 'fixed',
     })
-    expect(shellStyleForSettings({ ...settings, backgroundUrl: '' })).toBeUndefined()
+    expect(shellStyleForSettings({ ...settings, backgroundUrl: '', desktopBackgroundUrl: '', mobileBackgroundUrl: '' })).toBeUndefined()
   })
 
   it('keeps the homepage top controls inside one card with a simple custom overview', () => {
@@ -280,7 +284,7 @@ describe('HomeTopPanel', () => {
     expect(html).toContain('dashboard actions')
     expect(html).toContain('Zeno')
     expect(html).toContain('水饺监控')
-    expect(html).toContain('/assets/logo/custom.png')
+    expect(html).toContain('/assets/avatar/custom.webp')
     expect(html).toContain('VPS 状态总览')
     expect(html).toContain('home-summary')
     expect(html).toContain('home-summary__compact')
@@ -369,10 +373,15 @@ describe('AdminDashboard', () => {
     expect(html).toContain('VPS 状态总览')
     expect(html).toContain('name="logo-url"')
     expect(html).toContain('/assets/logo/custom.png')
+    expect(html).toContain('/assets/avatar/custom.webp')
+    expect(html).toContain('name="avatar-url"')
+    expect(html).toContain('头像 URL')
     expect(html).toContain('name="theme"')
     expect(html).toContain('深色')
-    expect(html).toContain('name="background-url"')
-    expect(html).toContain('https://example.com/bg.webp')
+    expect(html).toContain('name="desktop-background-url"')
+    expect(html).toContain('https://example.com/desktop-bg.webp')
+    expect(html).toContain('name="mobile-background-url"')
+    expect(html).toContain('https://example.com/mobile-bg.webp')
     expect(html).not.toContain('token')
     expect(html).not.toContain('secret')
     expect(html).not.toContain('credential')

@@ -6,8 +6,11 @@ export interface AdminSettings {
   siteTitle: string
   siteSubtitle: string
   logoUrl: string
+  avatarUrl: string
   theme: AdminTheme
   backgroundUrl: string
+  desktopBackgroundUrl: string
+  mobileBackgroundUrl: string
   updatedAt?: string
 }
 

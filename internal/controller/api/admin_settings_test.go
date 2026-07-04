@@ -28,7 +28,7 @@ func TestPublicSettingsDefaultsAndReflectsAdminPatch(t *testing.T) {
 	if err := json.NewDecoder(bytes.NewBufferString(defaultRecorder.Body.String())).Decode(&defaults); err != nil {
 		t.Fatalf("decode default settings: %v", err)
 	}
-	if defaults.SiteTitle != "Zeno" || defaults.LogoURL != "/assets/logo/id.png" || defaults.Theme != "system" {
+	if defaults.SiteTitle != "Zeno" || defaults.LogoURL != "/assets/logo/id.png" || defaults.AvatarURL != "/assets/logo/id.png" || defaults.Theme != "system" || defaults.DesktopBackgroundURL != "" || defaults.MobileBackgroundURL != "" {
 		t.Fatalf("default settings = %+v, want Zeno defaults", defaults)
 	}
 	assertNoSensitiveSettingsLeak(t, defaultRecorder.Body.String())
@@ -38,8 +38,11 @@ func TestPublicSettingsDefaultsAndReflectsAdminPatch(t *testing.T) {
 		"site_title": "  水饺监控  ",
 		"site_subtitle": "  VPS 状态总览  ",
 		"logo_url": "/assets/logo/custom.png",
+		"avatar_url": "/assets/avatar/custom.webp",
 		"theme": "dark",
-		"background_url": "https://example.com/bg.webp"
+		"background_url": "https://example.com/legacy-bg.webp",
+		"desktop_background_url": "https://example.com/desktop-bg.webp",
+		"mobile_background_url": "https://example.com/mobile-bg.webp"
 	}`))
 	patchRequest.Header.Set("X-Admin-Token", "admin-pass")
 	handler.ServeHTTP(patchRecorder, patchRequest)
@@ -53,7 +56,7 @@ func TestPublicSettingsDefaultsAndReflectsAdminPatch(t *testing.T) {
 	if err := json.NewDecoder(bytes.NewBufferString(patchRecorder.Body.String())).Decode(&patchResponse); err != nil {
 		t.Fatalf("decode patched settings: %v", err)
 	}
-	if patchResponse.Settings.SiteTitle != "水饺监控" || patchResponse.Settings.SiteSubtitle != "VPS 状态总览" || patchResponse.Settings.LogoURL != "/assets/logo/custom.png" || patchResponse.Settings.Theme != "dark" || patchResponse.Settings.BackgroundURL != "https://example.com/bg.webp" {
+	if patchResponse.Settings.SiteTitle != "水饺监控" || patchResponse.Settings.SiteSubtitle != "VPS 状态总览" || patchResponse.Settings.LogoURL != "/assets/logo/custom.png" || patchResponse.Settings.AvatarURL != "/assets/avatar/custom.webp" || patchResponse.Settings.Theme != "dark" || patchResponse.Settings.BackgroundURL != "https://example.com/desktop-bg.webp" || patchResponse.Settings.DesktopBackgroundURL != "https://example.com/desktop-bg.webp" || patchResponse.Settings.MobileBackgroundURL != "https://example.com/mobile-bg.webp" {
 		t.Fatalf("patched settings = %+v, want trimmed persisted settings", patchResponse.Settings)
 	}
 
@@ -62,7 +65,7 @@ func TestPublicSettingsDefaultsAndReflectsAdminPatch(t *testing.T) {
 	if publicRecorder.Code != http.StatusOK {
 		t.Fatalf("public settings after patch status = %d, want 200; body=%s", publicRecorder.Code, publicRecorder.Body.String())
 	}
-	if !strings.Contains(publicRecorder.Body.String(), `"site_title":"水饺监控"`) || !strings.Contains(publicRecorder.Body.String(), `"background_url":"https://example.com/bg.webp"`) {
+	if !strings.Contains(publicRecorder.Body.String(), `"site_title":"水饺监控"`) || !strings.Contains(publicRecorder.Body.String(), `"logo_url":"/assets/logo/custom.png"`) || !strings.Contains(publicRecorder.Body.String(), `"avatar_url":"/assets/avatar/custom.webp"`) || !strings.Contains(publicRecorder.Body.String(), `"desktop_background_url":"https://example.com/desktop-bg.webp"`) || !strings.Contains(publicRecorder.Body.String(), `"mobile_background_url":"https://example.com/mobile-bg.webp"`) {
 		t.Fatalf("public settings after patch did not reflect admin update: %s", publicRecorder.Body.String())
 	}
 }
@@ -89,7 +92,10 @@ func TestAdminSettingsRequiresTokenAndRejectsInvalidValues(t *testing.T) {
 		{name: "blank site title", body: `{"site_title":"   "}`},
 		{name: "unsupported theme", body: `{"theme":"neon"}`},
 		{name: "javascript logo", body: `{"logo_url":"javascript:alert(1)"}`},
+		{name: "javascript avatar", body: `{"avatar_url":"javascript:alert(1)"}`},
 		{name: "javascript background", body: `{"background_url":"data:text/html,<script>alert(1)</script>"}`},
+		{name: "javascript desktop background", body: `{"desktop_background_url":"data:text/html,<script>alert(1)</script>"}`},
+		{name: "javascript mobile background", body: `{"mobile_background_url":"//evil.example/bg.webp"}`},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

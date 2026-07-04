@@ -107,29 +107,38 @@ type AdminMaintenanceCleanupRequest struct {
 }
 
 type SiteSettings struct {
-	SiteTitle     string `json:"site_title"`
-	SiteSubtitle  string `json:"site_subtitle"`
-	LogoURL       string `json:"logo_url"`
-	Theme         string `json:"theme"`
-	BackgroundURL string `json:"background_url"`
-	UpdatedAt     string `json:"updated_at,omitempty"`
+	SiteTitle            string `json:"site_title"`
+	SiteSubtitle         string `json:"site_subtitle"`
+	LogoURL              string `json:"logo_url"`
+	AvatarURL            string `json:"avatar_url"`
+	Theme                string `json:"theme"`
+	BackgroundURL        string `json:"background_url"`
+	DesktopBackgroundURL string `json:"desktop_background_url"`
+	MobileBackgroundURL  string `json:"mobile_background_url"`
+	UpdatedAt            string `json:"updated_at,omitempty"`
 }
 
 type AdminSettingsUpdateRequest struct {
-	SiteTitle     *string `json:"site_title,omitempty"`
-	SiteSubtitle  *string `json:"site_subtitle,omitempty"`
-	LogoURL       *string `json:"logo_url,omitempty"`
-	Theme         *string `json:"theme,omitempty"`
-	BackgroundURL *string `json:"background_url,omitempty"`
+	SiteTitle            *string `json:"site_title,omitempty"`
+	SiteSubtitle         *string `json:"site_subtitle,omitempty"`
+	LogoURL              *string `json:"logo_url,omitempty"`
+	AvatarURL            *string `json:"avatar_url,omitempty"`
+	Theme                *string `json:"theme,omitempty"`
+	BackgroundURL        *string `json:"background_url,omitempty"`
+	DesktopBackgroundURL *string `json:"desktop_background_url,omitempty"`
+	MobileBackgroundURL  *string `json:"mobile_background_url,omitempty"`
 }
 
 func defaultSiteSettings() SiteSettings {
 	return SiteSettings{
-		SiteTitle:     "Zeno",
-		SiteSubtitle:  "服务器运行概览",
-		LogoURL:       "/assets/logo/id.png",
-		Theme:         "system",
-		BackgroundURL: "",
+		SiteTitle:            "Zeno",
+		SiteSubtitle:         "服务器运行概览",
+		LogoURL:              "/assets/logo/id.png",
+		AvatarURL:            "/assets/logo/id.png",
+		Theme:                "system",
+		BackgroundURL:        "",
+		DesktopBackgroundURL: "",
+		MobileBackgroundURL:  "",
 	}
 }
 
@@ -159,6 +168,14 @@ func (request *AdminSettingsUpdateRequest) normalize() error {
 		}
 		request.LogoURL = &trimmed
 	}
+	if request.AvatarURL != nil {
+		changed = true
+		trimmed := strings.TrimSpace(*request.AvatarURL)
+		if trimmed == "" || !validSettingsAssetURL(trimmed) {
+			return errInvalidAdminSettingsUpdate
+		}
+		request.AvatarURL = &trimmed
+	}
 	if request.Theme != nil {
 		changed = true
 		trimmed := strings.ToLower(strings.TrimSpace(*request.Theme))
@@ -174,6 +191,22 @@ func (request *AdminSettingsUpdateRequest) normalize() error {
 			return errInvalidAdminSettingsUpdate
 		}
 		request.BackgroundURL = &trimmed
+	}
+	if request.DesktopBackgroundURL != nil {
+		changed = true
+		trimmed := strings.TrimSpace(*request.DesktopBackgroundURL)
+		if trimmed != "" && !validSettingsAssetURL(trimmed) {
+			return errInvalidAdminSettingsUpdate
+		}
+		request.DesktopBackgroundURL = &trimmed
+	}
+	if request.MobileBackgroundURL != nil {
+		changed = true
+		trimmed := strings.TrimSpace(*request.MobileBackgroundURL)
+		if trimmed != "" && !validSettingsAssetURL(trimmed) {
+			return errInvalidAdminSettingsUpdate
+		}
+		request.MobileBackgroundURL = &trimmed
 	}
 	if !changed {
 		return errInvalidAdminSettingsUpdate

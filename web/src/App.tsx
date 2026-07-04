@@ -57,8 +57,11 @@ const defaultSettings: AdminSettings = {
   siteTitle: 'Zeno',
   siteSubtitle: '服务器运行概览',
   logoUrl: '/assets/logo/id.png',
+  avatarUrl: '/assets/logo/id.png',
   theme: 'system',
   backgroundUrl: '',
+  desktopBackgroundUrl: '',
+  mobileBackgroundUrl: '',
 }
 
 const emptyAdminMaintenance: AdminMaintenance = {
@@ -76,14 +79,20 @@ const emptyAdminMaintenance: AdminMaintenance = {
   },
 }
 
+function backgroundImageValue(url: string): string {
+  return `linear-gradient(rgba(24, 21, 18, 0.78), rgba(24, 21, 18, 0.78)), url("${url.replaceAll('"', '%22')}")`
+}
+
 export function shellStyleForSettings(settings: AdminSettings): CSSProperties | undefined {
-  const backgroundUrl = settings.backgroundUrl.trim()
-  if (backgroundUrl === '') return undefined
+  const desktopBackgroundUrl = (settings.desktopBackgroundUrl || settings.backgroundUrl).trim()
+  const mobileBackgroundUrl = settings.mobileBackgroundUrl.trim()
+  if (desktopBackgroundUrl === '' && mobileBackgroundUrl === '') return undefined
   return {
-    backgroundImage: `linear-gradient(rgba(24, 21, 18, 0.78), rgba(24, 21, 18, 0.78)), url("${backgroundUrl.replaceAll('"', '%22')}")`,
+    '--zeno-desktop-background-image': desktopBackgroundUrl === '' ? 'none' : backgroundImageValue(desktopBackgroundUrl),
+    '--zeno-mobile-background-image': mobileBackgroundUrl === '' ? (desktopBackgroundUrl === '' ? 'none' : backgroundImageValue(desktopBackgroundUrl)) : backgroundImageValue(mobileBackgroundUrl),
     backgroundSize: 'cover',
     backgroundAttachment: 'fixed',
-  }
+  } as CSSProperties
 }
 
 export function reconcileAlertRuleStates(updatedRule: AdminAlertRule, states: AdminAlertRuleState[]): AdminAlertRuleState[] {
@@ -637,7 +646,7 @@ function DashboardHeader({ settings = defaultSettings, onHome, onAdmin, adminLab
   return (
     <header className="kulin-nav">
       <button className="brand" type="button" onClick={onHome}>
-        <span className="brand-logo"><img src={settings.logoUrl || defaultSettings.logoUrl} alt={`${settings.siteTitle || 'Zeno'} logo`} /></span>
+        <span className="brand-logo"><img src={settings.avatarUrl || settings.logoUrl || defaultSettings.avatarUrl} alt={`${settings.siteTitle || 'Zeno'} avatar`} /></span>
         <span>{settings.siteTitle || 'Zeno'}</span>
       </button>
       <nav className="nav-actions" aria-label="dashboard actions">
@@ -930,8 +939,11 @@ function AdminSettingsSection({ settings, onUpdate }: { settings: AdminSettings;
       siteTitle: String(formData.get('site-title') ?? '').trim(),
       siteSubtitle: String(formData.get('site-subtitle') ?? '').trim(),
       logoUrl: String(formData.get('logo-url') ?? '').trim(),
+      avatarUrl: String(formData.get('avatar-url') ?? '').trim(),
       theme,
-      backgroundUrl: String(formData.get('background-url') ?? '').trim(),
+      backgroundUrl: String(formData.get('desktop-background-url') ?? '').trim(),
+      desktopBackgroundUrl: String(formData.get('desktop-background-url') ?? '').trim(),
+      mobileBackgroundUrl: String(formData.get('mobile-background-url') ?? '').trim(),
     })
   }
 
@@ -953,8 +965,12 @@ function AdminSettingsSection({ settings, onUpdate }: { settings: AdminSettings;
           <input name="site-subtitle" autoComplete="off" defaultValue={settings.siteSubtitle} />
         </label>
         <label>
-          <span>Logo URL</span>
+          <span>Logo URL（兼容旧字段）</span>
           <input name="logo-url" autoComplete="off" defaultValue={settings.logoUrl} />
+        </label>
+        <label>
+          <span>头像 URL</span>
+          <input name="avatar-url" autoComplete="off" defaultValue={settings.avatarUrl || settings.logoUrl} />
         </label>
         <label>
           <span>主题</span>
@@ -965,8 +981,12 @@ function AdminSettingsSection({ settings, onUpdate }: { settings: AdminSettings;
           </select>
         </label>
         <label>
-          <span>背景图 URL</span>
-          <input name="background-url" autoComplete="off" defaultValue={settings.backgroundUrl} placeholder="可留空" />
+          <span>电脑端背景图 URL</span>
+          <input name="desktop-background-url" autoComplete="off" defaultValue={settings.desktopBackgroundUrl || settings.backgroundUrl} placeholder="可留空" />
+        </label>
+        <label>
+          <span>手机端背景图 URL</span>
+          <input name="mobile-background-url" autoComplete="off" defaultValue={settings.mobileBackgroundUrl} placeholder="可留空，默认跟随电脑端" />
         </label>
         {settings.updatedAt && <p className="admin-overview-note">最近更新：{formatAdminDate(settings.updatedAt)}</p>}
         <button type="submit">保存设置</button>
