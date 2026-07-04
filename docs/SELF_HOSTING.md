@@ -57,19 +57,21 @@ sudo scripts/deploy-local-release.sh \
 
 ## 3. 登录 Admin
 
-Admin token 默认保存在 Controller 机器：
+首次部署的 bootstrap Admin 密码默认保存在 Controller 机器：
 
 ```bash
 sudo cat /opt/zeno/data/admin-token
 ```
 
+打开 `/dashboard`，使用账号 `admin` 和上面的 bootstrap 密码登录。登录后建议在后台右上角“修改密码”，修改后旧 bootstrap token 不再作为后台 API 凭据，系统会使用数据库里的新密码和 session。
+
 Admin API 只接受请求头：
 
 ```http
-X-Admin-Token: <admin-token>
+X-Admin-Token: <session-token>
 ```
 
-不要把 Admin token 放在 URL query string 里。
+不要把 Admin/session token 放在 URL query string 里。
 
 ## 4. 配置 Agent 接入 URL
 

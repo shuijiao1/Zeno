@@ -37,6 +37,77 @@ func TestAdminNodesRequiresAdminToken(t *testing.T) {
 	}
 }
 
+func TestAdminLoginCreatesSessionAndPasswordUpdateInvalidatesOldPassword(t *testing.T) {
+	store, err := OpenSQLiteStore(filepath.Join(t.TempDir(), "zeno.db"))
+	if err != nil {
+		t.Fatalf("open sqlite store: %v", err)
+	}
+	defer store.Close()
+	if err := store.SeedPreviewData(context.Background(), PreviewSeedOptions{NodeID: "hytron", DisplayName: "Hytron", CountryCode: "HK", AgentToken: "test-agent-token"}); err != nil {
+		t.Fatalf("seed preview data: %v", err)
+	}
+	handler := NewHandler(HandlerOptions{Store: store, AdminTokenHash: HashAdminToken("admin-pass")})
+
+	loginRecorder := httptest.NewRecorder()
+	loginRequest := httptest.NewRequest(http.MethodPost, "/api/admin/v1/login", strings.NewReader(`{"username":"admin","password":"admin-pass"}`))
+	handler.ServeHTTP(loginRecorder, loginRequest)
+	if loginRecorder.Code != http.StatusOK {
+		t.Fatalf("login status = %d, want 200; body=%s", loginRecorder.Code, loginRecorder.Body.String())
+	}
+	var loginResponse AdminLoginResponse
+	if err := json.NewDecoder(loginRecorder.Body).Decode(&loginResponse); err != nil {
+		t.Fatalf("decode login: %v", err)
+	}
+	if loginResponse.Username != "admin" || loginResponse.Token == "" || loginResponse.Token == "admin-pass" {
+		t.Fatalf("login response = %+v, want opaque admin session", loginResponse)
+	}
+
+	listRecorder := httptest.NewRecorder()
+	listRequest := httptest.NewRequest(http.MethodGet, "/api/admin/v1/nodes", nil)
+	listRequest.Header.Set("X-Admin-Token", loginResponse.Token)
+	handler.ServeHTTP(listRecorder, listRequest)
+	if listRecorder.Code != http.StatusOK {
+		t.Fatalf("session list status = %d, want 200; body=%s", listRecorder.Code, listRecorder.Body.String())
+	}
+
+	passwordRecorder := httptest.NewRecorder()
+	passwordRequest := httptest.NewRequest(http.MethodPost, "/api/admin/v1/password", strings.NewReader(`{"current_password":"admin-pass","new_password":"new-admin-pass"}`))
+	passwordRequest.Header.Set("X-Admin-Token", loginResponse.Token)
+	handler.ServeHTTP(passwordRecorder, passwordRequest)
+	if passwordRecorder.Code != http.StatusOK {
+		t.Fatalf("password status = %d, want 200; body=%s", passwordRecorder.Code, passwordRecorder.Body.String())
+	}
+	var passwordResponse AdminLoginResponse
+	if err := json.NewDecoder(passwordRecorder.Body).Decode(&passwordResponse); err != nil {
+		t.Fatalf("decode password response: %v", err)
+	}
+	if passwordResponse.Token == "" || passwordResponse.Token == loginResponse.Token {
+		t.Fatalf("password response = %+v, want rotated session", passwordResponse)
+	}
+
+	oldTokenRecorder := httptest.NewRecorder()
+	oldTokenRequest := httptest.NewRequest(http.MethodGet, "/api/admin/v1/nodes", nil)
+	oldTokenRequest.Header.Set("X-Admin-Token", "admin-pass")
+	handler.ServeHTTP(oldTokenRecorder, oldTokenRequest)
+	if oldTokenRecorder.Code != http.StatusUnauthorized {
+		t.Fatalf("old bootstrap token status = %d, want 401", oldTokenRecorder.Code)
+	}
+
+	oldLoginRecorder := httptest.NewRecorder()
+	oldLoginRequest := httptest.NewRequest(http.MethodPost, "/api/admin/v1/login", strings.NewReader(`{"username":"admin","password":"admin-pass"}`))
+	handler.ServeHTTP(oldLoginRecorder, oldLoginRequest)
+	if oldLoginRecorder.Code != http.StatusUnauthorized {
+		t.Fatalf("old password status = %d, want 401", oldLoginRecorder.Code)
+	}
+
+	newLoginRecorder := httptest.NewRecorder()
+	newLoginRequest := httptest.NewRequest(http.MethodPost, "/api/admin/v1/login", strings.NewReader(`{"username":"admin","password":"new-admin-pass"}`))
+	handler.ServeHTTP(newLoginRecorder, newLoginRequest)
+	if newLoginRecorder.Code != http.StatusOK {
+		t.Fatalf("new password status = %d, want 200; body=%s", newLoginRecorder.Code, newLoginRecorder.Body.String())
+	}
+}
+
 func TestAdminNodesListsEnabledAndDisabledNodesWithoutTokenHashes(t *testing.T) {
 	store, err := OpenSQLiteStore(filepath.Join(t.TempDir(), "zeno.db"))
 	if err != nil {

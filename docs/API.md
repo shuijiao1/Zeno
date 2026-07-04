@@ -19,6 +19,61 @@ X-Agent-Version: <version>
 - 认证失败返回 401。
 - disabled node 返回 403。
 
+Admin 登录：
+
+- `POST /api/admin/v1/login` 使用单管理员账号 `admin` + 密码换取 opaque session token。
+- 后续 Admin API 继续通过 `X-Admin-Token: <session-token>` 调用；兼容首次部署时的 bootstrap admin token。
+- `POST /api/admin/v1/password` 修改密码后会轮换 session，并让旧 bootstrap token 不再作为后台 API 凭据使用。
+- `POST /api/admin/v1/logout` 注销当前 session。
+- 登录失败有内存限速，避免暴力尝试。
+
+### POST /api/admin/v1/login
+
+```json
+{
+  "username": "admin",
+  "password": "current-password"
+}
+```
+
+响应：
+
+```json
+{
+  "username": "admin",
+  "token": "opaque-session-token"
+}
+```
+
+### POST /api/admin/v1/password
+
+请求头：
+
+```http
+X-Admin-Token: <session-token>
+```
+
+请求：
+
+```json
+{
+  "current_password": "current-password",
+  "new_password": "new-password"
+}
+```
+
+响应同登录，会返回新的 session token。
+
+### POST /api/admin/v1/logout
+
+请求头：
+
+```http
+X-Admin-Token: <session-token>
+```
+
+成功返回 `204`。
+
 ## Agent API
 
 ### POST /api/agent/v1/heartbeat

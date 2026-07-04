@@ -82,6 +82,7 @@ token 文件处理规则：
 - 已存在且非空：保留原值，只修正权限为 `0600`。
 - 不存在或为空：生成随机值。
 - token 不输出到终端或日志。
+- `admin-token` 是首次登录 bootstrap 密码；后台“修改密码”后，Controller 会使用 SQLite 中的 `admin_password_hash` 和 session，旧 bootstrap token 不再作为后台 API 凭据。
 
 ## 安全更新顺序
 

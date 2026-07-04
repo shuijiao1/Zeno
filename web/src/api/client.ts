@@ -231,6 +231,16 @@ export interface ApiAdminSettingsResponse {
   settings: ApiSettings
 }
 
+interface ApiAdminLoginResponse {
+  username: string
+  token: string
+}
+
+export interface AdminLoginData {
+  username: string
+  token: string
+}
+
 export interface ApiSummaryResponse {
   nodes: ApiNode[] | null
   services?: ApiServiceTarget[] | null
@@ -494,6 +504,48 @@ export async function fetchNodeState(nodeId: string, range = '1h'): Promise<Node
     throw new Error(`state request failed: ${response.status}`)
   }
   return normalizeNodeState(await response.json() as ApiStateResponse)
+}
+
+export async function loginAdmin(username: string, password: string): Promise<AdminLoginData> {
+  const response = await fetch('/api/admin/v1/login', {
+    method: 'POST',
+    headers: {
+      Accept: 'application/json',
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ username, password }),
+  })
+  if (!response.ok) {
+    throw new Error(response.status === 429 ? '登录失败次数过多，请稍后再试。' : `admin login failed: ${response.status}`)
+  }
+  const data = await response.json() as ApiAdminLoginResponse
+  return { username: data.username, token: data.token }
+}
+
+export async function logoutAdmin(adminToken: string): Promise<void> {
+  await fetch('/api/admin/v1/logout', {
+    method: 'POST',
+    headers: {
+      'X-Admin-Token': adminToken,
+    },
+  })
+}
+
+export async function updateAdminPassword(adminToken: string, currentPassword: string, newPassword: string): Promise<AdminLoginData> {
+  const response = await fetch('/api/admin/v1/password', {
+    method: 'POST',
+    headers: {
+      Accept: 'application/json',
+      'Content-Type': 'application/json',
+      'X-Admin-Token': adminToken,
+    },
+    body: JSON.stringify({ current_password: currentPassword, new_password: newPassword }),
+  })
+  if (!response.ok) {
+    throw new Error(`admin password update failed: ${response.status}`)
+  }
+  const data = await response.json() as ApiAdminLoginResponse
+  return { username: data.username, token: data.token }
 }
 
 export async function fetchAdminSettings(adminToken: string): Promise<AdminSettings> {

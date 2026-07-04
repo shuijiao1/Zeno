@@ -57,13 +57,21 @@ Vite + React + TypeScript。
 
 当前页面：
 
-1. 前台主页：服务器卡片、监控服务状态、流量/资源概览、延迟摘要、外观设置应用。
-2. 节点详情页：延迟目标按钮、延迟图、资源历史图。
+1. 前台主页：服务器卡片、流量/资源概览、延迟摘要、外观设置应用；不单独展示监控服务列表。
+2. 节点详情页：延迟目标按钮、延迟图、资源历史图；资源历史包含 CPU、内存、磁盘、网络速率、系统负载、Swap、进程/TCP 连接和网络累计。
 3. 服务详情页：同一监控服务在所有节点上的历史延迟曲线。
-4. Admin 后台：服务器、延迟监控、通知、当前异常、外观设置；异常和发送明细都集中在通知页。
+4. Admin 后台：单管理员登录、改密码、退出登录、服务器、延迟监控、通知、当前异常、外观设置；异常和发送明细都集中在通知页。
 5. Admin 管理动作：服务器创建/编辑/安装命令复制、Agent 接入 URL、目标创建/编辑/删除/排序/分配、通知渠道/类型/测试发送/发送记录、通知类型作用范围。
 
-UI 规则：保持已确认主页卡片、详情页密度和 Admin 分区结构，不因数据/API 改动顺手重设计。
+UI 规则：保持已确认主页卡片、详情页密度和 Admin 分区结构；后台参考 Kulin 的清爽布局，但使用 Zeno 自己的视觉语言，不恢复旧介绍区。
+
+## Admin 认证
+
+- 单管理员账号固定为 `admin`。
+- 首次部署未设置 `admin_password_hash` 时，bootstrap admin token 可作为登录密码；修改密码后以 DB 中 `admin_password_hash` 为准，旧 bootstrap token 不再作为后台 API 凭据。
+- 登录成功返回 opaque session token，后续 Admin API 仍用 `X-Admin-Token`，但值是 session token。
+- 修改密码会轮换 session 并清空旧 session；退出登录删除当前 session。
+- 登录失败做内存限速，避免暴力尝试。
 
 ## 在线状态计算
 
@@ -111,7 +119,7 @@ delta_out = current_out_total - last_out_total
 
 每轮保留 summary + samples：
 
-- summary 用于快速首页、服务状态列表和图表。
+- summary 用于快速首页、服务详情定位和图表。
 - samples 保留 raw ping/tcp/http 结果，便于后续扩展抖动、尖峰、loss 细节。
 
 目标类型：

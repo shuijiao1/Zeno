@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { createAdminNode, createAdminNotificationChannel, createAdminProbeTarget, deleteAdminNotificationChannel, deleteAdminProbeTarget, fetchAdminAlertRules, fetchAdminAlertRuleStates, fetchAdminNodes, fetchAdminNotificationChannels, fetchAdminNotificationDeliveries, fetchAdminNotificationTypes, fetchAdminProbeTargets, fetchAdminSettings, fetchPublicSettings, fetchServiceLatency, normalizeAdminAlertRules, normalizeAdminAlertRuleStates, normalizeAdminNodes, normalizeAdminNotificationChannels, normalizeAdminNotificationDeliveries, normalizeAdminNotificationTypes, normalizeAdminProbeTargets, normalizeSettings, normalizeNodeLatency, normalizeNodeState, normalizeServiceLatency, normalizeSummary, requestAdminNodeInstallCommand, testAdminNotificationChannel, updateAdminAlertRule, updateAdminNode, updateAdminNotificationChannel, updateAdminNotificationType, updateAdminProbeTarget, updateAdminSettings } from './client'
+import { createAdminNode, createAdminNotificationChannel, createAdminProbeTarget, deleteAdminNotificationChannel, deleteAdminProbeTarget, fetchAdminAlertRules, fetchAdminAlertRuleStates, fetchAdminNodes, fetchAdminNotificationChannels, fetchAdminNotificationDeliveries, fetchAdminNotificationTypes, fetchAdminProbeTargets, fetchAdminSettings, fetchPublicSettings, fetchServiceLatency, loginAdmin, logoutAdmin, normalizeAdminAlertRules, normalizeAdminAlertRuleStates, normalizeAdminNodes, normalizeAdminNotificationChannels, normalizeAdminNotificationDeliveries, normalizeAdminNotificationTypes, normalizeAdminProbeTargets, normalizeSettings, normalizeNodeLatency, normalizeNodeState, normalizeServiceLatency, normalizeSummary, requestAdminNodeInstallCommand, testAdminNotificationChannel, updateAdminAlertRule, updateAdminNode, updateAdminNotificationChannel, updateAdminNotificationType, updateAdminPassword, updateAdminProbeTarget, updateAdminSettings } from './client'
 
 describe('normalizeSummary', () => {
   it('maps controller snake_case JSON into frontend camelCase models', () => {
@@ -441,6 +441,44 @@ describe('fetchAdminProbeTargets', () => {
         Accept: 'application/json',
         'X-Admin-Token': 'admin-pass',
       },
+    })
+  })
+})
+
+describe('admin auth client', () => {
+  const originalFetch = globalThis.fetch
+
+  afterEach(() => {
+    globalThis.fetch = originalFetch
+    vi.restoreAllMocks()
+  })
+
+  it('logs in, logs out, and changes the admin password through dedicated endpoints', async () => {
+    const fetchMock = vi.fn(async (url: string | URL | Request) => {
+      const textUrl = String(url)
+      if (textUrl.endsWith('/login')) return new Response(JSON.stringify({ username: 'admin', token: 'session-token' }), { status: 200, headers: { 'Content-Type': 'application/json' } })
+      if (textUrl.endsWith('/password')) return new Response(JSON.stringify({ username: 'admin', token: 'rotated-session-token' }), { status: 200, headers: { 'Content-Type': 'application/json' } })
+      return new Response(null, { status: 204 })
+    })
+    globalThis.fetch = fetchMock as unknown as typeof fetch
+
+    await expect(loginAdmin('admin', 'admin-pass')).resolves.toEqual({ username: 'admin', token: 'session-token' })
+    await expect(updateAdminPassword('session-token', 'admin-pass', 'new-admin-pass')).resolves.toEqual({ username: 'admin', token: 'rotated-session-token' })
+    await expect(logoutAdmin('rotated-session-token')).resolves.toBeUndefined()
+
+    expect(fetchMock).toHaveBeenNthCalledWith(1, '/api/admin/v1/login', {
+      method: 'POST',
+      headers: { Accept: 'application/json', 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username: 'admin', password: 'admin-pass' }),
+    })
+    expect(fetchMock).toHaveBeenNthCalledWith(2, '/api/admin/v1/password', {
+      method: 'POST',
+      headers: { Accept: 'application/json', 'Content-Type': 'application/json', 'X-Admin-Token': 'session-token' },
+      body: JSON.stringify({ current_password: 'admin-pass', new_password: 'new-admin-pass' }),
+    })
+    expect(fetchMock).toHaveBeenNthCalledWith(3, '/api/admin/v1/logout', {
+      method: 'POST',
+      headers: { 'X-Admin-Token': 'rotated-session-token' },
     })
   })
 })

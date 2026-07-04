@@ -33,6 +33,106 @@ type adminStore interface {
 	UpdateAdminAlertRule(ctx context.Context, ruleID string, update AdminAlertRuleUpdateRequest) (AdminAlertRule, error)
 }
 
+type adminAuthStore interface {
+	AdminLogin(ctx context.Context, username, password, fallbackHash string) (AdminSession, error)
+	AuthorizeAdminSession(ctx context.Context, token string) (bool, error)
+	RevokeAdminSession(ctx context.Context, token string) error
+	UpdateAdminPassword(ctx context.Context, currentPassword, newPassword, fallbackHash string) (AdminSession, error)
+	AdminPasswordConfigured(ctx context.Context) (bool, error)
+}
+
+func (h *handler) handleAdminLogin(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+	if h.adminTokenHash == "" {
+		writeError(w, http.StatusNotFound, "not found")
+		return
+	}
+	var request AdminLoginRequest
+	decoder := json.NewDecoder(r.Body)
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&request); err != nil {
+		writeError(w, http.StatusBadRequest, "bad request")
+		return
+	}
+	key := adminLoginRateLimitKey(r, request.Username)
+	if h.loginLimiter != nil && !h.loginLimiter.allow(key) {
+		writeError(w, http.StatusTooManyRequests, "too many attempts")
+		return
+	}
+	if authStore, ok := h.store.(adminAuthStore); ok {
+		session, err := authStore.AdminLogin(r.Context(), request.Username, request.Password, h.adminTokenHash)
+		if err != nil {
+			if h.loginLimiter != nil {
+				h.loginLimiter.recordFailure(key)
+			}
+			writeError(w, http.StatusUnauthorized, "unauthorized")
+			return
+		}
+		if h.loginLimiter != nil {
+			h.loginLimiter.recordSuccess(key)
+		}
+		writeJSON(w, http.StatusOK, AdminLoginResponse{Username: session.Username, Token: session.Token})
+		return
+	}
+	if strings.TrimSpace(request.Username) != "admin" || !adminTokenMatches(h.adminTokenHash, request.Password) {
+		if h.loginLimiter != nil {
+			h.loginLimiter.recordFailure(key)
+		}
+		writeError(w, http.StatusUnauthorized, "unauthorized")
+		return
+	}
+	if h.loginLimiter != nil {
+		h.loginLimiter.recordSuccess(key)
+	}
+	writeJSON(w, http.StatusOK, AdminLoginResponse{Username: "admin", Token: strings.TrimSpace(request.Password)})
+}
+
+func (h *handler) handleAdminLogout(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+	token := strings.TrimSpace(r.Header.Get("X-Admin-Token"))
+	if authStore, ok := h.store.(adminAuthStore); ok {
+		if err := authStore.RevokeAdminSession(r.Context(), token); err != nil {
+			writeError(w, http.StatusInternalServerError, "internal error")
+			return
+		}
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func (h *handler) handleAdminPassword(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+	if _, ok := h.authorizeAdminRequest(w, r); !ok {
+		return
+	}
+	authStore, ok := h.store.(adminAuthStore)
+	if !ok {
+		writeError(w, http.StatusNotFound, "not found")
+		return
+	}
+	var request AdminPasswordUpdateRequest
+	decoder := json.NewDecoder(r.Body)
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&request); err != nil {
+		writeError(w, http.StatusBadRequest, "bad request")
+		return
+	}
+	session, err := authStore.UpdateAdminPassword(r.Context(), request.CurrentPassword, request.NewPassword, h.adminTokenHash)
+	if err != nil {
+		writeAdminError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, AdminLoginResponse{Username: session.Username, Token: session.Token})
+}
+
 func (h *handler) handleAdminSettings(w http.ResponseWriter, r *http.Request) {
 	store, ok := h.authorizeAdminRequest(w, r)
 	if !ok {
@@ -239,6 +339,25 @@ func (h *handler) authorizeAdminRequest(w http.ResponseWriter, r *http.Request) 
 		return nil, false
 	}
 	provided := strings.TrimSpace(r.Header.Get("X-Admin-Token"))
+	if authStore, ok := h.store.(adminAuthStore); ok {
+		authorized, err := authStore.AuthorizeAdminSession(r.Context(), provided)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, "internal error")
+			return nil, false
+		}
+		if authorized {
+			return store, true
+		}
+		configured, err := authStore.AdminPasswordConfigured(r.Context())
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, "internal error")
+			return nil, false
+		}
+		if configured {
+			writeError(w, http.StatusUnauthorized, "unauthorized")
+			return nil, false
+		}
+	}
 	if !adminTokenMatches(h.adminTokenHash, provided) {
 		writeError(w, http.StatusUnauthorized, "unauthorized")
 		return nil, false
@@ -246,12 +365,20 @@ func (h *handler) authorizeAdminRequest(w http.ResponseWriter, r *http.Request) 
 	return store, true
 }
 
+func adminLoginRateLimitKey(r *http.Request, username string) string {
+	remote := strings.TrimSpace(r.RemoteAddr)
+	if host, _, ok := strings.Cut(remote, ":"); ok && host != "" {
+		remote = host
+	}
+	return strings.ToLower(remote + ":" + strings.TrimSpace(username))
+}
+
 func writeAdminError(w http.ResponseWriter, err error) {
 	if errors.Is(err, errNodeNotFound) || errors.Is(err, errProbeTargetNotFound) || errors.Is(err, errNotificationChannelNotFound) || errors.Is(err, errNotificationTypeNotFound) || errors.Is(err, errAlertRuleNotFound) {
 		writeError(w, http.StatusNotFound, "not found")
 		return
 	}
-	if errors.Is(err, errInvalidAdminSettingsUpdate) || errors.Is(err, errInvalidAdminNodeUpdate) || errors.Is(err, errInvalidAdminNodeCreate) || errors.Is(err, errInvalidAdminTargetWrite) || errors.Is(err, errInvalidAdminNotificationChannelWrite) || errors.Is(err, errInvalidAdminNotificationTypeWrite) || errors.Is(err, errInvalidAdminAlertRuleUpdate) {
+	if errors.Is(err, errInvalidAdminSettingsUpdate) || errors.Is(err, errInvalidAdminNodeUpdate) || errors.Is(err, errInvalidAdminNodeCreate) || errors.Is(err, errInvalidAdminTargetWrite) || errors.Is(err, errInvalidAdminNotificationChannelWrite) || errors.Is(err, errInvalidAdminNotificationTypeWrite) || errors.Is(err, errInvalidAdminAlertRuleUpdate) || errors.Is(err, errInvalidAdminPasswordUpdate) {
 		writeError(w, http.StatusBadRequest, "bad request")
 		return
 	}

@@ -1,7 +1,7 @@
 import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it } from 'vitest'
-import { AdminDashboard, HomeTopPanel, ServiceStatusPanel, reconcileAlertRuleStates, reconcileAlertRuleStatesForNode, shellStyleForSettings, validateAdminSettingsInput } from './App'
-import type { AdminAlertRule, AdminAlertRuleState, AdminNode, AdminNotificationChannel, AdminNotificationDelivery, AdminNotificationType, AdminProbeTarget, AdminSettings, ServiceTarget } from './types'
+import { AdminDashboard, HomeTopPanel, reconcileAlertRuleStates, reconcileAlertRuleStatesForNode, shellStyleForSettings, validateAdminSettingsInput } from './App'
+import type { AdminAlertRule, AdminAlertRuleState, AdminNode, AdminNotificationChannel, AdminNotificationDelivery, AdminNotificationType, AdminProbeTarget, AdminSettings } from './types'
 
 const overviewProps = {
   totalCount: 11,
@@ -103,11 +103,6 @@ const httpTarget: AdminProbeTarget = {
     { nodeId: 'hytron', nodeDisplayName: 'Hytron', enabled: true },
   ],
 }
-
-const serviceTargets: ServiceTarget[] = [
-  { id: 'google', name: 'Google', type: 'http_get', address: 'https://www.google.com/generate_204', assignedNodeCount: 10, reportingNodeCount: 10, medianMs: 1.2, lossPercent: 0, updatedAt: '2026-07-04T12:00:00Z' },
-  { id: 'telegram-dc5', name: 'Telegram DC5', type: 'tcping', address: '149.154.171.5', port: 443, assignedNodeCount: 10, reportingNodeCount: 8, medianMs: 34.5, lossPercent: 0.4, updatedAt: '2026-07-04T12:00:00Z' },
-]
 
 const telegramChannel: AdminNotificationChannel = {
   id: 'zeno-telegram',
@@ -232,8 +227,9 @@ function renderAdmin(section: 'nodes' | 'targets' | 'notifications' | 'settings'
         alertRules,
         alertRuleStates,
       }}
-      onAdminTokenSubmit={() => {}}
+      onAdminLogin={() => {}}
       onAdminTokenClear={() => {}}
+      onAdminPasswordUpdate={async () => {}}
       onAdminRefresh={() => {}}
       onAdminNodeCreate={() => {}}
       onAdminNodeUpdate={() => {}}
@@ -291,6 +287,7 @@ describe('HomeTopPanel', () => {
     expect(html.indexOf('Zeno')).toBeLessThan(html.indexOf('服务器运行概览'))
     expect(html).not.toContain('overview-card--combined')
     expect(html).not.toContain('overview-metric')
+    expect(html).not.toContain(['service', 'status', 'panel'].join('-'))
   })
 
   it('treats no-data nodes as not online in the summary copy', () => {
@@ -311,30 +308,15 @@ describe('HomeTopPanel', () => {
   })
 })
 
-describe('ServiceStatusPanel', () => {
-  it('renders public monitor service status cards', () => {
-    const html = renderToStaticMarkup(<ServiceStatusPanel services={serviceTargets} onOpen={() => {}} />)
-
-    expect(html).toContain('监控服务')
-    expect(html).toContain('2 个目标')
-    expect(html).toContain('Google')
-    expect(html).toContain('https://www.google.com/generate_204')
-    expect(html).toContain('1.20ms')
-    expect(html).toContain('10 / 10 节点上报')
-    expect(html).toContain('Telegram DC5')
-    expect(html).toContain('149.154.171.5:443')
-    expect(html).toContain('8 / 10 节点上报')
-  })
-})
-
 describe('AdminDashboard', () => {
   it('uses the same card shell and opens backend directly on the server list', () => {
     const html = renderAdmin()
 
     expect(html).toContain('home-top-card')
     expect(html).toContain('admin-panel')
-    expect(html).toContain('Zeno 后台')
-    expect(html).toContain('列表只保留关键字段')
+    expect(html).not.toContain(['Zeno', '后台'].join(' '))
+    expect(html).not.toContain('控' + '制台')
+    expect(html).not.toContain('列表只保留' + '关键字段')
     expect(html).toContain('admin-section-nav')
     expect(html).toContain('后台导航')
     expect(html).toContain('服务器')
@@ -342,6 +324,7 @@ describe('AdminDashboard', () => {
     expect(html).toContain('1 异常 / 2 类型')
     expect(html).toContain('设置')
     expect(html).toContain('通知')
+    expect(html).toContain('修改密码')
     expect(html).toContain('服务器列表')
     expect(html).toContain('Hytron')
     expect(html).not.toContain('admin-overview-panel')
@@ -493,8 +476,10 @@ describe('AdminDashboard', () => {
     expect(html).toContain('name="admin-username"')
     expect(html).toContain('name="admin-password"')
     expect(html).toContain('placeholder="admin"')
-    expect(html).toContain('默认账号：admin / admin')
-    expect(html).toContain('列表 / 弹窗编辑')
+    expect(html).toContain('后台登录')
+    expect(html).not.toContain('默认账号：' + 'admin / admin')
+    expect(html).not.toContain('列表 / 弹窗编辑')
+    expect(html).not.toContain('控' + '制台')
     expect(html).not.toContain('Admin Token')
   })
 

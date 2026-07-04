@@ -32,6 +32,21 @@ type AdminSettingsResponse struct {
 	Settings SiteSettings `json:"settings"`
 }
 
+type AdminLoginRequest struct {
+	Username string `json:"username"`
+	Password string `json:"password"`
+}
+
+type AdminLoginResponse struct {
+	Username string `json:"username"`
+	Token    string `json:"token"`
+}
+
+type AdminPasswordUpdateRequest struct {
+	CurrentPassword string `json:"current_password"`
+	NewPassword     string `json:"new_password"`
+}
+
 type SiteSettings struct {
 	SiteTitle            string `json:"site_title"`
 	SiteSubtitle         string `json:"site_subtitle"`

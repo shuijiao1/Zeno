@@ -29,10 +29,11 @@ Zeno 当前已经具备完整预览闭环：
 - Go Agent + systemd。
 - Public API 和 Admin API。
 - React 前台和后台。
-- Agent 主机状态、资源历史、月流量（含首页计费周期范围）、延迟/服务探测和服务多节点历史。
+- Agent 主机状态、完整资源历史（CPU/内存/磁盘/网络速率/负载/Swap/进程/TCP/网络累计）、月流量（含首页计费周期范围）、延迟/服务探测和服务多节点历史。
 - `tcping`、`ping`/ICMP、`http_get` 探针目标。
-- Public 首页监控服务状态和服务详情页。
-- Admin 服务器、服务器排序、Agent 安装命令复制、Agent 接入 URL、探针目标、探针目标排序、节点分配、通知、外观设置和当前异常；外观 / Agent 接入 URL 保存前会先校验格式。
+- Public 服务详情页；首页只保留服务器卡片和整体概览，不单独展示监控服务列表。
+- Admin 单管理员登录/改密码/退出登录、服务器、服务器排序、Agent 安装命令复制、Agent 接入 URL、探针目标、探针目标排序、节点分配、通知、外观设置和当前异常；外观 / Agent 接入 URL 保存前会先校验格式。
+- Admin 手机端按卡片化列表和双列导航展示，避免宽表格挤压。
 - Telegram-only 通知 dispatch、测试发送和 sanitized delivery history。
 - 服务器元数据：到期日、账单周期、显示顺序（后台可上移/下移/整理）、国家码/国旗、公网 IPv4、公网 IPv6，Agent 可自动识别公网 IP / GeoIP。
 - 通知类型触发条件支持按服务器范围生效。

@@ -7,6 +7,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
+	"time"
 )
 
 type HandlerOptions struct {
@@ -25,6 +27,63 @@ type handler struct {
 	agentBinaryPath    string
 	agentVersion       string
 	notificationSender notificationSender
+	loginLimiter       *adminLoginLimiter
+}
+
+type adminLoginLimiter struct {
+	mu       sync.Mutex
+	attempts map[string]adminLoginAttempt
+}
+
+type adminLoginAttempt struct {
+	Count       int
+	FirstSeenAt time.Time
+	LockedUntil time.Time
+}
+
+const (
+	adminLoginWindow       = 15 * time.Minute
+	adminLoginLockDuration = 10 * time.Minute
+	adminLoginMaxFailures  = 5
+)
+
+func newAdminLoginLimiter() *adminLoginLimiter {
+	return &adminLoginLimiter{attempts: map[string]adminLoginAttempt{}}
+}
+
+func (limiter *adminLoginLimiter) allow(key string) bool {
+	now := time.Now()
+	limiter.mu.Lock()
+	defer limiter.mu.Unlock()
+	attempt := limiter.attempts[key]
+	if !attempt.LockedUntil.IsZero() && now.Before(attempt.LockedUntil) {
+		return false
+	}
+	if !attempt.FirstSeenAt.IsZero() && now.Sub(attempt.FirstSeenAt) > adminLoginWindow {
+		delete(limiter.attempts, key)
+	}
+	return true
+}
+
+func (limiter *adminLoginLimiter) recordFailure(key string) {
+	now := time.Now()
+	limiter.mu.Lock()
+	defer limiter.mu.Unlock()
+	attempt := limiter.attempts[key]
+	if attempt.FirstSeenAt.IsZero() || now.Sub(attempt.FirstSeenAt) > adminLoginWindow {
+		attempt = adminLoginAttempt{FirstSeenAt: now}
+	}
+	attempt.Count++
+	if attempt.Count >= adminLoginMaxFailures {
+		attempt.LockedUntil = now.Add(adminLoginLockDuration)
+	}
+	limiter.attempts[key] = attempt
+}
+
+func (limiter *adminLoginLimiter) recordSuccess(key string) {
+	limiter.mu.Lock()
+	defer limiter.mu.Unlock()
+	delete(limiter.attempts, key)
 }
 
 func NewHandler(options ...HandlerOptions) http.Handler {
@@ -42,6 +101,7 @@ func NewHandler(options ...HandlerOptions) http.Handler {
 		agentBinaryPath:    opts.AgentBinaryPath,
 		agentVersion:       opts.AgentVersion,
 		notificationSender: newHTTPNotificationSender(opts.NotificationClient, opts.TelegramAPIBaseURL),
+		loginLimiter:       newAdminLoginLimiter(),
 	}
 
 	mux := http.NewServeMux()
@@ -51,6 +111,9 @@ func NewHandler(options ...HandlerOptions) http.Handler {
 	mux.HandleFunc("/api/public/v1/summary", h.handleSummary)
 	mux.HandleFunc("/api/public/v1/services/", h.handlePublicServiceResource)
 	mux.HandleFunc("/api/public/v1/nodes/", h.handlePublicNodeResource)
+	mux.HandleFunc("/api/admin/v1/login", h.handleAdminLogin)
+	mux.HandleFunc("/api/admin/v1/logout", h.handleAdminLogout)
+	mux.HandleFunc("/api/admin/v1/password", h.handleAdminPassword)
 	mux.HandleFunc("/api/admin/v1/settings", h.handleAdminSettings)
 	mux.HandleFunc("/api/admin/v1/notification-channels", h.handleAdminNotificationChannels)
 	mux.HandleFunc("/api/admin/v1/notification-channels/", h.handleAdminNotificationChannelResource)

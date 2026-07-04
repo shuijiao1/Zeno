@@ -138,7 +138,7 @@ CREATE TABLE probe_targets (
 - `ping`：ICMP ping，不带 `port`。
 - `http_get`：HTTP/HTTPS GET，不带 `port`。
 
-`display_order` 控制后台延迟监控列表、Agent 目标下发顺序、首页监控服务列表和同一时间点的 Public latency series 展示顺序。
+`display_order` 控制后台延迟监控列表、Agent 目标下发顺序、服务详情入口顺序和同一时间点的 Public latency series 展示顺序。
 
 ## node_probe_targets
 
@@ -282,7 +282,7 @@ CREATE INDEX idx_alert_rule_states_node_active ON alert_rule_states(node_id, act
 
 ## settings
 
-全局设置，包含站点标题、Logo、主题、Agent 接入 URL、桌面/手机背景图配置。
+全局设置，包含站点标题、Logo、主题、Agent 接入 URL、桌面/手机背景图配置和后台密码 hash。
 
 ```sql
 CREATE TABLE settings (
@@ -302,6 +302,19 @@ CREATE TABLE settings (
 - `background_url`（兼容）
 - `desktop_background_url`
 - `mobile_background_url`
+- `admin_password_hash`：单管理员密码 hash。首次部署未设置时可用 bootstrap admin token 登录；修改密码后以后以此设置为准。
+
+## admin_sessions
+
+后台单管理员登录 session。只存 session token hash，不存明文。
+
+```sql
+CREATE TABLE admin_sessions (
+  token_hash TEXT PRIMARY KEY,
+  created_at INTEGER NOT NULL,
+  last_seen_at INTEGER NOT NULL
+);
+```
 
 ## 迁移策略
 

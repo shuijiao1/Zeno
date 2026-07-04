@@ -224,6 +224,11 @@ func (s *SQLiteStore) ensureSchema(ctx context.Context) error {
 			value TEXT NOT NULL,
 			updated_at INTEGER NOT NULL
 		);`,
+		`CREATE TABLE IF NOT EXISTS admin_sessions (
+			token_hash TEXT PRIMARY KEY,
+			created_at INTEGER NOT NULL,
+			last_seen_at INTEGER NOT NULL
+		);`,
 	}
 	for _, statement := range statements {
 		if _, err := s.db.ExecContext(ctx, statement); err != nil {

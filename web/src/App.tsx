@@ -1,5 +1,5 @@
 import { type CSSProperties, type FormEvent, type ReactNode, useEffect, useState } from 'react'
-import { createAdminNode, createAdminNotificationChannel, createAdminProbeTarget, deleteAdminNotificationChannel, deleteAdminProbeTarget, fetchAdminAlertRules, fetchAdminAlertRuleStates, fetchAdminNodes, fetchAdminNotificationChannels, fetchAdminNotificationDeliveries, fetchAdminNotificationTypes, fetchAdminProbeTargets, fetchAdminSettings, fetchNodeLatency, fetchNodeState, fetchPublicSettings, fetchServiceLatency, fetchSummary, requestAdminNodeInstallCommand, testAdminNotificationChannel, updateAdminAlertRule, updateAdminNode, updateAdminNotificationChannel, updateAdminNotificationType, updateAdminProbeTarget, updateAdminSettings, type AdminAlertRuleUpdateInput, type AdminNodeCreateInput, type AdminNodeUpdateInput, type AdminNotificationChannelCreateInput, type AdminNotificationChannelUpdateInput, type AdminProbeTargetInput, type AdminProbeTargetUpdateInput, type AdminSettingsUpdateInput, type NodeLatencyData, type NodeStateData, type ServiceLatencyData, type SummaryData } from './api/client'
+import { createAdminNode, createAdminNotificationChannel, createAdminProbeTarget, deleteAdminNotificationChannel, deleteAdminProbeTarget, fetchAdminAlertRules, fetchAdminAlertRuleStates, fetchAdminNodes, fetchAdminNotificationChannels, fetchAdminNotificationDeliveries, fetchAdminNotificationTypes, fetchAdminProbeTargets, fetchAdminSettings, fetchNodeLatency, fetchNodeState, fetchPublicSettings, fetchServiceLatency, fetchSummary, loginAdmin, logoutAdmin, requestAdminNodeInstallCommand, testAdminNotificationChannel, updateAdminAlertRule, updateAdminNode, updateAdminNotificationChannel, updateAdminNotificationType, updateAdminPassword, updateAdminProbeTarget, updateAdminSettings, type AdminAlertRuleUpdateInput, type AdminNodeCreateInput, type AdminNodeUpdateInput, type AdminNotificationChannelCreateInput, type AdminNotificationChannelUpdateInput, type AdminProbeTargetInput, type AdminProbeTargetUpdateInput, type AdminSettingsUpdateInput, type NodeLatencyData, type NodeStateData, type ServiceLatencyData, type SummaryData } from './api/client'
 import { LatencyDetail } from './components/LatencyDetail'
 import { LatencyChart } from './components/LatencyChart'
 import { ServerCard } from './components/ServerCard'
@@ -34,6 +34,11 @@ type AdminLoadState =
   | { kind: 'idle' }
   | { kind: 'loading' }
   | { kind: 'ready'; nodes: AdminNode[]; targets: AdminProbeTarget[]; notificationChannels: AdminNotificationChannel[]; notificationTypes: AdminNotificationType[]; notificationDeliveries: AdminNotificationDelivery[]; alertRules: AdminAlertRule[]; alertRuleStates: AdminAlertRuleState[] }
+  | { kind: 'error'; message: string }
+
+type AdminAuthState =
+  | { kind: 'idle' }
+  | { kind: 'loading' }
   | { kind: 'error'; message: string }
 
 type AdminSection = 'nodes' | 'targets' | 'settings' | 'notifications'
@@ -161,6 +166,7 @@ export function App() {
   const [stateHistoryState, setStateHistoryState] = useState<StateHistoryLoadState>({ kind: 'idle' })
   const [serviceLatencyState, setServiceLatencyState] = useState<ServiceLatencyLoadState>({ kind: 'idle' })
   const [adminToken, setAdminToken] = useState(() => window.sessionStorage.getItem('zeno_admin_token') ?? '')
+  const [adminAuthState, setAdminAuthState] = useState<AdminAuthState>({ kind: 'idle' })
   const [adminState, setAdminState] = useState<AdminLoadState>({ kind: 'idle' })
   const [settings, setSettings] = useState<AdminSettings>(defaultSettings)
 
@@ -322,17 +328,38 @@ export function App() {
     }
   }, [route, adminToken])
 
-  const submitAdminToken = (token: string) => {
-    const trimmed = token.trim()
-    if (trimmed === '') return
-    window.sessionStorage.setItem('zeno_admin_token', trimmed)
-    setAdminToken(trimmed)
+  const submitAdminLogin = (username: string, password: string) => {
+    const trimmedUsername = username.trim()
+    const trimmedPassword = password.trim()
+    if (trimmedUsername === '' || trimmedPassword === '') return
+    setAdminAuthState({ kind: 'loading' })
+    loginAdmin(trimmedUsername, trimmedPassword)
+      .then((session) => {
+        window.sessionStorage.setItem('zeno_admin_token', session.token)
+        setAdminToken(session.token)
+        setAdminAuthState({ kind: 'idle' })
+      })
+      .catch((error: unknown) => {
+        setAdminAuthState({ kind: 'error', message: error instanceof Error ? error.message : '登录失败' })
+      })
   }
 
   const clearAdminToken = () => {
+    if (adminToken !== '') {
+      logoutAdmin(adminToken).catch(() => {})
+    }
     window.sessionStorage.removeItem('zeno_admin_token')
     setAdminToken('')
+    setAdminAuthState({ kind: 'idle' })
     setAdminState({ kind: 'idle' })
+  }
+
+  const updateAdminPasswordDetails = (currentPassword: string, newPassword: string): Promise<void> => {
+    if (adminToken === '') return Promise.reject(new Error('missing admin token'))
+    return updateAdminPassword(adminToken, currentPassword, newPassword).then((session) => {
+      window.sessionStorage.setItem('zeno_admin_token', session.token)
+      setAdminToken(session.token)
+    })
   }
 
   const refreshAdminNodes = () => {
@@ -558,9 +585,11 @@ export function App() {
           onHome={navigateHome}
           settings={settings}
           hasAdminToken={adminToken !== ''}
+          authState={adminAuthState}
           adminState={adminState}
-          onAdminTokenSubmit={submitAdminToken}
+          onAdminLogin={submitAdminLogin}
           onAdminTokenClear={clearAdminToken}
+          onAdminPasswordUpdate={updateAdminPasswordDetails}
           onAdminRefresh={refreshAdminNodes}
           onAdminNodeCreate={createAdminNodeDetails}
           onAdminNodeUpdate={updateAdminNodeDetails}
@@ -631,8 +660,6 @@ export function App() {
             onAdmin={navigateAdmin}
           />
 
-          <ServiceStatusPanel services={services} onOpen={navigateService} />
-
           <section className="server-card-list" aria-label="server cards">
             {nodes.map((node) => <ServerCard key={node.id} node={node} onOpen={navigateNode} />)}
           </section>
@@ -670,32 +697,6 @@ export function HomeTopPanel({ settings = defaultSettings, onHome, onAdmin, ...o
     <section className="home-top-card" aria-label="homepage control panel">
       <DashboardHeader settings={settings} onHome={onHome} onAdmin={onAdmin} />
       <HomeOverviewPanel settings={settings} {...overview} />
-    </section>
-  )
-}
-
-export function ServiceStatusPanel({ services, onOpen }: { services: ServiceTarget[]; onOpen: (targetId: string) => void }) {
-  if (services.length === 0) return null
-  const issueCount = services.filter((service) => service.lossPercent !== null && service.lossPercent >= 20).length
-  return (
-    <section className="monitor-panel service-status-panel" aria-label="监控服务状态">
-      <header className="monitor-heading">
-        <div>
-          <h3>监控服务</h3>
-          <p>{services.length} 个目标 · {issueCount === 0 ? '当前无大面积丢包' : `${issueCount} 个异常`}</p>
-        </div>
-      </header>
-      <div className="service-status-grid">
-        {services.map((service) => (
-          <button className="service-status-card" type="button" onClick={() => onOpen(service.id)} key={service.id}>
-            <span className={`node-dot status-${serviceTone(service)}`} />
-            <strong>{service.name}</strong>
-            <small>{formatServiceEndpoint(service)}</small>
-            <em>{formatServiceLatency(service.medianMs)} · 丢包 {formatServiceLoss(service.lossPercent)}</em>
-            <span>{service.reportingNodeCount} / {service.assignedNodeCount} 节点上报</span>
-          </button>
-        ))}
-      </div>
     </section>
   )
 }
@@ -810,10 +811,12 @@ interface AdminDashboardProps {
   onHome: () => void
   settings?: AdminSettings
   hasAdminToken?: boolean
+  authState?: AdminAuthState
   adminState?: AdminLoadState
   initialSection?: AdminSection
-  onAdminTokenSubmit?: (token: string) => void
+  onAdminLogin?: (username: string, password: string) => void
   onAdminTokenClear?: () => void
+  onAdminPasswordUpdate?: (currentPassword: string, newPassword: string) => Promise<void>
   onAdminRefresh?: () => void
   onAdminNodeCreate?: (input: AdminNodeCreateInput) => void
   onAdminNodeUpdate?: (nodeId: string, input: AdminNodeUpdateInput) => void
@@ -834,10 +837,12 @@ export function AdminDashboard({
   onHome,
   settings = defaultSettings,
   hasAdminToken = false,
+  authState = { kind: 'idle' },
   adminState = { kind: 'idle' },
   initialSection = 'nodes',
-  onAdminTokenSubmit = () => {},
+  onAdminLogin = () => {},
   onAdminTokenClear = () => {},
+  onAdminPasswordUpdate = () => Promise.reject(new Error('password update unavailable')),
   onAdminRefresh = () => {},
   onAdminNodeCreate = () => {},
   onAdminNodeUpdate = () => {},
@@ -854,6 +859,7 @@ export function AdminDashboard({
   onAdminSettingsUpdate = () => {},
 }: AdminDashboardProps) {
   const [activeSection, setActiveSection] = useState<AdminSection>(initialSection)
+  const [passwordModalOpen, setPasswordModalOpen] = useState(false)
 
   const handleTokenSubmit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
@@ -861,9 +867,8 @@ export function AdminDashboard({
     const formData = new FormData(form)
     const username = String(formData.get('admin-username') ?? '').trim()
     const password = String(formData.get('admin-password') ?? '').trim()
-    if (username !== 'admin' || password === '') return
-    onAdminTokenSubmit(password)
-    form.reset()
+    if (username === '' || password === '') return
+    onAdminLogin(username, password)
   }
 
   const nodeCount = adminState.kind === 'ready' ? adminState.nodes.length : 0
@@ -875,36 +880,11 @@ export function AdminDashboard({
     <div className="kulin-container admin-container">
       <section className="home-top-card admin-panel" aria-label="admin dashboard">
         <DashboardHeader settings={settings} onHome={onHome} onAdmin={onHome} adminLabel="前台" />
-        <div className="admin-hero">
-          <p className="eyebrow">Zeno 后台</p>
-          <h2>控制台</h2>
-          <p>服务器、延迟监控和通知拆成独立导航；列表只保留关键字段，编辑放进弹窗里处理。</p>
-        </div>
 
         {!hasAdminToken && (
-          <>
-            <div className="admin-action-grid" aria-label="admin modules">
-              <article className="admin-action-card">
-                <p>服务器</p>
-                <strong>列表 / 弹窗编辑</strong>
-              </article>
-              <article className="admin-action-card">
-                <p>延迟监控</p>
-                <strong>目标 / 节点分配</strong>
-              </article>
-              <article className="admin-action-card">
-                <p>通知渠道</p>
-                <strong>Telegram-only</strong>
-              </article>
-              <article className="admin-action-card">
-                <p>通知类型</p>
-                <strong>上线 / 离线 / 异常</strong>
-              </article>
-            </div>
-            <form className="admin-login-card" aria-label="admin login form" onSubmit={handleTokenSubmit}>
-              <div>
-                <p>后台登录</p>
-                <strong>默认账号：admin / admin</strong>
+          <form className="admin-login-card" aria-label="admin login form" onSubmit={handleTokenSubmit}>
+              <div className="admin-login-title">
+                <strong>后台登录</strong>
               </div>
               <label>
                 <span>账号</span>
@@ -914,9 +894,9 @@ export function AdminDashboard({
                 <span>密码</span>
                 <input name="admin-password" type="password" autoComplete="current-password" placeholder="admin" aria-label="后台密码" />
               </label>
-              <button type="submit">登录后台</button>
-            </form>
-          </>
+              <button type="submit" disabled={authState.kind === 'loading'}>{authState.kind === 'loading' ? '登录中…' : '登录后台'}</button>
+              {authState.kind === 'error' && <p className="admin-login-error">{authState.message}</p>}
+          </form>
         )}
 
         {hasAdminToken && (
@@ -932,9 +912,17 @@ export function AdminDashboard({
               />
               <div className="admin-section-actions">
                 <button type="button" onClick={onAdminRefresh}>刷新</button>
+                <button type="button" onClick={() => setPasswordModalOpen(true)}>修改密码</button>
                 <button type="button" onClick={onAdminTokenClear}>退出</button>
               </div>
             </div>
+
+            {passwordModalOpen && (
+              <AdminPasswordModal
+                onClose={() => setPasswordModalOpen(false)}
+                onUpdate={onAdminPasswordUpdate}
+              />
+            )}
 
             {adminState.kind === 'loading' && <div className="admin-state-card">正在读取 Admin API…</div>}
             {adminState.kind === 'error' && <div className="admin-state-card is-error">Admin API 读取失败：{adminState.message}</div>}
@@ -1010,6 +998,59 @@ function AdminSectionNav({ activeSection, onSectionChange, nodeCount, targetCoun
   )
 }
 
+function AdminPasswordModal({ onClose, onUpdate }: { onClose: () => void; onUpdate: (currentPassword: string, newPassword: string) => Promise<void> }) {
+  const [message, setMessage] = useState<{ kind: 'error' | 'success'; text: string } | null>(null)
+  const [submitting, setSubmitting] = useState(false)
+
+  const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    const formData = new FormData(event.currentTarget)
+    const currentPassword = String(formData.get('current-password') ?? '').trim()
+    const newPassword = String(formData.get('new-password') ?? '').trim()
+    const confirmPassword = String(formData.get('confirm-password') ?? '').trim()
+    if (newPassword.length < 8) {
+      setMessage({ kind: 'error', text: '新密码至少 8 位。' })
+      return
+    }
+    if (newPassword !== confirmPassword) {
+      setMessage({ kind: 'error', text: '两次输入的新密码不一致。' })
+      return
+    }
+    setSubmitting(true)
+    setMessage(null)
+    onUpdate(currentPassword, newPassword)
+      .then(() => {
+        setMessage({ kind: 'success', text: '密码已更新。' })
+        setTimeout(onClose, 650)
+      })
+      .catch((error: unknown) => setMessage({ kind: 'error', text: error instanceof Error ? error.message : '密码更新失败。' }))
+      .finally(() => setSubmitting(false))
+  }
+
+  return (
+    <AdminModal title="修改密码" eyebrow="Account" onClose={onClose}>
+      <form className="admin-password-form admin-node-edit-form" aria-label="修改后台密码" onSubmit={handleSubmit}>
+        <label>
+          <span>当前密码</span>
+          <input name="current-password" type="password" autoComplete="current-password" />
+        </label>
+        <label>
+          <span>新密码</span>
+          <input name="new-password" type="password" autoComplete="new-password" />
+        </label>
+        <label>
+          <span>确认新密码</span>
+          <input name="confirm-password" type="password" autoComplete="new-password" />
+        </label>
+        <div className="admin-modal-actions">
+          <button type="submit" disabled={submitting}>{submitting ? '保存中…' : '保存密码'}</button>
+        </div>
+        {message && <p className={`admin-install-error${message.kind === 'success' ? ' is-success' : ''}`}>{message.text}</p>}
+      </form>
+    </AdminModal>
+  )
+}
+
 function AdminSettingsSection({ settings, onUpdate }: { settings: AdminSettings; onUpdate: (input: AdminSettingsUpdateInput) => void }) {
   const [settingsError, setSettingsError] = useState<string | null>(null)
   const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
@@ -1056,7 +1097,7 @@ function AdminSettingsSection({ settings, onUpdate }: { settings: AdminSettings;
           <span>头像 / Logo URL</span>
           <input name="logo-url" autoComplete="off" defaultValue={settings.logoUrl} />
         </label>
-        <p className="admin-overview-note">图片字段只填 https:// 链接或 /assets/... 站内路径。</p>
+        <p className="admin-help-note">图片字段只填 https:// 链接或 /assets/... 站内路径。</p>
         <label>
           <span>主题</span>
           <select name="theme" defaultValue={settings.theme}>
@@ -1069,7 +1110,7 @@ function AdminSettingsSection({ settings, onUpdate }: { settings: AdminSettings;
           <span>Agent 接入 URL</span>
           <input name="agent-controller-url" autoComplete="off" defaultValue={settings.agentControllerUrl} placeholder="留空则使用当前后台访问地址" />
         </label>
-        <p className="admin-overview-note">生成 Agent 安装命令时优先使用这个 URL；准备公网 HTTPS 入口后填入，例如 https://zeno.example.com。</p>
+        <p className="admin-help-note">生成 Agent 安装命令时优先使用这个 URL；准备公网 HTTPS 入口后填入，例如 https://zeno.example.com。</p>
         <label>
           <span>电脑端背景图 URL</span>
           <input name="desktop-background-url" autoComplete="off" defaultValue={settings.desktopBackgroundUrl || settings.backgroundUrl} placeholder="可留空" />
@@ -1078,7 +1119,7 @@ function AdminSettingsSection({ settings, onUpdate }: { settings: AdminSettings;
           <span>手机端背景图 URL</span>
           <input name="mobile-background-url" autoComplete="off" defaultValue={settings.mobileBackgroundUrl} placeholder="可留空，默认跟随电脑端" />
         </label>
-        {settings.updatedAt && <p className="admin-overview-note">最近更新：{formatAdminDate(settings.updatedAt)}</p>}
+        {settings.updatedAt && <p className="admin-help-note">最近更新：{formatAdminDate(settings.updatedAt)}</p>}
         {settingsError && <p className="admin-install-error">{settingsError}</p>}
         <button type="submit">保存设置</button>
       </form>
@@ -1190,12 +1231,12 @@ function AdminNodeList({ nodes, onEdit, onReorder }: { nodes: AdminNode[]; onEdi
             <strong>{node.displayName}</strong>
             <small>{node.id} · {countryCodeToFlag(node.countryCode)} {formatAdminLocation(node)} · 顺序 {node.displayOrder}</small>
           </div>
-          <span className={`admin-node-status status-${node.disabled ? 'disabled' : node.status}`}>{node.disabled ? 'disabled' : node.status}</span>
-          <span>{formatAdminPublicIPs(node)}</span>
-          <span>{formatAdminBilling(node)}</span>
-          <span>{formatAdminSystem(node)}</span>
-          <span>{formatAdminDate(node.lastSeenAt)}</span>
-          <span>{node.agentVersion || '—'}</span>
+          <span data-label="状态" className={`admin-node-status status-${node.disabled ? 'disabled' : node.status}`}>{node.disabled ? 'disabled' : node.status}</span>
+          <span data-label="公网 IP">{formatAdminPublicIPs(node)}</span>
+          <span data-label="账单">{formatAdminBilling(node)}</span>
+          <span data-label="系统">{formatAdminSystem(node)}</span>
+          <span data-label="最近在线">{formatAdminDate(node.lastSeenAt)}</span>
+          <span data-label="Agent">{node.agentVersion || '—'}</span>
           <div className="admin-row-actions">
             <button className="admin-row-action" type="button" onClick={() => onReorder(node.id, 'up')} disabled={index === 0}>上移</button>
             <button className="admin-row-action" type="button" onClick={() => onReorder(node.id, 'down')} disabled={index === orderedNodes.length - 1}>下移</button>
@@ -1427,7 +1468,7 @@ function AdminNodeEditModal({ node, onUpdate, onInstallCommand, onClose }: { nod
           <button type="button" onClick={handleCopyInstallCommand} disabled={installCommandState.kind !== 'ready'}>复制安装命令</button>
         </div>
       </form>
-      <p className="admin-overview-note">安装命令会轮换该服务器的 Agent Token；已在线服务器执行新命令前会停止上报。</p>
+      <p className="admin-help-note">安装命令会轮换该服务器的 Agent Token；已在线服务器执行新命令前会停止上报。</p>
       {installCommandState.kind === 'ready' && (
         <textarea className="admin-install-command" aria-label={`${node.displayName} Agent 安装命令`} readOnly value={installCommandState.command} />
       )}
@@ -1529,10 +1570,10 @@ function AdminTargetList({ targets, nodes, onEdit, onUpdate, onDelete, onReorder
             <strong>{target.name}</strong>
             <small>{target.id} · 顺序 {target.displayOrder}</small>
           </div>
-          <span className={`admin-node-status status-${target.enabled ? 'online' : 'disabled'}`}>{target.enabled ? 'enabled' : 'disabled'}</span>
-          <span>{formatTargetEndpoint(target)}</span>
-          <span>{formatTargetTypeLabel(target.type)} · {target.count} 次 / {target.timeoutMs}ms / {target.intervalSec}s</span>
-          <span>{formatTargetAssignmentSummary(target)}</span>
+          <span data-label="状态" className={`admin-node-status status-${target.enabled ? 'online' : 'disabled'}`}>{target.enabled ? 'enabled' : 'disabled'}</span>
+          <span data-label="地址">{formatTargetEndpoint(target)}</span>
+          <span data-label="参数">{formatTargetTypeLabel(target.type)} · {target.count} 次 / {target.timeoutMs}ms / {target.intervalSec}s</span>
+          <span data-label="节点">{formatTargetAssignmentSummary(target)}</span>
           <div className="admin-row-actions">
             <button className="admin-row-action" type="button" onClick={() => onReorder(target.id, 'up')} disabled={index === 0}>上移</button>
             <button className="admin-row-action" type="button" onClick={() => onReorder(target.id, 'down')} disabled={index === targets.length - 1}>下移</button>
@@ -1728,7 +1769,7 @@ function AdminAlertRulesSection({ rules, states, nodes, onUpdate }: { rules: Adm
   return (
     <section className="admin-notification-block admin-alert-rule-section" aria-label="通知类型规则">
       <h4>通知类型</h4>
-      <p className="admin-overview-note">资源、探测和在线状态会按这里的条件映射到上线、离线或异常通知。</p>
+      <p className="admin-help-note">资源、探测和在线状态会按这里的条件映射到上线、离线或异常通知。</p>
 
       <section className="admin-notification-block" aria-label="当前异常">
         <h4>当前异常</h4>
@@ -1778,10 +1819,10 @@ function AdminAlertRuleStateList({ states }: { states: AdminAlertRuleState[] }) 
             <strong>{state.ruleName}</strong>
             <small>{state.ruleId} · {formatRuleCategory(state.category)} · {state.metric}</small>
           </div>
-          <span>{formatAlertRuleStateValue(state)}</span>
-          <span className="admin-rule-condition">{formatAlertRuleStateCondition(state)}</span>
-          <span>通知：{state.notificationLabel || state.notificationEventType}<small> · {state.notificationEventType}</small></span>
-          <span>{state.nodeStatus} · {formatAdminDate(state.lastSeenAt)}</span>
+          <span data-label="当前值">{formatAlertRuleStateValue(state)}</span>
+          <span data-label="条件" className="admin-rule-condition">{formatAlertRuleStateCondition(state)}</span>
+          <span data-label="通知">通知：{state.notificationLabel || state.notificationEventType}<small> · {state.notificationEventType}</small></span>
+          <span data-label="最近命中">{state.nodeStatus} · {formatAdminDate(state.lastSeenAt)}</span>
         </article>
       ))}
     </div>
@@ -1806,11 +1847,11 @@ function AdminAlertRuleList({ rules, nodes, onEdit, onUpdate }: { rules: AdminAl
             <strong>{rule.name}</strong>
             <small>{rule.id} · {formatRuleCategory(rule.category)}</small>
           </div>
-          <span className="admin-rule-condition">{formatAlertRuleCondition(rule)}</span>
-          <span>持续 {rule.durationSec}s</span>
-          <span>通知：{rule.notificationLabel || rule.notificationEventType}<small> · {rule.notificationEventType}</small></span>
-          <span>{formatAlertRuleScope(rule, nodes)}</span>
-          <span className={`admin-node-status status-${rule.enabled ? 'online' : 'disabled'}`}>{rule.enabled ? '启用中' : '已停用'}</span>
+          <span data-label="条件" className="admin-rule-condition">{formatAlertRuleCondition(rule)}</span>
+          <span data-label="持续时间">持续 {rule.durationSec}s</span>
+          <span data-label="通知">通知：{rule.notificationLabel || rule.notificationEventType}<small> · {rule.notificationEventType}</small></span>
+          <span data-label="范围">{formatAlertRuleScope(rule, nodes)}</span>
+          <span data-label="状态" className={`admin-node-status status-${rule.enabled ? 'online' : 'disabled'}`}>{rule.enabled ? '启用中' : '已停用'}</span>
           <div className="admin-row-actions">
             <button className="admin-row-action" type="button" onClick={() => onEdit(rule)}>编辑通知类型</button>
             <button className="admin-row-action" type="button" onClick={() => onUpdate(rule.id, { enabled: !rule.enabled })}>
@@ -1963,11 +2004,11 @@ function AdminNotificationDeliveryList({ deliveries }: { deliveries: AdminNotifi
             <strong>{delivery.label}</strong>
             <small>{delivery.eventType}</small>
           </div>
-          <span>{delivery.nodeName || delivery.nodeId}</span>
-          <span>{delivery.channelName || delivery.channelId}</span>
-          <span>{delivery.previousStatus} → {delivery.status}</span>
-          <span>{formatAdminDate(delivery.createdAt)}</span>
-          <span className={`admin-node-status status-${delivery.success ? 'online' : 'disabled'}`}>{delivery.success ? '发送成功' : '发送失败'}{delivery.error ? ` · ${delivery.error}` : ''}</span>
+          <span data-label="节点">{delivery.nodeName || delivery.nodeId}</span>
+          <span data-label="渠道">{delivery.channelName || delivery.channelId}</span>
+          <span data-label="状态">{delivery.previousStatus} → {delivery.status}</span>
+          <span data-label="时间">{formatAdminDate(delivery.createdAt)}</span>
+          <span data-label="结果" className={`admin-node-status status-${delivery.success ? 'online' : 'disabled'}`}>{delivery.success ? '发送成功' : '发送失败'}{delivery.error ? ` · ${delivery.error}` : ''}</span>
         </article>
       ))}
     </div>
@@ -1995,9 +2036,9 @@ function AdminNotificationChannelList({ channels, onUpdate, onDelete, onTest, on
             <strong>{channel.name}</strong>
             <small>{channel.id}</small>
           </div>
-          <span className={`admin-node-status status-${channel.enabled ? 'online' : 'disabled'}`}>{channel.enabled ? '启用中' : '已停用'}</span>
-          <span className="admin-notification-destination">{channel.destination}</span>
-          <span>{channel.credentialSet ? '凭据已设置' : '未设置凭据'}</span>
+          <span data-label="状态" className={`admin-node-status status-${channel.enabled ? 'online' : 'disabled'}`}>{channel.enabled ? '启用中' : '已停用'}</span>
+          <span data-label="Chat ID" className="admin-notification-destination">{channel.destination}</span>
+          <span data-label="Bot Token">{channel.credentialSet ? '凭据已设置' : '未设置凭据'}</span>
           <div className="admin-row-actions">
             <button className="admin-row-action" type="button" onClick={() => onTest(channel.id)}>测试发送</button>
             <button className="admin-row-action" type="button" onClick={() => onEdit(channel)}>编辑渠道</button>

@@ -37,6 +37,8 @@ export function StateHistoryPanel({ points, rangeLabel, loading = false, error }
   const latestDisk = latest(points, diskPercent)
   const latestInSpeed = latest(points, (point) => point.netInSpeedBps)
   const latestOutSpeed = latest(points, (point) => point.netOutSpeedBps)
+  const latestInTotal = latest(points, (point) => point.netInTotalBytes)
+  const latestOutTotal = latest(points, (point) => point.netOutTotalBytes)
   const latestUptime = latest(points, (point) => point.uptimeSeconds)
   const latestLoad1 = latest(points, (point) => point.load1)
   const latestLoad5 = latest(points, (point) => point.load5)
@@ -88,6 +90,49 @@ export function StateHistoryPanel({ points, rangeLabel, loading = false, error }
       lines: [
         { key: 'net-out', label: '上传', values: points.map((point) => finiteOrNull(point.netOutSpeedBps)), color: '#f97316' },
         { key: 'net-in', label: '下载', values: points.map((point) => finiteOrNull(point.netInSpeedBps)), color: '#06b6d4' },
+      ],
+    },
+    {
+      key: 'load',
+      label: '系统负载',
+      value: latestLoad1 !== null && latestLoad5 !== null && latestLoad15 !== null ? `${formatFixed(latestLoad1, 2)} / ${formatFixed(latestLoad5, 2)} / ${formatFixed(latestLoad15, 2)}` : '--',
+      tone: 'green',
+      unitLabel: 'load',
+      lines: [
+        { key: 'load1', label: '1m', values: points.map((point) => finiteOrNull(point.load1)), color: '#22c55e' },
+        { key: 'load5', label: '5m', values: points.map((point) => finiteOrNull(point.load5)), color: '#84cc16' },
+        { key: 'load15', label: '15m', values: points.map((point) => finiteOrNull(point.load15)), color: '#14b8a6' },
+      ],
+    },
+    {
+      key: 'swap',
+      label: 'Swap',
+      value: formatPercent(latestSwap),
+      tone: 'blue',
+      unitLabel: '%',
+      domainMax: 100,
+      lines: [{ key: 'swap', label: 'Swap', values: points.map(swapPercent), color: '#0ea5e9' }],
+    },
+    {
+      key: 'connections',
+      label: '进程 / TCP',
+      value: <><span>进程 {latestProcessCount !== null ? Math.round(latestProcessCount) : '--'}</span><span>TCP {latestTcpConnectionCount !== null ? Math.round(latestTcpConnectionCount) : '--'}</span></>,
+      tone: 'purple',
+      unitLabel: 'count',
+      lines: [
+        { key: 'processes', label: '进程', values: points.map((point) => finiteOrNull(point.processCount)), color: '#a855f7' },
+        { key: 'tcp', label: 'TCP', values: points.map((point) => finiteOrNull(point.tcpConnectionCount)), color: '#ec4899' },
+      ],
+    },
+    {
+      key: 'traffic-total',
+      label: '网络累计',
+      value: <><span>↑{formatBinaryBytes(latestOutTotal)}</span><span>↓{formatBinaryBytes(latestInTotal)}</span></>,
+      tone: 'orange',
+      unitLabel: 'B',
+      lines: [
+        { key: 'net-out-total', label: '上传累计', values: points.map((point) => finiteOrNull(point.netOutTotalBytes)), color: '#fb923c' },
+        { key: 'net-in-total', label: '下载累计', values: points.map((point) => finiteOrNull(point.netInTotalBytes)), color: '#38bdf8' },
       ],
     },
   ]
@@ -208,6 +253,19 @@ function formatFixed(value: number, digits: number): string {
   return value.toFixed(digits)
 }
 
+function formatBinaryBytes(value: number | null): string {
+  if (value === null) return '--'
+  if (value <= 0) return '0 B'
+  const units = ['B', 'KB', 'MB', 'GB', 'TB', 'PB']
+  let size = value
+  let unit = 0
+  while (size >= 1024 && unit < units.length - 1) {
+    size /= 1024
+    unit += 1
+  }
+  return `${size.toFixed(unit === 0 ? 0 : 2)} ${units[unit]}`
+}
+
 function yDomain(values: Array<number | null>, forcedMax?: number): { min: number; max: number } {
   const finiteValues = values.filter((value): value is number => value !== null)
   if (finiteValues.length === 0) return { min: 0, max: forcedMax ?? 1 }
@@ -240,5 +298,8 @@ function sparklinePath(values: Array<number | null>, domain: { min: number; max:
 
 function formatAxisValue(value: number, unitLabel: string): string {
   if (unitLabel === '%') return `${Math.round(value)}%`
+  if (unitLabel === 'count') return `${Math.round(value)}`
+  if (unitLabel === 'load') return value.toFixed(value >= 10 ? 0 : 1)
+  if (unitLabel === 'B') return formatBinaryBytes(value)
   return value >= 1024 ? formatBps(value).replace('/s', '') : `${Math.round(value)} ${unitLabel}`
 }
