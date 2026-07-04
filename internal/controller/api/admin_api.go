@@ -11,9 +11,6 @@ import (
 type adminStore interface {
 	AdminSettings(ctx context.Context) (SiteSettings, error)
 	UpdateAdminSettings(ctx context.Context, update AdminSettingsUpdateRequest) (SiteSettings, error)
-	AdminMaintenance(ctx context.Context) (AdminMaintenanceResponse, error)
-	UpdateAdminMaintenance(ctx context.Context, update AdminMaintenanceUpdateRequest) (AdminMaintenanceResponse, error)
-	RunAdminMaintenanceCleanup(ctx context.Context, request AdminMaintenanceCleanupRequest) (AdminMaintenanceCleanupResponse, error)
 	AdminNodes(ctx context.Context) ([]AdminNode, error)
 	AdminProbeTargets(ctx context.Context) ([]AdminProbeTarget, error)
 	AdminNotificationChannels(ctx context.Context) ([]AdminNotificationChannel, error)
@@ -66,62 +63,6 @@ func (h *handler) handleAdminSettings(w http.ResponseWriter, r *http.Request) {
 	default:
 		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
 	}
-}
-
-func (h *handler) handleAdminMaintenance(w http.ResponseWriter, r *http.Request) {
-	store, ok := h.authorizeAdminRequest(w, r)
-	if !ok {
-		return
-	}
-	switch r.Method {
-	case http.MethodGet:
-		maintenance, err := store.AdminMaintenance(r.Context())
-		if err != nil {
-			writeError(w, http.StatusInternalServerError, "internal error")
-			return
-		}
-		writeJSON(w, http.StatusOK, maintenance)
-	case http.MethodPatch:
-		var update AdminMaintenanceUpdateRequest
-		decoder := json.NewDecoder(r.Body)
-		decoder.DisallowUnknownFields()
-		if err := decoder.Decode(&update); err != nil {
-			writeError(w, http.StatusBadRequest, "bad request")
-			return
-		}
-		maintenance, err := store.UpdateAdminMaintenance(r.Context(), update)
-		if err != nil {
-			writeAdminError(w, err)
-			return
-		}
-		writeJSON(w, http.StatusOK, maintenance)
-	default:
-		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
-	}
-}
-
-func (h *handler) handleAdminMaintenanceCleanup(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
-		return
-	}
-	store, ok := h.authorizeAdminRequest(w, r)
-	if !ok {
-		return
-	}
-	var request AdminMaintenanceCleanupRequest
-	decoder := json.NewDecoder(r.Body)
-	decoder.DisallowUnknownFields()
-	if err := decoder.Decode(&request); err != nil {
-		writeError(w, http.StatusBadRequest, "bad request")
-		return
-	}
-	cleanup, err := store.RunAdminMaintenanceCleanup(r.Context(), request)
-	if err != nil {
-		writeAdminError(w, err)
-		return
-	}
-	writeJSON(w, http.StatusOK, cleanup)
 }
 
 func (h *handler) handleAdminProbeTargets(w http.ResponseWriter, r *http.Request) {
@@ -301,7 +242,7 @@ func writeAdminError(w http.ResponseWriter, err error) {
 		writeError(w, http.StatusNotFound, "not found")
 		return
 	}
-	if errors.Is(err, errInvalidAdminSettingsUpdate) || errors.Is(err, errInvalidAdminNodeUpdate) || errors.Is(err, errInvalidAdminNodeCreate) || errors.Is(err, errInvalidAdminTargetWrite) || errors.Is(err, errInvalidAdminNotificationChannelWrite) || errors.Is(err, errInvalidAdminNotificationTypeWrite) || errors.Is(err, errInvalidAdminAlertRuleUpdate) || errors.Is(err, errInvalidAdminMaintenanceUpdate) || errors.Is(err, errInvalidAdminMaintenanceCleanup) {
+	if errors.Is(err, errInvalidAdminSettingsUpdate) || errors.Is(err, errInvalidAdminNodeUpdate) || errors.Is(err, errInvalidAdminNodeCreate) || errors.Is(err, errInvalidAdminTargetWrite) || errors.Is(err, errInvalidAdminNotificationChannelWrite) || errors.Is(err, errInvalidAdminNotificationTypeWrite) || errors.Is(err, errInvalidAdminAlertRuleUpdate) {
 		writeError(w, http.StatusBadRequest, "bad request")
 		return
 	}

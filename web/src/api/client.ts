@@ -1,4 +1,4 @@
-import type { AdminAlertRule, AdminAlertRuleState, AdminMaintenance, AdminMaintenanceCleanup, AdminMaintenanceSettings, AdminMaintenanceStats, AdminNode, AdminNodeInstallCommand, AdminNotificationChannel, AdminNotificationDelivery, AdminNotificationType, AdminProbeTarget, AdminSettings, AdminTheme, HomeCardNode, LatencyPoint, ProbeType, StatePoint } from '../types'
+import type { AdminAlertRule, AdminAlertRuleState, AdminNode, AdminNodeInstallCommand, AdminNotificationChannel, AdminNotificationDelivery, AdminNotificationType, AdminProbeTarget, AdminSettings, AdminTheme, HomeCardNode, LatencyPoint, ProbeType, StatePoint } from '../types'
 
 interface ApiSettings {
   site_title: string
@@ -9,21 +9,6 @@ interface ApiSettings {
   desktop_background_url?: string
   mobile_background_url?: string
   updated_at?: string
-}
-
-interface ApiAdminMaintenanceSettings {
-  enabled: boolean
-  state_retention_days: number
-  probe_retention_days: number
-  notification_retention_days: number
-  updated_at?: string
-}
-
-interface ApiAdminMaintenanceStats {
-  state_samples: number
-  probe_rounds: number
-  probe_samples: number
-  notification_deliveries: number
 }
 
 interface ApiLatencySummary {
@@ -224,18 +209,6 @@ export interface ApiAdminSettingsResponse {
   settings: ApiSettings
 }
 
-export interface ApiAdminMaintenanceResponse {
-  settings: ApiAdminMaintenanceSettings
-  candidates: ApiAdminMaintenanceStats
-}
-
-export interface ApiAdminMaintenanceCleanupResponse {
-  settings: ApiAdminMaintenanceSettings
-  deleted: ApiAdminMaintenanceStats
-  candidates: ApiAdminMaintenanceStats
-  dry_run: boolean
-}
-
 export interface ApiSummaryResponse {
   nodes: ApiNode[] | null
   latency_points: ApiLatencyPoint[] | null
@@ -367,18 +340,6 @@ export interface AdminSettingsUpdateInput {
   mobileBackgroundUrl?: string
 }
 
-export interface AdminMaintenanceUpdateInput {
-  enabled?: boolean
-  stateRetentionDays?: number
-  probeRetentionDays?: number
-  notificationRetentionDays?: number
-}
-
-export interface AdminMaintenanceCleanupInput {
-  dryRun?: boolean
-  confirm?: boolean
-}
-
 export interface AdminNodeUpdateInput {
   displayName?: string
   countryCode?: string
@@ -502,51 +463,6 @@ export async function fetchAdminSettings(adminToken: string): Promise<AdminSetti
   }
   const data = await response.json() as ApiAdminSettingsResponse
   return normalizeSettings(data.settings)
-}
-
-export async function fetchAdminMaintenance(adminToken: string): Promise<AdminMaintenance> {
-  const response = await fetch('/api/admin/v1/maintenance', {
-    headers: {
-      Accept: 'application/json',
-      'X-Admin-Token': adminToken,
-    },
-  })
-  if (!response.ok) {
-    throw new Error(`admin maintenance request failed: ${response.status}`)
-  }
-  return normalizeAdminMaintenance(await response.json() as ApiAdminMaintenanceResponse)
-}
-
-export async function updateAdminMaintenance(adminToken: string, input: AdminMaintenanceUpdateInput): Promise<AdminMaintenance> {
-  const response = await fetch('/api/admin/v1/maintenance', {
-    method: 'PATCH',
-    headers: {
-      Accept: 'application/json',
-      'Content-Type': 'application/json',
-      'X-Admin-Token': adminToken,
-    },
-    body: JSON.stringify(serializeAdminMaintenanceUpdate(input)),
-  })
-  if (!response.ok) {
-    throw new Error(`admin maintenance update failed: ${response.status}`)
-  }
-  return normalizeAdminMaintenance(await response.json() as ApiAdminMaintenanceResponse)
-}
-
-export async function runAdminMaintenanceCleanup(adminToken: string, input: AdminMaintenanceCleanupInput): Promise<AdminMaintenanceCleanup> {
-  const response = await fetch('/api/admin/v1/maintenance/cleanup', {
-    method: 'POST',
-    headers: {
-      Accept: 'application/json',
-      'Content-Type': 'application/json',
-      'X-Admin-Token': adminToken,
-    },
-    body: JSON.stringify(serializeAdminMaintenanceCleanup(input)),
-  })
-  if (!response.ok) {
-    throw new Error(`admin maintenance cleanup failed: ${response.status}`)
-  }
-  return normalizeAdminMaintenanceCleanup(await response.json() as ApiAdminMaintenanceCleanupResponse)
 }
 
 export async function fetchAdminNodes(adminToken: string): Promise<AdminNodesData> {
@@ -864,41 +780,6 @@ export function normalizeSettings(input: ApiSettings): AdminSettings {
   }
 }
 
-export function normalizeAdminMaintenance(input: ApiAdminMaintenanceResponse): AdminMaintenance {
-  return {
-    settings: normalizeAdminMaintenanceSettings(input.settings),
-    candidates: normalizeAdminMaintenanceStats(input.candidates),
-  }
-}
-
-export function normalizeAdminMaintenanceCleanup(input: ApiAdminMaintenanceCleanupResponse): AdminMaintenanceCleanup {
-  return {
-    settings: normalizeAdminMaintenanceSettings(input.settings),
-    deleted: normalizeAdminMaintenanceStats(input.deleted),
-    candidates: normalizeAdminMaintenanceStats(input.candidates),
-    dryRun: input.dry_run,
-  }
-}
-
-function normalizeAdminMaintenanceSettings(input: ApiAdminMaintenanceSettings): AdminMaintenanceSettings {
-  return {
-    enabled: input.enabled,
-    stateRetentionDays: input.state_retention_days,
-    probeRetentionDays: input.probe_retention_days,
-    notificationRetentionDays: input.notification_retention_days,
-    updatedAt: input.updated_at,
-  }
-}
-
-function normalizeAdminMaintenanceStats(input: ApiAdminMaintenanceStats): AdminMaintenanceStats {
-  return {
-    stateSamples: input.state_samples,
-    probeRounds: input.probe_rounds,
-    probeSamples: input.probe_samples,
-    notificationDeliveries: input.notification_deliveries,
-  }
-}
-
 export function normalizeSummary(input: ApiSummaryResponse): SummaryData {
   return {
     nodes: (input.nodes ?? []).map(normalizeNode),
@@ -974,22 +855,6 @@ function serializeAdminSettingsUpdate(input: AdminSettingsUpdateInput) {
     ...(input.backgroundUrl !== undefined ? { background_url: input.backgroundUrl } : {}),
     ...(input.desktopBackgroundUrl !== undefined ? { desktop_background_url: input.desktopBackgroundUrl } : {}),
     ...(input.mobileBackgroundUrl !== undefined ? { mobile_background_url: input.mobileBackgroundUrl } : {}),
-  }
-}
-
-function serializeAdminMaintenanceUpdate(input: AdminMaintenanceUpdateInput) {
-  return {
-    ...(input.enabled !== undefined ? { enabled: input.enabled } : {}),
-    ...(input.stateRetentionDays !== undefined ? { state_retention_days: input.stateRetentionDays } : {}),
-    ...(input.probeRetentionDays !== undefined ? { probe_retention_days: input.probeRetentionDays } : {}),
-    ...(input.notificationRetentionDays !== undefined ? { notification_retention_days: input.notificationRetentionDays } : {}),
-  }
-}
-
-function serializeAdminMaintenanceCleanup(input: AdminMaintenanceCleanupInput) {
-  return {
-    dry_run: input.dryRun ?? false,
-    confirm: input.confirm ?? false,
   }
 }
 

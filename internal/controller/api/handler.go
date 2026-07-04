@@ -51,8 +51,6 @@ func NewHandler(options ...HandlerOptions) http.Handler {
 	mux.HandleFunc("/api/public/v1/summary", h.handleSummary)
 	mux.HandleFunc("/api/public/v1/nodes/", h.handlePublicNodeResource)
 	mux.HandleFunc("/api/admin/v1/settings", h.handleAdminSettings)
-	mux.HandleFunc("/api/admin/v1/maintenance", h.handleAdminMaintenance)
-	mux.HandleFunc("/api/admin/v1/maintenance/cleanup", h.handleAdminMaintenanceCleanup)
 	mux.HandleFunc("/api/admin/v1/notification-channels", h.handleAdminNotificationChannels)
 	mux.HandleFunc("/api/admin/v1/notification-channels/", h.handleAdminNotificationChannelResource)
 	mux.HandleFunc("/api/admin/v1/notification-deliveries", h.handleAdminNotificationDeliveries)
@@ -194,6 +192,10 @@ func handleStatic(staticDir string) http.HandlerFunc {
 		}
 
 		cleanPath := filepath.Clean("/" + strings.TrimPrefix(r.URL.Path, "/"))
+		if strings.HasPrefix(cleanPath, "/api/") {
+			writeError(w, http.StatusNotFound, "not found")
+			return
+		}
 		filePath := filepath.Join(staticDir, strings.TrimPrefix(cleanPath, "/"))
 		if info, err := os.Stat(filePath); err == nil && !info.IsDir() {
 			fileServer.ServeHTTP(w, r)

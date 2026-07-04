@@ -476,8 +476,7 @@ svg { display: block; }
 .admin-target-section,
 .admin-notification-section,
 .admin-alert-rule-section,
-.admin-settings-section,
-.admin-maintenance-section {
+.admin-settings-section {
   margin-top: 16px;
   padding: 16px;
   border: 1px solid var(--border);
@@ -684,8 +683,6 @@ svg { display: block; }
   gap: 10px;
 }
 .admin-notification-type-card { gap: 8px; align-items: flex-start; }
-.admin-maintenance-stat-card { min-height: 108px; align-items: flex-start; }
-.admin-maintenance-stat-card span { color: var(--muted); font-size: 12px; font-weight: 500; }
 .admin-notification-destination { font-variant-numeric: normal; }
 .admin-modal-backdrop {
   position: fixed;

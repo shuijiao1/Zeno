@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { createAdminNode, createAdminNotificationChannel, createAdminProbeTarget, deleteAdminNotificationChannel, deleteAdminProbeTarget, fetchAdminAlertRules, fetchAdminAlertRuleStates, fetchAdminMaintenance, fetchAdminNodes, fetchAdminNotificationChannels, fetchAdminNotificationDeliveries, fetchAdminNotificationTypes, fetchAdminProbeTargets, fetchAdminSettings, fetchPublicSettings, normalizeAdminAlertRules, normalizeAdminAlertRuleStates, normalizeAdminMaintenance, normalizeAdminMaintenanceCleanup, normalizeAdminNodes, normalizeAdminNotificationChannels, normalizeAdminNotificationDeliveries, normalizeAdminNotificationTypes, normalizeAdminProbeTargets, normalizeSettings, normalizeNodeLatency, normalizeNodeState, normalizeSummary, requestAdminNodeInstallCommand, runAdminMaintenanceCleanup, testAdminNotificationChannel, updateAdminAlertRule, updateAdminMaintenance, updateAdminNode, updateAdminNotificationChannel, updateAdminNotificationType, updateAdminProbeTarget, updateAdminSettings } from './client'
+import { createAdminNode, createAdminNotificationChannel, createAdminProbeTarget, deleteAdminNotificationChannel, deleteAdminProbeTarget, fetchAdminAlertRules, fetchAdminAlertRuleStates, fetchAdminNodes, fetchAdminNotificationChannels, fetchAdminNotificationDeliveries, fetchAdminNotificationTypes, fetchAdminProbeTargets, fetchAdminSettings, fetchPublicSettings, normalizeAdminAlertRules, normalizeAdminAlertRuleStates, normalizeAdminNodes, normalizeAdminNotificationChannels, normalizeAdminNotificationDeliveries, normalizeAdminNotificationTypes, normalizeAdminProbeTargets, normalizeSettings, normalizeNodeLatency, normalizeNodeState, normalizeSummary, requestAdminNodeInstallCommand, testAdminNotificationChannel, updateAdminAlertRule, updateAdminNode, updateAdminNotificationChannel, updateAdminNotificationType, updateAdminProbeTarget, updateAdminSettings } from './client'
 
 describe('normalizeSummary', () => {
   it('maps controller snake_case JSON into frontend camelCase models', () => {
@@ -347,55 +347,6 @@ describe('normalizeSettings', () => {
   })
 })
 
-describe('normalizeAdminMaintenance', () => {
-  it('maps data-maintenance settings, candidates, and cleanup responses into camelCase models', () => {
-    const maintenance = normalizeAdminMaintenance({
-      settings: {
-        enabled: true,
-        state_retention_days: 30,
-        probe_retention_days: 45,
-        notification_retention_days: 90,
-        updated_at: '2026-07-04T13:00:00Z',
-      },
-      candidates: {
-        state_samples: 12,
-        probe_rounds: 3,
-        probe_samples: 9,
-        notification_deliveries: 2,
-      },
-    })
-    const cleanup = normalizeAdminMaintenanceCleanup({
-      settings: {
-        enabled: true,
-        state_retention_days: 30,
-        probe_retention_days: 45,
-        notification_retention_days: 90,
-      },
-      deleted: {
-        state_samples: 7,
-        probe_rounds: 2,
-        probe_samples: 6,
-        notification_deliveries: 1,
-      },
-      candidates: {
-        state_samples: 0,
-        probe_rounds: 0,
-        probe_samples: 0,
-        notification_deliveries: 0,
-      },
-      dry_run: true,
-    })
-
-    expect(maintenance.settings.stateRetentionDays).toBe(30)
-    expect(maintenance.settings.probeRetentionDays).toBe(45)
-    expect(maintenance.settings.notificationRetentionDays).toBe(90)
-    expect(maintenance.settings.updatedAt).toBe('2026-07-04T13:00:00Z')
-    expect(maintenance.candidates.probeSamples).toBe(9)
-    expect(cleanup.deleted.stateSamples).toBe(7)
-    expect(cleanup.dryRun).toBe(true)
-  })
-})
-
 describe('fetchAdminNodes', () => {
   const originalFetch = globalThis.fetch
 
@@ -531,78 +482,6 @@ describe('fetchSettings', () => {
     })
   })
 })
-
-describe('fetchAdminMaintenance', () => {
-  const originalFetch = globalThis.fetch
-
-  afterEach(() => {
-    globalThis.fetch = originalFetch
-    vi.restoreAllMocks()
-  })
-
-  it('fetches, updates, and runs cleanup with X-Admin-Token only', async () => {
-    const maintenancePayload = {
-      settings: {
-        enabled: true,
-        state_retention_days: 30,
-        probe_retention_days: 45,
-        notification_retention_days: 90,
-        updated_at: '2026-07-04T13:00:00Z',
-      },
-      candidates: {
-        state_samples: 12,
-        probe_rounds: 3,
-        probe_samples: 9,
-        notification_deliveries: 2,
-      },
-    }
-    const fetchMock = vi.fn(async (url: string | URL | Request) => {
-      if (String(url).endsWith('/cleanup')) {
-        return new Response(JSON.stringify({ ...maintenancePayload, deleted: maintenancePayload.candidates, dry_run: false }), { status: 200, headers: { 'Content-Type': 'application/json' } })
-      }
-      return new Response(JSON.stringify(maintenancePayload), { status: 200, headers: { 'Content-Type': 'application/json' } })
-    })
-    globalThis.fetch = fetchMock as unknown as typeof fetch
-
-    const maintenance = await fetchAdminMaintenance('admin-pass')
-    const updated = await updateAdminMaintenance('admin-pass', { enabled: true, stateRetentionDays: 30, probeRetentionDays: 45, notificationRetentionDays: 90 })
-    const cleanup = await runAdminMaintenanceCleanup('admin-pass', { dryRun: false, confirm: true })
-
-    expect(maintenance.candidates.stateSamples).toBe(12)
-    expect(updated.settings.notificationRetentionDays).toBe(90)
-    expect(cleanup.deleted.probeSamples).toBe(9)
-    expect(fetchMock).toHaveBeenNthCalledWith(1, '/api/admin/v1/maintenance', {
-      headers: {
-        Accept: 'application/json',
-        'X-Admin-Token': 'admin-pass',
-      },
-    })
-    expect(fetchMock).toHaveBeenNthCalledWith(2, '/api/admin/v1/maintenance', {
-      method: 'PATCH',
-      headers: {
-        Accept: 'application/json',
-        'Content-Type': 'application/json',
-        'X-Admin-Token': 'admin-pass',
-      },
-      body: JSON.stringify({
-        enabled: true,
-        state_retention_days: 30,
-        probe_retention_days: 45,
-        notification_retention_days: 90,
-      }),
-    })
-    expect(fetchMock).toHaveBeenNthCalledWith(3, '/api/admin/v1/maintenance/cleanup', {
-      method: 'POST',
-      headers: {
-        Accept: 'application/json',
-        'Content-Type': 'application/json',
-        'X-Admin-Token': 'admin-pass',
-      },
-      body: JSON.stringify({ dry_run: false, confirm: true }),
-    })
-  })
-})
-
 
 describe('fetchAdminNotifications', () => {
   const originalFetch = globalThis.fetch
@@ -1057,7 +936,7 @@ describe('admin alert rules', () => {
     vi.restoreAllMocks()
   })
 
-  it('normalizes status rules and fetches them with X-Admin-Token only', async () => {
+  it('normalizes notification types and fetches them with X-Admin-Token only', async () => {
     const apiPayload = {
       rules: [
         {
@@ -1098,7 +977,7 @@ describe('admin alert rules', () => {
     })
   })
 
-  it('updates status rule enablement threshold and duration without putting admin token in the URL', async () => {
+  it('updates notification type enablement threshold and duration without putting admin token in the URL', async () => {
     const fetchMock = vi.fn(async (_input: RequestInfo | URL, _init?: RequestInit) => new Response(JSON.stringify({
       rule: {
         id: 'cpu_high',

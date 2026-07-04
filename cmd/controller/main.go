@@ -91,7 +91,6 @@ func main() {
 	agentBinaryPath := flag.String("agent-binary", "", "optional Zeno agent linux/amd64 binary path served for dashboard install commands")
 	agentVersion := flag.String("agent-version", "", "optional version string inserted into generated agent install commands")
 	probeInterval := flag.Duration("probe-interval", time.Minute, "controller-local probe collection interval")
-	maintenanceInterval := flag.Duration("maintenance-interval", 24*time.Hour, "automatic data maintenance interval; set 0 to disable scheduler")
 	flag.Parse()
 
 	token, err := readAgentToken(*agentToken, *agentTokenFile)
@@ -126,24 +125,6 @@ func main() {
 		}()
 		log.Printf("controller-local probe collector enabled for node %s every %s", *nodeID, probeInterval.String())
 	}
-	if runtime.Store != nil && *maintenanceInterval > 0 {
-		go func() {
-			ticker := time.NewTicker(*maintenanceInterval)
-			defer ticker.Stop()
-			for range ticker.C {
-				cleanup, ran, err := runtime.Store.RunAutomaticAdminMaintenanceCleanup(context.Background())
-				if err != nil {
-					log.Printf("automatic data maintenance failed: %v", err)
-					continue
-				}
-				if ran && maintenanceDeletedAny(cleanup.Deleted) {
-					log.Printf("automatic data maintenance deleted state=%d probe_rounds=%d probe_samples=%d notification_deliveries=%d", cleanup.Deleted.StateSamples, cleanup.Deleted.ProbeRounds, cleanup.Deleted.ProbeSamples, cleanup.Deleted.NotificationDeliveries)
-				}
-			}
-		}()
-		log.Printf("automatic data maintenance scheduler checks every %s", maintenanceInterval.String())
-	}
-
 	log.Printf("zeno controller listening on %s", *addr)
 	if *webDir != "" {
 		log.Printf("serving dashboard from %s", *webDir)
@@ -160,8 +141,4 @@ func main() {
 	if err := http.ListenAndServe(*addr, runtime.Handler); err != nil {
 		log.Fatal(err)
 	}
-}
-
-func maintenanceDeletedAny(stats api.AdminMaintenanceStats) bool {
-	return stats.StateSamples > 0 || stats.ProbeRounds > 0 || stats.ProbeSamples > 0 || stats.NotificationDeliveries > 0
 }

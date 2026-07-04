@@ -29,7 +29,7 @@ Go 单二进制，当前职责：
 - 执行 Telegram 通知 dispatch。
 - 记录 sanitized notification delivery history。
 - 提供 Agent binary 下载和 install command 生成。
-- 执行状态规则 evaluator，维护当前异常状态。
+- 执行通知类型 evaluator，维护当前异常状态。
 
 Controller 不暴露 Agent token、admin token hash、通知凭据或 bearer secret。即使 Admin API 已鉴权，响应也必须走 explicit DTO。
 
@@ -59,8 +59,8 @@ Vite + React + TypeScript。
 
 1. 前台主页：服务器卡片、流量/资源概览、延迟摘要、外观设置应用。
 2. 节点详情页：延迟目标按钮、延迟图、资源历史图。
-3. Admin 后台：概览、服务器、延迟监控、通知、状态规则、当前异常、数据维护、外观设置；概览和导航直接展示当前异常命中数，概览也展示最近通知发送失败数，异常和发送明细仍分别留在状态规则页/通知页。
-4. Admin 管理动作：服务器创建/编辑/安装命令复制、目标创建/编辑/删除/排序/分配、通知渠道/类型/测试发送/发送记录、状态规则范围、维护清理。
+3. Admin 后台：概览、服务器、延迟监控、通知、当前异常、外观设置；概览和导航直接展示当前异常命中数，概览也展示最近通知发送失败数，异常和发送明细都集中在通知页。
+4. Admin 管理动作：服务器创建/编辑/安装命令复制、目标创建/编辑/删除/排序/分配、通知渠道/类型/测试发送/发送记录、通知类型作用范围。
 
 UI 规则：保持已确认主页卡片、详情页密度和 Admin 分区结构，不因数据/API 改动顺手重设计。
 
@@ -131,9 +131,9 @@ delta_out = current_out_total - last_out_total
 - Admin 手动测试发送同步返回 sanitized delivery，方便操作员立即验证配置。
 - Delivery history 只记录事件、节点、渠道、状态和 sanitized 错误，不记录 chat id、Bot Token 或凭据原文。
 
-## 状态规则 / 当前异常
+## 通知类型 / 当前异常
 
-状态规则持久化为 `alert_rules`，但 Admin 文案使用中性词“状态规则”。
+通知类型触发条件持久化为 `alert_rules`，Admin 文案统一放在“通知”下。
 
 当前规则覆盖：
 
@@ -180,18 +180,6 @@ Agent 使用 tokenless、可替换的轻量 HTTP provider 自动发现公网 IPv
 - `mobile_background_url`
 
 兼容字段：`background_url` 会映射到 desktop background。不要重新拆出 `avatar_url`。
-
-## 数据维护
-
-数据维护通过 Admin API 暴露：
-
-- retention 设置：state samples、probe rounds/samples、notification deliveries。
-- candidate counts。
-- dry-run cleanup。
-- confirmed cleanup。
-- 自动清理：`maintenance_enabled=true` 时 Controller 按 `-maintenance-interval` 定期执行同一套确认清理逻辑，默认 24 小时检查一次；默认关闭，避免首次部署误删历史。
-
-默认安全：只统计和清理可再生历史样本/发送记录，不清理节点、token、规则、设置或正式配置。
 
 ## 部署
 

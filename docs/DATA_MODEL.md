@@ -232,7 +232,7 @@ CREATE INDEX idx_notification_deliveries_created_at ON notification_deliveries(c
 
 ## alert_rules / alert_rule_node_scopes / alert_rule_states
 
-状态规则和当前异常。
+通知类型触发条件和当前异常。
 
 ```sql
 CREATE TABLE alert_rules (
@@ -281,7 +281,7 @@ CREATE INDEX idx_alert_rule_states_node_active ON alert_rule_states(node_id, act
 
 ## settings
 
-全局设置，包含站点标题、Logo、主题、桌面/手机背景图和数据维护 retention 配置。
+全局设置，包含站点标题、Logo、主题、桌面/手机背景图配置。
 
 ```sql
 CREATE TABLE settings (
@@ -300,10 +300,6 @@ CREATE TABLE settings (
 - `background_url`（兼容）
 - `desktop_background_url`
 - `mobile_background_url`
-- `maintenance_enabled`
-- `maintenance_state_retention_days`
-- `maintenance_probe_retention_days`
-- `maintenance_notification_retention_days`
 
 ## 迁移策略
 

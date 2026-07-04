@@ -1,7 +1,7 @@
 import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it } from 'vitest'
 import { AdminDashboard, HomeTopPanel, reconcileAlertRuleStates, reconcileAlertRuleStatesForNode, shellStyleForSettings } from './App'
-import type { AdminAlertRule, AdminAlertRuleState, AdminMaintenance, AdminNode, AdminNotificationChannel, AdminNotificationDelivery, AdminNotificationType, AdminProbeTarget, AdminSettings } from './types'
+import type { AdminAlertRule, AdminAlertRuleState, AdminNode, AdminNotificationChannel, AdminNotificationDelivery, AdminNotificationType, AdminProbeTarget, AdminSettings } from './types'
 
 const overviewProps = {
   totalCount: 11,
@@ -209,23 +209,7 @@ const settings: AdminSettings = {
   updatedAt: '2026-07-04T12:00:00Z',
 }
 
-const maintenance: AdminMaintenance = {
-  settings: {
-    enabled: true,
-    stateRetentionDays: 30,
-    probeRetentionDays: 45,
-    notificationRetentionDays: 90,
-    updatedAt: '2026-07-04T13:00:00Z',
-  },
-  candidates: {
-    stateSamples: 12,
-    probeRounds: 3,
-    probeSamples: 9,
-    notificationDeliveries: 2,
-  },
-}
-
-function renderAdmin(section: 'overview' | 'nodes' | 'targets' | 'notifications' | 'rules' | 'maintenance' | 'settings' = 'overview') {
+function renderAdmin(section: 'overview' | 'nodes' | 'targets' | 'notifications' | 'settings' = 'overview') {
   return renderToStaticMarkup(
     <AdminDashboard
       onHome={() => {}}
@@ -241,7 +225,6 @@ function renderAdmin(section: 'overview' | 'nodes' | 'targets' | 'notifications'
         notificationDeliveries,
         alertRules,
         alertRuleStates,
-        maintenance,
       }}
       onAdminTokenSubmit={() => {}}
       onAdminTokenClear={() => {}}
@@ -256,8 +239,6 @@ function renderAdmin(section: 'overview' | 'nodes' | 'targets' | 'notifications'
       onAdminNotificationTypeUpdate={() => {}}
       onAdminAlertRuleUpdate={() => {}}
       onAdminSettingsUpdate={() => {}}
-      onAdminMaintenanceUpdate={() => {}}
-      onAdminMaintenanceCleanup={async () => ({ ...maintenance, deleted: maintenance.candidates, dryRun: true })}
     />,
   )
 }
@@ -337,11 +318,10 @@ describe('AdminDashboard', () => {
     expect(html).toContain('概览')
     expect(html).toContain('服务器')
     expect(html).toContain('延迟监控')
-    expect(html).toContain('状态规则')
-    expect(html).toContain('1 异常 / 2 规则')
+    expect(html).toContain('1 异常 / 2 类型')
     expect(html).toContain('当前异常')
     expect(html).toContain('1 个命中')
-    expect(html).toContain('进入状态规则查看明细')
+    expect(html).toContain('进入通知页查看明细')
     expect(html).toContain('通知渠道')
     expect(html).toContain('1 / 1 启用')
     expect(html).toContain('Telegram-only')
@@ -350,33 +330,8 @@ describe('AdminDashboard', () => {
     expect(html).toContain('最近通知')
     expect(html).toContain('1 失败 / 1 记录')
     expect(html).toContain('进入通知页查看发送结果')
-    expect(html).toContain('数据维护')
     expect(html).toContain('设置')
     expect(html).toContain('通知')
-  })
-
-  it('renders data maintenance as its own section with retention settings and cleanup actions', () => {
-    const html = renderAdmin('maintenance')
-
-    expect(html).toContain('数据维护')
-    expect(html).toContain('启用自动清理')
-    expect(html).toContain('Controller 会定期自动清理')
-    expect(html).toContain('候选数据')
-    expect(html).toContain('状态采样')
-    expect(html).toContain('12 条')
-    expect(html).toContain('探测轮次')
-    expect(html).toContain('3 条')
-    expect(html).toContain('探测明细')
-    expect(html).toContain('9 条')
-    expect(html).toContain('通知发送')
-    expect(html).toContain('2 条')
-    expect(html).toContain('name="maintenance-enabled"')
-    expect(html).toContain('name="maintenance-state-retention-days"')
-    expect(html).toContain('name="maintenance-probe-retention-days"')
-    expect(html).toContain('name="maintenance-notification-retention-days"')
-    expect(html).toContain('保存数据维护设置')
-    expect(html).toContain('预览清理')
-    expect(html).toContain('确认清理')
   })
 
   it('renders settings as a lightweight appearance configuration page', () => {
@@ -430,11 +385,11 @@ describe('AdminDashboard', () => {
     expect(html).not.toContain('告警')
   })
 
-  it('renders status rules as their own notification-rule management page with current active hits', () => {
-    const html = renderAdmin('rules')
+  it('renders notification type triggers inside the notifications page with current active hits', () => {
+    const html = renderAdmin('notifications')
 
-    expect(html).toContain('状态规则')
-    expect(html).toContain('通知规则')
+    expect(html).toContain('通知类型')
+    expect(html).toContain('触发条件')
     expect(html).toContain('当前异常')
     expect(html).toContain('Hytron')
     expect(html).toContain('warning')
@@ -448,13 +403,13 @@ describe('AdminDashboard', () => {
     expect(html).toContain('Backup (backup)')
     expect(html).toContain('离线判定')
     expect(html).toContain('node_offline')
-    expect(html).toContain('编辑规则')
-    expect(html).toContain('停用规则')
+    expect(html).toContain('编辑通知类型')
+    expect(html).toContain('停用通知类型')
     expect(html).not.toContain('告警')
     expect(html).not.toContain('telegram-bot-secret')
   })
 
-  it('reconciles current anomalies immediately when a status rule is disabled or its threshold changes', () => {
+  it('reconciles current anomalies immediately when a notification type is disabled or its threshold changes', () => {
     const [disabledState] = reconcileAlertRuleStates({ ...alertRules[0], enabled: false, threshold: 85, durationSec: 120 }, alertRuleStates)
 
     expect(disabledState.enabled).toBe(false)

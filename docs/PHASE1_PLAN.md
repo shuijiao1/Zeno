@@ -30,10 +30,10 @@ Zeno 当前已经具备完整预览闭环：
 - React 前台和后台。
 - Agent 主机状态、资源历史、月流量（含首页计费周期范围）、延迟/服务探测。
 - `tcping`、`ping`/ICMP、`http_get` 探针目标。
-- Admin 概览当前异常计数和最近通知发送失败数、服务器、服务器排序、Agent 安装命令复制、探针目标、探针目标排序、节点分配、通知、外观设置、状态规则、当前异常和数据维护（含启用后的自动清理）。
+- Admin 概览当前异常计数和最近通知发送失败数、服务器、服务器排序、Agent 安装命令复制、探针目标、探针目标排序、节点分配、通知、外观设置和当前异常。
 - Telegram-only 通知 dispatch、测试发送和 sanitized delivery history。
 - 服务器元数据：到期日、账单周期、显示顺序（后台可上移/下移/整理）、国家码/国旗、公网 IPv4、公网 IPv6，Agent 可自动识别公网 IP / GeoIP。
-- 状态规则支持按服务器范围生效。
+- 通知类型触发条件支持按服务器范围生效。
 - Linux amd64 发布包、systemd 模板、本机 Controller 更新脚本、单独 Agent 安装脚本和 GUKO 服务器清单导入脚本。
 - Hytron 预览部署：`/opt/zeno`，`zeno-controller.service`，`zeno-agent.service`。
 
@@ -50,4 +50,4 @@ Zeno 当前已经具备完整预览闭环：
 1. 多节点铺 Agent：在 Controller 公网 HTTPS 入口确认后逐台安装，先少量 smoke，再批量。
 2. 安装文档打磨和开源前自部署说明。
 3. 后续服务监控状态页 / 历史页：暂缓，确认需要后再做。
-4. UI polish：外观 URL 输入体验、拖拽排序、更多数据维护增强等，放在主线闭环之后。
+4. UI polish：外观 URL 输入体验、拖拽排序等，放在主线闭环之后。

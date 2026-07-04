@@ -13,33 +13,6 @@ export interface AdminSettings {
   updatedAt?: string
 }
 
-export interface AdminMaintenanceSettings {
-  enabled: boolean
-  stateRetentionDays: number
-  probeRetentionDays: number
-  notificationRetentionDays: number
-  updatedAt?: string
-}
-
-export interface AdminMaintenanceStats {
-  stateSamples: number
-  probeRounds: number
-  probeSamples: number
-  notificationDeliveries: number
-}
-
-export interface AdminMaintenance {
-  settings: AdminMaintenanceSettings
-  candidates: AdminMaintenanceStats
-}
-
-export interface AdminMaintenanceCleanup {
-  settings: AdminMaintenanceSettings
-  deleted: AdminMaintenanceStats
-  candidates: AdminMaintenanceStats
-  dryRun: boolean
-}
-
 export interface LatencySummary {
   targetId: string
   targetName: string
