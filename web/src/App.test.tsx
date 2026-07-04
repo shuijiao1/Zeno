@@ -28,7 +28,6 @@ const hytronNode: AdminNode = {
   publicIPv4: '198.51.100.8',
   publicIPv6: '2001:db8::8',
   monthlyQuotaBytes: 1099511627776,
-  hideForGuest: false,
   lastSeenAt: '2026-07-03T00:00:00Z',
   createdAt: '2026-07-02T00:00:00Z',
   updatedAt: '2026-07-03T00:00:00Z',
@@ -66,7 +65,6 @@ const hytronTarget: AdminProbeTarget = {
   timeoutMs: 1200,
   intervalSec: 60,
   enabled: true,
-  hideForGuest: false,
   assignments: [
     { nodeId: 'hytron', nodeDisplayName: 'Hytron', enabled: true },
     { nodeId: 'backup', nodeDisplayName: 'Backup', enabled: false },
@@ -83,7 +81,6 @@ const pingTarget: AdminProbeTarget = {
   timeoutMs: 900,
   intervalSec: 45,
   enabled: true,
-  hideForGuest: false,
   assignments: [
     { nodeId: 'hytron', nodeDisplayName: 'Hytron', enabled: true },
   ],
@@ -99,7 +96,6 @@ const httpTarget: AdminProbeTarget = {
   timeoutMs: 1500,
   intervalSec: 60,
   enabled: true,
-  hideForGuest: false,
   assignments: [
     { nodeId: 'hytron', nodeDisplayName: 'Hytron', enabled: true },
   ],

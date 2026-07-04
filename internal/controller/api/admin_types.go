@@ -325,7 +325,6 @@ type AdminNodeCreateRequest struct {
 	PublicIPv4        string             `json:"public_ipv4,omitempty"`
 	PublicIPv6        string             `json:"public_ipv6,omitempty"`
 	MonthlyQuotaBytes adminOptionalInt64 `json:"monthly_quota_bytes,omitempty"`
-	HideForGuest      bool               `json:"hide_for_guest,omitempty"`
 	Disabled          bool               `json:"disabled,omitempty"`
 }
 
@@ -397,16 +396,15 @@ type AdminProbeTargetResponse struct {
 }
 
 type AdminProbeTargetCreateRequest struct {
-	ID           string             `json:"id,omitempty"`
-	Name         string             `json:"name"`
-	Type         string             `json:"type"`
-	Address      string             `json:"address"`
-	Port         adminOptionalInt64 `json:"port,omitempty"`
-	Count        int                `json:"count"`
-	TimeoutMS    int                `json:"timeout_ms"`
-	IntervalSec  int                `json:"interval_sec"`
-	Enabled      *bool              `json:"enabled,omitempty"`
-	HideForGuest bool               `json:"hide_for_guest,omitempty"`
+	ID          string             `json:"id,omitempty"`
+	Name        string             `json:"name"`
+	Type        string             `json:"type"`
+	Address     string             `json:"address"`
+	Port        adminOptionalInt64 `json:"port,omitempty"`
+	Count       int                `json:"count"`
+	TimeoutMS   int                `json:"timeout_ms"`
+	IntervalSec int                `json:"interval_sec"`
+	Enabled     *bool              `json:"enabled,omitempty"`
 }
 
 func (request *AdminProbeTargetCreateRequest) normalize() error {
@@ -437,16 +435,15 @@ func (request *AdminProbeTargetCreateRequest) normalize() error {
 }
 
 type AdminProbeTargetUpdateRequest struct {
-	Name         *string                            `json:"name,omitempty"`
-	Type         *string                            `json:"type,omitempty"`
-	Address      *string                            `json:"address,omitempty"`
-	Port         adminOptionalInt64                 `json:"port,omitempty"`
-	Count        *int                               `json:"count,omitempty"`
-	TimeoutMS    *int                               `json:"timeout_ms,omitempty"`
-	IntervalSec  *int                               `json:"interval_sec,omitempty"`
-	Enabled      *bool                              `json:"enabled,omitempty"`
-	HideForGuest *bool                              `json:"hide_for_guest,omitempty"`
-	Assignments  []AdminProbeTargetAssignmentUpdate `json:"assignments,omitempty"`
+	Name        *string                            `json:"name,omitempty"`
+	Type        *string                            `json:"type,omitempty"`
+	Address     *string                            `json:"address,omitempty"`
+	Port        adminOptionalInt64                 `json:"port,omitempty"`
+	Count       *int                               `json:"count,omitempty"`
+	TimeoutMS   *int                               `json:"timeout_ms,omitempty"`
+	IntervalSec *int                               `json:"interval_sec,omitempty"`
+	Enabled     *bool                              `json:"enabled,omitempty"`
+	Assignments []AdminProbeTargetAssignmentUpdate `json:"assignments,omitempty"`
 }
 
 type AdminProbeTargetAssignmentUpdate struct {
@@ -515,9 +512,6 @@ func (request *AdminProbeTargetUpdateRequest) normalize() error {
 	if request.Enabled != nil {
 		changed = true
 	}
-	if request.HideForGuest != nil {
-		changed = true
-	}
 	if request.Assignments != nil {
 		changed = true
 		if len(request.Assignments) == 0 {
@@ -568,17 +562,16 @@ func validPort(port int64) bool {
 }
 
 type AdminProbeTarget struct {
-	ID           string                       `json:"id"`
-	Name         string                       `json:"name"`
-	Type         string                       `json:"type"`
-	Address      string                       `json:"address"`
-	Port         *int                         `json:"port"`
-	Count        int                          `json:"count"`
-	TimeoutMS    int                          `json:"timeout_ms"`
-	IntervalSec  int                          `json:"interval_sec"`
-	Enabled      bool                         `json:"enabled"`
-	HideForGuest bool                         `json:"hide_for_guest"`
-	Assignments  []AdminProbeTargetAssignment `json:"assignments"`
+	ID          string                       `json:"id"`
+	Name        string                       `json:"name"`
+	Type        string                       `json:"type"`
+	Address     string                       `json:"address"`
+	Port        *int                         `json:"port"`
+	Count       int                          `json:"count"`
+	TimeoutMS   int                          `json:"timeout_ms"`
+	IntervalSec int                          `json:"interval_sec"`
+	Enabled     bool                         `json:"enabled"`
+	Assignments []AdminProbeTargetAssignment `json:"assignments"`
 }
 
 type AdminProbeTargetAssignment struct {
@@ -824,7 +817,6 @@ type AdminNodeUpdateRequest struct {
 	PublicIPv4        *string            `json:"public_ipv4,omitempty"`
 	PublicIPv6        *string            `json:"public_ipv6,omitempty"`
 	MonthlyQuotaBytes adminOptionalInt64 `json:"monthly_quota_bytes,omitempty"`
-	HideForGuest      *bool              `json:"hide_for_guest,omitempty"`
 	Disabled          *bool              `json:"disabled,omitempty"`
 }
 
@@ -914,9 +906,6 @@ func (request *AdminNodeUpdateRequest) normalize() error {
 			return errInvalidAdminNodeUpdate
 		}
 	}
-	if request.HideForGuest != nil {
-		changed = true
-	}
 	if request.Disabled != nil {
 		changed = true
 	}
@@ -963,7 +952,6 @@ type AdminNode struct {
 	PublicIPv4        string  `json:"public_ipv4,omitempty"`
 	PublicIPv6        string  `json:"public_ipv6,omitempty"`
 	MonthlyQuotaBytes *int64  `json:"monthly_quota_bytes,omitempty"`
-	HideForGuest      bool    `json:"hide_for_guest"`
 	LastSeenAt        *string `json:"last_seen_at,omitempty"`
 	CreatedAt         string  `json:"created_at"`
 	UpdatedAt         string  `json:"updated_at"`

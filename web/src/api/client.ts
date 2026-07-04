@@ -107,7 +107,6 @@ interface ApiAdminNode {
   public_ipv4?: string
   public_ipv6?: string
   monthly_quota_bytes?: number | null
-  hide_for_guest?: boolean
   last_seen_at?: string | null
   created_at: string
   updated_at: string
@@ -141,7 +140,6 @@ interface ApiAdminProbeTarget {
   timeout_ms: number
   interval_sec: number
   enabled: boolean
-  hide_for_guest?: boolean
   assignments: ApiAdminProbeTargetAssignment[] | null
 }
 
@@ -388,7 +386,6 @@ export interface AdminNodeUpdateInput {
   publicIPv4?: string
   publicIPv6?: string
   monthlyQuotaBytes?: number | null
-  hideForGuest?: boolean
   disabled?: boolean
 }
 
@@ -405,7 +402,6 @@ export interface AdminNodeCreateInput {
   publicIPv4?: string
   publicIPv6?: string
   monthlyQuotaBytes?: number | null
-  hideForGuest?: boolean
   disabled?: boolean
 }
 
@@ -419,7 +415,6 @@ export interface AdminProbeTargetInput {
   timeoutMs: number
   intervalSec: number
   enabled?: boolean
-  hideForGuest?: boolean
 }
 
 export interface AdminProbeTargetUpdateInput {
@@ -431,7 +426,6 @@ export interface AdminProbeTargetUpdateInput {
   timeoutMs?: number
   intervalSec?: number
   enabled?: boolean
-  hideForGuest?: boolean
   assignments?: Array<{ nodeId: string; enabled: boolean }>
 }
 
@@ -1005,7 +999,6 @@ function serializeAdminNodeUpdate(input: AdminNodeUpdateInput) {
     ...(input.publicIPv4 !== undefined ? { public_ipv4: input.publicIPv4 } : {}),
     ...(input.publicIPv6 !== undefined ? { public_ipv6: input.publicIPv6 } : {}),
     ...(input.monthlyQuotaBytes !== undefined ? { monthly_quota_bytes: input.monthlyQuotaBytes } : {}),
-    ...(input.hideForGuest !== undefined ? { hide_for_guest: input.hideForGuest } : {}),
     ...(input.disabled !== undefined ? { disabled: input.disabled } : {}),
   }
 }
@@ -1024,7 +1017,6 @@ function serializeAdminNodeCreate(input: AdminNodeCreateInput) {
     ...(input.publicIPv4 !== undefined ? { public_ipv4: input.publicIPv4 } : {}),
     ...(input.publicIPv6 !== undefined ? { public_ipv6: input.publicIPv6 } : {}),
     ...(input.monthlyQuotaBytes !== undefined ? { monthly_quota_bytes: input.monthlyQuotaBytes } : {}),
-    ...(input.hideForGuest !== undefined ? { hide_for_guest: input.hideForGuest } : {}),
     ...(input.disabled !== undefined ? { disabled: input.disabled } : {}),
   }
 }
@@ -1040,7 +1032,6 @@ function serializeAdminProbeTargetCreate(input: AdminProbeTargetInput) {
     timeout_ms: input.timeoutMs,
     interval_sec: input.intervalSec,
     ...(input.enabled !== undefined ? { enabled: input.enabled } : {}),
-    ...(input.hideForGuest !== undefined ? { hide_for_guest: input.hideForGuest } : {}),
   }
 }
 
@@ -1054,7 +1045,6 @@ function serializeAdminProbeTargetUpdate(input: AdminProbeTargetUpdateInput) {
     ...(input.timeoutMs !== undefined ? { timeout_ms: input.timeoutMs } : {}),
     ...(input.intervalSec !== undefined ? { interval_sec: input.intervalSec } : {}),
     ...(input.enabled !== undefined ? { enabled: input.enabled } : {}),
-    ...(input.hideForGuest !== undefined ? { hide_for_guest: input.hideForGuest } : {}),
     ...(input.assignments !== undefined ? {
       assignments: input.assignments.map((assignment) => ({
         node_id: assignment.nodeId,
@@ -1179,7 +1169,6 @@ function normalizeAdminNode(node: ApiAdminNode): AdminNode {
     publicIPv4: node.public_ipv4,
     publicIPv6: node.public_ipv6,
     monthlyQuotaBytes: node.monthly_quota_bytes ?? null,
-    hideForGuest: node.hide_for_guest ?? false,
     lastSeenAt: node.last_seen_at ?? undefined,
     createdAt: node.created_at,
     updatedAt: node.updated_at,
@@ -1209,7 +1198,6 @@ function normalizeAdminProbeTarget(target: ApiAdminProbeTarget): AdminProbeTarge
     timeoutMs: target.timeout_ms,
     intervalSec: target.interval_sec,
     enabled: target.enabled,
-    hideForGuest: target.hide_for_guest ?? false,
     assignments: (target.assignments ?? []).map((assignment) => ({
       nodeId: assignment.node_id,
       nodeDisplayName: assignment.node_display_name,

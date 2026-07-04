@@ -1059,7 +1059,7 @@ function AdminNodeList({ nodes, onEdit }: { nodes: AdminNode[]; onEdit: (nodeId:
         <article className="admin-list-row" role="listitem" key={node.id}>
           <div className="admin-list-main">
             <strong>{node.displayName}</strong>
-            <small>{node.id} · {countryCodeToFlag(node.countryCode)} {formatAdminLocation(node)} · 顺序 {node.displayOrder}{node.hideForGuest ? ' · 游客隐藏' : ''}</small>
+            <small>{node.id} · {countryCodeToFlag(node.countryCode)} {formatAdminLocation(node)} · 顺序 {node.displayOrder}</small>
           </div>
           <span className={`admin-node-status status-${node.disabled ? 'disabled' : node.status}`}>{node.disabled ? 'disabled' : node.status}</span>
           <span>{formatAdminPublicIPs(node)}</span>
@@ -1094,7 +1094,6 @@ function AdminNodeCreateModal({ onCreate, onClose }: { onCreate: (input: AdminNo
       publicIPv4: String(formData.get('new-public-ipv4') ?? '').trim(),
       publicIPv6: String(formData.get('new-public-ipv6') ?? '').trim(),
       monthlyQuotaBytes: parseQuotaGigabytes(String(formData.get('new-monthly-quota-gb') ?? '')),
-      hideForGuest: formData.get('new-hide-for-guest') === 'on',
     })
   }
 
@@ -1154,10 +1153,6 @@ function AdminNodeCreateModal({ onCreate, onClose }: { onCreate: (input: AdminNo
           <span>月配额 GB</span>
           <input name="new-monthly-quota-gb" type="number" min="0" step="0.01" />
         </label>
-        <label className="admin-node-toggle">
-          <input name="new-hide-for-guest" type="checkbox" />
-          <span>游客隐藏</span>
-        </label>
         <button type="submit">添加服务器</button>
       </form>
     </AdminModal>
@@ -1182,7 +1177,6 @@ function AdminNodeEditModal({ node, onUpdate, onInstallCommand, onClose }: { nod
       publicIPv4: String(formData.get('public-ipv4') ?? '').trim(),
       publicIPv6: String(formData.get('public-ipv6') ?? '').trim(),
       monthlyQuotaBytes: parseQuotaGigabytes(String(formData.get('monthly-quota-gb') ?? '')),
-      hideForGuest: formData.get('hide-for-guest') === 'on',
       disabled: formData.get('disabled') === 'on',
     })
   }
@@ -1198,7 +1192,6 @@ function AdminNodeEditModal({ node, onUpdate, onInstallCommand, onClose }: { nod
     <AdminModal title={`编辑服务器 · ${node.displayName}`} eyebrow={node.id} onClose={onClose}>
       <dl className="admin-modal-summary">
         <div><dt>状态</dt><dd>{node.disabled ? 'disabled' : node.status}</dd></div>
-        <div><dt>游客可见</dt><dd>{node.hideForGuest ? '隐藏' : '可见'}</dd></div>
         <div><dt>账单</dt><dd>{formatAdminBilling(node)}</dd></div>
         <div><dt>公网 IP</dt><dd>{formatAdminPublicIPs(node)}</dd></div>
         <div><dt>顺序</dt><dd>{node.displayOrder}</dd></div>
@@ -1255,10 +1248,6 @@ function AdminNodeEditModal({ node, onUpdate, onInstallCommand, onClose }: { nod
         <label>
           <span>月配额 GB</span>
           <input name="monthly-quota-gb" type="number" min="0" step="0.01" defaultValue={formatQuotaGigabytes(node.monthlyQuotaBytes)} />
-        </label>
-        <label className="admin-node-toggle">
-          <input name="hide-for-guest" type="checkbox" defaultChecked={node.hideForGuest} />
-          <span>游客隐藏</span>
         </label>
         <label className="admin-node-toggle">
           <input name="disabled" type="checkbox" defaultChecked={node.disabled} />
@@ -1358,7 +1347,7 @@ function AdminTargetList({ targets, nodes, onEdit, onUpdate, onDelete }: { targe
         <article className="admin-list-row" role="listitem" key={target.id}>
           <div className="admin-list-main">
             <strong>{target.name}</strong>
-            <small>{target.id}{target.hideForGuest ? ' · 游客隐藏' : ''}</small>
+            <small>{target.id}</small>
           </div>
           <span className={`admin-node-status status-${target.enabled ? 'online' : 'disabled'}`}>{target.enabled ? 'enabled' : 'disabled'}</span>
           <span>{formatTargetEndpoint(target)}</span>
@@ -1398,7 +1387,6 @@ function AdminTargetCreateModal({ onCreate, onClose }: { onCreate: (input: Admin
       count: parsePositiveInt(String(formData.get('new-target-count') ?? '')) ?? 3,
       timeoutMs: parsePositiveInt(String(formData.get('new-target-timeout-ms') ?? '')) ?? 1200,
       intervalSec: parsePositiveInt(String(formData.get('new-target-interval-sec') ?? '')) ?? 60,
-      hideForGuest: formData.get('new-target-hide-for-guest') === 'on',
     })
   }
 
@@ -1439,10 +1427,6 @@ function AdminTargetCreateModal({ onCreate, onClose }: { onCreate: (input: Admin
           <span>间隔 s</span>
           <input name="new-target-interval-sec" type="number" min="1" defaultValue="60" />
         </label>
-        <label className="admin-node-toggle">
-          <input name="new-target-hide-for-guest" type="checkbox" />
-          <span>游客隐藏</span>
-        </label>
         <button type="submit">添加目标</button>
       </form>
     </AdminModal>
@@ -1468,7 +1452,6 @@ function AdminTargetEditModal({ target, nodes, onUpdate, onClose }: { target: Ad
       timeoutMs: parsePositiveInt(String(formData.get('target-timeout-ms') ?? '')) ?? target.timeoutMs,
       intervalSec: parsePositiveInt(String(formData.get('target-interval-sec') ?? '')) ?? target.intervalSec,
       enabled: formData.get('target-enabled') === 'on',
-      hideForGuest: formData.get('target-hide-for-guest') === 'on',
       assignments: assignmentRows.length > 0
         ? assignmentRows.map((assignment) => ({
             nodeId: assignment.nodeId,
@@ -1482,7 +1465,6 @@ function AdminTargetEditModal({ target, nodes, onUpdate, onClose }: { target: Ad
     <AdminModal title={`编辑延迟监控 · ${target.name}`} eyebrow={target.id} onClose={onClose}>
       <dl className="admin-modal-summary">
         <div><dt>状态</dt><dd>{target.enabled ? 'enabled' : 'disabled'}</dd></div>
-        <div><dt>游客可见</dt><dd>{target.hideForGuest ? '隐藏' : '可见'}</dd></div>
         <div><dt>类型</dt><dd>{formatTargetTypeLabel(target.type)}</dd></div>
         <div><dt>地址</dt><dd>{formatTargetEndpoint(target)}</dd></div>
         <div><dt>参数</dt><dd>{target.count} 次 / {target.timeoutMs}ms / {target.intervalSec}s</dd></div>
@@ -1526,10 +1508,6 @@ function AdminTargetEditModal({ target, nodes, onUpdate, onClose }: { target: Ad
         <label className="admin-node-toggle">
           <input name="target-enabled" type="checkbox" defaultChecked={target.enabled} />
           <span>启用目标</span>
-        </label>
-        <label className="admin-node-toggle">
-          <input name="target-hide-for-guest" type="checkbox" defaultChecked={target.hideForGuest} />
-          <span>游客隐藏</span>
         </label>
         {assignmentRows.length > 0 && (
           <fieldset className="admin-target-assignment-list">
