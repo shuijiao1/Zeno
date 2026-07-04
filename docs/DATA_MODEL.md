@@ -95,7 +95,7 @@ CREATE INDEX idx_state_samples_node_ts ON state_samples(node_id, ts);
 
 ## traffic_monthly
 
-月流量累计。Controller 根据 state 的累计 counter delta 更新。
+月流量累计。Controller 根据 state 的累计 counter delta 更新；`month` 是该节点当前计费周期开始月份（例如 `monthly_reset_day=15` 且当前周期为 2026-06-15 至 2026-07-14 时，`month=2026-06`）。
 
 ```sql
 CREATE TABLE traffic_monthly (

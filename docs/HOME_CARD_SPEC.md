@@ -63,7 +63,7 @@ Label          value / capacity
 - 70-84%：橙色。
 - >=85%：红色。
 
-月流量条按 `billable_bytes / quota_bytes` 计算，不按速度积分。
+月流量条按当前计费周期的 `billable_bytes / quota_bytes` 计算，不按速度积分；展示层要标注当前周期日期范围。
 
 ## 网络流量信息
 
@@ -107,6 +107,10 @@ interface HomeCardNode {
   netOutSpeedBps: number | null
   netInTotalBytes: number | null
   netOutTotalBytes: number | null
+  billingMode?: string
+  monthlyResetDay?: number
+  monthlyPeriodStart?: string
+  monthlyPeriodEnd?: string
   monthlyBillableBytes: number | null
   monthlyQuotaBytes: number | null
   latencySummary?: LatencySummary

@@ -72,6 +72,10 @@ export interface HomeCardNode {
   netOutSpeedBps: number | null
   netInTotalBytes: number | null
   netOutTotalBytes: number | null
+  billingMode?: string
+  monthlyResetDay?: number
+  monthlyPeriodStart?: string
+  monthlyPeriodEnd?: string
   monthlyBillableBytes: number | null
   monthlyQuotaBytes: number | null
   latencySummary?: LatencySummary

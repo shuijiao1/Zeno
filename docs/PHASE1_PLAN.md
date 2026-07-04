@@ -28,7 +28,7 @@ Zeno 当前已经具备完整预览闭环：
 - Go Agent + systemd。
 - Public API 和 Admin API。
 - React 前台和后台。
-- Agent 主机状态、资源历史、月流量、延迟/服务探测。
+- Agent 主机状态、资源历史、月流量（含首页计费周期范围）、延迟/服务探测。
 - `tcping`、`ping`/ICMP、`http_get` 探针目标。
 - Admin 服务器、服务器排序、Agent 安装命令复制、探针目标、探针目标排序、节点分配、通知、外观设置、状态规则、当前异常和数据维护（含启用后的自动清理）。
 - Telegram-only 通知 dispatch、测试发送和 sanitized delivery history。

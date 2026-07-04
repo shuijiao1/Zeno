@@ -304,14 +304,50 @@ func billableTrafficDelta(mode string, deltaIn, deltaOut int64) int64 {
 }
 
 func billingPeriodKey(ts time.Time, resetDay int) string {
+	return billingPeriodFor(ts, resetDay).Key
+}
+
+type billingPeriod struct {
+	Key       string
+	StartDate string
+	EndDate   string
+}
+
+func billingPeriodFor(ts time.Time, resetDay int) billingPeriod {
 	if resetDay < 1 || resetDay > 31 {
 		resetDay = 1
 	}
-	period := ts.UTC()
-	if period.Day() < resetDay {
-		period = period.AddDate(0, -1, 0)
+	now := ts.UTC()
+	currentReset := resetDate(now.Year(), now.Month(), resetDay)
+	start := currentReset
+	if now.Before(currentReset) {
+		previousYear, previousMonth := monthOffset(now.Year(), now.Month(), -1)
+		start = resetDate(previousYear, previousMonth, resetDay)
 	}
-	return period.Format("2006-01")
+	nextYear, nextMonth := monthOffset(start.Year(), start.Month(), 1)
+	nextReset := resetDate(nextYear, nextMonth, resetDay)
+	return billingPeriod{
+		Key:       start.Format("2006-01"),
+		StartDate: start.Format("2006-01-02"),
+		EndDate:   nextReset.AddDate(0, 0, -1).Format("2006-01-02"),
+	}
+}
+
+func resetDate(year int, month time.Month, resetDay int) time.Time {
+	day := resetDay
+	if maxDay := daysInMonth(year, month); day > maxDay {
+		day = maxDay
+	}
+	return time.Date(year, month, day, 0, 0, 0, 0, time.UTC)
+}
+
+func daysInMonth(year int, month time.Month) int {
+	return time.Date(year, month+1, 0, 0, 0, 0, 0, time.UTC).Day()
+}
+
+func monthOffset(year int, month time.Month, offset int) (int, time.Month) {
+	shifted := time.Date(year, month, 1, 0, 0, 0, 0, time.UTC).AddDate(0, offset, 0)
+	return shifted.Year(), shifted.Month()
 }
 
 func nullableUnix(value int64) any {

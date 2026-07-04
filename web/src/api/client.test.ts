@@ -28,6 +28,10 @@ describe('normalizeSummary', () => {
           net_out_speed_bps: 2048,
           net_in_total_bytes: 4096,
           net_out_total_bytes: 8192,
+          billing_mode: 'max',
+          monthly_reset_day: 15,
+          monthly_period_start: '2026-06-15',
+          monthly_period_end: '2026-07-14',
           monthly_billable_bytes: 1000,
           monthly_quota_bytes: 2000,
           latency_summary: {
@@ -50,6 +54,10 @@ describe('normalizeSummary', () => {
     expect(summary.nodes[0].countryCode).toBe('HK')
     expect(summary.nodes[0].cpuCores).toBe(2)
     expect(summary.nodes[0].expiryLabel).toBe('永 久')
+    expect(summary.nodes[0].billingMode).toBe('max')
+    expect(summary.nodes[0].monthlyResetDay).toBe(15)
+    expect(summary.nodes[0].monthlyPeriodStart).toBe('2026-06-15')
+    expect(summary.nodes[0].monthlyPeriodEnd).toBe('2026-07-14')
     expect(summary.nodes[0].monthlyBillableBytes).toBe(1000)
     expect(summary.nodes[0].latencySummary?.targetName).toBe('Google')
     expect(summary.nodes[0].osVersion).toBe('13')

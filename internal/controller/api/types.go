@@ -40,6 +40,10 @@ type Node struct {
 	NetOutSpeedBps       *float64        `json:"net_out_speed_bps"`
 	NetInTotalBytes      *float64        `json:"net_in_total_bytes"`
 	NetOutTotalBytes     *float64        `json:"net_out_total_bytes"`
+	BillingMode          string          `json:"billing_mode,omitempty"`
+	MonthlyResetDay      int             `json:"monthly_reset_day,omitempty"`
+	MonthlyPeriodStart   string          `json:"monthly_period_start,omitempty"`
+	MonthlyPeriodEnd     string          `json:"monthly_period_end,omitempty"`
 	MonthlyBillableBytes *float64        `json:"monthly_billable_bytes"`
 	MonthlyQuotaBytes    *float64        `json:"monthly_quota_bytes"`
 	LatencySummary       *LatencySummary `json:"latency_summary,omitempty"`

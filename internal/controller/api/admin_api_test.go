@@ -250,6 +250,10 @@ func TestAdminNodeBillingIPAndDisplayOrderFieldsFlowThroughAdminAndPublicSummary
 	if summary.Nodes[0].ExpiryLabel != "2026-08-01" || summary.Nodes[1].ExpiryLabel != "2026-12-31" {
 		t.Fatalf("summary expiry labels = %q/%q, want explicit expiry dates", summary.Nodes[0].ExpiryLabel, summary.Nodes[1].ExpiryLabel)
 	}
+	expectedPeriod := billingPeriodFor(time.Now().UTC(), 15)
+	if summary.Nodes[0].BillingMode != "max" || summary.Nodes[0].MonthlyResetDay != 15 || summary.Nodes[0].MonthlyPeriodStart != expectedPeriod.StartDate || summary.Nodes[0].MonthlyPeriodEnd != expectedPeriod.EndDate {
+		t.Fatalf("summary billing period = %+v, want billing mode/reset day and current period", summary.Nodes[0])
+	}
 }
 
 func TestAdminNodePatchRejectsUnauthorizedUnknownAndInvalidRequests(t *testing.T) {

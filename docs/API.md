@@ -212,6 +212,10 @@ X-Agent-Version: <version>
       "net_out_speed_bps": 2048,
       "net_in_total_bytes": 4096,
       "net_out_total_bytes": 8192,
+      "billing_mode": "both",
+      "monthly_reset_day": 15,
+      "monthly_period_start": "2026-06-15",
+      "monthly_period_end": "2026-07-14",
       "monthly_billable_bytes": 1099511627776,
       "monthly_quota_bytes": 2199023255552
     }
@@ -219,6 +223,8 @@ X-Agent-Version: <version>
   "latency_points": []
 }
 ```
+
+`monthly_period_start` / `monthly_period_end` 是当前流量计费周期的 UTC 日期范围，按该节点 `monthly_reset_day` 计算；`monthly_billable_bytes` 也取同一周期。
 
 ### GET /api/public/v1/nodes/{node_id}/latency
 

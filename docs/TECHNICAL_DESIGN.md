@@ -103,7 +103,8 @@ delta_out = current_out_total - last_out_total
   - `out`: billable = out_bytes
   - `both`: billable = in_bytes + out_bytes
   - `max`: billable = max(in_bytes, out_bytes)
-- `monthly_reset_day`：每台服务器可设置月流量重置日。重置日为 1 时按自然月；重置日大于 1 时，重置日前的样本计入上一个账单周期。
+- `monthly_reset_day`：每台服务器可设置月流量重置日。重置日为 1 时按自然月；重置日大于 1 时，重置日前的样本计入上一个账单周期；月末不存在该日期时按当月最后一天计算。
+- Public summary 会返回当前流量计费周期的 `monthly_period_start` / `monthly_period_end`，首页流量条直接展示这段周期范围，避免“本月”口径不清。
 
 ## 延迟 / 服务探测数据
 

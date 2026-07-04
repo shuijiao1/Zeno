@@ -1179,6 +1179,14 @@ func TestBillingTrafficModeAndResetPeriodHelpers(t *testing.T) {
 	if got := billingPeriodKey(time.Date(2026, 7, 15, 0, 0, 0, 0, time.UTC), 15); got != "2026-07" {
 		t.Fatalf("billing period on reset = %s, want 2026-07", got)
 	}
+	period := billingPeriodFor(time.Date(2026, 7, 14, 12, 0, 0, 0, time.UTC), 15)
+	if period.Key != "2026-06" || period.StartDate != "2026-06-15" || period.EndDate != "2026-07-14" {
+		t.Fatalf("billing period window = %+v, want 2026-06 2026-06-15..2026-07-14", period)
+	}
+	clamped := billingPeriodFor(time.Date(2026, 2, 28, 12, 0, 0, 0, time.UTC), 31)
+	if clamped.Key != "2026-02" || clamped.StartDate != "2026-02-28" || clamped.EndDate != "2026-03-30" {
+		t.Fatalf("clamped billing period window = %+v, want reset day clamped to month end", clamped)
+	}
 }
 
 func TestAgentStateLegacyPayloadKeepsExtraMetricsNull(t *testing.T) {

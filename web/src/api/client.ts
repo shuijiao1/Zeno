@@ -58,6 +58,10 @@ interface ApiNode {
   net_out_speed_bps: number | null
   net_in_total_bytes: number | null
   net_out_total_bytes: number | null
+  billing_mode?: string
+  monthly_reset_day?: number
+  monthly_period_start?: string
+  monthly_period_end?: string
   monthly_billable_bytes: number | null
   monthly_quota_bytes: number | null
   latency_summary?: ApiLatencySummary
@@ -1112,6 +1116,10 @@ function normalizeNode(node: ApiNode): HomeCardNode {
     netOutSpeedBps: node.net_out_speed_bps,
     netInTotalBytes: node.net_in_total_bytes,
     netOutTotalBytes: node.net_out_total_bytes,
+    billingMode: node.billing_mode,
+    monthlyResetDay: node.monthly_reset_day,
+    monthlyPeriodStart: node.monthly_period_start,
+    monthlyPeriodEnd: node.monthly_period_end,
     monthlyBillableBytes: node.monthly_billable_bytes,
     monthlyQuotaBytes: node.monthly_quota_bytes,
     latencySummary: node.latency_summary ? {
