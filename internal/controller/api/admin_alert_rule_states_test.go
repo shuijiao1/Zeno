@@ -22,7 +22,7 @@ func TestAdminAlertRuleStatesExposeCurrentRuleHitsWithoutSensitiveLeak(t *testin
 		t.Fatalf("seed preview data: %v", err)
 	}
 
-	ts := time.Date(2026, 7, 4, 11, 0, 0, 0, time.UTC)
+	ts := time.Now().UTC().Truncate(time.Second)
 	if _, err := store.RecordAgentStateAlertRuleTransition(ctx, "hytron", ts, AgentStateRequest{
 		TS:               ts.Unix(),
 		CPUPercent:       95.25,
@@ -85,7 +85,7 @@ func TestAdminAlertRuleStatesExposeCurrentRuleHitsWithoutSensitiveLeak(t *testin
 	if !state.Active || state.NotificationEventType != "probe_unhealthy" || state.NotificationLabel != "异常" {
 		t.Fatalf("notification/status fields = %+v, want active probe_unhealthy/异常", state)
 	}
-	if state.FirstSeenAt != "2026-07-04T11:00:00Z" || state.LastSeenAt != "2026-07-04T11:00:00Z" || state.UpdatedAt == "" {
+	if state.FirstSeenAt != ts.Format(time.RFC3339) || state.LastSeenAt != ts.Format(time.RFC3339) || state.UpdatedAt == "" {
 		t.Fatalf("timestamps = first:%q last:%q updated:%q", state.FirstSeenAt, state.LastSeenAt, state.UpdatedAt)
 	}
 }

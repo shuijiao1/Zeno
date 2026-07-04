@@ -329,7 +329,7 @@ export function App() {
       .then((createdNode) => {
         setAdminState((current) => {
           if (current.kind === 'ready') {
-            return { ...current, nodes: [...current.nodes, createdNode] }
+            return { ...current, nodes: sortAdminNodes([...current.nodes, createdNode]) }
           }
           return { kind: 'ready', nodes: [createdNode], targets: [], notificationChannels: [], notificationTypes: [], notificationDeliveries: [], alertRules: [], alertRuleStates: [], maintenance: emptyAdminMaintenance }
         })
@@ -350,7 +350,7 @@ export function App() {
           if (current.kind === 'ready') {
             return {
               ...current,
-              nodes: current.nodes.map((node) => node.id === updatedNode.id ? updatedNode : node),
+              nodes: sortAdminNodes(current.nodes.map((node) => node.id === updatedNode.id ? updatedNode : node)),
               alertRuleStates: reconcileAlertRuleStatesForNode(updatedNode, current.alertRuleStates, current.alertRules),
             }
           }
@@ -1002,6 +1002,9 @@ function AdminNodeSection({ nodes, onCreate, onUpdate, onInstallCommand }: { nod
   const [creatingNode, setCreatingNode] = useState(false)
   const [editingNodeId, setEditingNodeId] = useState<string | null>(null)
   const editingNode = editingNodeId ? nodes.find((node) => node.id === editingNodeId) : undefined
+  const applyOrderPatches = (patches: AdminNodeOrderPatch[]) => {
+    patches.forEach((patch) => onUpdate(patch.nodeId, { displayOrder: patch.displayOrder }))
+  }
 
   return (
     <section className="admin-node-section admin-workspace-panel" aria-label="admin node list">
@@ -1010,11 +1013,14 @@ function AdminNodeSection({ nodes, onCreate, onUpdate, onInstallCommand }: { nod
           <p className="eyebrow">Servers</p>
           <h3>服务器列表</h3>
         </div>
-        <button className="admin-primary-action" type="button" onClick={() => setCreatingNode(true)}>添加服务器</button>
+        <div className="admin-section-actions">
+          <button type="button" onClick={() => applyOrderPatches(buildAdminNodeOrderPatches(nodes))}>整理顺序</button>
+          <button className="admin-primary-action" type="button" onClick={() => setCreatingNode(true)}>添加服务器</button>
+        </div>
       </header>
 
       {nodes.length === 0 && <div className="admin-state-card">还没有节点。</div>}
-      {nodes.length > 0 && <AdminNodeList nodes={nodes} onEdit={setEditingNodeId} />}
+      {nodes.length > 0 && <AdminNodeList nodes={nodes} onEdit={setEditingNodeId} onReorder={(nodeId, direction) => applyOrderPatches(buildAdminNodeOrderPatches(nodes, nodeId, direction))} />}
 
       {creatingNode && (
         <AdminNodeCreateModal
@@ -1042,7 +1048,11 @@ function AdminNodeSection({ nodes, onCreate, onUpdate, onInstallCommand }: { nod
   )
 }
 
-function AdminNodeList({ nodes, onEdit }: { nodes: AdminNode[]; onEdit: (nodeId: string) => void }) {
+type AdminNodeOrderDirection = 'up' | 'down'
+type AdminNodeOrderPatch = { nodeId: string; displayOrder: number }
+
+function AdminNodeList({ nodes, onEdit, onReorder }: { nodes: AdminNode[]; onEdit: (nodeId: string) => void; onReorder: (nodeId: string, direction: AdminNodeOrderDirection) => void }) {
+  const orderedNodes = sortAdminNodes(nodes)
   return (
     <div className="admin-list" role="list" aria-label="服务器列表">
       <div className="admin-list-head" aria-hidden="true">
@@ -1055,7 +1065,7 @@ function AdminNodeList({ nodes, onEdit }: { nodes: AdminNode[]; onEdit: (nodeId:
         <span>Agent</span>
         <span>操作</span>
       </div>
-      {nodes.map((node) => (
+      {orderedNodes.map((node, index) => (
         <article className="admin-list-row" role="listitem" key={node.id}>
           <div className="admin-list-main">
             <strong>{node.displayName}</strong>
@@ -1067,11 +1077,36 @@ function AdminNodeList({ nodes, onEdit }: { nodes: AdminNode[]; onEdit: (nodeId:
           <span>{formatAdminSystem(node)}</span>
           <span>{formatAdminDate(node.lastSeenAt)}</span>
           <span>{node.agentVersion || '—'}</span>
-          <button className="admin-row-action" type="button" onClick={() => onEdit(node.id)}>编辑服务器</button>
+          <div className="admin-row-actions">
+            <button className="admin-row-action" type="button" onClick={() => onReorder(node.id, 'up')} disabled={index === 0}>上移</button>
+            <button className="admin-row-action" type="button" onClick={() => onReorder(node.id, 'down')} disabled={index === orderedNodes.length - 1}>下移</button>
+            <button className="admin-row-action" type="button" onClick={() => onEdit(node.id)}>编辑服务器</button>
+          </div>
         </article>
       ))}
     </div>
   )
+}
+
+function sortAdminNodes(nodes: AdminNode[]): AdminNode[] {
+  return [...nodes].sort((left, right) => left.displayOrder - right.displayOrder || left.id.localeCompare(right.id))
+}
+
+function buildAdminNodeOrderPatches(nodes: AdminNode[], nodeId?: string, direction?: AdminNodeOrderDirection): AdminNodeOrderPatch[] {
+  const orderedNodes = sortAdminNodes(nodes)
+  const reorderedNodes = [...orderedNodes]
+  if (nodeId && direction) {
+    const index = reorderedNodes.findIndex((node) => node.id === nodeId)
+    if (index < 0) return []
+    const targetIndex = direction === 'up' ? index - 1 : index + 1
+    if (targetIndex < 0 || targetIndex >= reorderedNodes.length) return []
+    const current = reorderedNodes[index]
+    reorderedNodes[index] = reorderedNodes[targetIndex]
+    reorderedNodes[targetIndex] = current
+  }
+  return reorderedNodes
+    .map((node, index) => ({ nodeId: node.id, displayOrder: (index + 1) * 10 }))
+    .filter((patch) => orderedNodes.find((node) => node.id === patch.nodeId)?.displayOrder !== patch.displayOrder)
 }
 
 function AdminNodeCreateModal({ onCreate, onClose }: { onCreate: (input: AdminNodeCreateInput) => void; onClose: () => void }) {

@@ -273,9 +273,24 @@ func (s *SQLiteStore) ensureColumn(ctx context.Context, table, column, columnTyp
 	if !safeSQLIdentifier(table) || !safeSQLIdentifier(column) || strings.TrimSpace(columnType) == "" {
 		return fmt.Errorf("invalid schema identifier")
 	}
-	rows, err := s.db.QueryContext(ctx, fmt.Sprintf("PRAGMA table_info(%s)", table))
+	exists, err := s.columnExists(ctx, table, column)
 	if err != nil {
 		return err
+	}
+	if exists {
+		return nil
+	}
+	_, err = s.db.ExecContext(ctx, fmt.Sprintf("ALTER TABLE %s ADD COLUMN %s %s", table, column, columnType))
+	return err
+}
+
+func (s *SQLiteStore) columnExists(ctx context.Context, table, column string) (bool, error) {
+	if !safeSQLIdentifier(table) || !safeSQLIdentifier(column) {
+		return false, fmt.Errorf("invalid schema identifier")
+	}
+	rows, err := s.db.QueryContext(ctx, fmt.Sprintf("PRAGMA table_info(%s)", table))
+	if err != nil {
+		return false, err
 	}
 	defer rows.Close()
 	for rows.Next() {
@@ -285,17 +300,16 @@ func (s *SQLiteStore) ensureColumn(ctx context.Context, table, column, columnTyp
 		var defaultValue any
 		var primaryKey int
 		if err := rows.Scan(&cid, &name, &dataType, &notNull, &defaultValue, &primaryKey); err != nil {
-			return err
+			return false, err
 		}
 		if name == column {
-			return nil
+			return true, nil
 		}
 	}
 	if err := rows.Err(); err != nil {
-		return err
+		return false, err
 	}
-	_, err = s.db.ExecContext(ctx, fmt.Sprintf("ALTER TABLE %s ADD COLUMN %s %s", table, column, columnType))
-	return err
+	return false, nil
 }
 
 func safeSQLIdentifier(value string) bool {

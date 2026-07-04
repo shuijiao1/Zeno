@@ -32,7 +32,7 @@ Zeno 当前已经具备完整预览闭环：
 - `tcping`、`ping`/ICMP、`http_get` 探针目标。
 - Admin 服务器、探针目标、节点分配、通知、外观设置、状态规则、当前异常和数据维护。
 - Telegram-only 通知 dispatch、测试发送和 sanitized delivery history。
-- 服务器元数据：到期日、账单周期、显示顺序、国家码/国旗、公网 IPv4、公网 IPv6，Agent 可自动识别公网 IP / GeoIP。
+- 服务器元数据：到期日、账单周期、显示顺序（后台可上移/下移/整理）、国家码/国旗、公网 IPv4、公网 IPv6，Agent 可自动识别公网 IP / GeoIP。
 - 状态规则支持按服务器范围生效。
 - Linux amd64 发布包、systemd 模板、本机 Controller 更新脚本、单独 Agent 安装脚本和 GUKO 服务器清单导入脚本。
 - Hytron 预览部署：`/opt/zeno`，`zeno-controller.service`，`zeno-agent.service`。
