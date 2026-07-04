@@ -346,6 +346,10 @@ func (s *SQLiteStore) Summary(ctx context.Context) (SummaryResponse, error) {
 		}
 		nodes[index].LatencySummary = summary
 	}
+	services, err := s.serviceTargets(ctx)
+	if err != nil {
+		return SummaryResponse{}, err
+	}
 
 	var points []LatencyPoint
 	if len(nodes) > 0 {
@@ -356,7 +360,7 @@ func (s *SQLiteStore) Summary(ctx context.Context) (SummaryResponse, error) {
 			return SummaryResponse{}, err
 		}
 	}
-	return SummaryResponse{Nodes: nodes, LatencyPoints: points}, nil
+	return SummaryResponse{Nodes: nodes, Services: services, LatencyPoints: points}, nil
 }
 
 func (s *SQLiteStore) NodeLatency(ctx context.Context, nodeID string, window latencyWindow) (LatencyResponse, error) {
@@ -372,6 +376,18 @@ func (s *SQLiteStore) NodeLatency(ctx context.Context, nodeID string, window lat
 		return LatencyResponse{}, err
 	}
 	return LatencyResponse{NodeID: nodeID, Range: window.Name, Points: points}, nil
+}
+
+func (s *SQLiteStore) ServiceTargetLatency(ctx context.Context, targetID string, window latencyWindow) (ServiceTargetLatencyResponse, error) {
+	target, err := s.serviceTargetByID(ctx, targetID)
+	if err != nil {
+		return ServiceTargetLatencyResponse{}, err
+	}
+	points, err := s.serviceLatencyPoints(ctx, targetID, window)
+	if err != nil {
+		return ServiceTargetLatencyResponse{}, err
+	}
+	return ServiceTargetLatencyResponse{Target: target, Range: window.Name, Points: points}, nil
 }
 
 func (s *SQLiteStore) NodeState(ctx context.Context, nodeID string, window latencyWindow) (StateResponse, error) {
@@ -966,6 +982,149 @@ func (s *SQLiteStore) latestLatencySummary(ctx context.Context, nodeID string) (
 		LossPercent: &lossPtr,
 		UpdatedAt:   time.Unix(ts, 0).UTC().Format(time.RFC3339),
 	}, nil
+}
+
+func (s *SQLiteStore) serviceTargets(ctx context.Context) ([]ServiceTarget, error) {
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT pt.id, pt.name, pt.type, pt.address, pt.port,
+		       COUNT(DISTINCT CASE WHEN n.id IS NOT NULL AND COALESCE(npt.enabled, 1) = 1 AND n.disabled = 0 THEN n.id END) AS assigned_nodes
+		FROM probe_targets pt
+		LEFT JOIN node_probe_targets npt ON npt.target_id = pt.id
+		LEFT JOIN nodes n ON n.id = npt.node_id
+		WHERE pt.enabled = 1
+		GROUP BY pt.id, pt.name, pt.type, pt.address, pt.port, pt.display_order
+		ORDER BY pt.display_order ASC, pt.name ASC, pt.id ASC
+	`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	targets := []ServiceTarget{}
+	for rows.Next() {
+		var target ServiceTarget
+		var port sql.NullInt64
+		if err := rows.Scan(&target.ID, &target.Name, &target.Type, &target.Address, &port, &target.AssignedNodeCount); err != nil {
+			return nil, err
+		}
+		target.Port = intSQLPtr(port)
+		targets = append(targets, target)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	for index := range targets {
+		if err := s.populateServiceTargetLatencySummary(ctx, &targets[index]); err != nil {
+			return nil, err
+		}
+	}
+	return targets, nil
+}
+
+func (s *SQLiteStore) serviceTargetByID(ctx context.Context, targetID string) (ServiceTarget, error) {
+	var target ServiceTarget
+	var port sql.NullInt64
+	var assigned int
+	err := s.db.QueryRowContext(ctx, `
+		SELECT pt.id, pt.name, pt.type, pt.address, pt.port,
+		       COUNT(DISTINCT CASE WHEN n.id IS NOT NULL AND COALESCE(npt.enabled, 1) = 1 AND n.disabled = 0 THEN n.id END) AS assigned_nodes
+		FROM probe_targets pt
+		LEFT JOIN node_probe_targets npt ON npt.target_id = pt.id
+		LEFT JOIN nodes n ON n.id = npt.node_id
+		WHERE pt.enabled = 1 AND pt.id = ?
+		GROUP BY pt.id, pt.name, pt.type, pt.address, pt.port
+	`, targetID).Scan(&target.ID, &target.Name, &target.Type, &target.Address, &port, &assigned)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return ServiceTarget{}, errProbeTargetNotFound
+		}
+		return ServiceTarget{}, err
+	}
+	target.Port = intSQLPtr(port)
+	target.AssignedNodeCount = assigned
+	if err := s.populateServiceTargetLatencySummary(ctx, &target); err != nil {
+		return ServiceTarget{}, err
+	}
+	return target, nil
+}
+
+func (s *SQLiteStore) populateServiceTargetLatencySummary(ctx context.Context, target *ServiceTarget) error {
+	since := time.Now().UTC().Add(-24 * time.Hour).Unix()
+	if err := s.db.QueryRowContext(ctx, `
+		SELECT COUNT(DISTINCT pr.node_id)
+		FROM probe_rounds pr
+		JOIN nodes n ON n.id = pr.node_id
+		LEFT JOIN node_probe_targets npt ON npt.node_id = pr.node_id AND npt.target_id = pr.target_id
+		WHERE pr.target_id = ?
+		  AND pr.ts >= ?
+		  AND n.disabled = 0
+		  AND COALESCE(npt.enabled, 1) = 1
+	`, target.ID, since).Scan(&target.ReportingNodeCount); err != nil {
+		return err
+	}
+	var median sql.NullFloat64
+	var loss sql.NullFloat64
+	var ts sql.NullInt64
+	err := s.db.QueryRowContext(ctx, `
+		SELECT pr.median_ms, pr.loss_percent, pr.ts
+		FROM probe_rounds pr
+		JOIN nodes n ON n.id = pr.node_id
+		LEFT JOIN node_probe_targets npt ON npt.node_id = pr.node_id AND npt.target_id = pr.target_id
+		WHERE pr.target_id = ?
+		  AND n.disabled = 0
+		  AND COALESCE(npt.enabled, 1) = 1
+		ORDER BY pr.ts DESC, pr.id DESC
+		LIMIT 1
+	`, target.ID).Scan(&median, &loss, &ts)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return nil
+		}
+		return err
+	}
+	target.MedianMS = floatPtr(median)
+	target.LossPercent = floatPtr(loss)
+	if ts.Valid {
+		target.UpdatedAt = time.Unix(ts.Int64, 0).UTC().Format(time.RFC3339)
+	}
+	return nil
+}
+
+func (s *SQLiteStore) serviceLatencyPoints(ctx context.Context, targetID string, window latencyWindow) ([]ServiceLatencyPoint, error) {
+	since := time.Now().UTC().Add(-time.Duration(window.Samples) * window.Step).Unix()
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT pr.ts, pr.node_id, n.display_name, pr.median_ms, pr.loss_percent
+		FROM probe_rounds pr
+		JOIN nodes n ON n.id = pr.node_id
+		JOIN probe_targets pt ON pt.id = pr.target_id
+		LEFT JOIN node_probe_targets npt ON npt.node_id = pr.node_id AND npt.target_id = pr.target_id
+		WHERE pr.target_id = ?
+		  AND pr.ts >= ?
+		  AND pt.enabled = 1
+		  AND n.disabled = 0
+		  AND COALESCE(npt.enabled, 1) = 1
+		ORDER BY pr.ts ASC, n.display_order ASC, n.display_name ASC, pr.id ASC
+	`, targetID, since)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	points := []ServiceLatencyPoint{}
+	for rows.Next() {
+		var ts int64
+		var nodeID, nodeName string
+		var median sql.NullFloat64
+		var loss float64
+		if err := rows.Scan(&ts, &nodeID, &nodeName, &median, &loss); err != nil {
+			return nil, err
+		}
+		points = append(points, ServiceLatencyPoint{TS: time.Unix(ts, 0).UTC().Format(time.RFC3339), NodeID: nodeID, NodeName: nodeName, MedianMS: floatPtr(median), LossPercent: loss})
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return points, nil
 }
 
 func (s *SQLiteStore) latencyPoints(ctx context.Context, nodeID string, window latencyWindow) ([]LatencyPoint, error) {

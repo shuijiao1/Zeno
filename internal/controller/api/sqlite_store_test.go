@@ -168,6 +168,22 @@ func TestSQLiteBackedSummaryUsesPersistedNodeAndLatestLatency(t *testing.T) {
 	if len(summary.LatencyPoints) != 2 {
 		t.Fatalf("summary latency points len = %d, want persisted points", len(summary.LatencyPoints))
 	}
+	if len(summary.Services) != 1 || summary.Services[0].ID != "google" || summary.Services[0].ReportingNodeCount != 1 || summary.Services[0].MedianMS == nil || *summary.Services[0].MedianMS != 8.8 {
+		t.Fatalf("summary services = %+v, want persisted google service status", summary.Services)
+	}
+
+	serviceRecorder := httptest.NewRecorder()
+	handler.ServeHTTP(serviceRecorder, httptest.NewRequest(http.MethodGet, "/api/public/v1/services/google/latency?range=1h", nil))
+	if serviceRecorder.Code != http.StatusOK {
+		t.Fatalf("service status = %d, want 200; body=%s", serviceRecorder.Code, serviceRecorder.Body.String())
+	}
+	var serviceResponse ServiceTargetLatencyResponse
+	if err := json.NewDecoder(serviceRecorder.Body).Decode(&serviceResponse); err != nil {
+		t.Fatalf("decode service response: %v", err)
+	}
+	if serviceResponse.Target.ID != "google" || len(serviceResponse.Points) != 2 || serviceResponse.Points[0].NodeID != "hytron" {
+		t.Fatalf("service response = %+v, want google points by node", serviceResponse)
+	}
 }
 
 func TestSQLiteBackedHandlerReturnsPersistedStateHistory(t *testing.T) {

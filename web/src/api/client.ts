@@ -1,4 +1,4 @@
-import type { AdminAlertRule, AdminAlertRuleState, AdminNode, AdminNodeInstallCommand, AdminNotificationChannel, AdminNotificationDelivery, AdminNotificationType, AdminProbeTarget, AdminSettings, AdminTheme, HomeCardNode, LatencyPoint, ProbeType, StatePoint } from '../types'
+import type { AdminAlertRule, AdminAlertRuleState, AdminNode, AdminNodeInstallCommand, AdminNotificationChannel, AdminNotificationDelivery, AdminNotificationType, AdminProbeTarget, AdminSettings, AdminTheme, HomeCardNode, LatencyPoint, ProbeType, ServiceTarget, StatePoint } from '../types'
 
 interface ApiSettings {
   site_title: string
@@ -57,6 +57,27 @@ interface ApiLatencyPoint {
   ts: string
   target_id: string
   target_name: string
+  median_ms: number | null
+  loss_percent: number
+}
+
+interface ApiServiceTarget {
+  id: string
+  name: string
+  type: ProbeType
+  address: string
+  port?: number | null
+  assigned_node_count: number
+  reporting_node_count: number
+  median_ms: number | null
+  loss_percent: number | null
+  updated_at?: string
+}
+
+interface ApiServiceLatencyPoint {
+  ts: string
+  node_id: string
+  node_name: string
   median_ms: number | null
   loss_percent: number
 }
@@ -212,6 +233,7 @@ export interface ApiAdminSettingsResponse {
 
 export interface ApiSummaryResponse {
   nodes: ApiNode[] | null
+  services?: ApiServiceTarget[] | null
   latency_points: ApiLatencyPoint[] | null
 }
 
@@ -219,6 +241,12 @@ export interface ApiLatencyResponse {
   node_id: string
   range: string
   points: ApiLatencyPoint[] | null
+}
+
+export interface ApiServiceLatencyResponse {
+  target: ApiServiceTarget
+  range: string
+  points: ApiServiceLatencyPoint[] | null
 }
 
 export interface ApiStateResponse {
@@ -287,11 +315,18 @@ export interface ApiAdminAlertRuleResponse {
 
 export interface SummaryData {
   nodes: HomeCardNode[]
+  services: ServiceTarget[]
   latencyPoints: LatencyPoint[]
 }
 
 export interface NodeLatencyData {
   nodeId: string
+  range: string
+  points: LatencyPoint[]
+}
+
+export interface ServiceLatencyData {
+  target: ServiceTarget
   range: string
   points: LatencyPoint[]
 }
@@ -443,6 +478,14 @@ export async function fetchNodeLatency(nodeId: string, range = '1h'): Promise<No
     throw new Error(`latency request failed: ${response.status}`)
   }
   return normalizeNodeLatency(await response.json() as ApiLatencyResponse)
+}
+
+export async function fetchServiceLatency(targetId: string, range = '1h'): Promise<ServiceLatencyData> {
+  const response = await fetch(`/api/public/v1/services/${encodeURIComponent(targetId)}/latency?range=${encodeURIComponent(range)}`, { headers: { Accept: 'application/json' } })
+  if (!response.ok) {
+    throw new Error(`service latency request failed: ${response.status}`)
+  }
+  return normalizeServiceLatency(await response.json() as ApiServiceLatencyResponse)
 }
 
 export async function fetchNodeState(nodeId: string, range = '1h'): Promise<NodeStateData> {
@@ -786,6 +829,7 @@ export function normalizeSettings(input: ApiSettings): AdminSettings {
 export function normalizeSummary(input: ApiSummaryResponse): SummaryData {
   return {
     nodes: (input.nodes ?? []).map(normalizeNode),
+    services: (input.services ?? []).map(normalizeServiceTarget),
     latencyPoints: (input.latency_points ?? []).map(normalizeLatencyPoint),
   }
 }
@@ -795,6 +839,14 @@ export function normalizeNodeLatency(input: ApiLatencyResponse): NodeLatencyData
     nodeId: input.node_id,
     range: input.range,
     points: (input.points ?? []).map(normalizeLatencyPoint),
+  }
+}
+
+export function normalizeServiceLatency(input: ApiServiceLatencyResponse): ServiceLatencyData {
+  return {
+    target: normalizeServiceTarget(input.target),
+    range: input.range,
+    points: (input.points ?? []).map(normalizeServiceLatencyPoint),
   }
 }
 
@@ -1007,6 +1059,31 @@ function normalizeLatencyPoint(point: ApiLatencyPoint): LatencyPoint {
     ts: point.ts,
     targetId: point.target_id,
     targetName: point.target_name,
+    medianMs: point.median_ms,
+    lossPercent: point.loss_percent,
+  }
+}
+
+function normalizeServiceTarget(target: ApiServiceTarget): ServiceTarget {
+  return {
+    id: target.id,
+    name: target.name,
+    type: target.type,
+    address: target.address,
+    port: target.port ?? undefined,
+    assignedNodeCount: target.assigned_node_count,
+    reportingNodeCount: target.reporting_node_count,
+    medianMs: target.median_ms,
+    lossPercent: target.loss_percent,
+    updatedAt: target.updated_at,
+  }
+}
+
+function normalizeServiceLatencyPoint(point: ApiServiceLatencyPoint): LatencyPoint {
+  return {
+    ts: point.ts,
+    targetId: point.node_id,
+    targetName: point.node_name,
     medianMs: point.median_ms,
     lossPercent: point.loss_percent,
   }

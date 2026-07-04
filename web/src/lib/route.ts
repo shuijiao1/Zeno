@@ -2,6 +2,7 @@ export type DashboardRoute =
   | { kind: 'home' }
   | { kind: 'admin' }
   | { kind: 'node'; nodeId: string }
+  | { kind: 'service'; targetId: string }
 
 export function parseDashboardRoute(pathname: string): DashboardRoute {
   const normalized = pathname || '/'
@@ -18,9 +19,18 @@ export function parseDashboardRoute(pathname: string): DashboardRoute {
     return { kind: 'node', nodeId: decodeURIComponent(match[1]) }
   }
 
+  const serviceMatch = normalized.match(/^\/service\/([^/]+)\/?$/)
+  if (serviceMatch) {
+    return { kind: 'service', targetId: decodeURIComponent(serviceMatch[1]) }
+  }
+
   return { kind: 'home' }
 }
 
 export function nodePath(nodeId: string): string {
   return `/server/${encodeURIComponent(nodeId)}`
+}
+
+export function servicePath(targetId: string): string {
+  return `/service/${encodeURIComponent(targetId)}`
 }

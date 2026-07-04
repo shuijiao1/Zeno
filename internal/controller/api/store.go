@@ -11,13 +11,14 @@ type Store interface {
 	Summary(ctx context.Context) (SummaryResponse, error)
 	PublicSettings(ctx context.Context) (SiteSettings, error)
 	NodeLatency(ctx context.Context, nodeID string, window latencyWindow) (LatencyResponse, error)
+	ServiceTargetLatency(ctx context.Context, targetID string, window latencyWindow) (ServiceTargetLatencyResponse, error)
 	NodeState(ctx context.Context, nodeID string, window latencyWindow) (StateResponse, error)
 }
 
 type mockStore struct{}
 
 func (mockStore) Summary(ctx context.Context) (SummaryResponse, error) {
-	return SummaryResponse{Nodes: mockNodes(), LatencyPoints: mockLatencyPoints("hytron", "1h")}, nil
+	return SummaryResponse{Nodes: mockNodes(), Services: mockServiceTargets(), LatencyPoints: mockLatencyPoints("hytron", "1h")}, nil
 }
 
 func (mockStore) PublicSettings(ctx context.Context) (SiteSettings, error) {
@@ -29,6 +30,15 @@ func (mockStore) NodeLatency(ctx context.Context, nodeID string, window latencyW
 		return LatencyResponse{}, errNodeNotFound
 	}
 	return LatencyResponse{NodeID: nodeID, Range: window.Name, Points: mockLatencyPoints(nodeID, window.Name)}, nil
+}
+
+func (mockStore) ServiceTargetLatency(ctx context.Context, targetID string, window latencyWindow) (ServiceTargetLatencyResponse, error) {
+	for _, target := range mockServiceTargets() {
+		if target.ID == targetID {
+			return ServiceTargetLatencyResponse{Target: target, Range: window.Name, Points: mockServiceLatencyPoints(targetID, window.Name)}, nil
+		}
+	}
+	return ServiceTargetLatencyResponse{}, errProbeTargetNotFound
 }
 
 func (mockStore) NodeState(ctx context.Context, nodeID string, window latencyWindow) (StateResponse, error) {

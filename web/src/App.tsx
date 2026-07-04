@@ -1,10 +1,11 @@
 import { type CSSProperties, type FormEvent, type ReactNode, useEffect, useState } from 'react'
-import { createAdminNode, createAdminNotificationChannel, createAdminProbeTarget, deleteAdminNotificationChannel, deleteAdminProbeTarget, fetchAdminAlertRules, fetchAdminAlertRuleStates, fetchAdminNodes, fetchAdminNotificationChannels, fetchAdminNotificationDeliveries, fetchAdminNotificationTypes, fetchAdminProbeTargets, fetchAdminSettings, fetchNodeLatency, fetchNodeState, fetchPublicSettings, fetchSummary, requestAdminNodeInstallCommand, testAdminNotificationChannel, updateAdminAlertRule, updateAdminNode, updateAdminNotificationChannel, updateAdminNotificationType, updateAdminProbeTarget, updateAdminSettings, type AdminAlertRuleUpdateInput, type AdminNodeCreateInput, type AdminNodeUpdateInput, type AdminNotificationChannelCreateInput, type AdminNotificationChannelUpdateInput, type AdminProbeTargetInput, type AdminProbeTargetUpdateInput, type AdminSettingsUpdateInput, type NodeLatencyData, type NodeStateData, type SummaryData } from './api/client'
+import { createAdminNode, createAdminNotificationChannel, createAdminProbeTarget, deleteAdminNotificationChannel, deleteAdminProbeTarget, fetchAdminAlertRules, fetchAdminAlertRuleStates, fetchAdminNodes, fetchAdminNotificationChannels, fetchAdminNotificationDeliveries, fetchAdminNotificationTypes, fetchAdminProbeTargets, fetchAdminSettings, fetchNodeLatency, fetchNodeState, fetchPublicSettings, fetchServiceLatency, fetchSummary, requestAdminNodeInstallCommand, testAdminNotificationChannel, updateAdminAlertRule, updateAdminNode, updateAdminNotificationChannel, updateAdminNotificationType, updateAdminProbeTarget, updateAdminSettings, type AdminAlertRuleUpdateInput, type AdminNodeCreateInput, type AdminNodeUpdateInput, type AdminNotificationChannelCreateInput, type AdminNotificationChannelUpdateInput, type AdminProbeTargetInput, type AdminProbeTargetUpdateInput, type AdminSettingsUpdateInput, type NodeLatencyData, type NodeStateData, type ServiceLatencyData, type SummaryData } from './api/client'
 import { LatencyDetail } from './components/LatencyDetail'
+import { LatencyChart } from './components/LatencyChart'
 import { ServerCard } from './components/ServerCard'
 import { startLiveRefresh } from './lib/liveRefresh'
-import { nodePath, parseDashboardRoute, type DashboardRoute } from './lib/route'
-import type { AdminAlertRule, AdminAlertRuleState, AdminNode, AdminNotificationChannel, AdminNotificationDelivery, AdminNotificationType, AdminProbeTarget, AdminSettings, ProbeType } from './types'
+import { nodePath, parseDashboardRoute, servicePath, type DashboardRoute } from './lib/route'
+import type { AdminAlertRule, AdminAlertRuleState, AdminNode, AdminNotificationChannel, AdminNotificationDelivery, AdminNotificationType, AdminProbeTarget, AdminSettings, LatencyPoint, ProbeType, ServiceTarget } from './types'
 
 type LoadState =
   | { kind: 'loading' }
@@ -21,6 +22,12 @@ type StateHistoryLoadState =
   | { kind: 'idle' }
   | { kind: 'loading' }
   | { kind: 'ready'; data: NodeStateData }
+  | { kind: 'error'; message: string }
+
+type ServiceLatencyLoadState =
+  | { kind: 'idle' }
+  | { kind: 'loading' }
+  | { kind: 'ready'; data: ServiceLatencyData }
   | { kind: 'error'; message: string }
 
 type AdminLoadState =
@@ -152,6 +159,7 @@ export function App() {
   const [latencyRange, setLatencyRange] = useState('1d')
   const [latencyState, setLatencyState] = useState<LatencyLoadState>({ kind: 'idle' })
   const [stateHistoryState, setStateHistoryState] = useState<StateHistoryLoadState>({ kind: 'idle' })
+  const [serviceLatencyState, setServiceLatencyState] = useState<ServiceLatencyLoadState>({ kind: 'idle' })
   const [adminToken, setAdminToken] = useState(() => window.sessionStorage.getItem('zeno_admin_token') ?? '')
   const [adminState, setAdminState] = useState<AdminLoadState>({ kind: 'idle' })
   const [settings, setSettings] = useState<AdminSettings>(defaultSettings)
@@ -246,6 +254,35 @@ export function App() {
 
     loadStateHistory()
     const stopRefresh = startLiveRefresh(loadStateHistory)
+    return () => {
+      cancelled = true
+      stopRefresh()
+    }
+  }, [route, latencyRange])
+
+  useEffect(() => {
+    if (route.kind !== 'service') {
+      setServiceLatencyState({ kind: 'idle' })
+      return
+    }
+
+    let cancelled = false
+    let loadedOnce = false
+    const loadServiceLatency = () => {
+      if (!loadedOnce) setServiceLatencyState({ kind: 'loading' })
+      fetchServiceLatency(route.targetId, latencyRange)
+        .then((data) => {
+          loadedOnce = true
+          if (!cancelled) setServiceLatencyState({ kind: 'ready', data })
+        })
+        .catch((error: unknown) => {
+          loadedOnce = true
+          if (!cancelled) setServiceLatencyState({ kind: 'error', message: error instanceof Error ? error.message : 'unknown error' })
+        })
+    }
+
+    loadServiceLatency()
+    const stopRefresh = startLiveRefresh(loadServiceLatency)
     return () => {
       cancelled = true
       stopRefresh()
@@ -494,8 +531,16 @@ export function App() {
     setRoute({ kind: 'node', nodeId })
   }
 
+  const navigateService = (targetId: string) => {
+    window.history.pushState(null, '', servicePath(targetId))
+    setLatencyRange('1d')
+    setRoute({ kind: 'service', targetId })
+  }
+
   const nodes = state.kind === 'ready' ? state.data.nodes : []
+  const services = state.kind === 'ready' ? state.data.services : []
   const selectedNode = route.kind === 'node' ? nodes.find((node) => node.id === route.nodeId) : undefined
+  const selectedService = route.kind === 'service' ? services.find((service) => service.id === route.targetId) : undefined
   const totalCount = nodes.length
   const onlineCount = nodes.filter((node) => node.status === 'online').length
   const offlineCount = nodes.filter((node) => node.status === 'offline').length
@@ -506,7 +551,7 @@ export function App() {
 
   return (
     <main className="kulin-shell" data-theme={settings.theme} style={shellStyleForSettings(settings)}>
-      {route.kind === 'node' && <DashboardHeader settings={settings} onHome={navigateHome} onAdmin={navigateAdmin} />}
+      {(route.kind === 'node' || route.kind === 'service') && <DashboardHeader settings={settings} onHome={navigateHome} onAdmin={navigateAdmin} />}
 
       {route.kind === 'admin' && (
         <AdminDashboard
@@ -555,6 +600,22 @@ export function App() {
         <section className="state-panel is-error">没有找到这台服务器：{route.nodeId}</section>
       )}
 
+      {state.kind === 'ready' && route.kind === 'service' && (selectedService || serviceLatencyState.kind === 'ready') && (
+        <ServiceDetail
+          target={serviceLatencyState.kind === 'ready' ? serviceLatencyState.data.target : selectedService!}
+          points={serviceLatencyState.kind === 'ready' ? serviceLatencyState.data.points : []}
+          range={latencyRange}
+          loading={serviceLatencyState.kind === 'loading'}
+          error={serviceLatencyState.kind === 'error' ? serviceLatencyState.message : undefined}
+          onBack={navigateHome}
+          onRangeChange={setLatencyRange}
+        />
+      )}
+
+      {state.kind === 'ready' && route.kind === 'service' && !selectedService && serviceLatencyState.kind === 'error' && (
+        <section className="state-panel is-error">没有找到这个监控服务：{route.targetId}</section>
+      )}
+
       {state.kind === 'ready' && route.kind === 'home' && (
         <div className="kulin-container">
           <HomeTopPanel
@@ -569,6 +630,8 @@ export function App() {
             onHome={navigateHome}
             onAdmin={navigateAdmin}
           />
+
+          <ServiceStatusPanel services={services} onOpen={navigateService} />
 
           <section className="server-card-list" aria-label="server cards">
             {nodes.map((node) => <ServerCard key={node.id} node={node} onOpen={navigateNode} />)}
@@ -609,6 +672,121 @@ export function HomeTopPanel({ settings = defaultSettings, onHome, onAdmin, ...o
       <HomeOverviewPanel settings={settings} {...overview} />
     </section>
   )
+}
+
+export function ServiceStatusPanel({ services, onOpen }: { services: ServiceTarget[]; onOpen: (targetId: string) => void }) {
+  if (services.length === 0) return null
+  const issueCount = services.filter((service) => service.lossPercent !== null && service.lossPercent >= 20).length
+  return (
+    <section className="monitor-panel service-status-panel" aria-label="监控服务状态">
+      <header className="monitor-heading">
+        <div>
+          <h3>监控服务</h3>
+          <p>{services.length} 个目标 · {issueCount === 0 ? '当前无大面积丢包' : `${issueCount} 个异常`}</p>
+        </div>
+      </header>
+      <div className="service-status-grid">
+        {services.map((service) => (
+          <button className="service-status-card" type="button" onClick={() => onOpen(service.id)} key={service.id}>
+            <span className={`node-dot status-${serviceTone(service)}`} />
+            <strong>{service.name}</strong>
+            <small>{formatServiceEndpoint(service)}</small>
+            <em>{formatServiceLatency(service.medianMs)} · 丢包 {formatServiceLoss(service.lossPercent)}</em>
+            <span>{service.reportingNodeCount} / {service.assignedNodeCount} 节点上报</span>
+          </button>
+        ))}
+      </div>
+    </section>
+  )
+}
+
+function ServiceDetail({ target, points, range, loading, error, onBack, onRangeChange }: { target: ServiceTarget; points: LatencyPoint[]; range: string; loading?: boolean; error?: string; onBack: () => void; onRangeChange: (range: string) => void }) {
+  const [peakCut, setPeakCut] = useState(false)
+  const rangeLabel = detailRangeOptions.find((option) => option.value === range)?.label ?? range
+  return (
+    <div className="kulin-container detail-container">
+      <section className="detail-hero" aria-label={`${target.name} service overview`}>
+        <div className="detail-hero__main">
+          <button className="detail-title-button" type="button" onClick={onBack}>
+            <span aria-hidden="true">‹</span>
+            <span>{target.name}</span>
+          </button>
+          <span className={`detail-status-pill status-${serviceTone(target)}`}>{target.reportingNodeCount} / {target.assignedNodeCount} 节点上报</span>
+        </div>
+        <section className="detail-fact-strip" aria-label={`${target.name} service facts`}>
+          <ServiceInfoFact label="类型" value={target.type} />
+          <ServiceInfoFact label="地址" value={formatServiceEndpoint(target)} wide />
+          <ServiceInfoFact label="最新延迟" value={formatServiceLatency(target.medianMs)} />
+          <ServiceInfoFact label="丢包" value={formatServiceLoss(target.lossPercent)} />
+          <ServiceInfoFact label="更新时间" value={target.updatedAt ? formatAdminDate(target.updatedAt) : '--'} />
+        </section>
+      </section>
+
+      <section className="monitor-panel" aria-label={`${target.name} service latency`}>
+        <header className="monitor-heading">
+          <div>
+            <h3>{target.name} 多节点历史</h3>
+            <p>{rangeLabel} · 按节点分线展示</p>
+          </div>
+          <div className="monitor-heading-actions">
+            <div className="detail-range-row" aria-label="service latency range selector">
+              {detailRangeOptions.map((option) => (
+                <button key={option.value} type="button" className={range === option.value ? 'is-active' : ''} onClick={() => onRangeChange(option.value)}>{option.label}</button>
+              ))}
+            </div>
+            <label className="peak-switch">
+              <input type="checkbox" aria-label="削峰" checked={peakCut} onChange={(event) => setPeakCut(event.target.checked)} />
+              <span />
+              <b>削峰</b>
+            </label>
+          </div>
+        </header>
+        {loading && <div className="detail-state">正在读取服务延迟…</div>}
+        {error && <div className="detail-state is-error">服务延迟读取失败：{error}</div>}
+        {!loading && !error && points.length === 0 && <div className="detail-state">暂无服务延迟历史</div>}
+        {!loading && !error && points.length > 0 && (
+          <LatencyChart points={points} title={`${target.name} 多节点延迟`} eyebrow={`${rangeLabel} · ${target.reportingNodeCount} 个节点`} compactHeader peakCut={peakCut} />
+        )}
+      </section>
+    </div>
+  )
+}
+
+function ServiceInfoFact({ label, value, wide = false }: { label: string; value: string; wide?: boolean }) {
+  return (
+    <article className={`detail-fact${wide ? ' is-wide' : ''}`} title={`${label}: ${value}`}>
+      <p>{label}</p>
+      <strong>{value}</strong>
+    </article>
+  )
+}
+
+const detailRangeOptions = [
+  { value: '1d', label: '1 天' },
+  { value: '7d', label: '7 天' },
+  { value: '30d', label: '30 天' },
+]
+
+function serviceTone(service: ServiceTarget): 'online' | 'warning' | 'offline' {
+  if (service.reportingNodeCount <= 0) return 'offline'
+  if (service.assignedNodeCount > 0 && service.reportingNodeCount < service.assignedNodeCount) return 'warning'
+  if (service.lossPercent !== null && service.lossPercent >= 20) return 'warning'
+  return 'online'
+}
+
+function formatServiceEndpoint(service: ServiceTarget): string {
+  if (service.port !== undefined) return `${service.address}:${service.port}`
+  return service.address
+}
+
+function formatServiceLatency(value: number | null | undefined): string {
+  if (value === null || value === undefined) return '--'
+  return `${Number.isInteger(value) ? value.toFixed(0) : value.toFixed(2)}ms`
+}
+
+function formatServiceLoss(value: number | null | undefined): string {
+  if (value === null || value === undefined) return '--'
+  return `${value.toFixed(2)}%`
 }
 
 function DashboardHeader({ settings = defaultSettings, onHome, onAdmin, adminLabel = '后台' }: DashboardHeaderProps) {

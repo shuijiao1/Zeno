@@ -63,6 +63,19 @@ export interface LatencyPoint {
   lossPercent: number
 }
 
+export interface ServiceTarget {
+  id: string
+  name: string
+  type: ProbeType
+  address: string
+  port?: number
+  assignedNodeCount: number
+  reportingNodeCount: number
+  medianMs: number | null
+  lossPercent: number | null
+  updatedAt?: string
+}
+
 export interface StatePoint {
   ts: string
   cpuPercent: number | null

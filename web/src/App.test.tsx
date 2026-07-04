@@ -1,7 +1,7 @@
 import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it } from 'vitest'
-import { AdminDashboard, HomeTopPanel, reconcileAlertRuleStates, reconcileAlertRuleStatesForNode, shellStyleForSettings, validateAdminSettingsInput } from './App'
-import type { AdminAlertRule, AdminAlertRuleState, AdminNode, AdminNotificationChannel, AdminNotificationDelivery, AdminNotificationType, AdminProbeTarget, AdminSettings } from './types'
+import { AdminDashboard, HomeTopPanel, ServiceStatusPanel, reconcileAlertRuleStates, reconcileAlertRuleStatesForNode, shellStyleForSettings, validateAdminSettingsInput } from './App'
+import type { AdminAlertRule, AdminAlertRuleState, AdminNode, AdminNotificationChannel, AdminNotificationDelivery, AdminNotificationType, AdminProbeTarget, AdminSettings, ServiceTarget } from './types'
 
 const overviewProps = {
   totalCount: 11,
@@ -103,6 +103,11 @@ const httpTarget: AdminProbeTarget = {
     { nodeId: 'hytron', nodeDisplayName: 'Hytron', enabled: true },
   ],
 }
+
+const serviceTargets: ServiceTarget[] = [
+  { id: 'google', name: 'Google', type: 'http_get', address: 'https://www.google.com/generate_204', assignedNodeCount: 10, reportingNodeCount: 10, medianMs: 1.2, lossPercent: 0, updatedAt: '2026-07-04T12:00:00Z' },
+  { id: 'telegram-dc5', name: 'Telegram DC5', type: 'tcping', address: '149.154.171.5', port: 443, assignedNodeCount: 10, reportingNodeCount: 8, medianMs: 34.5, lossPercent: 0.4, updatedAt: '2026-07-04T12:00:00Z' },
+]
 
 const telegramChannel: AdminNotificationChannel = {
   id: 'zeno-telegram',
@@ -303,6 +308,22 @@ describe('HomeTopPanel', () => {
     expect(html).toContain('/ 11 在线')
     expect(html).toContain('11 台未在线')
     expect(html).not.toContain('全部在线')
+  })
+})
+
+describe('ServiceStatusPanel', () => {
+  it('renders public monitor service status cards', () => {
+    const html = renderToStaticMarkup(<ServiceStatusPanel services={serviceTargets} onOpen={() => {}} />)
+
+    expect(html).toContain('监控服务')
+    expect(html).toContain('2 个目标')
+    expect(html).toContain('Google')
+    expect(html).toContain('https://www.google.com/generate_204')
+    expect(html).toContain('1.20ms')
+    expect(html).toContain('10 / 10 节点上报')
+    expect(html).toContain('Telegram DC5')
+    expect(html).toContain('149.154.171.5:443')
+    expect(html).toContain('8 / 10 节点上报')
   })
 })
 

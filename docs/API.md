@@ -221,11 +221,56 @@ X-Agent-Version: <version>
       "monthly_quota_bytes": 2199023255552
     }
   ],
+  "services": [
+    {
+      "id": "google",
+      "name": "Google",
+      "type": "http_get",
+      "address": "https://www.google.com/generate_204",
+      "assigned_node_count": 10,
+      "reporting_node_count": 9,
+      "median_ms": 1.2,
+      "loss_percent": 0,
+      "updated_at": "2026-07-04T12:00:00Z"
+    }
+  ],
   "latency_points": []
 }
 ```
 
 `monthly_period_start` / `monthly_period_end` 是当前流量计费周期的 UTC 日期范围，按该节点 `monthly_reset_day` 计算；`monthly_billable_bytes` 也取同一周期。
+
+`services` 是首页“监控服务”状态列表。它按后台探针目标显示顺序返回已启用目标，`assigned_node_count` 是分配且启用的节点数量，`reporting_node_count` 是最近 24 小时内有上报的节点数量，延迟/丢包取该服务最新一条探测结果。
+
+### GET /api/public/v1/services/{target_id}/latency
+
+查询某个监控服务在所有节点上的历史延迟。前端把每个节点作为一条曲线，用于服务详情页。`range` 支持 `1h`、`1d`、`7d`、`30d`。
+
+```json
+{
+  "target": {
+    "id": "google",
+    "name": "Google",
+    "type": "http_get",
+    "address": "https://www.google.com/generate_204",
+    "assigned_node_count": 10,
+    "reporting_node_count": 9,
+    "median_ms": 1.2,
+    "loss_percent": 0,
+    "updated_at": "2026-07-04T12:00:00Z"
+  },
+  "range": "1d",
+  "points": [
+    {
+      "ts": "2026-07-04T12:00:00Z",
+      "node_id": "hytron",
+      "node_name": "Hytron",
+      "median_ms": 1.2,
+      "loss_percent": 0
+    }
+  ]
+}
+```
 
 ### GET /api/public/v1/nodes/{node_id}/latency
 

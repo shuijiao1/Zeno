@@ -71,9 +71,40 @@ func TestSummaryEndpointReturnsMockHomeCardsWithoutSecrets(t *testing.T) {
 	if len(summary.LatencyPoints) == 0 {
 		t.Fatal("summary should include latency points for the mock chart")
 	}
+	if len(summary.Services) == 0 || summary.Services[0].Name == "" || summary.Services[0].AssignedNodeCount == 0 {
+		t.Fatalf("summary services = %+v, want public monitor service status", summary.Services)
+	}
 
 	if strings.Contains(strings.ToLower(raw), "token") || strings.Contains(strings.ToLower(raw), "secret") {
 		t.Fatalf("public summary leaked token/secret wording: %s", raw)
+	}
+}
+
+func TestServiceLatencyEndpointReturnsNodeSeries(t *testing.T) {
+	handler := NewHandler()
+	recorder := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodGet, "/api/public/v1/services/google/latency?range=1d", nil)
+
+	handler.ServeHTTP(recorder, request)
+
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d; body=%s", recorder.Code, http.StatusOK, recorder.Body.String())
+	}
+	var response ServiceTargetLatencyResponse
+	if err := json.NewDecoder(recorder.Body).Decode(&response); err != nil {
+		t.Fatalf("decode service latency: %v", err)
+	}
+	if response.Target.ID != "google" || response.Target.Name != "Google" {
+		t.Fatalf("target = %+v, want google target", response.Target)
+	}
+	if response.Range != "1d" || len(response.Points) == 0 {
+		t.Fatalf("service latency range/points = %q/%d, want 1d points", response.Range, len(response.Points))
+	}
+	if response.Points[0].NodeID == "" || response.Points[0].NodeName == "" {
+		t.Fatalf("service latency point missing node identity: %+v", response.Points[0])
+	}
+	if strings.Contains(strings.ToLower(recorder.Body.String()), "token") || strings.Contains(strings.ToLower(recorder.Body.String()), "secret") {
+		t.Fatalf("service latency leaked sensitive wording: %s", recorder.Body.String())
 	}
 }
 

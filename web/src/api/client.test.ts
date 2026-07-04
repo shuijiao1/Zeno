@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { createAdminNode, createAdminNotificationChannel, createAdminProbeTarget, deleteAdminNotificationChannel, deleteAdminProbeTarget, fetchAdminAlertRules, fetchAdminAlertRuleStates, fetchAdminNodes, fetchAdminNotificationChannels, fetchAdminNotificationDeliveries, fetchAdminNotificationTypes, fetchAdminProbeTargets, fetchAdminSettings, fetchPublicSettings, normalizeAdminAlertRules, normalizeAdminAlertRuleStates, normalizeAdminNodes, normalizeAdminNotificationChannels, normalizeAdminNotificationDeliveries, normalizeAdminNotificationTypes, normalizeAdminProbeTargets, normalizeSettings, normalizeNodeLatency, normalizeNodeState, normalizeSummary, requestAdminNodeInstallCommand, testAdminNotificationChannel, updateAdminAlertRule, updateAdminNode, updateAdminNotificationChannel, updateAdminNotificationType, updateAdminProbeTarget, updateAdminSettings } from './client'
+import { createAdminNode, createAdminNotificationChannel, createAdminProbeTarget, deleteAdminNotificationChannel, deleteAdminProbeTarget, fetchAdminAlertRules, fetchAdminAlertRuleStates, fetchAdminNodes, fetchAdminNotificationChannels, fetchAdminNotificationDeliveries, fetchAdminNotificationTypes, fetchAdminProbeTargets, fetchAdminSettings, fetchPublicSettings, fetchServiceLatency, normalizeAdminAlertRules, normalizeAdminAlertRuleStates, normalizeAdminNodes, normalizeAdminNotificationChannels, normalizeAdminNotificationDeliveries, normalizeAdminNotificationTypes, normalizeAdminProbeTargets, normalizeSettings, normalizeNodeLatency, normalizeNodeState, normalizeServiceLatency, normalizeSummary, requestAdminNodeInstallCommand, testAdminNotificationChannel, updateAdminAlertRule, updateAdminNode, updateAdminNotificationChannel, updateAdminNotificationType, updateAdminProbeTarget, updateAdminSettings } from './client'
 
 describe('normalizeSummary', () => {
   it('maps controller snake_case JSON into frontend camelCase models', () => {
@@ -44,6 +44,9 @@ describe('normalizeSummary', () => {
           },
         },
       ],
+      services: [
+        { id: 'google', name: 'Google', type: 'http_get', address: 'https://www.google.com/generate_204', port: null, assigned_node_count: 10, reporting_node_count: 9, median_ms: 1.2, loss_percent: 0, updated_at: '2026-07-02T12:00:00Z' },
+      ],
       latency_points: [
         { ts: '2026-07-02T12:00:00Z', target_id: 'google', target_name: 'Google', median_ms: null, loss_percent: 100 },
       ],
@@ -67,16 +70,63 @@ describe('normalizeSummary', () => {
     expect(summary.latencyPoints[0].targetId).toBe('google')
     expect(summary.latencyPoints[0].medianMs).toBeNull()
     expect(summary.latencyPoints[0].lossPercent).toBe(100)
+    expect(summary.services[0].name).toBe('Google')
+    expect(summary.services[0].reportingNodeCount).toBe(9)
   })
 
   it('normalizes null collections from empty preview stores', () => {
     const summary = normalizeSummary({
       nodes: null,
+      services: null,
       latency_points: null,
     })
 
     expect(summary.nodes).toEqual([])
+    expect(summary.services).toEqual([])
     expect(summary.latencyPoints).toEqual([])
+  })
+})
+
+describe('normalizeServiceLatency', () => {
+  it('maps service latency points into chart-compatible node series', () => {
+    const data = normalizeServiceLatency({
+      target: { id: 'google', name: 'Google', type: 'http_get', address: 'https://www.google.com/generate_204', port: null, assigned_node_count: 10, reporting_node_count: 9, median_ms: 1.2, loss_percent: 0, updated_at: '2026-07-02T12:00:00Z' },
+      range: '1d',
+      points: [
+        { ts: '2026-07-02T12:00:00Z', node_id: 'hytron', node_name: 'Hytron', median_ms: 1.4, loss_percent: 0 },
+      ],
+    })
+
+    expect(data.target.id).toBe('google')
+    expect(data.target.assignedNodeCount).toBe(10)
+    expect(data.points[0].targetId).toBe('hytron')
+    expect(data.points[0].targetName).toBe('Hytron')
+  })
+})
+
+describe('fetchServiceLatency', () => {
+  const originalFetch = globalThis.fetch
+
+  afterEach(() => {
+    globalThis.fetch = originalFetch
+    vi.restoreAllMocks()
+  })
+
+  it('fetches public service latency without admin credentials', async () => {
+    const fetchMock = vi.fn(async () => new Response(JSON.stringify({
+      target: { id: 'google', name: 'Google', type: 'http_get', address: 'https://www.google.com/generate_204', port: null, assigned_node_count: 10, reporting_node_count: 9, median_ms: 1.2, loss_percent: 0 },
+      range: '7d',
+      points: [],
+    }), { status: 200, headers: { 'Content-Type': 'application/json' } }))
+    globalThis.fetch = fetchMock as unknown as typeof fetch
+
+    const data = await fetchServiceLatency('google', '7d')
+
+    expect(data.target.name).toBe('Google')
+    expect(data.range).toBe('7d')
+    expect(fetchMock).toHaveBeenCalledWith('/api/public/v1/services/google/latency?range=7d', {
+      headers: { Accept: 'application/json' },
+    })
   })
 })
 

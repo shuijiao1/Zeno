@@ -138,7 +138,7 @@ CREATE TABLE probe_targets (
 - `ping`：ICMP ping，不带 `port`。
 - `http_get`：HTTP/HTTPS GET，不带 `port`。
 
-`display_order` 控制后台延迟监控列表、Agent 目标下发顺序和同一时间点的 Public latency series 展示顺序。
+`display_order` 控制后台延迟监控列表、Agent 目标下发顺序、首页监控服务列表和同一时间点的 Public latency series 展示顺序。
 
 ## node_probe_targets
 
@@ -156,6 +156,7 @@ CREATE TABLE node_probe_targets (
 ## probe_rounds / probe_samples
 
 每轮探测摘要和 raw samples。
+Public 服务详情页按 `target_id` 查询所有节点的 `probe_rounds`，把同一监控服务拆成多条节点曲线。
 
 ```sql
 CREATE TABLE probe_rounds (

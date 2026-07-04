@@ -188,6 +188,42 @@ func mockLatencyPoints(nodeID string, rangeNames ...string) []LatencyPoint {
 	return points
 }
 
+func mockServiceTargets() []ServiceTarget {
+	return []ServiceTarget{
+		{ID: "cq-unicom", Name: "重庆联通", Type: "tcping", Address: "cq-unicom.example", Port: intValue(443), AssignedNodeCount: 11, ReportingNodeCount: 11, MedianMS: ptr(34.8), LossPercent: ptr(0.18), UpdatedAt: "2026-07-02T13:30:00Z"},
+		{ID: "telegram-dc5", Name: "DC5", Type: "tcping", Address: "149.154.171.5", Port: intValue(443), AssignedNodeCount: 11, ReportingNodeCount: 10, MedianMS: ptr(31.8), LossPercent: ptr(0.38), UpdatedAt: "2026-07-02T13:30:00Z"},
+		{ID: "google", Name: "Google", Type: "http_get", Address: "https://www.google.com/generate_204", AssignedNodeCount: 11, ReportingNodeCount: 11, MedianMS: ptr(1.4), LossPercent: ptr(0), UpdatedAt: "2026-07-02T13:30:00Z"},
+	}
+}
+
+func mockServiceLatencyPoints(targetID string, rangeNames ...string) []ServiceLatencyPoint {
+	window, ok := resolveLatencyWindow("")
+	if len(rangeNames) > 0 {
+		window, ok = resolveLatencyWindow(rangeNames[0])
+	}
+	if !ok {
+		window, _ = resolveLatencyWindow("")
+	}
+	end := time.Date(2026, 7, 2, 13, 30, 0, 0, time.UTC)
+	nodes := mockNodes()
+	points := make([]ServiceLatencyPoint, 0, window.Samples*len(nodes))
+	for index := 0; index < window.Samples; index++ {
+		ts := end.Add(-time.Duration(window.Samples-1-index) * window.Step).Format(time.RFC3339)
+		for nodeIndex, node := range nodes {
+			base := 20 + float64(nodeIndex*8)
+			if targetID == "telegram-dc5" {
+				base += 15
+			}
+			median := base + float64((index+nodeIndex)%5)*1.7
+			loss := float64((index+nodeIndex)%4) * 0.05
+			points = append(points, ServiceLatencyPoint{TS: ts, NodeID: node.ID, NodeName: node.DisplayName, MedianMS: ptr(median), LossPercent: loss})
+		}
+	}
+	return points
+}
+
+func intValue(value int) *int { return &value }
+
 func mockStatePoints(window latencyWindow) []StatePoint {
 	end := time.Date(2026, 7, 2, 13, 30, 0, 0, time.UTC)
 	points := make([]StatePoint, 0, window.Samples)

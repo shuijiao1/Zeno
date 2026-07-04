@@ -348,6 +348,41 @@ svg { display: block; }
 @media (min-width: 768px) { .server-card-list { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 @media (min-width: 1024px) { .server-card-list { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
 
+.service-status-panel { margin-top: 24px; }
+.service-status-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 10px;
+  padding: 0 20px 20px;
+}
+.service-status-card {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 3px 8px;
+  align-items: center;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--metric-bg) 82%, transparent);
+  color: var(--foreground);
+  text-align: left;
+}
+.service-status-card strong,
+.service-status-card small,
+.service-status-card em,
+.service-status-card span:last-child {
+  grid-column: 2;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.service-status-card strong { font-size: 14px; font-weight: 600; }
+.service-status-card small { color: var(--muted); font-size: 12px; }
+.service-status-card em { color: color-mix(in srgb, var(--foreground) 70%, transparent); font-size: 12px; font-style: normal; }
+.service-status-card span:last-child { color: var(--muted); font-size: 11px; }
+.service-status-card:hover { border-color: color-mix(in srgb, var(--foreground) 22%, var(--border)); transform: translateY(-1px); }
+
 .admin-container { display: flex; flex-direction: column; gap: 24px; }
 .admin-panel { min-height: 360px; }
 .admin-hero {

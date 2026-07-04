@@ -1,14 +1,21 @@
 package api
 
 type SummaryResponse struct {
-	Nodes         []Node         `json:"nodes"`
-	LatencyPoints []LatencyPoint `json:"latency_points"`
+	Nodes         []Node          `json:"nodes"`
+	Services      []ServiceTarget `json:"services"`
+	LatencyPoints []LatencyPoint  `json:"latency_points"`
 }
 
 type LatencyResponse struct {
 	NodeID string         `json:"node_id"`
 	Range  string         `json:"range"`
 	Points []LatencyPoint `json:"points"`
+}
+
+type ServiceTargetLatencyResponse struct {
+	Target ServiceTarget         `json:"target"`
+	Range  string                `json:"range"`
+	Points []ServiceLatencyPoint `json:"points"`
 }
 
 type StateResponse struct {
@@ -62,6 +69,27 @@ type LatencyPoint struct {
 	TS          string   `json:"ts"`
 	TargetID    string   `json:"target_id"`
 	TargetName  string   `json:"target_name"`
+	MedianMS    *float64 `json:"median_ms"`
+	LossPercent float64  `json:"loss_percent"`
+}
+
+type ServiceTarget struct {
+	ID                 string   `json:"id"`
+	Name               string   `json:"name"`
+	Type               string   `json:"type"`
+	Address            string   `json:"address"`
+	Port               *int     `json:"port,omitempty"`
+	AssignedNodeCount  int      `json:"assigned_node_count"`
+	ReportingNodeCount int      `json:"reporting_node_count"`
+	MedianMS           *float64 `json:"median_ms"`
+	LossPercent        *float64 `json:"loss_percent"`
+	UpdatedAt          string   `json:"updated_at,omitempty"`
+}
+
+type ServiceLatencyPoint struct {
+	TS          string   `json:"ts"`
+	NodeID      string   `json:"node_id"`
+	NodeName    string   `json:"node_name"`
 	MedianMS    *float64 `json:"median_ms"`
 	LossPercent float64  `json:"loss_percent"`
 }

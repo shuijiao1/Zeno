@@ -49,6 +49,7 @@ func NewHandler(options ...HandlerOptions) http.Handler {
 	mux.HandleFunc("/api/public/v1/agent/linux-amd64", h.handleAgentBinary)
 	mux.HandleFunc("/api/public/v1/settings", h.handlePublicSettings)
 	mux.HandleFunc("/api/public/v1/summary", h.handleSummary)
+	mux.HandleFunc("/api/public/v1/services/", h.handlePublicServiceResource)
 	mux.HandleFunc("/api/public/v1/nodes/", h.handlePublicNodeResource)
 	mux.HandleFunc("/api/admin/v1/settings", h.handleAdminSettings)
 	mux.HandleFunc("/api/admin/v1/notification-channels", h.handleAdminNotificationChannels)
@@ -72,6 +73,30 @@ func NewHandler(options ...HandlerOptions) http.Handler {
 		mux.HandleFunc("/", handleStatic(opts.StaticDir))
 	}
 	return mux
+}
+
+func (h *handler) handlePublicServiceResource(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+	path := strings.TrimPrefix(r.URL.Path, "/api/public/v1/services/")
+	parts := strings.Split(strings.Trim(path, "/"), "/")
+	if len(parts) != 2 || parts[1] != "latency" {
+		writeError(w, http.StatusNotFound, "not found")
+		return
+	}
+	window, ok := resolveLatencyWindow(r.URL.Query().Get("range"))
+	if !ok {
+		writeError(w, http.StatusBadRequest, "unsupported range")
+		return
+	}
+	response, err := h.store.ServiceTargetLatency(r.Context(), parts[0], window)
+	if err != nil {
+		writeStoreError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, response)
 }
 
 func handleHealth(w http.ResponseWriter, r *http.Request) {
@@ -224,6 +249,10 @@ func writeError(w http.ResponseWriter, status int, message string) {
 func writeStoreError(w http.ResponseWriter, err error) {
 	if errors.Is(err, errNodeNotFound) {
 		writeError(w, http.StatusNotFound, "node not found")
+		return
+	}
+	if errors.Is(err, errProbeTargetNotFound) {
+		writeError(w, http.StatusNotFound, "service not found")
 		return
 	}
 	writeError(w, http.StatusInternalServerError, "internal error")
