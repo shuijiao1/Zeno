@@ -1268,7 +1268,23 @@ svg { display: block; }
     border-radius: 14px;
     background: color-mix(in srgb, var(--background) 58%, transparent);
   }
-  .admin-list-row > span { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; white-space: normal; }
+  .admin-node-section .admin-list-row,
+  .admin-target-list .admin-list-row,
+  .admin-notification-list .admin-list-row,
+  .admin-alert-rule-list .admin-list-row { grid-template-columns: 1fr; }
+  .admin-list-row > span {
+    min-width: 0;
+    max-width: 100%;
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 12px;
+    overflow: visible;
+    text-align: right;
+    text-overflow: clip;
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
   .admin-list-row > span[data-label]::before { content: attr(data-label); flex: none; color: var(--muted); font-size: 12px; font-weight: 600; }
   .admin-list-row > .admin-ip-stack {
     display: grid;
@@ -1277,7 +1293,7 @@ svg { display: block; }
     gap: 3px 12px;
   }
   .admin-list-row > .admin-ip-stack::before { grid-row: 1 / span 2; }
-  .admin-list-row > .admin-ip-stack span { justify-self: end; }
+  .admin-list-row > .admin-ip-stack span { max-width: 100%; justify-self: end; overflow-wrap: anywhere; text-align: right; white-space: normal; }
   .admin-list-row > .admin-ip-stack.is-single::before { grid-row: auto; }
   .admin-row-actions { width: 100%; justify-self: stretch; display: grid; grid-template-columns: repeat(auto-fit, minmax(96px, 1fr)); gap: 6px; }
   .admin-row-action { justify-self: stretch; width: 100%; }
