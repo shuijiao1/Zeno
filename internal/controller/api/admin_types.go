@@ -571,7 +571,6 @@ type AdminNotificationTestResponse struct {
 type AdminNotificationChannelCreateRequest struct {
 	ID          string `json:"id,omitempty"`
 	Name        string `json:"name"`
-	Type        string `json:"type"`
 	Destination string `json:"destination"`
 	Credential  string `json:"credential"`
 	Enabled     *bool  `json:"enabled,omitempty"`
@@ -580,10 +579,9 @@ type AdminNotificationChannelCreateRequest struct {
 func (request *AdminNotificationChannelCreateRequest) normalize() error {
 	request.ID = normalizeAdminNodeID(request.ID)
 	request.Name = strings.TrimSpace(request.Name)
-	request.Type = strings.ToLower(strings.TrimSpace(request.Type))
 	request.Destination = strings.TrimSpace(request.Destination)
 	request.Credential = strings.TrimSpace(request.Credential)
-	if request.Name == "" || request.Destination == "" || request.Credential == "" || !validAdminNotificationChannelType(request.Type) {
+	if request.Name == "" || request.Destination == "" || request.Credential == "" {
 		return errInvalidAdminNotificationChannelWrite
 	}
 	return nil
@@ -591,7 +589,6 @@ func (request *AdminNotificationChannelCreateRequest) normalize() error {
 
 type AdminNotificationChannelUpdateRequest struct {
 	Name        *string `json:"name,omitempty"`
-	Type        *string `json:"type,omitempty"`
 	Destination *string `json:"destination,omitempty"`
 	Credential  *string `json:"credential,omitempty"`
 	Enabled     *bool   `json:"enabled,omitempty"`
@@ -606,14 +603,6 @@ func (request *AdminNotificationChannelUpdateRequest) normalize() error {
 			return errInvalidAdminNotificationChannelWrite
 		}
 		request.Name = &trimmed
-	}
-	if request.Type != nil {
-		changed = true
-		trimmed := strings.ToLower(strings.TrimSpace(*request.Type))
-		if !validAdminNotificationChannelType(trimmed) {
-			return errInvalidAdminNotificationChannelWrite
-		}
-		request.Type = &trimmed
 	}
 	if request.Destination != nil {
 		changed = true
@@ -638,15 +627,6 @@ func (request *AdminNotificationChannelUpdateRequest) normalize() error {
 		return errInvalidAdminNotificationChannelWrite
 	}
 	return nil
-}
-
-func validAdminNotificationChannelType(channelType string) bool {
-	switch channelType {
-	case "telegram", "webhook":
-		return true
-	default:
-		return false
-	}
 }
 
 type AdminNotificationTypeUpdateRequest struct {
@@ -731,7 +711,6 @@ type AdminAlertRuleState struct {
 type AdminNotificationChannel struct {
 	ID            string `json:"id"`
 	Name          string `json:"name"`
-	Type          string `json:"type"`
 	Destination   string `json:"destination"`
 	CredentialSet bool   `json:"credential_set"`
 	Enabled       bool   `json:"enabled"`
@@ -756,7 +735,6 @@ type AdminNotificationDelivery struct {
 	Status         string `json:"status"`
 	ChannelID      string `json:"channel_id"`
 	ChannelName    string `json:"channel_name"`
-	ChannelType    string `json:"channel_type"`
 	Success        bool   `json:"success"`
 	Error          string `json:"error,omitempty"`
 	CreatedAt      string `json:"created_at"`

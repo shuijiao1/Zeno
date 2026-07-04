@@ -100,11 +100,10 @@ const httpTarget: AdminProbeTarget = {
   ],
 }
 
-const webhookChannel: AdminNotificationChannel = {
-  id: 'zeno-webhook',
-  name: 'Zeno Webhook',
-  type: 'webhook',
-  destination: 'https://example.com/notify',
+const telegramChannel: AdminNotificationChannel = {
+  id: 'zeno-telegram',
+  name: 'Zeno Telegram',
+  destination: '7579942307',
   credentialSet: true,
   enabled: true,
   createdAt: '2026-07-03T00:00:00Z',
@@ -161,11 +160,10 @@ const notificationDeliveries: AdminNotificationDelivery[] = [
     nodeName: 'Hytron',
     previousStatus: 'no_data',
     status: 'online',
-    channelId: 'zeno-webhook',
-    channelName: 'Zeno Webhook',
-    channelType: 'webhook',
+    channelId: 'zeno-telegram',
+    channelName: 'Zeno Telegram',
     success: false,
-    error: 'webhook returned status 500',
+    error: 'telegram returned status 500',
     createdAt: '2026-07-03T00:05:00Z',
   },
 ]
@@ -232,7 +230,7 @@ function renderAdmin(section: 'overview' | 'nodes' | 'targets' | 'notifications'
         kind: 'ready',
         nodes: [hytronNode, backupNode],
         targets: [hytronTarget, pingTarget, httpTarget],
-        notificationChannels: [webhookChannel],
+        notificationChannels: [telegramChannel],
         notificationTypes,
         notificationDeliveries,
         alertRules,
@@ -393,8 +391,8 @@ describe('AdminDashboard', () => {
 
     expect(html).toContain('通知渠道')
     expect(html).toContain('通知类型')
-    expect(html).toContain('Zeno Webhook')
-    expect(html).toContain('https://example.com/notify')
+    expect(html).toContain('Zeno Telegram')
+    expect(html).toContain('7579942307')
     expect(html).toContain('凭据已设置')
     expect(html).toContain('node_online')
     expect(html).toContain('上线')
@@ -406,9 +404,9 @@ describe('AdminDashboard', () => {
     expect(html).toContain('最近发送')
     expect(html).toContain('Hytron')
     expect(html).toContain('发送失败')
-    expect(html).toContain('webhook returned status 500')
+    expect(html).toContain('telegram returned status 500')
     expect(html).not.toContain('后续再接入')
-    expect(html).not.toContain('webhook-secret')
+    expect(html).not.toContain('telegram-bot-secret')
     expect(html).not.toContain('告警')
   })
 
@@ -431,7 +429,7 @@ describe('AdminDashboard', () => {
     expect(html).toContain('编辑规则')
     expect(html).toContain('停用规则')
     expect(html).not.toContain('告警')
-    expect(html).not.toContain('webhook-secret')
+    expect(html).not.toContain('telegram-bot-secret')
   })
 
   it('reconciles current anomalies immediately when a status rule is disabled or its threshold changes', () => {

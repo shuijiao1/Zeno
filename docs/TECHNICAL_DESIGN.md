@@ -27,7 +27,7 @@ Go 单二进制，当前职责：
 - 写 SQLite。
 - 提供 Public API 给前端。
 - 提供 Admin API 给后台。
-- 执行 Webhook / Telegram 通知 dispatch。
+- 执行 Telegram 通知 dispatch。
 - 记录 sanitized notification delivery history。
 - 提供 Agent binary 下载和 install command 生成。
 
@@ -122,11 +122,11 @@ delta_out = current_out_total - last_out_total
 
 当前通知模型保持简单：
 
-- 渠道：Webhook、Telegram。
+- 渠道：Telegram-only。
 - 事件：`node_online`、`node_offline`、`probe_unhealthy`、手动 `test_notification`。
 - Agent heartbeat 触发的通知异步发送，不能阻塞 Agent 上报。
 - Admin 手动测试发送同步返回 sanitized delivery，方便操作员立即验证配置。
-- Delivery history 只记录事件、节点、渠道、状态和 sanitized 错误，不记录 webhook URL、bot token、bearer 或凭据原文。
+- Delivery history 只记录事件、节点、渠道、状态和 sanitized 错误，不记录 chat id、Bot Token 或凭据原文。
 
 ## 部署
 

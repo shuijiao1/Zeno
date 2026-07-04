@@ -1,10 +1,8 @@
 package api
 
 import (
-	"bytes"
 	"context"
 	"database/sql"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -81,51 +79,10 @@ func newHTTPNotificationSender(client *http.Client, telegramAPIBaseURL string) n
 }
 
 func (sender httpNotificationSender) Send(ctx context.Context, channel notificationDispatchChannel, event notificationEvent) error {
-	switch strings.ToLower(strings.TrimSpace(channel.Type)) {
-	case "webhook":
-		return sender.sendWebhook(ctx, channel, event)
-	case "telegram":
-		return sender.sendTelegram(ctx, channel, event)
-	default:
-		return fmt.Errorf("unsupported notification channel type %q", channel.Type)
+	if channel.Type != "" && strings.ToLower(strings.TrimSpace(channel.Type)) != "telegram" {
+		return fmt.Errorf("unsupported notification channel type")
 	}
-}
-
-func (sender httpNotificationSender) sendWebhook(ctx context.Context, channel notificationDispatchChannel, event notificationEvent) error {
-	endpoint := strings.TrimSpace(channel.Destination)
-	credential := strings.TrimSpace(channel.Credential)
-	authorization := ""
-	if isHTTPURL(credential) && !isHTTPURL(endpoint) {
-		endpoint = credential
-	} else if credential != "" {
-		authorization = "Bearer " + credential
-	}
-	if !isHTTPURL(endpoint) {
-		return fmt.Errorf("invalid webhook destination")
-	}
-	body, err := json.Marshal(event)
-	if err != nil {
-		return err
-	}
-	request, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(body))
-	if err != nil {
-		return err
-	}
-	request.Header.Set("Content-Type", "application/json")
-	request.Header.Set("User-Agent", "Zeno-Controller")
-	if authorization != "" {
-		request.Header.Set("Authorization", authorization)
-	}
-	response, err := sender.client.Do(request)
-	if err != nil {
-		return err
-	}
-	defer response.Body.Close()
-	_, _ = io.Copy(io.Discard, response.Body)
-	if response.StatusCode < 200 || response.StatusCode >= 300 {
-		return fmt.Errorf("webhook returned status %d", response.StatusCode)
-	}
-	return nil
+	return sender.sendTelegram(ctx, channel, event)
 }
 
 func (sender httpNotificationSender) sendTelegram(ctx context.Context, channel notificationDispatchChannel, event notificationEvent) error {
@@ -154,11 +111,6 @@ func (sender httpNotificationSender) sendTelegram(ctx context.Context, channel n
 		return fmt.Errorf("telegram returned status %d", response.StatusCode)
 	}
 	return nil
-}
-
-func isHTTPURL(value string) bool {
-	parsed, err := url.Parse(strings.TrimSpace(value))
-	return err == nil && (parsed.Scheme == "http" || parsed.Scheme == "https") && parsed.Host != ""
 }
 
 func (event notificationEvent) messageText() string {
@@ -303,9 +255,9 @@ func (s *SQLiteStore) EnabledNotificationChannelsForEvent(ctx context.Context, e
 		return label, nil, nil
 	}
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT id, name, type, destination, credential
+		SELECT id, name, destination, credential
 		FROM notification_channels
-		WHERE enabled = 1 AND TRIM(credential) <> ''
+		WHERE enabled = 1 AND type = 'telegram' AND TRIM(credential) <> ''
 		ORDER BY id ASC
 	`)
 	if err != nil {
@@ -315,9 +267,10 @@ func (s *SQLiteStore) EnabledNotificationChannelsForEvent(ctx context.Context, e
 	channels := make([]notificationDispatchChannel, 0)
 	for rows.Next() {
 		var channel notificationDispatchChannel
-		if err := rows.Scan(&channel.ID, &channel.Name, &channel.Type, &channel.Destination, &channel.Credential); err != nil {
+		if err := rows.Scan(&channel.ID, &channel.Name, &channel.Destination, &channel.Credential); err != nil {
 			return "", nil, err
 		}
+		channel.Type = "telegram"
 		channels = append(channels, channel)
 	}
 	if err := rows.Err(); err != nil {

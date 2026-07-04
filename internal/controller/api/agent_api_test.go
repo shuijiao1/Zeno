@@ -163,32 +163,16 @@ func TestAgentProbeResultsMarksNodeWarningAndDispatchesProbeUnhealthy(t *testing
 		t.Fatalf("seed preview data: %v", err)
 	}
 
-	var captureMu sync.Mutex
-	var webhookBodies []string
-	var webhookErrors []error
-	webhook := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		body, err := io.ReadAll(r.Body)
-		captureMu.Lock()
-		defer captureMu.Unlock()
-		if err != nil {
-			webhookErrors = append(webhookErrors, err)
-			w.WriteHeader(http.StatusInternalServerError)
-			return
-		}
-		webhookBodies = append(webhookBodies, string(body))
-		w.WriteHeader(http.StatusNoContent)
-	}))
-	defer webhook.Close()
-
+	telegram := newTelegramTestCapture(t)
 	enabled := true
-	if _, err := store.CreateAdminNotificationChannel(ctx, AdminNotificationChannelCreateRequest{ID: "ops-webhook", Name: "Ops Webhook", Type: "webhook", Destination: webhook.URL, Credential: "dispatch-credential-value", Enabled: &enabled}); err != nil {
+	if _, err := store.CreateAdminNotificationChannel(ctx, AdminNotificationChannelCreateRequest{ID: "ops-telegram", Name: "Ops Telegram", Destination: "7579942307", Credential: "telegram-bot-credential-value", Enabled: &enabled}); err != nil {
 		t.Fatalf("create notification channel: %v", err)
 	}
 	if _, err := store.UpdateAdminNotificationType(ctx, "probe_unhealthy", AdminNotificationTypeUpdateRequest{Enabled: &enabled}); err != nil {
 		t.Fatalf("enable probe_unhealthy notification type: %v", err)
 	}
 
-	handler := NewHandler(HandlerOptions{Store: store})
+	handler := NewHandler(telegram.handlerOptions(store))
 	now := time.Now().UTC().Truncate(time.Second)
 	postAgentHeartbeat(t, handler, now.Unix(), "online")
 
@@ -210,34 +194,17 @@ func TestAgentProbeResultsMarksNodeWarningAndDispatchesProbeUnhealthy(t *testing
 	if status != "warning" {
 		t.Fatalf("node status = %q, want warning after all probe samples fail", status)
 	}
-
-	waitUntil(t, time.Second, func() bool {
-		captureMu.Lock()
-		defer captureMu.Unlock()
-		return len(webhookBodies)+len(webhookErrors) == 1
-	})
-	captureMu.Lock()
-	capturedBodies := append([]string(nil), webhookBodies...)
-	capturedErrors := append([]error(nil), webhookErrors...)
-	captureMu.Unlock()
-	if len(capturedErrors) != 0 {
-		t.Fatalf("webhook handler errors = %+v", capturedErrors)
+	paths, forms, errors := telegram.waitForCalls(t, 1)
+	if len(errors) != 0 {
+		t.Fatalf("telegram handler errors = %+v", errors)
 	}
-	if len(capturedBodies) != 1 {
-		t.Fatalf("webhook calls = %d, want one probe_unhealthy notification", len(capturedBodies))
+	if len(paths) != 1 || paths[0] != "/bottelegram-bot-credential-value/sendMessage" {
+		t.Fatalf("telegram paths = %+v, want one sendMessage request", paths)
 	}
-	var event struct {
-		EventType      string `json:"event_type"`
-		Label          string `json:"label"`
-		PreviousStatus string `json:"previous_status"`
-		Status         string `json:"status"`
+	if len(forms) != 1 || !strings.Contains(forms[0], "chat_id=7579942307") || !strings.Contains(forms[0], "%E7%8A%B6%E6%80%81%E5%BC%82%E5%B8%B8") {
+		t.Fatalf("telegram forms = %+v, want probe unhealthy text", forms)
 	}
-	if err := json.Unmarshal([]byte(capturedBodies[0]), &event); err != nil {
-		t.Fatalf("decode webhook event: %v", err)
-	}
-	if event.EventType != "probe_unhealthy" || event.Label != "异常" || event.PreviousStatus != "online" || event.Status != "warning" {
-		t.Fatalf("event = %+v, want online -> warning probe_unhealthy payload", event)
-	}
+	assertTelegramFormsDoNotLeakCredential(t, forms, "telegram-bot-credential-value")
 }
 
 func TestAgentProbeResultsUsesAlertRuleThresholdsForSuccessfulHighLatency(t *testing.T) {
@@ -327,32 +294,16 @@ func TestAgentStateResourceRuleMarksWarningAndDispatchesProbeUnhealthy(t *testin
 	if err := store.SeedPreviewData(ctx, PreviewSeedOptions{NodeID: "hytron", DisplayName: "Hytron", CountryCode: "HK", AgentToken: "test-agent-token"}); err != nil {
 		t.Fatalf("seed preview data: %v", err)
 	}
-
-	var captureMu sync.Mutex
-	var webhookBodies []string
-	var webhookErrors []error
-	webhook := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		body, err := io.ReadAll(r.Body)
-		captureMu.Lock()
-		defer captureMu.Unlock()
-		if err != nil {
-			webhookErrors = append(webhookErrors, err)
-			w.WriteHeader(http.StatusInternalServerError)
-			return
-		}
-		webhookBodies = append(webhookBodies, string(body))
-		w.WriteHeader(http.StatusNoContent)
-	}))
-	defer webhook.Close()
+	telegram := newTelegramTestCapture(t)
 	enabled := true
-	if _, err := store.CreateAdminNotificationChannel(ctx, AdminNotificationChannelCreateRequest{ID: "ops-webhook", Name: "Ops Webhook", Type: "webhook", Destination: webhook.URL, Credential: "dispatch-credential-value", Enabled: &enabled}); err != nil {
+	if _, err := store.CreateAdminNotificationChannel(ctx, AdminNotificationChannelCreateRequest{ID: "ops-telegram", Name: "Ops Telegram", Destination: "7579942307", Credential: "telegram-bot-credential-value", Enabled: &enabled}); err != nil {
 		t.Fatalf("create notification channel: %v", err)
 	}
 	if _, err := store.UpdateAdminNotificationType(ctx, "probe_unhealthy", AdminNotificationTypeUpdateRequest{Enabled: &enabled}); err != nil {
 		t.Fatalf("enable probe_unhealthy notification type: %v", err)
 	}
 
-	handler := NewHandler(HandlerOptions{Store: store})
+	handler := NewHandler(telegram.handlerOptions(store))
 	now := time.Now().UTC().Truncate(time.Second)
 	postAgentHeartbeat(t, handler, now.Unix(), "online")
 	body := map[string]any{
@@ -389,32 +340,14 @@ func TestAgentStateResourceRuleMarksWarningAndDispatchesProbeUnhealthy(t *testin
 	if status != "warning" {
 		t.Fatalf("node status = %q, want warning after enabled CPU rule threshold is exceeded", status)
 	}
-	waitUntil(t, time.Second, func() bool {
-		captureMu.Lock()
-		defer captureMu.Unlock()
-		return len(webhookBodies)+len(webhookErrors) == 1
-	})
-	captureMu.Lock()
-	capturedBodies := append([]string(nil), webhookBodies...)
-	capturedErrors := append([]error(nil), webhookErrors...)
-	captureMu.Unlock()
-	if len(capturedErrors) != 0 {
-		t.Fatalf("webhook handler errors = %+v", capturedErrors)
+	paths, forms, errors := telegram.waitForCalls(t, 1)
+	if len(errors) != 0 {
+		t.Fatalf("telegram handler errors = %+v", errors)
 	}
-	if len(capturedBodies) != 1 {
-		t.Fatalf("webhook calls = %d, want one resource threshold notification", len(capturedBodies))
+	if len(paths) != 1 || len(forms) != 1 || !strings.Contains(forms[0], "%E7%8A%B6%E6%80%81%E5%BC%82%E5%B8%B8") {
+		t.Fatalf("telegram request paths=%+v forms=%+v, want one resource threshold notification", paths, forms)
 	}
-	var event struct {
-		EventType      string `json:"event_type"`
-		PreviousStatus string `json:"previous_status"`
-		Status         string `json:"status"`
-	}
-	if err := json.Unmarshal([]byte(capturedBodies[0]), &event); err != nil {
-		t.Fatalf("decode webhook event: %v", err)
-	}
-	if event.EventType != "probe_unhealthy" || event.PreviousStatus != "online" || event.Status != "warning" {
-		t.Fatalf("event = %+v, want online -> warning probe_unhealthy payload", event)
-	}
+	assertTelegramFormsDoNotLeakCredential(t, forms, "telegram-bot-credential-value")
 }
 
 func TestAgentHeartbeatDoesNotClearExistingProbeWarning(t *testing.T) {
@@ -546,7 +479,7 @@ func TestAgentHeartbeatUpdatesNodeStatusAndLastSeen(t *testing.T) {
 	}
 }
 
-func TestAgentHeartbeatDispatchesEnabledWebhookOnNodeOnlineTransition(t *testing.T) {
+func TestAgentHeartbeatDispatchesEnabledTelegramOnNodeOnlineTransition(t *testing.T) {
 	store, err := OpenSQLiteStore(filepath.Join(t.TempDir(), "zeno.db"))
 	if err != nil {
 		t.Fatalf("open sqlite store: %v", err)
@@ -556,35 +489,13 @@ func TestAgentHeartbeatDispatchesEnabledWebhookOnNodeOnlineTransition(t *testing
 	if err := store.SeedPreviewData(ctx, PreviewSeedOptions{NodeID: "hytron", DisplayName: "Hytron", CountryCode: "HK", AgentToken: "test-agent-token"}); err != nil {
 		t.Fatalf("seed preview data: %v", err)
 	}
-
-	var captureMu sync.Mutex
-	var webhookMethods []string
-	var webhookBodies []string
-	var webhookAuthorization []string
-	var webhookErrors []error
-	webhook := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		body, err := io.ReadAll(r.Body)
-		captureMu.Lock()
-		defer captureMu.Unlock()
-		webhookMethods = append(webhookMethods, r.Method)
-		if err != nil {
-			webhookErrors = append(webhookErrors, err)
-			w.WriteHeader(http.StatusInternalServerError)
-			return
-		}
-		webhookAuthorization = append(webhookAuthorization, r.Header.Get("Authorization"))
-		webhookBodies = append(webhookBodies, string(body))
-		w.WriteHeader(http.StatusNoContent)
-	}))
-	defer webhook.Close()
-
+	telegram := newTelegramTestCapture(t)
 	enabled := true
 	if _, err := store.CreateAdminNotificationChannel(ctx, AdminNotificationChannelCreateRequest{
-		ID:          "ops-webhook",
-		Name:        "Ops Webhook",
-		Type:        "webhook",
-		Destination: webhook.URL,
-		Credential:  "dispatch-credential-value",
+		ID:          "ops-telegram",
+		Name:        "Ops Telegram",
+		Destination: "7579942307",
+		Credential:  "telegram-bot-credential-value",
 		Enabled:     &enabled,
 	}); err != nil {
 		t.Fatalf("create notification channel: %v", err)
@@ -593,50 +504,20 @@ func TestAgentHeartbeatDispatchesEnabledWebhookOnNodeOnlineTransition(t *testing
 		t.Fatalf("enable notification type: %v", err)
 	}
 
-	handler := NewHandler(HandlerOptions{Store: store})
-	ts := time.Now().UTC().Truncate(time.Second).Unix()
-	postAgentHeartbeat(t, handler, ts, "online")
+	handler := NewHandler(telegram.handlerOptions(store))
+	postAgentHeartbeat(t, handler, time.Now().UTC().Truncate(time.Second).Unix(), "online")
 
-	waitUntil(t, time.Second, func() bool {
-		captureMu.Lock()
-		defer captureMu.Unlock()
-		return len(webhookBodies)+len(webhookErrors) == 1
-	})
-	captureMu.Lock()
-	capturedMethods := append([]string(nil), webhookMethods...)
-	capturedBodies := append([]string(nil), webhookBodies...)
-	capturedAuthorization := append([]string(nil), webhookAuthorization...)
-	capturedErrors := append([]error(nil), webhookErrors...)
-	captureMu.Unlock()
-	if len(capturedErrors) != 0 {
-		t.Fatalf("webhook handler errors = %+v", capturedErrors)
+	paths, forms, errors := telegram.waitForCalls(t, 1)
+	if len(errors) != 0 {
+		t.Fatalf("telegram handler errors = %+v", errors)
 	}
-	if len(capturedMethods) != 1 || capturedMethods[0] != http.MethodPost {
-		t.Fatalf("webhook methods = %+v, want POST", capturedMethods)
+	if len(paths) != 1 || paths[0] != "/bottelegram-bot-credential-value/sendMessage" {
+		t.Fatalf("telegram paths = %+v, want one sendMessage request", paths)
 	}
-	if len(capturedBodies) != 1 {
-		t.Fatalf("webhook calls = %d, want one online transition notification", len(capturedBodies))
+	if len(forms) != 1 || !strings.Contains(forms[0], "chat_id=7579942307") || !strings.Contains(forms[0], "%E5%B7%B2%E4%B8%8A%E7%BA%BF") {
+		t.Fatalf("telegram forms = %+v, want online text", forms)
 	}
-	if capturedAuthorization[0] != "Bearer dispatch-credential-value" {
-		t.Fatalf("webhook Authorization = %q, want bearer credential header", capturedAuthorization[0])
-	}
-	if strings.Contains(capturedBodies[0], "dispatch-credential-value") {
-		t.Fatalf("webhook body leaked credential: %s", capturedBodies[0])
-	}
-	var event struct {
-		EventType      string `json:"event_type"`
-		Label          string `json:"label"`
-		NodeID         string `json:"node_id"`
-		NodeName       string `json:"node_name"`
-		Status         string `json:"status"`
-		PreviousStatus string `json:"previous_status"`
-	}
-	if err := json.Unmarshal([]byte(capturedBodies[0]), &event); err != nil {
-		t.Fatalf("decode webhook event: %v", err)
-	}
-	if event.EventType != "node_online" || event.Label != "上线" || event.NodeID != "hytron" || event.NodeName != "Hytron" || event.Status != "online" || event.PreviousStatus != "no_data" {
-		t.Fatalf("webhook event = %+v, want node_online transition payload", event)
-	}
+	assertTelegramFormsDoNotLeakCredential(t, forms, "telegram-bot-credential-value")
 }
 
 func TestAgentHeartbeatDispatchesEnabledTelegramChannel(t *testing.T) {
@@ -674,7 +555,6 @@ func TestAgentHeartbeatDispatchesEnabledTelegramChannel(t *testing.T) {
 	if _, err := store.CreateAdminNotificationChannel(ctx, AdminNotificationChannelCreateRequest{
 		ID:          "home-telegram",
 		Name:        "Home Telegram",
-		Type:        "telegram",
 		Destination: "7579942307",
 		Credential:  "telegram-bot-credential-value",
 		Enabled:     &enabled,
@@ -725,15 +605,15 @@ func TestAgentHeartbeatNotificationDeliveryDoesNotBlockResponse(t *testing.T) {
 
 	called := make(chan struct{}, 1)
 	release := make(chan struct{})
-	slowWebhook := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	slowTelegram := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		called <- struct{}{}
 		<-release
-		w.WriteHeader(http.StatusNoContent)
+		writeJSON(w, http.StatusOK, map[string]any{"ok": true})
 	}))
-	defer slowWebhook.Close()
+	defer slowTelegram.Close()
 	defer close(release)
 	enabled := true
-	if _, err := store.CreateAdminNotificationChannel(ctx, AdminNotificationChannelCreateRequest{ID: "slow-webhook", Name: "Slow Webhook", Type: "webhook", Destination: slowWebhook.URL, Credential: "dispatch-credential-value", Enabled: &enabled}); err != nil {
+	if _, err := store.CreateAdminNotificationChannel(ctx, AdminNotificationChannelCreateRequest{ID: "slow-telegram", Name: "Slow Telegram", Destination: "7579942307", Credential: "telegram-bot-credential-value", Enabled: &enabled}); err != nil {
 		t.Fatalf("create notification channel: %v", err)
 	}
 	if _, err := store.UpdateAdminNotificationType(ctx, "node_online", AdminNotificationTypeUpdateRequest{Enabled: &enabled}); err != nil {
@@ -741,7 +621,7 @@ func TestAgentHeartbeatNotificationDeliveryDoesNotBlockResponse(t *testing.T) {
 	}
 
 	started := time.Now()
-	postAgentHeartbeat(t, NewHandler(HandlerOptions{Store: store}), time.Now().UTC().Unix(), "online")
+	postAgentHeartbeat(t, NewHandler(HandlerOptions{Store: store, NotificationClient: slowTelegram.Client(), TelegramAPIBaseURL: slowTelegram.URL}), time.Now().UTC().Unix(), "online")
 	elapsed := time.Since(started)
 	if elapsed > 150*time.Millisecond {
 		t.Fatalf("heartbeat response took %s, want notification delivery to be non-blocking", elapsed)
@@ -749,7 +629,7 @@ func TestAgentHeartbeatNotificationDeliveryDoesNotBlockResponse(t *testing.T) {
 	select {
 	case <-called:
 	case <-time.After(time.Second):
-		t.Fatalf("slow webhook was not attempted")
+		t.Fatalf("slow telegram send was not attempted")
 	}
 }
 
@@ -768,53 +648,33 @@ func TestAgentHeartbeatDispatchesOnlineAfterStaleHeartbeatOffline(t *testing.T) 
 		t.Fatalf("set stale heartbeat: %v", err)
 	}
 
-	var captureMu sync.Mutex
-	var webhookBodies []string
-	var webhookErrors []error
-	webhook := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		body, err := io.ReadAll(r.Body)
-		captureMu.Lock()
-		if err != nil {
-			webhookErrors = append(webhookErrors, err)
-		} else {
-			webhookBodies = append(webhookBodies, string(body))
-		}
-		captureMu.Unlock()
-		w.WriteHeader(http.StatusNoContent)
-	}))
-	defer webhook.Close()
+	telegram := newTelegramTestCapture(t)
 	enabled := true
-	if _, err := store.CreateAdminNotificationChannel(ctx, AdminNotificationChannelCreateRequest{ID: "ops-webhook", Name: "Ops Webhook", Type: "webhook", Destination: webhook.URL, Credential: "dispatch-credential-value", Enabled: &enabled}); err != nil {
+	if _, err := store.CreateAdminNotificationChannel(ctx, AdminNotificationChannelCreateRequest{ID: "ops-telegram", Name: "Ops Telegram", Destination: "7579942307", Credential: "telegram-bot-credential-value", Enabled: &enabled}); err != nil {
 		t.Fatalf("create notification channel: %v", err)
 	}
 	if _, err := store.UpdateAdminNotificationType(ctx, "node_online", AdminNotificationTypeUpdateRequest{Enabled: &enabled}); err != nil {
 		t.Fatalf("enable notification type: %v", err)
 	}
 
-	postAgentHeartbeat(t, NewHandler(HandlerOptions{Store: store}), time.Now().UTC().Unix(), "online")
+	postAgentHeartbeat(t, NewHandler(telegram.handlerOptions(store)), time.Now().UTC().Unix(), "online")
+	paths, forms, errors := telegram.waitForCalls(t, 1)
+	if len(errors) != 0 {
+		t.Fatalf("telegram handler errors = %+v", errors)
+	}
+	if len(paths) != 1 || len(forms) != 1 || !strings.Contains(forms[0], "%E5%B7%B2%E4%B8%8A%E7%BA%BF") {
+		t.Fatalf("telegram calls paths=%+v forms=%+v, want online notification after stale heartbeat offline", paths, forms)
+	}
 	waitUntil(t, time.Second, func() bool {
-		captureMu.Lock()
-		defer captureMu.Unlock()
-		return len(webhookBodies)+len(webhookErrors) == 1
+		deliveries, err := store.AdminNotificationDeliveries(ctx, 20)
+		return err == nil && len(deliveries) == 1
 	})
-	captureMu.Lock()
-	capturedBodies := append([]string(nil), webhookBodies...)
-	capturedErrors := append([]error(nil), webhookErrors...)
-	captureMu.Unlock()
-	if len(capturedErrors) != 0 {
-		t.Fatalf("webhook handler errors = %+v", capturedErrors)
+	deliveries, err := store.AdminNotificationDeliveries(ctx, 20)
+	if err != nil {
+		t.Fatalf("list notification deliveries: %v", err)
 	}
-	if len(capturedBodies) != 1 {
-		t.Fatalf("webhook calls = %d, want online notification after stale heartbeat offline", len(capturedBodies))
-	}
-	var event struct {
-		PreviousStatus string `json:"previous_status"`
-	}
-	if err := json.Unmarshal([]byte(capturedBodies[0]), &event); err != nil {
-		t.Fatalf("decode webhook event: %v", err)
-	}
-	if event.PreviousStatus != "offline" {
-		t.Fatalf("previous status = %q, want offline derived from stale last_seen_at", event.PreviousStatus)
+	if len(deliveries) != 1 || deliveries[0].PreviousStatus != "offline" {
+		t.Fatalf("deliveries = %+v, want previous status offline derived from stale last_seen_at", deliveries)
 	}
 }
 
@@ -885,16 +745,15 @@ func TestAgentHeartbeatNotificationFailureDoesNotRejectHeartbeat(t *testing.T) {
 		t.Fatalf("seed preview data: %v", err)
 	}
 
-	closedWebhook := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}))
-	closedURL := closedWebhook.URL
-	closedWebhook.Close()
+	closedTelegram := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}))
+	closedURL := closedTelegram.URL
+	closedTelegram.Close()
 	enabled := true
 	if _, err := store.CreateAdminNotificationChannel(ctx, AdminNotificationChannelCreateRequest{
-		ID:          "broken-webhook",
-		Name:        "Broken Webhook",
-		Type:        "webhook",
-		Destination: closedURL,
-		Credential:  "dispatch-credential-value",
+		ID:          "broken-telegram",
+		Name:        "Broken Telegram",
+		Destination: "7579942307",
+		Credential:  "telegram-bot-credential-value",
 		Enabled:     &enabled,
 	}); err != nil {
 		t.Fatalf("create notification channel: %v", err)
@@ -903,7 +762,7 @@ func TestAgentHeartbeatNotificationFailureDoesNotRejectHeartbeat(t *testing.T) {
 		t.Fatalf("enable notification type: %v", err)
 	}
 
-	recorder := postAgentHeartbeat(t, NewHandler(HandlerOptions{Store: store}), time.Now().UTC().Unix(), "online")
+	recorder := postAgentHeartbeat(t, NewHandler(HandlerOptions{Store: store, TelegramAPIBaseURL: closedURL}), time.Now().UTC().Unix(), "online")
 	if recorder.Code != http.StatusAccepted {
 		t.Fatalf("heartbeat status = %d, want 202 even if notification send fails; body=%s", recorder.Code, recorder.Body.String())
 	}
@@ -927,17 +786,16 @@ func TestAgentHeartbeatRecordsNotificationDeliveryHistoryWithoutCredentialLeak(t
 		t.Fatalf("seed preview data: %v", err)
 	}
 
-	webhook := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	telegramAPI := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusInternalServerError)
 	}))
-	defer webhook.Close()
+	defer telegramAPI.Close()
 	enabled := true
 	if _, err := store.CreateAdminNotificationChannel(ctx, AdminNotificationChannelCreateRequest{
-		ID:          "ops-webhook",
-		Name:        "Ops Webhook",
-		Type:        "webhook",
-		Destination: webhook.URL,
-		Credential:  "dispatch-credential-value",
+		ID:          "ops-telegram",
+		Name:        "Ops Telegram",
+		Destination: "7579942307",
+		Credential:  "telegram-bot-credential-value",
 		Enabled:     &enabled,
 	}); err != nil {
 		t.Fatalf("create notification channel: %v", err)
@@ -946,7 +804,7 @@ func TestAgentHeartbeatRecordsNotificationDeliveryHistoryWithoutCredentialLeak(t
 		t.Fatalf("enable notification type: %v", err)
 	}
 
-	postAgentHeartbeat(t, NewHandler(HandlerOptions{Store: store}), time.Now().UTC().Unix(), "online")
+	postAgentHeartbeat(t, NewHandler(HandlerOptions{Store: store, NotificationClient: telegramAPI.Client(), TelegramAPIBaseURL: telegramAPI.URL}), time.Now().UTC().Unix(), "online")
 	waitUntil(t, time.Second, func() bool {
 		deliveries, err := store.AdminNotificationDeliveries(ctx, 20)
 		return err == nil && len(deliveries) == 1
@@ -959,10 +817,10 @@ func TestAgentHeartbeatRecordsNotificationDeliveryHistoryWithoutCredentialLeak(t
 		t.Fatalf("deliveries len = %d, want one recorded dispatch", len(deliveries))
 	}
 	delivery := deliveries[0]
-	if delivery.EventType != "node_online" || delivery.Label != "上线" || delivery.ChannelID != "ops-webhook" || delivery.ChannelName != "Ops Webhook" || delivery.ChannelType != "webhook" || delivery.NodeID != "hytron" || delivery.NodeName != "Hytron" || delivery.PreviousStatus != "no_data" || delivery.Status != "online" || delivery.Success {
-		t.Fatalf("delivery = %+v, want failed node_online webhook delivery metadata", delivery)
+	if delivery.EventType != "node_online" || delivery.Label != "上线" || delivery.ChannelID != "ops-telegram" || delivery.ChannelName != "Ops Telegram" || delivery.NodeID != "hytron" || delivery.NodeName != "Hytron" || delivery.PreviousStatus != "no_data" || delivery.Status != "online" || delivery.Success {
+		t.Fatalf("delivery = %+v, want failed node_online telegram delivery metadata", delivery)
 	}
-	if delivery.Error == "" || strings.Contains(delivery.Error, "dispatch-credential-value") || strings.Contains(delivery.Error, webhook.URL) {
+	if delivery.Error == "" || strings.Contains(delivery.Error, "telegram-bot-credential-value") || strings.Contains(delivery.Error, telegramAPI.URL) {
 		t.Fatalf("delivery error should be sanitized and useful, got %q", delivery.Error)
 	}
 
@@ -976,8 +834,8 @@ func TestAgentHeartbeatRecordsNotificationDeliveryHistoryWithoutCredentialLeak(t
 	}
 	raw := recorder.Body.String()
 	lower := bytes.ToLower([]byte(raw))
-	if bytes.Contains(lower, []byte("token")) || bytes.Contains(lower, []byte("secret")) || bytes.Contains(lower, []byte("hash")) || strings.Contains(raw, "dispatch-credential-value") || strings.Contains(raw, webhook.URL) {
-		t.Fatalf("notification delivery history leaked sensitive data: %s", raw)
+	if bytes.Contains(lower, []byte("token")) || bytes.Contains(lower, []byte("secret")) || bytes.Contains(lower, []byte("hash")) || bytes.Contains(lower, []byte("channel_type")) || strings.Contains(raw, "telegram-bot-credential-value") || strings.Contains(raw, telegramAPI.URL) {
+		t.Fatalf("notification delivery history leaked sensitive or channel-type data: %s", raw)
 	}
 }
 
@@ -1013,6 +871,60 @@ func waitUntil(t *testing.T, timeout time.Duration, condition func() bool) {
 			return
 		}
 		time.Sleep(10 * time.Millisecond)
+	}
+}
+
+type telegramTestCapture struct {
+	server *httptest.Server
+	mu     sync.Mutex
+	paths  []string
+	forms  []string
+	errors []error
+}
+
+func newTelegramTestCapture(t *testing.T) *telegramTestCapture {
+	t.Helper()
+	capture := &telegramTestCapture{}
+	capture.server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if err := r.ParseForm(); err != nil {
+			capture.mu.Lock()
+			capture.errors = append(capture.errors, err)
+			capture.mu.Unlock()
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		capture.mu.Lock()
+		capture.paths = append(capture.paths, r.URL.Path)
+		capture.forms = append(capture.forms, r.Form.Encode())
+		capture.mu.Unlock()
+		writeJSON(w, http.StatusOK, map[string]any{"ok": true})
+	}))
+	t.Cleanup(capture.server.Close)
+	return capture
+}
+
+func (capture *telegramTestCapture) handlerOptions(store Store) HandlerOptions {
+	return HandlerOptions{Store: store, NotificationClient: capture.server.Client(), TelegramAPIBaseURL: capture.server.URL}
+}
+
+func (capture *telegramTestCapture) waitForCalls(t *testing.T, want int) ([]string, []string, []error) {
+	t.Helper()
+	waitUntil(t, time.Second, func() bool {
+		capture.mu.Lock()
+		defer capture.mu.Unlock()
+		return len(capture.paths)+len(capture.errors) >= want
+	})
+	capture.mu.Lock()
+	defer capture.mu.Unlock()
+	return append([]string(nil), capture.paths...), append([]string(nil), capture.forms...), append([]error(nil), capture.errors...)
+}
+
+func assertTelegramFormsDoNotLeakCredential(t *testing.T, forms []string, credential string) {
+	t.Helper()
+	for _, form := range forms {
+		if strings.Contains(form, credential) {
+			t.Fatalf("telegram form leaked credential: %s", form)
+		}
 	}
 }
 

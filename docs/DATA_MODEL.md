@@ -172,7 +172,7 @@ CREATE TABLE probe_samples (
 CREATE TABLE notification_channels (
   id TEXT PRIMARY KEY,
   name TEXT NOT NULL,
-  type TEXT NOT NULL, -- telegram | webhook
+  type TEXT NOT NULL, -- fixed to telegram; kept as an internal compatibility column
   destination TEXT NOT NULL,
   credential TEXT NOT NULL,
   enabled INTEGER NOT NULL DEFAULT 1,

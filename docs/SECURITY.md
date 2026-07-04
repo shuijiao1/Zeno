@@ -73,11 +73,11 @@ Public API 只返回展示所需数据：
 
 ## 通知渠道凭据
 
-- 通知渠道写入时可以提交 Telegram/Webhook 凭据。
+- 通知渠道写入时可以提交 Telegram Bot Token。
 - Admin API 响应只返回 `credential_set`，不返回凭据原文。
 - 渠道凭据不进入 URL query string，不写入日志，不放到 Telegram 汇报里。
-- 通知 payload body 不包含渠道凭据；Webhook 凭据只作为 Authorization 请求头的 Bearer 值发送给该渠道目标。
-- Telegram Bot 凭据只用于 Telegram API 请求路径，不进入通知正文或 Admin 响应。
+- 通知 payload body 不包含渠道凭据。
+- Telegram Bot Token 只用于 Telegram API 请求路径，不进入通知正文或 Admin 响应。
 - 通知发送失败不阻塞 Agent 心跳、状态和探测数据写入，避免通知渠道故障拖垮采集入口。
 - SQLite 文件权限仍是第一道边界；后续如加入专用服务用户，应继续限制 DB 读取权限。
 

@@ -290,10 +290,9 @@ describe('normalizeAdminNotifications', () => {
     const channels = normalizeAdminNotificationChannels({
       channels: [
         {
-          id: 'zeno-webhook',
-          name: 'Zeno Webhook',
-          type: 'webhook',
-          destination: 'https://example.com/notify',
+          id: 'zeno-telegram',
+          name: 'Zeno Telegram',
+          destination: '7579942307',
           credential_set: true,
           enabled: false,
           created_at: '2026-07-03T00:00:00Z',
@@ -1167,11 +1166,10 @@ describe('admin notification deliveries', () => {
           node_name: 'Hytron',
           previous_status: 'no_data',
           status: 'online',
-          channel_id: 'zeno-webhook',
-          channel_name: 'Zeno Webhook',
-          channel_type: 'webhook' as const,
-          success: false,
-          error: 'webhook returned status 500',
+          channel_id: 'zeno-telegram',
+          channel_name: 'Zeno Telegram',
+            success: false,
+          error: 'telegram returned status 500',
           created_at: '2026-07-03T00:05:00Z',
         },
       ],
@@ -1179,13 +1177,13 @@ describe('admin notification deliveries', () => {
     const normalized = normalizeAdminNotificationDeliveries(apiPayload)
     expect(normalized.deliveries[0].nodeName).toBe('Hytron')
     expect(normalized.deliveries[0].success).toBe(false)
-    expect(normalized.deliveries[0].error).toBe('webhook returned status 500')
+    expect(normalized.deliveries[0].error).toBe('telegram returned status 500')
 
     const fetchMock = vi.fn(async () => new Response(JSON.stringify(apiPayload), { status: 200, headers: { 'Content-Type': 'application/json' } }))
     globalThis.fetch = fetchMock as unknown as typeof fetch
 
     const fetched = await fetchAdminNotificationDeliveries('admin-pass')
-    expect(fetched.deliveries[0].channelName).toBe('Zeno Webhook')
+    expect(fetched.deliveries[0].channelName).toBe('Zeno Telegram')
     expect(fetchMock).toHaveBeenCalledWith('/api/admin/v1/notification-deliveries', {
       headers: {
         Accept: 'application/json',
@@ -1209,10 +1207,9 @@ describe('notification writes', () => {
       if (String(url).endsWith('/notification-channels')) {
         return new Response(JSON.stringify({
           channel: {
-            id: 'zeno-webhook',
-            name: 'Zeno Webhook',
-            type: 'webhook',
-            destination: 'https://example.com/notify',
+            id: 'zeno-telegram',
+            name: 'Zeno Telegram',
+              destination: '7579942307',
             credential_set: true,
             enabled: true,
             created_at: '2026-07-03T00:00:00Z',
@@ -1223,10 +1220,9 @@ describe('notification writes', () => {
       if (String(url).includes('/notification-channels/')) {
         return new Response(JSON.stringify({
           channel: {
-            id: 'zeno-webhook',
-            name: 'Zeno Webhook',
-            type: 'webhook',
-            destination: 'https://example.com/notify',
+            id: 'zeno-telegram',
+            name: 'Zeno Telegram',
+              destination: '7579942307',
             credential_set: true,
             enabled: false,
             created_at: '2026-07-03T00:00:00Z',
@@ -1239,13 +1235,12 @@ describe('notification writes', () => {
     globalThis.fetch = fetchMock as unknown as typeof fetch
 
     const created = await createAdminNotificationChannel('admin-pass', {
-      name: 'Zeno Webhook',
-      type: 'webhook',
-      destination: 'https://example.com/notify',
-      credential: 'webhook-secret',
+      name: 'Zeno Telegram',
+      destination: '7579942307',
+      credential: 'telegram-bot-secret',
       enabled: true,
     })
-    const updated = await updateAdminNotificationChannel('admin-pass', 'zeno-webhook', { enabled: false })
+    const updated = await updateAdminNotificationChannel('admin-pass', 'zeno-telegram', { enabled: false })
     const notificationType = await updateAdminNotificationType('admin-pass', 'node_online', true)
 
     expect(created.credentialSet).toBe(true)
@@ -1259,14 +1254,13 @@ describe('notification writes', () => {
         'X-Admin-Token': 'admin-pass',
       },
       body: JSON.stringify({
-        name: 'Zeno Webhook',
-        type: 'webhook',
-        destination: 'https://example.com/notify',
-        credential: 'webhook-secret',
+        name: 'Zeno Telegram',
+          destination: '7579942307',
+        credential: 'telegram-bot-secret',
         enabled: true,
       }),
     })
-    expect(fetchMock).toHaveBeenNthCalledWith(2, '/api/admin/v1/notification-channels/zeno-webhook', {
+    expect(fetchMock).toHaveBeenNthCalledWith(2, '/api/admin/v1/notification-channels/zeno-telegram', {
       method: 'PATCH',
       headers: {
         Accept: 'application/json',
@@ -1285,7 +1279,7 @@ describe('notification writes', () => {
       body: JSON.stringify({ enabled: true }),
     })
     const calls = fetchMock.mock.calls as unknown as Array<[RequestInfo | URL, RequestInit?]>
-    expect(String(calls[0]?.[0])).not.toContain('webhook-secret')
+    expect(String(calls[0]?.[0])).not.toContain('telegram-bot-secret')
   })
 
   it('tests a notification channel with the admin token and returns a sanitized delivery', async () => {
@@ -1298,21 +1292,20 @@ describe('notification writes', () => {
         node_name: 'Zeno',
         previous_status: 'test',
         status: 'test',
-        channel_id: 'zeno-webhook',
-        channel_name: 'Zeno Webhook',
-        channel_type: 'webhook',
+        channel_id: 'zeno-telegram',
+        channel_name: 'Zeno Telegram',
         success: true,
         created_at: '2026-07-03T00:10:00Z',
       },
     }), { status: 200, headers: { 'Content-Type': 'application/json' } }))
     globalThis.fetch = fetchMock as unknown as typeof fetch
 
-    const delivery = await testAdminNotificationChannel('admin-pass', 'zeno-webhook')
+    const delivery = await testAdminNotificationChannel('admin-pass', 'zeno-telegram')
 
     expect(delivery.eventType).toBe('test_notification')
     expect(delivery.label).toBe('测试发送')
     expect(delivery.success).toBe(true)
-    expect(fetchMock).toHaveBeenCalledWith('/api/admin/v1/notification-channels/zeno-webhook/test', {
+    expect(fetchMock).toHaveBeenCalledWith('/api/admin/v1/notification-channels/zeno-telegram/test', {
       method: 'POST',
       headers: {
         Accept: 'application/json',
@@ -1324,10 +1317,9 @@ describe('notification writes', () => {
   it('omits a blank notification credential on channel updates to preserve the write-only credential', async () => {
     const fetchMock = vi.fn(async () => new Response(JSON.stringify({
       channel: {
-        id: 'zeno-webhook',
-        name: 'Zeno Webhook Updated',
-        type: 'webhook',
-        destination: 'https://example.com/updated',
+        id: 'zeno-telegram',
+        name: 'Zeno Telegram Updated',
+          destination: '7579942307',
         credential_set: true,
         enabled: true,
         created_at: '2026-07-03T00:00:00Z',
@@ -1336,15 +1328,14 @@ describe('notification writes', () => {
     }), { status: 200, headers: { 'Content-Type': 'application/json' } }))
     globalThis.fetch = fetchMock as unknown as typeof fetch
 
-    await updateAdminNotificationChannel('admin-pass', 'zeno-webhook', {
-      name: 'Zeno Webhook Updated',
-      type: 'webhook',
-      destination: 'https://example.com/updated',
+    await updateAdminNotificationChannel('admin-pass', 'zeno-telegram', {
+      name: 'Zeno Telegram Updated',
+      destination: '7579942307',
       credential: '   ',
       enabled: true,
     })
 
-    expect(fetchMock).toHaveBeenCalledWith('/api/admin/v1/notification-channels/zeno-webhook', {
+    expect(fetchMock).toHaveBeenCalledWith('/api/admin/v1/notification-channels/zeno-telegram', {
       method: 'PATCH',
       headers: {
         Accept: 'application/json',
@@ -1352,9 +1343,8 @@ describe('notification writes', () => {
         'X-Admin-Token': 'admin-pass',
       },
       body: JSON.stringify({
-        name: 'Zeno Webhook Updated',
-        type: 'webhook',
-        destination: 'https://example.com/updated',
+        name: 'Zeno Telegram Updated',
+          destination: '7579942307',
         enabled: true,
       }),
     })
@@ -1364,9 +1354,9 @@ describe('notification writes', () => {
     const fetchMock = vi.fn(async () => new Response(null, { status: 204 }))
     globalThis.fetch = fetchMock as unknown as typeof fetch
 
-    await deleteAdminNotificationChannel('admin-pass', 'zeno-webhook')
+    await deleteAdminNotificationChannel('admin-pass', 'zeno-telegram')
 
-    expect(fetchMock).toHaveBeenCalledWith('/api/admin/v1/notification-channels/zeno-webhook', {
+    expect(fetchMock).toHaveBeenCalledWith('/api/admin/v1/notification-channels/zeno-telegram', {
       method: 'DELETE',
       headers: {
         Accept: 'application/json',

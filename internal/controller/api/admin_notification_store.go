@@ -15,8 +15,9 @@ var adminNotificationTypeCatalog = []AdminNotificationType{
 
 func (s *SQLiteStore) AdminNotificationChannels(ctx context.Context) ([]AdminNotificationChannel, error) {
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT id, name, type, destination, credential, enabled, created_at, updated_at
+		SELECT id, name, destination, credential, enabled, created_at, updated_at
 		FROM notification_channels
+		WHERE type = 'telegram'
 		ORDER BY id ASC
 	`)
 	if err != nil {
@@ -30,7 +31,7 @@ func (s *SQLiteStore) AdminNotificationChannels(ctx context.Context) ([]AdminNot
 		var credential string
 		var enabled int
 		var createdAt, updatedAt sql.NullInt64
-		if err := rows.Scan(&channel.ID, &channel.Name, &channel.Type, &channel.Destination, &credential, &enabled, &createdAt, &updatedAt); err != nil {
+		if err := rows.Scan(&channel.ID, &channel.Name, &channel.Destination, &credential, &enabled, &createdAt, &updatedAt); err != nil {
 			return nil, err
 		}
 		channel.CredentialSet = strings.TrimSpace(credential) != ""
@@ -64,8 +65,8 @@ func (s *SQLiteStore) CreateAdminNotificationChannel(ctx context.Context, create
 	now := time.Now().UTC().Unix()
 	result, err := s.db.ExecContext(ctx, `
 		INSERT OR IGNORE INTO notification_channels (id, name, type, destination, credential, enabled, created_at, updated_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-	`, channelID, create.Name, create.Type, create.Destination, create.Credential, enabled, now, now)
+		VALUES (?, ?, 'telegram', ?, ?, ?, ?, ?)
+	`, channelID, create.Name, create.Destination, create.Credential, enabled, now, now)
 	if err != nil {
 		return AdminNotificationChannel{}, err
 	}
@@ -88,7 +89,7 @@ func (s *SQLiteStore) UpdateAdminNotificationChannel(ctx context.Context, channe
 		return AdminNotificationChannel{}, err
 	}
 	var exists int
-	if err := s.db.QueryRowContext(ctx, `SELECT 1 FROM notification_channels WHERE id = ?`, channelID).Scan(&exists); err != nil {
+	if err := s.db.QueryRowContext(ctx, `SELECT 1 FROM notification_channels WHERE id = ? AND type = 'telegram'`, channelID).Scan(&exists); err != nil {
 		if err == sql.ErrNoRows {
 			return AdminNotificationChannel{}, errNotificationChannelNotFound
 		}
@@ -99,10 +100,6 @@ func (s *SQLiteStore) UpdateAdminNotificationChannel(ctx context.Context, channe
 	if update.Name != nil {
 		sets = append(sets, "name = ?")
 		args = append(args, *update.Name)
-	}
-	if update.Type != nil {
-		sets = append(sets, "type = ?")
-		args = append(args, *update.Type)
 	}
 	if update.Destination != nil {
 		sets = append(sets, "destination = ?")
@@ -136,7 +133,7 @@ func (s *SQLiteStore) DeleteAdminNotificationChannel(ctx context.Context, channe
 	if channelID == "" {
 		return errNotificationChannelNotFound
 	}
-	result, err := s.db.ExecContext(ctx, `DELETE FROM notification_channels WHERE id = ?`, channelID)
+	result, err := s.db.ExecContext(ctx, `DELETE FROM notification_channels WHERE id = ? AND type = 'telegram'`, channelID)
 	if err != nil {
 		return err
 	}
@@ -170,10 +167,10 @@ func (s *SQLiteStore) AdminNotificationDispatchChannel(ctx context.Context, chan
 	}
 	var channel notificationDispatchChannel
 	if err := s.db.QueryRowContext(ctx, `
-		SELECT id, name, type, destination, credential
+		SELECT id, name, destination, credential
 		FROM notification_channels
-		WHERE id = ?
-	`, channelID).Scan(&channel.ID, &channel.Name, &channel.Type, &channel.Destination, &channel.Credential); err != nil {
+		WHERE id = ? AND type = 'telegram'
+	`, channelID).Scan(&channel.ID, &channel.Name, &channel.Destination, &channel.Credential); err != nil {
 		if err == sql.ErrNoRows {
 			return notificationDispatchChannel{}, errNotificationChannelNotFound
 		}
@@ -182,6 +179,7 @@ func (s *SQLiteStore) AdminNotificationDispatchChannel(ctx context.Context, chan
 	if strings.TrimSpace(channel.Credential) == "" {
 		return notificationDispatchChannel{}, errInvalidAdminNotificationChannelWrite
 	}
+	channel.Type = "telegram"
 	return channel, nil
 }
 

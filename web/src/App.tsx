@@ -757,7 +757,7 @@ export function AdminDashboard({
               </article>
               <article className="admin-action-card">
                 <p>通知渠道</p>
-                <strong>Telegram / Webhook</strong>
+                <strong>Telegram-only</strong>
               </article>
               <article className="admin-action-card">
                 <p>通知类型</p>
@@ -917,7 +917,7 @@ function AdminOverviewPanel({ nodeCount, onlineNodeCount, targetCount, enabledTa
         </article>
         <article className="admin-action-card">
           <p>通知渠道</p>
-          <strong>Telegram / Webhook</strong>
+          <strong>Telegram-only</strong>
         </article>
         <article className="admin-action-card">
           <p>通知类型</p>
@@ -1810,7 +1810,7 @@ function AdminNotificationDeliveryList({ deliveries }: { deliveries: AdminNotifi
             <small>{delivery.eventType}</small>
           </div>
           <span>{delivery.nodeName || delivery.nodeId}</span>
-          <span>{delivery.channelName || delivery.channelId} · {formatNotificationChannelType(delivery.channelType)}</span>
+          <span>{delivery.channelName || delivery.channelId}</span>
           <span>{delivery.previousStatus} → {delivery.status}</span>
           <span>{formatAdminDate(delivery.createdAt)}</span>
           <span className={`admin-node-status status-${delivery.success ? 'online' : 'disabled'}`}>{delivery.success ? '发送成功' : '发送失败'}{delivery.error ? ` · ${delivery.error}` : ''}</span>
@@ -1831,9 +1831,8 @@ function AdminNotificationChannelList({ channels, onUpdate, onDelete, onTest, on
       <div className="admin-list-head" aria-hidden="true">
         <span>渠道</span>
         <span>状态</span>
-        <span>类型</span>
-        <span>目标</span>
-        <span>凭据</span>
+        <span>Chat ID</span>
+        <span>Bot Token</span>
         <span>操作</span>
       </div>
       {channels.map((channel) => (
@@ -1843,7 +1842,6 @@ function AdminNotificationChannelList({ channels, onUpdate, onDelete, onTest, on
             <small>{channel.id}</small>
           </div>
           <span className={`admin-node-status status-${channel.enabled ? 'online' : 'disabled'}`}>{channel.enabled ? '启用中' : '已停用'}</span>
-          <span>{formatNotificationChannelType(channel.type)}</span>
           <span className="admin-notification-destination">{channel.destination}</span>
           <span>{channel.credentialSet ? '凭据已设置' : '未设置凭据'}</span>
           <div className="admin-row-actions">
@@ -1865,13 +1863,11 @@ function AdminNotificationChannelEditModal({ channel, onUpdate, onClose }: { cha
     event.preventDefault()
     const formData = new FormData(event.currentTarget)
     const name = String(formData.get('channel-name') ?? '').trim()
-    const type = String(formData.get('channel-type') ?? channel.type) === 'telegram' ? 'telegram' : 'webhook'
     const destination = String(formData.get('channel-destination') ?? '').trim()
     const credential = String(formData.get('channel-credential') ?? '').trim()
     if (name === '' || destination === '') return
     onUpdate(channel.id, {
       name,
-      type,
       destination,
       ...(credential !== '' ? { credential } : {}),
       enabled: formData.get('channel-enabled') === 'on',
@@ -1886,19 +1882,12 @@ function AdminNotificationChannelEditModal({ channel, onUpdate, onClose }: { cha
           <input name="channel-name" autoComplete="off" defaultValue={channel.name} />
         </label>
         <label>
-          <span>类型</span>
-          <select name="channel-type" defaultValue={channel.type}>
-            <option value="webhook">Webhook</option>
-            <option value="telegram">Telegram</option>
-          </select>
-        </label>
-        <label>
-          <span>目标</span>
+          <span>Telegram Chat ID</span>
           <input name="channel-destination" autoComplete="off" defaultValue={channel.destination} />
         </label>
         <label>
-          <span>凭据</span>
-          <input name="channel-credential" type="password" autoComplete="new-password" placeholder={channel.credentialSet ? '留空则保留当前凭据' : '仅写入，不回显'} />
+          <span>Telegram Bot Token</span>
+          <input name="channel-credential" type="password" autoComplete="new-password" placeholder={channel.credentialSet ? '留空则保留当前 Bot Token' : '仅写入，不回显'} />
         </label>
         <label className="admin-node-toggle">
           <input name="channel-enabled" type="checkbox" defaultChecked={channel.enabled} />
@@ -1917,13 +1906,11 @@ function AdminNotificationChannelCreateModal({ onCreate, onClose }: { onCreate: 
     event.preventDefault()
     const formData = new FormData(event.currentTarget)
     const name = String(formData.get('new-channel-name') ?? '').trim()
-    const type = String(formData.get('new-channel-type') ?? 'webhook') === 'telegram' ? 'telegram' : 'webhook'
     const destination = String(formData.get('new-channel-destination') ?? '').trim()
     const credential = String(formData.get('new-channel-credential') ?? '').trim()
     if (name === '' || destination === '' || credential === '') return
     onCreate({
       name,
-      type,
       destination,
       credential,
       enabled: formData.get('new-channel-enabled') === 'on',
@@ -1935,21 +1922,14 @@ function AdminNotificationChannelCreateModal({ onCreate, onClose }: { onCreate: 
       <form className="admin-notification-create-form admin-node-edit-form" aria-label="添加通知渠道" onSubmit={handleSubmit}>
         <label>
           <span>渠道名称</span>
-          <input name="new-channel-name" autoComplete="off" placeholder="Zeno Webhook" />
+          <input name="new-channel-name" autoComplete="off" placeholder="Zeno Telegram" />
         </label>
         <label>
-          <span>类型</span>
-          <select name="new-channel-type" defaultValue="webhook">
-            <option value="webhook">Webhook</option>
-            <option value="telegram">Telegram</option>
-          </select>
+          <span>Telegram Chat ID</span>
+          <input name="new-channel-destination" autoComplete="off" placeholder="7579942307" />
         </label>
         <label>
-          <span>目标</span>
-          <input name="new-channel-destination" autoComplete="off" placeholder="Webhook URL 或 Telegram chat ID" />
-        </label>
-        <label>
-          <span>凭据</span>
+          <span>Telegram Bot Token</span>
           <input name="new-channel-credential" type="password" autoComplete="new-password" placeholder="仅写入，不回显" />
         </label>
         <label className="admin-node-toggle">
@@ -2066,10 +2046,6 @@ function formatRuleCategory(category: string): string {
   if (category === 'probe') return '探测'
   if (category === 'liveness') return '在线状态'
   return category || '规则'
-}
-
-function formatNotificationChannelType(type: AdminNotificationChannel['type']): string {
-  return type === 'telegram' ? 'Telegram' : 'Webhook'
 }
 
 function totalMaintenanceCandidates(stats: AdminMaintenanceStats): number {

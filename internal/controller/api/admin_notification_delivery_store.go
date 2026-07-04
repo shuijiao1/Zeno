@@ -13,13 +13,17 @@ func (s *SQLiteStore) RecordNotificationDelivery(ctx context.Context, event noti
 	if success {
 		successValue = 1
 	}
+	channelType := channel.Type
+	if channelType == "" {
+		channelType = "telegram"
+	}
 	result, err := s.db.ExecContext(ctx, `
 		INSERT INTO notification_deliveries (
 			event_type, label, node_id, node_name, previous_status, status,
 			channel_id, channel_name, channel_type, success, error, created_at
 		)
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-	`, event.EventType, event.Label, event.NodeID, event.NodeName, event.PreviousStatus, event.Status, channel.ID, channel.Name, channel.Type, successValue, deliveryError, time.Now().UTC().Unix())
+	`, event.EventType, event.Label, event.NodeID, event.NodeName, event.PreviousStatus, event.Status, channel.ID, channel.Name, channelType, successValue, deliveryError, time.Now().UTC().Unix())
 	if err != nil {
 		return AdminNotificationDelivery{}, err
 	}
@@ -76,12 +80,13 @@ type adminNotificationDeliveryScanner interface {
 
 func scanAdminNotificationDelivery(scanner adminNotificationDeliveryScanner) (AdminNotificationDelivery, error) {
 	var delivery AdminNotificationDelivery
+	var channelType string
 	var success int
 	var createdAt sql.NullInt64
 	if err := scanner.Scan(
 		&delivery.ID, &delivery.EventType, &delivery.Label, &delivery.NodeID, &delivery.NodeName,
 		&delivery.PreviousStatus, &delivery.Status, &delivery.ChannelID, &delivery.ChannelName,
-		&delivery.ChannelType, &success, &delivery.Error, &createdAt,
+		&channelType, &success, &delivery.Error, &createdAt,
 	); err != nil {
 		return AdminNotificationDelivery{}, err
 	}

@@ -145,7 +145,7 @@ func TestNotificationDispatchRequiresEnabledAlertRuleForEvent(t *testing.T) {
 	defer store.Close()
 	ctx := context.Background()
 	enabled := true
-	if _, err := store.CreateAdminNotificationChannel(ctx, AdminNotificationChannelCreateRequest{ID: "ops-webhook", Name: "Ops Webhook", Type: "webhook", Destination: "https://example.com/hook", Credential: "dispatch-credential-value", Enabled: &enabled}); err != nil {
+	if _, err := store.CreateAdminNotificationChannel(ctx, AdminNotificationChannelCreateRequest{ID: "ops-telegram", Name: "Ops Telegram", Destination: "7579942307", Credential: "dispatch-credential-value", Enabled: &enabled}); err != nil {
 		t.Fatalf("create notification channel: %v", err)
 	}
 	if _, err := store.UpdateAdminNotificationType(ctx, "node_online", AdminNotificationTypeUpdateRequest{Enabled: &enabled}); err != nil {

@@ -145,7 +145,6 @@ interface ApiAdminProbeTarget {
 interface ApiAdminNotificationChannel {
   id: string
   name: string
-  type: 'telegram' | 'webhook'
   destination: string
   credential_set: boolean
   enabled: boolean
@@ -170,7 +169,6 @@ interface ApiAdminNotificationDelivery {
   status: string
   channel_id: string
   channel_name: string
-  channel_type: 'telegram' | 'webhook'
   success: boolean
   error?: string
   created_at: string
@@ -428,7 +426,6 @@ export interface AdminProbeTargetUpdateInput {
 export interface AdminNotificationChannelCreateInput {
   id?: string
   name: string
-  type: 'telegram' | 'webhook'
   destination: string
   credential: string
   enabled?: boolean
@@ -436,7 +433,6 @@ export interface AdminNotificationChannelCreateInput {
 
 export interface AdminNotificationChannelUpdateInput {
   name?: string
-  type?: 'telegram' | 'webhook'
   destination?: string
   credential?: string
   enabled?: boolean
@@ -1051,7 +1047,6 @@ function serializeAdminNotificationChannelCreate(input: AdminNotificationChannel
   return {
     ...(input.id !== undefined && input.id.trim() !== '' ? { id: input.id } : {}),
     name: input.name,
-    type: input.type,
     destination: input.destination,
     credential: input.credential,
     ...(input.enabled !== undefined ? { enabled: input.enabled } : {}),
@@ -1062,7 +1057,6 @@ function serializeAdminNotificationChannelUpdate(input: AdminNotificationChannel
   const trimmedCredential = input.credential?.trim()
   return {
     ...(input.name !== undefined ? { name: input.name } : {}),
-    ...(input.type !== undefined ? { type: input.type } : {}),
     ...(input.destination !== undefined ? { destination: input.destination } : {}),
     ...(trimmedCredential !== undefined && trimmedCredential !== '' ? { credential: trimmedCredential } : {}),
     ...(input.enabled !== undefined ? { enabled: input.enabled } : {}),
@@ -1203,7 +1197,6 @@ function normalizeAdminNotificationChannel(channel: ApiAdminNotificationChannel)
   return {
     id: channel.id,
     name: channel.name,
-    type: channel.type,
     destination: channel.destination,
     credentialSet: channel.credential_set,
     enabled: channel.enabled,
@@ -1232,7 +1225,6 @@ function normalizeAdminNotificationDelivery(delivery: ApiAdminNotificationDelive
     status: delivery.status,
     channelId: delivery.channel_id,
     channelName: delivery.channel_name,
-    channelType: delivery.channel_type,
     success: delivery.success,
     error: delivery.error,
     createdAt: delivery.created_at,

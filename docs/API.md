@@ -613,7 +613,7 @@ Controller 会在 Agent 上报时实际使用这些规则：
 
 ### GET /api/admin/v1/alert-rule-states
 
-当前状态规则命中列表，用于后台“当前异常”面板。只返回节点、规则、当前值、阈值、通知事件类型和时间戳；不返回 Admin token、Agent token、token hash、通知渠道 destination、Webhook URL、Telegram Bot 凭据、Authorization header、secret 或 credential 原文。
+当前状态规则命中列表，用于后台“当前异常”面板。只返回节点、规则、当前值、阈值、通知事件类型和时间戳；不返回 Admin token、Agent token、token hash、通知渠道 destination、Telegram Bot Token、secret 或 credential 原文。
 
 ```json
 {
@@ -729,7 +729,7 @@ Controller 会在 Agent 上报时实际使用这些规则：
 
 ### GET /api/admin/v1/notification-channels
 
-通知渠道管理列表。渠道凭据只在写入时提交，响应只返回 `credential_set` 标记，不返回凭据原文。
+Telegram 通知渠道管理列表。Zeno 当前只支持 Telegram 一个通知渠道类型；API 不暴露 `type` / `channel_type`，避免以后把多渠道复杂度带回产品面。渠道凭据只在写入时提交，响应只返回 `credential_set` 标记，不返回 Bot Token 原文。
 
 ```json
 {
@@ -737,7 +737,6 @@ Controller 会在 Agent 上报时实际使用这些规则：
     {
       "id": "telegram-home",
       "name": "Telegram Home",
-      "type": "telegram",
       "destination": "7579942307",
       "credential_set": true,
       "enabled": true,
@@ -750,12 +749,11 @@ Controller 会在 Agent 上报时实际使用这些规则：
 
 ### POST /api/admin/v1/notification-channels
 
-新增通知渠道。当前支持 `telegram` 和 `webhook` 两类；`credential` 可以是 Telegram Bot 凭据或 Webhook URL，只保存用于后续发送，响应不会返回。
+新增 Telegram 通知渠道。`destination` 是 Telegram chat id；`credential` 是 Telegram Bot Token，只保存用于后续 `sendMessage`，响应不会返回。请求不接受 `type` 字段。
 
 ```json
 {
   "name": "Telegram Home",
-  "type": "telegram",
   "destination": "7579942307",
   "credential": "***",
   "enabled": true
@@ -764,7 +762,7 @@ Controller 会在 Agent 上报时实际使用这些规则：
 
 ### PATCH /api/admin/v1/notification-channels/{channel_id}
 
-部分更新通知渠道。省略 `credential` 时保留旧凭据；传入新 `credential` 时覆盖旧凭据。
+部分更新 Telegram 通知渠道。省略 `credential` 时保留旧 Bot Token；传入新 `credential` 时覆盖旧 Bot Token。请求不接受 `type` 字段。
 
 ### DELETE /api/admin/v1/notification-channels/{channel_id}
 
@@ -772,9 +770,9 @@ Controller 会在 Agent 上报时实际使用这些规则：
 
 ### POST /api/admin/v1/notification-channels/{channel_id}/test
 
-显式测试某个通知渠道。这个接口只在后台管理员点击“测试发送”时调用，同步发送一条合成的 `test_notification` / `测试发送` 事件，并把结果写入通知发送记录。禁用中的渠道也允许测试，方便先验证配置再启用正式通知。
+显式测试某个 Telegram 通知渠道。这个接口只在后台管理员点击“测试发送”时调用，同步发送一条合成的 `test_notification` / `测试发送` 事件，并把结果写入通知发送记录。禁用中的渠道也允许测试，方便先验证配置再启用正式通知。
 
-响应只返回一次发送记录 DTO，不返回渠道凭据、Webhook URL、Telegram Bot 凭据、Authorization header 或任何 hash。
+响应只返回一次发送记录 DTO，不返回渠道 Bot Token、token 原文、secret、credential、Authorization header 或任何 hash。
 
 ```json
 {
@@ -788,7 +786,6 @@ Controller 会在 Agent 上报时实际使用这些规则：
     "status": "test",
     "channel_id": "telegram-home",
     "channel_name": "Telegram Home",
-    "channel_type": "telegram",
     "success": true,
     "created_at": "2026-07-03T00:10:00Z"
   }
@@ -823,7 +820,7 @@ Controller 会在 Agent 上报时实际使用这些规则：
 
 查看最近通知发送记录，用于后台“最近发送”面板。默认返回最近 50 条；可以传正整数 `limit` 覆盖数量。
 
-记录只包含事件、节点、渠道标识、渠道类型、成功/失败和脱敏错误信息；不会返回渠道 destination、Webhook URL、Telegram Bot 凭据、Authorization header、token 原文、secret 或 hash。
+记录只包含事件、节点、渠道标识、成功/失败和脱敏错误信息；不会返回渠道 destination、Telegram Bot Token、token 原文、secret、credential 或 hash。
 
 ```json
 {
@@ -838,7 +835,6 @@ Controller 会在 Agent 上报时实际使用这些规则：
       "status": "online",
       "channel_id": "telegram-home",
       "channel_name": "Telegram Home",
-      "channel_type": "telegram",
       "success": true,
       "created_at": "2026-07-03T00:05:00Z"
     },
@@ -850,11 +846,10 @@ Controller 会在 Agent 上报时实际使用这些规则：
       "node_name": "Hytron",
       "previous_status": "online",
       "status": "warning",
-      "channel_id": "zeno-webhook",
-      "channel_name": "Zeno Webhook",
-      "channel_type": "webhook",
+      "channel_id": "telegram-home",
+      "channel_name": "Telegram Home",
       "success": false,
-      "error": "webhook returned status 500",
+      "error": "telegram returned status 500",
       "created_at": "2026-07-03T00:04:00Z"
     }
   ]
@@ -872,12 +867,9 @@ Controller 会在 Agent 上报时实际使用这些规则：
 - `/api/agent/v1/probe-results` 会依据启用的探测延迟/丢包规则触发或清除探测类 `warning`。
 - 状态未变化时不重复发送。
 
-发送前同时要求：对应 `alert_rules.enabled = 1`、对应 `notification_types.enabled = 1`，且至少一个 `notification_channels.enabled = 1` 并已配置凭据。显式 `POST /notification-channels/{channel_id}/test` 是管理员手动测试，不受状态规则启用状态影响。
+发送前同时要求：对应 `alert_rules.enabled = 1`、对应 `notification_types.enabled = 1`，且至少一个 `notification_channels.enabled = 1` 并已配置 Telegram chat id 和 Bot Token。显式 `POST /notification-channels/{channel_id}/test` 是管理员手动测试，不受状态规则启用状态影响。
 
-渠道语义：
-
-- `telegram`：`destination` 是 chat id，`credential` 是 Bot 凭据；发送 `sendMessage`。
-- webhook：优先把 destination 当 Webhook URL；credential 作为 Authorization 请求头的 Bearer 值发送。若 destination 不是 URL 且 credential 是 URL，则把 credential 当 Webhook URL 使用。
+渠道语义：Telegram-only。`destination` 是 chat id，`credential` 是 Bot Token；Controller 调用 Telegram Bot API 的 `sendMessage`。
 
 通知发送失败不会阻塞 Agent 心跳/状态写入；凭据不会出现在 JSON 响应或通知 payload body 中。
 

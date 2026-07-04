@@ -173,8 +173,8 @@ func seedMaintenanceFixture(t *testing.T, store *SQLiteStore) {
 	}
 	if _, err := store.db.ExecContext(ctx, `
 		INSERT INTO notification_deliveries (event_type, label, node_id, node_name, previous_status, status, channel_id, channel_name, channel_type, success, error, created_at)
-		VALUES ('probe_unhealthy', '异常', 'hytron', 'Hytron', 'online', 'warning', 'webhook', 'Webhook', 'webhook', 1, '', ?),
-		       ('node_online', '上线', 'hytron', 'Hytron', 'offline', 'online', 'webhook', 'Webhook', 'webhook', 1, '', ?)
+		VALUES ('probe_unhealthy', '异常', 'hytron', 'Hytron', 'online', 'warning', 'telegram', 'Telegram', 'telegram', 1, '', ?),
+		       ('node_online', '上线', 'hytron', 'Hytron', 'offline', 'online', 'telegram', 'Telegram', 'telegram', 1, '', ?)
 	`, oldNotification, now); err != nil {
 		t.Fatalf("insert notification deliveries: %v", err)
 	}

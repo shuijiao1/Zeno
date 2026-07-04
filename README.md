@@ -19,7 +19,7 @@ Zeno 是一个从零实现的轻量服务器探针 / 在线监控系统。
 - Public API：主页 summary、节点延迟、节点状态历史。
 - Web UI：主页卡片、节点详情页、延迟图、资源历史图、移动端紧凑布局。
 - Admin API/UI：服务器、探针目标、节点分配、通知渠道、通知类型、发送记录。
-- 通知：Webhook / Telegram 渠道，支持上线、离线、探测异常和手动测试发送；响应只暴露 sanitized delivery，不返回凭据。
+- 通知：Telegram-only 渠道，支持上线、离线、探测异常和手动测试发送；响应只暴露 sanitized delivery，不返回 Bot Token。
 - 部署预览：Hytron 上以 `zeno-controller.service` / `zeno-agent.service` 运行，路径 `/opt/zeno`。
 
 ## 当前不做

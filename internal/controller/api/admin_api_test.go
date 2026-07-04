@@ -1205,6 +1205,58 @@ func TestAdminProbeTargetsRequiresAdminToken(t *testing.T) {
 	}
 }
 
+func TestAdminNotificationChannelsAreTelegramOnlyAndDoNotExposeChannelType(t *testing.T) {
+	store, err := OpenSQLiteStore(filepath.Join(t.TempDir(), "zeno.db"))
+	if err != nil {
+		t.Fatalf("open sqlite store: %v", err)
+	}
+	defer store.Close()
+	handler := NewHandler(HandlerOptions{Store: store, AdminTokenHash: HashAdminToken("admin-pass")})
+
+	createRecorder := httptest.NewRecorder()
+	createRequest := httptest.NewRequest(http.MethodPost, "/api/admin/v1/notification-channels", bytes.NewBufferString(`{
+		"name": "Telegram Home",
+		"destination": "7579942307",
+		"credential": "telegram-bot-secret-value",
+		"enabled": true
+	}`))
+	createRequest.Header.Set("X-Admin-Token", "admin-pass")
+	handler.ServeHTTP(createRecorder, createRequest)
+	if createRecorder.Code != http.StatusCreated {
+		t.Fatalf("create status = %d, want 201; body=%s", createRecorder.Code, createRecorder.Body.String())
+	}
+	assertNoSensitiveNotificationLeak(t, createRecorder.Body.String())
+	if bytes.Contains(createRecorder.Body.Bytes(), []byte(`"type"`)) {
+		t.Fatalf("telegram-only channel create response exposed channel type: %s", createRecorder.Body.String())
+	}
+
+	listRecorder := httptest.NewRecorder()
+	listRequest := httptest.NewRequest(http.MethodGet, "/api/admin/v1/notification-channels", nil)
+	listRequest.Header.Set("X-Admin-Token", "admin-pass")
+	handler.ServeHTTP(listRecorder, listRequest)
+	if listRecorder.Code != http.StatusOK {
+		t.Fatalf("list status = %d, want 200; body=%s", listRecorder.Code, listRecorder.Body.String())
+	}
+	assertNoSensitiveNotificationLeak(t, listRecorder.Body.String())
+	if bytes.Contains(listRecorder.Body.Bytes(), []byte(`"type"`)) {
+		t.Fatalf("telegram-only channel list response exposed channel type: %s", listRecorder.Body.String())
+	}
+
+	explicitTypeRecorder := httptest.NewRecorder()
+	explicitTypeRequest := httptest.NewRequest(http.MethodPost, "/api/admin/v1/notification-channels", bytes.NewBufferString(`{
+		"name": "Explicit Type",
+		"type": "unsupported",
+		"destination": "7579942307",
+		"credential": "telegram-bot-secret-value"
+	}`))
+	explicitTypeRequest.Header.Set("X-Admin-Token", "admin-pass")
+	handler.ServeHTTP(explicitTypeRecorder, explicitTypeRequest)
+	if explicitTypeRecorder.Code != http.StatusBadRequest {
+		t.Fatalf("explicit type create status = %d, want 400; body=%s", explicitTypeRecorder.Code, explicitTypeRecorder.Body.String())
+	}
+	assertNoSensitiveNotificationLeak(t, explicitTypeRecorder.Body.String())
+}
+
 func TestAdminNotificationChannelsCreateListAndPatchWithoutCredentialLeak(t *testing.T) {
 	store, err := OpenSQLiteStore(filepath.Join(t.TempDir(), "zeno.db"))
 	if err != nil {
@@ -1216,7 +1268,6 @@ func TestAdminNotificationChannelsCreateListAndPatchWithoutCredentialLeak(t *tes
 	createRecorder := httptest.NewRecorder()
 	createRequest := httptest.NewRequest(http.MethodPost, "/api/admin/v1/notification-channels", bytes.NewBufferString(`{
 		"name": "  Telegram Home  ",
-		"type": "telegram",
 		"destination": "  7579942307  ",
 		"credential": "telegram-bot-secret-value",
 		"enabled": true
@@ -1232,7 +1283,6 @@ func TestAdminNotificationChannelsCreateListAndPatchWithoutCredentialLeak(t *tes
 		Channel struct {
 			ID            string `json:"id"`
 			Name          string `json:"name"`
-			Type          string `json:"type"`
 			Destination   string `json:"destination"`
 			CredentialSet bool   `json:"credential_set"`
 			Enabled       bool   `json:"enabled"`
@@ -1241,7 +1291,7 @@ func TestAdminNotificationChannelsCreateListAndPatchWithoutCredentialLeak(t *tes
 	if err := json.NewDecoder(bytes.NewBufferString(createRecorder.Body.String())).Decode(&createResponse); err != nil {
 		t.Fatalf("decode created notification channel: %v", err)
 	}
-	if createResponse.Channel.ID == "" || createResponse.Channel.Name != "Telegram Home" || createResponse.Channel.Type != "telegram" || createResponse.Channel.Destination != "7579942307" || !createResponse.Channel.CredentialSet || !createResponse.Channel.Enabled {
+	if createResponse.Channel.ID == "" || createResponse.Channel.Name != "Telegram Home" || createResponse.Channel.Destination != "7579942307" || !createResponse.Channel.CredentialSet || !createResponse.Channel.Enabled {
 		t.Fatalf("created channel = %+v, want normalized enabled telegram channel with credential marker", createResponse.Channel)
 	}
 
@@ -1257,7 +1307,6 @@ func TestAdminNotificationChannelsCreateListAndPatchWithoutCredentialLeak(t *tes
 		Channels []struct {
 			ID            string `json:"id"`
 			Name          string `json:"name"`
-			Type          string `json:"type"`
 			Destination   string `json:"destination"`
 			CredentialSet bool   `json:"credential_set"`
 			Enabled       bool   `json:"enabled"`
@@ -1297,44 +1346,39 @@ func TestAdminNotificationChannelsCreateListAndPatchWithoutCredentialLeak(t *tes
 	}
 }
 
-func TestAdminNotificationChannelTestSendsWebhookAndRecordsSanitizedDelivery(t *testing.T) {
+func TestAdminNotificationChannelTestSendsTelegramAndRecordsSanitizedDelivery(t *testing.T) {
 	store, err := OpenSQLiteStore(filepath.Join(t.TempDir(), "zeno.db"))
 	if err != nil {
 		t.Fatalf("open sqlite store: %v", err)
 	}
 	defer store.Close()
 	ctx := context.Background()
-	var received struct {
-		EventType string `json:"event_type"`
-		Label     string `json:"label"`
-		NodeName  string `json:"node_name"`
-	}
-	webhook := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	var receivedPath string
+	var receivedForm string
+	telegramAPI := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
-			t.Errorf("webhook method = %s, want POST", r.Method)
+			t.Errorf("telegram method = %s, want POST", r.Method)
 		}
-		if r.Header.Get("Authorization") != "Bearer webhook-secret-value" {
-			t.Errorf("webhook authorization = %q, want bearer credential", r.Header.Get("Authorization"))
+		if err := r.ParseForm(); err != nil {
+			t.Errorf("parse telegram form: %v", err)
 		}
-		if err := json.NewDecoder(r.Body).Decode(&received); err != nil {
-			t.Errorf("decode webhook body: %v", err)
-		}
-		w.WriteHeader(http.StatusNoContent)
+		receivedPath = r.URL.Path
+		receivedForm = r.Form.Encode()
+		writeJSON(w, http.StatusOK, map[string]any{"ok": true})
 	}))
-	defer webhook.Close()
+	defer telegramAPI.Close()
 	enabled := false
 	channel, err := store.CreateAdminNotificationChannel(ctx, AdminNotificationChannelCreateRequest{
-		ID:          "smoke-webhook",
-		Name:        "Smoke Webhook",
-		Type:        "webhook",
-		Destination: webhook.URL,
-		Credential:  "webhook-secret-value",
+		ID:          "smoke-telegram",
+		Name:        "Smoke Telegram",
+		Destination: "7579942307",
+		Credential:  "telegram-bot-secret-value",
 		Enabled:     &enabled,
 	})
 	if err != nil {
 		t.Fatalf("create notification channel: %v", err)
 	}
-	handler := NewHandler(HandlerOptions{Store: store, AdminTokenHash: HashAdminToken("admin-pass"), NotificationClient: webhook.Client()})
+	handler := NewHandler(HandlerOptions{Store: store, AdminTokenHash: HashAdminToken("admin-pass"), NotificationClient: telegramAPI.Client(), TelegramAPIBaseURL: telegramAPI.URL})
 
 	recorder := httptest.NewRecorder()
 	request := httptest.NewRequest(http.MethodPost, "/api/admin/v1/notification-channels/"+channel.ID+"/test", nil)
@@ -1345,8 +1389,11 @@ func TestAdminNotificationChannelTestSendsWebhookAndRecordsSanitizedDelivery(t *
 		t.Fatalf("test status = %d, want 200; body=%s", recorder.Code, recorder.Body.String())
 	}
 	assertNoSensitiveNotificationLeak(t, recorder.Body.String())
-	if received.EventType != "test_notification" || received.Label != "测试发送" || received.NodeName != "Zeno" {
-		t.Fatalf("webhook test event = %+v, want sanitized Zeno test notification", received)
+	if receivedPath != "/bottelegram-bot-secret-value/sendMessage" || !strings.Contains(receivedForm, "chat_id=7579942307") || !strings.Contains(receivedForm, "%E9%80%9A%E7%9F%A5%E6%B8%A0%E9%81%93%E6%B5%8B%E8%AF%95") {
+		t.Fatalf("telegram test request path=%q form=%q, want test sendMessage", receivedPath, receivedForm)
+	}
+	if strings.Contains(receivedForm, "telegram-bot-secret-value") {
+		t.Fatalf("telegram form leaked credential: %s", receivedForm)
 	}
 	var response struct {
 		Delivery struct {
@@ -1361,7 +1408,7 @@ func TestAdminNotificationChannelTestSendsWebhookAndRecordsSanitizedDelivery(t *
 	if err := json.NewDecoder(bytes.NewBufferString(recorder.Body.String())).Decode(&response); err != nil {
 		t.Fatalf("decode test delivery response: %v", err)
 	}
-	if response.Delivery.EventType != "test_notification" || response.Delivery.Label != "测试发送" || response.Delivery.ChannelID != channel.ID || response.Delivery.ChannelName != "Smoke Webhook" || !response.Delivery.Success || response.Delivery.Error != "" {
+	if response.Delivery.EventType != "test_notification" || response.Delivery.Label != "测试发送" || response.Delivery.ChannelID != channel.ID || response.Delivery.ChannelName != "Smoke Telegram" || !response.Delivery.Success || response.Delivery.Error != "" {
 		t.Fatalf("test delivery response = %+v, want successful sanitized test delivery", response.Delivery)
 	}
 	deliveries, err := store.AdminNotificationDeliveries(ctx, 5)
@@ -1382,11 +1429,10 @@ func TestAdminNotificationChannelDeleteRemovesChannelWithoutCredentialLeak(t *te
 	ctx := context.Background()
 	enabled := true
 	channel, err := store.CreateAdminNotificationChannel(ctx, AdminNotificationChannelCreateRequest{
-		ID:          "smoke-webhook",
-		Name:        "Smoke Webhook",
-		Type:        "webhook",
+		ID:          "smoke-telegram",
+		Name:        "Smoke Telegram",
 		Destination: "https://example.com/notify",
-		Credential:  "webhook-secret-value",
+		Credential:  "telegram-bot-secret-value",
 		Enabled:     &enabled,
 	})
 	if err != nil {
