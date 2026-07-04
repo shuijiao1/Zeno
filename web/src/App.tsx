@@ -42,6 +42,7 @@ type AdminAuthState =
   | { kind: 'error'; message: string }
 
 type AdminSection = 'nodes' | 'targets' | 'notifications' | 'account' | 'settings'
+type AdminNodeSort = 'order' | 'name' | 'status' | 'agent' | 'ip'
 type AdminTargetSort = 'order' | 'name' | 'status' | 'type' | 'assignments'
 
 function sum(values: Array<number | null | undefined>): number {
@@ -301,17 +302,6 @@ export function App() {
     })
   }
 
-  const refreshAdminNodes = () => {
-    if (adminToken === '') return
-    setAdminState({ kind: 'loading' })
-    Promise.all([fetchAdminSettings(adminToken), fetchAdminAccount(adminToken), fetchAdminNodes(adminToken), fetchAdminProbeTargets(adminToken), fetchAdminNotificationChannels(adminToken), fetchAdminAlertRules(adminToken)])
-      .then(([settingsData, accountData, nodesData, targetsData, channelsData, alertRulesData]) => {
-        setSettings(settingsData)
-        setAdminState({ kind: 'ready', account: accountData, nodes: nodesData.nodes, targets: targetsData.targets, notificationChannels: channelsData.channels, alertRules: alertRulesData.rules })
-      })
-      .catch((error: unknown) => setAdminState({ kind: 'error', message: error instanceof Error ? error.message : 'unknown error' }))
-  }
-
   const createAdminNodeDetails = (input: AdminNodeCreateInput) => {
     if (adminToken === '') return
     createAdminNode(adminToken, input)
@@ -498,7 +488,6 @@ export function App() {
           onAdminLogin={submitAdminLogin}
           onAdminTokenClear={clearAdminToken}
           onAdminAccountUpdate={updateAdminAccountDetails}
-          onAdminRefresh={refreshAdminNodes}
           onAdminNodeCreate={createAdminNodeDetails}
           onAdminNodeUpdate={updateAdminNodeDetails}
           onAdminInstallCommand={requestAdminInstallCommand}
@@ -591,6 +580,7 @@ interface DashboardHeaderProps {
   onHome: () => void
   onAdmin: () => void
   adminLabel?: string
+  trailingAction?: ReactNode
 }
 
 interface HomeTopPanelProps extends HomeOverviewPanelProps {
@@ -696,7 +686,7 @@ function formatServiceLoss(value: number | null | undefined): string {
   return `${value.toFixed(2)}%`
 }
 
-function DashboardHeader({ settings = defaultSettings, onHome, onAdmin, adminLabel = '后台' }: DashboardHeaderProps) {
+function DashboardHeader({ settings = defaultSettings, onHome, onAdmin, adminLabel = '后台', trailingAction }: DashboardHeaderProps) {
   return (
     <header className="kulin-nav">
       <button className="brand" type="button" onClick={onHome}>
@@ -708,6 +698,7 @@ function DashboardHeader({ settings = defaultSettings, onHome, onAdmin, adminLab
         <button className="nav-icon-button is-solid" type="button" aria-label="language"><MapIcon /></button>
         <button className="nav-icon-button" type="button" aria-label="切换主题"><SunIcon /><span className="sr-only">切换主题</span></button>
         <button className="nav-icon-button" type="button" aria-label="background"><ImageMinusIcon /></button>
+        {trailingAction}
       </nav>
     </header>
   )
@@ -723,7 +714,6 @@ interface AdminDashboardProps {
   onAdminLogin?: (username: string, password: string) => void
   onAdminTokenClear?: () => void
   onAdminAccountUpdate?: (username: string, currentPassword: string, newPassword: string) => Promise<void>
-  onAdminRefresh?: () => void
   onAdminNodeCreate?: (input: AdminNodeCreateInput) => void
   onAdminNodeUpdate?: (nodeId: string, input: AdminNodeUpdateInput) => void
   onAdminInstallCommand?: (nodeId: string) => Promise<string>
@@ -747,7 +737,6 @@ export function AdminDashboard({
   onAdminLogin = () => {},
   onAdminTokenClear = () => {},
   onAdminAccountUpdate = () => Promise.reject(new Error('account update unavailable')),
-  onAdminRefresh = () => {},
   onAdminNodeCreate = () => {},
   onAdminNodeUpdate = () => {},
   onAdminInstallCommand = () => Promise.reject(new Error('install command unavailable')),
@@ -778,7 +767,13 @@ export function AdminDashboard({
   return (
     <div className="kulin-container admin-container">
       <section className="home-top-card admin-panel" aria-label="admin dashboard">
-        <DashboardHeader settings={settings} onHome={onHome} onAdmin={onHome} adminLabel="前台" />
+        <DashboardHeader
+          settings={settings}
+          onHome={onHome}
+          onAdmin={onHome}
+          adminLabel="前台"
+          trailingAction={hasAdminToken ? <button className="nav-logout-button" type="button" onClick={onAdminTokenClear}>退出</button> : undefined}
+        />
 
         {!hasAdminToken && (
           <form className="admin-login-card" aria-label="admin login form" onSubmit={handleTokenSubmit}>
@@ -808,10 +803,6 @@ export function AdminDashboard({
                 targetCount={targetCount}
                 ruleCount={ruleCount}
               />
-              <div className="admin-section-actions">
-                <button type="button" onClick={onAdminRefresh}>刷新</button>
-                <button type="button" onClick={onAdminTokenClear}>退出</button>
-              </div>
             </div>
 
             {adminState.kind === 'loading' && <div className="admin-state-card">正在读取 Admin API…</div>}
@@ -1089,9 +1080,12 @@ function validAgentControllerURL(value: string): boolean {
 function AdminNodeSection({ nodes, onCreate, onUpdate, onInstallCommand }: { nodes: AdminNode[]; onCreate: (input: AdminNodeCreateInput) => void; onUpdate: (nodeId: string, input: AdminNodeUpdateInput) => void; onInstallCommand: (nodeId: string) => Promise<string> }) {
   const [creatingNode, setCreatingNode] = useState(false)
   const [editingNodeId, setEditingNodeId] = useState<string | null>(null)
+  const [nodeSort, setNodeSort] = useState<AdminNodeSort>('order')
   const editingNode = editingNodeId ? nodes.find((node) => node.id === editingNodeId) : undefined
+  const sortedNodes = sortAdminNodes(nodes, nodeSort)
   const applyOrderPatches = (patches: AdminNodeOrderPatch[]) => {
     patches.forEach((patch) => onUpdate(patch.nodeId, { displayOrder: patch.displayOrder }))
+    if (patches.length > 0) setNodeSort('order')
   }
 
   return (
@@ -1102,13 +1096,23 @@ function AdminNodeSection({ nodes, onCreate, onUpdate, onInstallCommand }: { nod
           <h3>服务器列表</h3>
         </div>
         <div className="admin-section-actions">
-          <button type="button" onClick={() => applyOrderPatches(buildAdminNodeOrderPatches(nodes))}>整理顺序</button>
+          <label className="admin-sort-control">
+            <span>排序</span>
+            <select name="node-sort" value={nodeSort} onChange={(event) => setNodeSort(event.currentTarget.value as AdminNodeSort)}>
+              <option value="order">按手动顺序</option>
+              <option value="name">按名称排序</option>
+              <option value="status">按状态排序</option>
+              <option value="agent">按 Agent 排序</option>
+              <option value="ip">按公网 IP 排序</option>
+            </select>
+          </label>
+          <button type="button" onClick={() => applyOrderPatches(buildAdminNodeOrderPatches(sortedNodes))}>整理顺序</button>
           <button className="admin-primary-action" type="button" onClick={() => setCreatingNode(true)}>添加服务器</button>
         </div>
       </header>
 
       {nodes.length === 0 && <div className="admin-state-card">还没有节点。</div>}
-      {nodes.length > 0 && <AdminNodeList nodes={nodes} onEdit={setEditingNodeId} />}
+      {nodes.length > 0 && <AdminNodeList nodes={sortedNodes} onEdit={setEditingNodeId} />}
 
       {creatingNode && (
         <AdminNodeCreateModal
@@ -1140,7 +1144,6 @@ type AdminNodeOrderDirection = 'up' | 'down'
 type AdminNodeOrderPatch = { nodeId: string; displayOrder: number }
 
 function AdminNodeList({ nodes, onEdit }: { nodes: AdminNode[]; onEdit: (nodeId: string) => void }) {
-  const orderedNodes = sortAdminNodes(nodes)
   return (
     <div className="admin-list" role="list" aria-label="服务器列表">
       <div className="admin-list-head" aria-hidden="true">
@@ -1150,7 +1153,7 @@ function AdminNodeList({ nodes, onEdit }: { nodes: AdminNode[]; onEdit: (nodeId:
         <span>Agent</span>
         <span>操作</span>
       </div>
-      {orderedNodes.map((node) => (
+      {nodes.map((node) => (
         <article className="admin-list-row" role="listitem" key={node.id}>
           <div className="admin-list-main">
             <strong>{node.displayName}</strong>
@@ -1171,12 +1174,27 @@ function AdminNodeList({ nodes, onEdit }: { nodes: AdminNode[]; onEdit: (nodeId:
   )
 }
 
-function sortAdminNodes(nodes: AdminNode[]): AdminNode[] {
-  return [...nodes].sort((left, right) => left.displayOrder - right.displayOrder || left.id.localeCompare(right.id))
+function sortAdminNodes(nodes: AdminNode[], sort: AdminNodeSort = 'order'): AdminNode[] {
+  return [...nodes].sort((left, right) => {
+    const byName = left.displayName.localeCompare(right.displayName, 'zh-CN') || left.id.localeCompare(right.id, 'zh-CN')
+    if (sort === 'order') {
+      return left.displayOrder - right.displayOrder || left.id.localeCompare(right.id, 'zh-CN')
+    }
+    if (sort === 'status') {
+      return adminNodeStatusRank(left) - adminNodeStatusRank(right) || byName
+    }
+    if (sort === 'agent') {
+      return (left.agentVersion || '').localeCompare(right.agentVersion || '', 'zh-CN') || byName
+    }
+    if (sort === 'ip') {
+      return adminNodeIPSortValue(left).localeCompare(adminNodeIPSortValue(right), 'zh-CN') || byName
+    }
+    return byName
+  })
 }
 
 function buildAdminNodeOrderPatches(nodes: AdminNode[], nodeId?: string, direction?: AdminNodeOrderDirection): AdminNodeOrderPatch[] {
-  const orderedNodes = sortAdminNodes(nodes)
+  const orderedNodes = [...nodes]
   const reorderedNodes = [...orderedNodes]
   if (nodeId && direction) {
     const index = reorderedNodes.findIndex((node) => node.id === nodeId)
@@ -2221,6 +2239,19 @@ function formatAdminNodeStatusLabel(node: AdminNode): string {
   if (node.status === 'warning') return '异常'
   if (node.status === 'no_data') return '暂无数据'
   return node.status
+}
+
+function adminNodeStatusRank(node: AdminNode): number {
+  if (node.disabled) return 4
+  if (node.status === 'online') return 0
+  if (node.status === 'warning') return 1
+  if (node.status === 'offline') return 2
+  if (node.status === 'no_data') return 3
+  return 5
+}
+
+function adminNodeIPSortValue(node: AdminNode): string {
+  return node.publicIPv4 || node.publicIPv6 || '~'
 }
 
 function formatAdminEnabledStatusLabel(enabled: boolean): string {

@@ -116,7 +116,8 @@ svg { display: block; }
 .brand span:last-child { white-space: nowrap; }
 
 .nav-actions { display: inline-flex; align-items: center; gap: 8px; }
-.login-link {
+.login-link,
+.nav-logout-button {
   display: inline-flex;
   align-items: center;
   gap: 4px;
@@ -131,7 +132,8 @@ svg { display: block; }
   font-weight: 500;
   transition: opacity 150ms ease;
 }
-.login-link:hover { opacity: 1; }
+.login-link:hover,
+.nav-logout-button:hover { opacity: 1; }
 .nav-icon-button {
   width: 36px;
   height: 36px;
@@ -1222,7 +1224,8 @@ svg { display: block; }
   .home-top-card .kulin-nav { padding: 0 0 9px; }
   .nav-actions { flex-wrap: nowrap; gap: 5px; }
   .nav-icon-button { width: 32px; height: 32px; padding: 8px; }
-  .login-link {
+  .login-link,
+  .nav-logout-button {
     min-height: 32px;
     padding: 0 10px;
     border: 1px solid var(--border);

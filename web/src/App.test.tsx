@@ -181,7 +181,6 @@ function renderAdmin(section: 'nodes' | 'targets' | 'notifications' | 'account' 
       onAdminLogin={() => {}}
       onAdminTokenClear={() => {}}
       onAdminAccountUpdate={async () => {}}
-      onAdminRefresh={() => {}}
       onAdminNodeCreate={() => {}}
       onAdminNodeUpdate={() => {}}
       onAdminInstallCommand={async () => 'install command'}
@@ -277,6 +276,8 @@ describe('AdminDashboard', () => {
     expect(html).toContain('账户')
     expect(html).toContain('设置')
     expect(html).toContain('通知')
+    expect(html).toContain('退出')
+    expect(html).not.toContain(['刷', '新'].join(''))
     expect(html).not.toContain('修改密码</button>')
     expect(html).toContain('服务器列表')
     expect(html).toContain('Hytron')
@@ -432,6 +433,11 @@ describe('AdminDashboard', () => {
     expect(html).not.toContain('月付')
     expect(html).not.toContain('sharon · 🇭🇰 HK · 顺序 10')
     expect(html).not.toContain('顺序 10')
+    expect(html).toContain('name="node-sort"')
+    expect(html).toContain('按手动顺序')
+    expect(html).toContain('按状态排序')
+    expect(html).toContain('按 Agent 排序')
+    expect(html).toContain('按公网 IP 排序')
     expect(html).toContain('整理顺序')
     expect(html).not.toContain('上移')
     expect(html).not.toContain('下移')

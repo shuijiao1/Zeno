@@ -39,7 +39,8 @@ describe('homepage and admin shell layout', () => {
 
   it('keeps the homepage backend entry visible on phones', () => {
     expect(styles).toContain('@media (max-width: 767px)')
-    expect(styles).toContain('.login-link {')
+    expect(styles).toContain('.login-link,')
+    expect(styles).toContain('.nav-logout-button')
     expect(styles).toContain('min-height: 32px')
     expect(styles).not.toContain('.login-link { display: none; }')
   })
