@@ -1,4 +1,4 @@
-import type { AdminAlertRule, AdminAlertRuleState, AdminAsset, AdminMaintenance, AdminMaintenanceCleanup, AdminMaintenanceSettings, AdminMaintenanceStats, AdminNode, AdminNodeInstallCommand, AdminNotificationChannel, AdminNotificationDelivery, AdminNotificationType, AdminProbeTarget, AdminSettings, AdminTheme, HomeCardNode, LatencyPoint, ProbeType, StatePoint } from '../types'
+import type { AdminAlertRule, AdminAlertRuleState, AdminMaintenance, AdminMaintenanceCleanup, AdminMaintenanceSettings, AdminMaintenanceStats, AdminNode, AdminNodeInstallCommand, AdminNotificationChannel, AdminNotificationDelivery, AdminNotificationType, AdminProbeTarget, AdminSettings, AdminTheme, HomeCardNode, LatencyPoint, ProbeType, StatePoint } from '../types'
 
 interface ApiSettings {
   site_title: string
@@ -17,15 +17,6 @@ interface ApiAdminMaintenanceSettings {
   probe_retention_days: number
   notification_retention_days: number
   updated_at?: string
-}
-
-interface ApiAdminAsset {
-  id: string
-  filename: string
-  content_type: string
-  size_bytes: number
-  url: string
-  created_at: string
 }
 
 interface ApiAdminMaintenanceStats {
@@ -229,10 +220,6 @@ export interface ApiAdminSettingsResponse {
   settings: ApiSettings
 }
 
-export interface ApiAdminAssetResponse {
-  asset: ApiAdminAsset
-}
-
 export interface ApiAdminMaintenanceResponse {
   settings: ApiAdminMaintenanceSettings
   candidates: ApiAdminMaintenanceStats
@@ -374,12 +361,6 @@ export interface AdminSettingsUpdateInput {
   backgroundUrl?: string
   desktopBackgroundUrl?: string
   mobileBackgroundUrl?: string
-}
-
-export interface AdminAssetUploadInput {
-  filename: string
-  contentType: string
-  dataBase64: string
 }
 
 export interface AdminMaintenanceUpdateInput {
@@ -672,27 +653,6 @@ export async function updateAdminSettings(adminToken: string, input: AdminSettin
   return normalizeSettings(data.settings)
 }
 
-export async function uploadAdminAsset(adminToken: string, input: AdminAssetUploadInput): Promise<AdminAsset> {
-  const response = await fetch('/api/admin/v1/assets', {
-    method: 'POST',
-    headers: {
-      Accept: 'application/json',
-      'Content-Type': 'application/json',
-      'X-Admin-Token': adminToken,
-    },
-    body: JSON.stringify({
-      filename: input.filename,
-      content_type: input.contentType,
-      data_base64: input.dataBase64,
-    }),
-  })
-  if (!response.ok) {
-    throw new Error(`admin asset upload failed: ${response.status}`)
-  }
-  const data = await response.json() as ApiAdminAssetResponse
-  return normalizeAdminAsset(data.asset)
-}
-
 export async function createAdminNode(adminToken: string, input: AdminNodeCreateInput): Promise<AdminNode> {
   const response = await fetch('/api/admin/v1/nodes', {
     method: 'POST',
@@ -897,17 +857,6 @@ export function normalizeSettings(input: ApiSettings): AdminSettings {
     desktopBackgroundUrl,
     mobileBackgroundUrl: input.mobile_background_url ?? '',
     updatedAt: input.updated_at,
-  }
-}
-
-function normalizeAdminAsset(input: ApiAdminAsset): AdminAsset {
-  return {
-    id: input.id,
-    filename: input.filename,
-    contentType: input.content_type,
-    sizeBytes: input.size_bytes,
-    url: input.url,
-    createdAt: input.created_at,
   }
 }
 

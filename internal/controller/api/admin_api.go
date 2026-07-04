@@ -11,8 +11,6 @@ import (
 type adminStore interface {
 	AdminSettings(ctx context.Context) (SiteSettings, error)
 	UpdateAdminSettings(ctx context.Context, update AdminSettingsUpdateRequest) (SiteSettings, error)
-	UploadAdminAsset(ctx context.Context, request AdminAssetUploadRequest) (AdminAsset, error)
-	DeleteAdminAsset(ctx context.Context, assetID string) error
 	AdminMaintenance(ctx context.Context) (AdminMaintenanceResponse, error)
 	UpdateAdminMaintenance(ctx context.Context, update AdminMaintenanceUpdateRequest) (AdminMaintenanceResponse, error)
 	RunAdminMaintenanceCleanup(ctx context.Context, request AdminMaintenanceCleanupRequest) (AdminMaintenanceCleanupResponse, error)
@@ -68,51 +66,6 @@ func (h *handler) handleAdminSettings(w http.ResponseWriter, r *http.Request) {
 	default:
 		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
 	}
-}
-
-func (h *handler) handleAdminAssets(w http.ResponseWriter, r *http.Request) {
-	store, ok := h.authorizeAdminRequest(w, r)
-	if !ok {
-		return
-	}
-	if r.Method != http.MethodPost {
-		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
-		return
-	}
-	var request AdminAssetUploadRequest
-	decoder := json.NewDecoder(http.MaxBytesReader(w, r.Body, maxAdminAssetRequestBytes()))
-	decoder.DisallowUnknownFields()
-	if err := decoder.Decode(&request); err != nil {
-		writeError(w, http.StatusBadRequest, "bad request")
-		return
-	}
-	asset, err := store.UploadAdminAsset(r.Context(), request)
-	if err != nil {
-		writeAdminError(w, err)
-		return
-	}
-	writeJSON(w, http.StatusCreated, AdminAssetResponse{Asset: asset})
-}
-
-func (h *handler) handleAdminAssetResource(w http.ResponseWriter, r *http.Request) {
-	store, ok := h.authorizeAdminRequest(w, r)
-	if !ok {
-		return
-	}
-	assetID := strings.Trim(strings.TrimPrefix(r.URL.Path, "/api/admin/v1/assets/"), "/")
-	if assetID == "" || strings.Contains(assetID, "/") {
-		writeError(w, http.StatusNotFound, "not found")
-		return
-	}
-	if r.Method != http.MethodDelete {
-		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
-		return
-	}
-	if err := store.DeleteAdminAsset(r.Context(), assetID); err != nil {
-		writeAdminError(w, err)
-		return
-	}
-	w.WriteHeader(http.StatusNoContent)
 }
 
 func (h *handler) handleAdminMaintenance(w http.ResponseWriter, r *http.Request) {
@@ -344,11 +297,11 @@ func (h *handler) authorizeAdminRequest(w http.ResponseWriter, r *http.Request) 
 }
 
 func writeAdminError(w http.ResponseWriter, err error) {
-	if errors.Is(err, errNodeNotFound) || errors.Is(err, errAssetNotFound) || errors.Is(err, errProbeTargetNotFound) || errors.Is(err, errNotificationChannelNotFound) || errors.Is(err, errNotificationTypeNotFound) || errors.Is(err, errAlertRuleNotFound) {
+	if errors.Is(err, errNodeNotFound) || errors.Is(err, errProbeTargetNotFound) || errors.Is(err, errNotificationChannelNotFound) || errors.Is(err, errNotificationTypeNotFound) || errors.Is(err, errAlertRuleNotFound) {
 		writeError(w, http.StatusNotFound, "not found")
 		return
 	}
-	if errors.Is(err, errInvalidAdminSettingsUpdate) || errors.Is(err, errInvalidAdminAssetUpload) || errors.Is(err, errInvalidAdminNodeUpdate) || errors.Is(err, errInvalidAdminNodeCreate) || errors.Is(err, errInvalidAdminTargetWrite) || errors.Is(err, errInvalidAdminNotificationChannelWrite) || errors.Is(err, errInvalidAdminNotificationTypeWrite) || errors.Is(err, errInvalidAdminAlertRuleUpdate) || errors.Is(err, errInvalidAdminMaintenanceUpdate) || errors.Is(err, errInvalidAdminMaintenanceCleanup) {
+	if errors.Is(err, errInvalidAdminSettingsUpdate) || errors.Is(err, errInvalidAdminNodeUpdate) || errors.Is(err, errInvalidAdminNodeCreate) || errors.Is(err, errInvalidAdminTargetWrite) || errors.Is(err, errInvalidAdminNotificationChannelWrite) || errors.Is(err, errInvalidAdminNotificationTypeWrite) || errors.Is(err, errInvalidAdminAlertRuleUpdate) || errors.Is(err, errInvalidAdminMaintenanceUpdate) || errors.Is(err, errInvalidAdminMaintenanceCleanup) {
 		writeError(w, http.StatusBadRequest, "bad request")
 		return
 	}

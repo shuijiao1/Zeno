@@ -172,7 +172,7 @@ X-Agent-Version: <version>
 
 ### GET /api/public/v1/settings
 
-读取公开站点外观配置。首页启动时会先读取该接口，用于品牌标题、头像/Logo、副标题、主题，以及电脑端/手机端背景图。头像/Logo 只用 `logo_url` 一个字段，不再拆出额外头像字段。响应只包含公开展示字段，不包含 Admin token、Agent token、token hash、通知渠道凭据、secret 或 credential 原文。通过后台上传的本地图片会返回 `/api/public/v1/assets/{asset_id}` URL，可直接写入这些外观字段。
+读取公开站点外观配置。首页启动时会先读取该接口，用于品牌标题、头像/Logo、副标题、主题，以及电脑端/手机端背景图。头像/Logo 只用 `logo_url` 一个字段，不再拆出额外头像字段。响应只包含公开展示字段，不包含 Admin token、Agent token、token hash、通知渠道凭据、secret 或 credential 原文。
 
 默认值：
 
@@ -187,15 +187,6 @@ X-Agent-Version: <version>
   "mobile_background_url": ""
 }
 ```
-
-### GET /api/public/v1/assets/{asset_id}
-
-读取后台上传的公开图片资产。当前仅用于 Logo / 背景图等外观资源。
-
-- 仅支持 `GET` / `HEAD`。
-- 返回原始图片 bytes，`Content-Type` 为 `image/png`、`image/jpeg` 或 `image/webp`。
-- 设置长期缓存头；资产 ID 由内容 hash 生成，相同图片可复用同一个 URL。
-- 不返回任何后台凭据或上传者信息。
 
 ### GET /api/public/v1/summary
 
@@ -359,48 +350,6 @@ X-Admin-Token: <admin-token>
 - `logo_url` 必须是站内绝对路径（如 `/assets/logo/id.png`）或 `https://` URL；当前首页/后台头部头像与 Logo 都使用这一字段。
 - `background_url` 是旧兼容字段，当前等价于电脑端背景图；`background_url`、`desktop_background_url`、`mobile_background_url` 均可为空，非空时必须是站内绝对路径或 `https://` URL。手机端背景留空时前端跟随电脑端背景。
 - 响应仍只返回公开展示字段，不返回 Admin token、Agent token、token hash、secret、credential 或任何凭据值。
-
-### POST /api/admin/v1/assets
-
-上传外观图片资产，供 `logo_url`、`desktop_background_url`、`mobile_background_url` 等字段使用。后台 UI 会把上传成功后的 `url` 填入对应输入框，保存设置后生效。
-
-请求：
-
-```json
-{
-  "filename": "logo.png",
-  "content_type": "image/png",
-  "data_base64": "iVBORw0KGgo..."
-}
-```
-
-约束：
-
-- 需要 `X-Admin-Token`。
-- 只接受 PNG / JPEG / WebP。
-- 单张图片解码后最大 4MB。
-- Controller 会按图片魔数校验真实类型；`content_type` 与真实类型不一致会拒绝。
-- `asset_id` 由内容 hash 生成，响应 URL 是公开可访问的站内绝对路径。
-- 不返回 token、secret、credential、hash 或任何凭据字段。
-
-响应：
-
-```json
-{
-  "asset": {
-    "id": "asset_deadbeefcafebabe.png",
-    "filename": "logo.png",
-    "content_type": "image/png",
-    "size_bytes": 12345,
-    "url": "/api/public/v1/assets/asset_deadbeefcafebabe.png",
-    "created_at": "2026-07-04T12:00:00Z"
-  }
-}
-```
-
-### DELETE /api/admin/v1/assets/{asset_id}
-
-删除已上传的图片资产。成功返回 `204 No Content`；不存在返回 `404`。删除不会自动清空 `settings` 中已经引用的 URL，后台应先改掉外观配置再删除不用的资产。
 
 ### GET /api/admin/v1/nodes
 

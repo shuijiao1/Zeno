@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { createAdminNode, createAdminNotificationChannel, createAdminProbeTarget, deleteAdminNotificationChannel, deleteAdminProbeTarget, fetchAdminAlertRules, fetchAdminAlertRuleStates, fetchAdminMaintenance, fetchAdminNodes, fetchAdminNotificationChannels, fetchAdminNotificationDeliveries, fetchAdminNotificationTypes, fetchAdminProbeTargets, fetchAdminSettings, fetchPublicSettings, normalizeAdminAlertRules, normalizeAdminAlertRuleStates, normalizeAdminMaintenance, normalizeAdminMaintenanceCleanup, normalizeAdminNodes, normalizeAdminNotificationChannels, normalizeAdminNotificationDeliveries, normalizeAdminNotificationTypes, normalizeAdminProbeTargets, normalizeSettings, normalizeNodeLatency, normalizeNodeState, normalizeSummary, requestAdminNodeInstallCommand, runAdminMaintenanceCleanup, testAdminNotificationChannel, updateAdminAlertRule, updateAdminMaintenance, updateAdminNode, updateAdminNotificationChannel, updateAdminNotificationType, updateAdminProbeTarget, updateAdminSettings, uploadAdminAsset } from './client'
+import { createAdminNode, createAdminNotificationChannel, createAdminProbeTarget, deleteAdminNotificationChannel, deleteAdminProbeTarget, fetchAdminAlertRules, fetchAdminAlertRuleStates, fetchAdminMaintenance, fetchAdminNodes, fetchAdminNotificationChannels, fetchAdminNotificationDeliveries, fetchAdminNotificationTypes, fetchAdminProbeTargets, fetchAdminSettings, fetchPublicSettings, normalizeAdminAlertRules, normalizeAdminAlertRuleStates, normalizeAdminMaintenance, normalizeAdminMaintenanceCleanup, normalizeAdminNodes, normalizeAdminNotificationChannels, normalizeAdminNotificationDeliveries, normalizeAdminNotificationTypes, normalizeAdminProbeTargets, normalizeSettings, normalizeNodeLatency, normalizeNodeState, normalizeSummary, requestAdminNodeInstallCommand, runAdminMaintenanceCleanup, testAdminNotificationChannel, updateAdminAlertRule, updateAdminMaintenance, updateAdminNode, updateAdminNotificationChannel, updateAdminNotificationType, updateAdminProbeTarget, updateAdminSettings } from './client'
 
 describe('normalizeSummary', () => {
   it('maps controller snake_case JSON into frontend camelCase models', () => {
@@ -519,39 +519,6 @@ describe('fetchSettings', () => {
         background_url: 'https://example.com/desktop-bg.webp',
         desktop_background_url: 'https://example.com/desktop-bg.webp',
         mobile_background_url: 'https://example.com/mobile-bg.webp',
-      }),
-    })
-  })
-
-  it('uploads appearance assets with X-Admin-Token only', async () => {
-    const fetchMock = vi.fn(async () => new Response(JSON.stringify({
-      asset: {
-        id: 'asset_deadbeef.png',
-        filename: 'logo.png',
-        content_type: 'image/png',
-        size_bytes: 32,
-        url: '/api/public/v1/assets/asset_deadbeef.png',
-        created_at: '2026-07-04T12:00:00Z',
-      },
-    }), { status: 201, headers: { 'Content-Type': 'application/json' } }))
-    globalThis.fetch = fetchMock as unknown as typeof fetch
-
-    const asset = await uploadAdminAsset('admin-pass', { filename: 'logo.png', contentType: 'image/png', dataBase64: 'iVBORw0KGgo=' })
-
-    expect(asset.url).toBe('/api/public/v1/assets/asset_deadbeef.png')
-    expect(asset.contentType).toBe('image/png')
-    expect(asset.sizeBytes).toBe(32)
-    expect(fetchMock).toHaveBeenCalledWith('/api/admin/v1/assets', {
-      method: 'POST',
-      headers: {
-        Accept: 'application/json',
-        'Content-Type': 'application/json',
-        'X-Admin-Token': 'admin-pass',
-      },
-      body: JSON.stringify({
-        filename: 'logo.png',
-        content_type: 'image/png',
-        data_base64: 'iVBORw0KGgo=',
       }),
     })
   })

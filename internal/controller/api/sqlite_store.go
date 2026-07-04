@@ -224,14 +224,6 @@ func (s *SQLiteStore) ensureSchema(ctx context.Context) error {
 			value TEXT NOT NULL,
 			updated_at INTEGER NOT NULL
 		);`,
-		`CREATE TABLE IF NOT EXISTS assets (
-			id TEXT PRIMARY KEY,
-			filename TEXT NOT NULL,
-			content_type TEXT NOT NULL,
-			size_bytes INTEGER NOT NULL,
-			content BLOB NOT NULL,
-			created_at INTEGER NOT NULL
-		);`,
 	}
 	for _, statement := range statements {
 		if _, err := s.db.ExecContext(ctx, statement); err != nil {
