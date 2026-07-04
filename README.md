@@ -24,7 +24,7 @@ Zeno 是一个从零实现的轻量服务器探针 / 在线监控系统。
 - 通知：Telegram-only 渠道，支持上线、离线、异常、测试发送；发送记录脱敏。
 - 状态规则：CPU / 内存 / 磁盘 / 探测延迟 / 丢包 / 离线 / 恢复，支持按服务器范围生效。
 - 数据维护：retention 设置、候选清理统计、dry-run、确认清理。
-- 发布工具：Linux amd64 release 打包、systemd 模板、本机安装/更新脚本、Controller health 失败回滚。
+- 发布工具：Linux amd64 release 打包、systemd 模板、本机安装/更新脚本、GUKO 服务器清单导入脚本、Controller health 失败回滚。
 - Hytron 预览部署：`/opt/zeno`，`zeno-controller.service`，`zeno-agent.service`，端口 `18980`。
 
 ## 当前不做

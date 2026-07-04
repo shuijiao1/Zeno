@@ -6,6 +6,7 @@ Zeno 的 Linux 发布闭环由三个脚本和两个 systemd 模板组成：
 scripts/package-release.sh
 scripts/deploy-local-release.sh
 scripts/install-agent.sh
+scripts/import-guko-servers.py
 packaging/systemd/zeno-controller.service
 packaging/systemd/zeno-agent.service
 ```
@@ -23,7 +24,8 @@ build/releases/zeno-<sha>-linux-amd64.tar.gz
     ├── web/
     ├── scripts/
     │   ├── deploy-local-release.sh
-    │   └── install-agent.sh
+    │   ├── install-agent.sh
+    │   └── import-guko-servers.py
     └── packaging/systemd/
         ├── zeno-controller.service
         └── zeno-agent.service
@@ -121,6 +123,19 @@ sudo scripts/install-agent.sh \
 ```
 
 `install-agent.sh` 只安装/重启 `zeno-agent.service`，不创建 Controller，不修改 `/opt/zeno/current`。Agent 默认每 6 小时 best-effort 刷新公网 IPv4 / IPv6 / GeoIP，可在手工 unit 或启动参数中用 `-identity-refresh-interval` 调整。
+
+## GUKO 服务器清单导入
+
+`scripts/import-guko-servers.py` 可把 `server-manager/servers.json` 同步到 Zeno Admin nodes：
+
+```bash
+python3 scripts/import-guko-servers.py \
+  --servers-json /path/to/server-manager/servers.json \
+  --controller-url http://127.0.0.1:18980 \
+  --admin-token-file /opt/zeno/data/admin-token
+```
+
+默认 dry-run；确认后加 `--apply`。脚本只创建/更新节点展示元数据，不删除节点，不调用 install-command，不轮换 Agent token。
 
 ## 本地 dry-run
 
