@@ -19,7 +19,7 @@ Zeno 是一个从零实现的轻量服务器探针 / 在线监控系统。
 - 延迟/服务探测：`tcping`、`ping`/ICMP、`http_get`，每轮保留 summary 和 raw samples。
 - Public API：主页 summary、节点延迟、节点状态历史、公开外观设置；外观图片只配置 URL / 站内静态路径。
 - Web UI：主页卡片、节点详情页、延迟图、资源历史图、移动端紧凑布局。
-- Admin API/UI：概览当前异常/通知发送状态、服务器、服务器排序、Agent 安装命令轮换/复制、Agent 接入 URL、探针目标、探针目标排序、节点分配、通知、当前异常、外观设置。
+- Admin API/UI：服务器、服务器排序、Agent 安装命令轮换/复制、Agent 接入 URL、探针目标、探针目标排序、节点分配、通知、当前异常、外观设置。
 - 服务器元数据：到期日、账单周期、显示顺序（后台可上移/下移/整理）、国家码/国旗、公网 IPv4、公网 IPv6；Agent 可 best-effort 自动识别公网 IPv4 / IPv6 / 国家码。
 - 通知：Telegram-only 渠道，支持上线、离线、异常、测试发送；通知类型包含 CPU / 内存 / 磁盘 / 探测延迟 / 丢包 / 离线 / 恢复触发条件，并支持按服务器范围生效；发送记录脱敏。
 - 发布工具：Linux amd64 release 打包、systemd 模板、本机安装/更新脚本、GUKO 服务器清单导入脚本、Controller health 失败回滚。

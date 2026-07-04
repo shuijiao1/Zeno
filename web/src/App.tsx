@@ -29,7 +29,7 @@ type AdminLoadState =
   | { kind: 'ready'; nodes: AdminNode[]; targets: AdminProbeTarget[]; notificationChannels: AdminNotificationChannel[]; notificationTypes: AdminNotificationType[]; notificationDeliveries: AdminNotificationDelivery[]; alertRules: AdminAlertRule[]; alertRuleStates: AdminAlertRuleState[] }
   | { kind: 'error'; message: string }
 
-type AdminSection = 'overview' | 'nodes' | 'targets' | 'settings' | 'notifications'
+type AdminSection = 'nodes' | 'targets' | 'settings' | 'notifications'
 type AdminTargetSort = 'order' | 'name' | 'status' | 'type' | 'assignments'
 
 function sum(values: Array<number | null | undefined>): number {
@@ -657,7 +657,7 @@ export function AdminDashboard({
   settings = defaultSettings,
   hasAdminToken = false,
   adminState = { kind: 'idle' },
-  initialSection = 'overview',
+  initialSection = 'nodes',
   onAdminTokenSubmit = () => {},
   onAdminTokenClear = () => {},
   onAdminRefresh = () => {},
@@ -690,17 +690,8 @@ export function AdminDashboard({
 
   const nodeCount = adminState.kind === 'ready' ? adminState.nodes.length : 0
   const targetCount = adminState.kind === 'ready' ? adminState.targets.length : 0
-  const onlineNodeCount = adminState.kind === 'ready' ? adminState.nodes.filter((node) => node.status === 'online').length : 0
-  const enabledTargetCount = adminState.kind === 'ready' ? adminState.targets.filter((target) => target.enabled).length : 0
   const ruleCount = adminState.kind === 'ready' ? adminState.alertRules.length : 0
-  const enabledRuleCount = adminState.kind === 'ready' ? adminState.alertRules.filter((rule) => rule.enabled).length : 0
   const activeIssueCount = adminState.kind === 'ready' ? adminState.alertRuleStates.filter((state) => state.active).length : 0
-  const notificationChannelCount = adminState.kind === 'ready' ? adminState.notificationChannels.length : 0
-  const enabledNotificationChannelCount = adminState.kind === 'ready' ? adminState.notificationChannels.filter((channel) => channel.enabled).length : 0
-  const notificationTypeCount = adminState.kind === 'ready' ? adminState.notificationTypes.length : 0
-  const enabledNotificationTypeCount = adminState.kind === 'ready' ? adminState.notificationTypes.filter((notificationType) => notificationType.enabled).length : 0
-  const notificationDeliveryCount = adminState.kind === 'ready' ? adminState.notificationDeliveries.length : 0
-  const failedNotificationDeliveryCount = adminState.kind === 'ready' ? adminState.notificationDeliveries.filter((delivery) => !delivery.success).length : 0
 
   return (
     <div className="kulin-container admin-container">
@@ -770,24 +761,6 @@ export function AdminDashboard({
             {adminState.kind === 'loading' && <div className="admin-state-card">正在读取 Admin API…</div>}
             {adminState.kind === 'error' && <div className="admin-state-card is-error">Admin API 读取失败：{adminState.message}</div>}
 
-            {adminState.kind === 'ready' && activeSection === 'overview' && (
-              <AdminOverviewPanel
-                nodeCount={nodeCount}
-                onlineNodeCount={onlineNodeCount}
-                targetCount={targetCount}
-                enabledTargetCount={enabledTargetCount}
-                ruleCount={ruleCount}
-                enabledRuleCount={enabledRuleCount}
-                activeIssueCount={activeIssueCount}
-                notificationChannelCount={notificationChannelCount}
-                enabledNotificationChannelCount={enabledNotificationChannelCount}
-                notificationTypeCount={notificationTypeCount}
-                enabledNotificationTypeCount={enabledNotificationTypeCount}
-                notificationDeliveryCount={notificationDeliveryCount}
-                failedNotificationDeliveryCount={failedNotificationDeliveryCount}
-              />
-            )}
-
             {adminState.kind === 'ready' && activeSection === 'nodes' && (
               <AdminNodeSection
                 nodes={adminState.nodes}
@@ -836,7 +809,6 @@ export function AdminDashboard({
 
 function AdminSectionNav({ activeSection, onSectionChange, nodeCount, targetCount, ruleCount, activeIssueCount }: { activeSection: AdminSection; onSectionChange: (section: AdminSection) => void; nodeCount: number; targetCount: number; ruleCount: number; activeIssueCount: number }) {
   const sections: Array<{ id: AdminSection; label: string; meta: string }> = [
-    { id: 'overview', label: '概览', meta: 'Summary' },
     { id: 'nodes', label: '服务器', meta: `${nodeCount} 台` },
     { id: 'targets', label: '延迟监控', meta: `${targetCount} 个目标` },
     { id: 'notifications', label: '通知', meta: activeIssueCount > 0 ? `${activeIssueCount} 异常 / ${ruleCount} 类型` : 'Channels' },
@@ -857,48 +829,6 @@ function AdminSectionNav({ activeSection, onSectionChange, nodeCount, targetCoun
         </button>
       ))}
     </nav>
-  )
-}
-
-function AdminOverviewPanel({ nodeCount, onlineNodeCount, targetCount, enabledTargetCount, ruleCount, enabledRuleCount, activeIssueCount, notificationChannelCount, enabledNotificationChannelCount, notificationTypeCount, enabledNotificationTypeCount, notificationDeliveryCount, failedNotificationDeliveryCount }: { nodeCount: number; onlineNodeCount: number; targetCount: number; enabledTargetCount: number; ruleCount: number; enabledRuleCount: number; activeIssueCount: number; notificationChannelCount: number; enabledNotificationChannelCount: number; notificationTypeCount: number; enabledNotificationTypeCount: number; notificationDeliveryCount: number; failedNotificationDeliveryCount: number }) {
-  return (
-    <section className="admin-overview-panel" aria-label="admin overview">
-      <div className="admin-action-grid" aria-label="admin modules">
-        <article className={`admin-action-card ${activeIssueCount > 0 ? 'is-warning' : 'is-good'}`}>
-          <p>当前异常</p>
-          <strong>{activeIssueCount} 个命中</strong>
-          <small>{activeIssueCount > 0 ? '进入通知页查看明细' : '没有命中的通知类型'}</small>
-        </article>
-        <article className="admin-action-card">
-          <p>服务器</p>
-          <strong>{onlineNodeCount} / {nodeCount} 在线</strong>
-        </article>
-        <article className="admin-action-card">
-          <p>延迟监控</p>
-          <strong>{enabledTargetCount} / {targetCount} 启用</strong>
-        </article>
-        <article className="admin-action-card">
-          <p>通知类型</p>
-          <strong>{enabledRuleCount} / {ruleCount} 启用</strong>
-        </article>
-        <article className="admin-action-card">
-          <p>通知渠道</p>
-          <strong>{enabledNotificationChannelCount} / {notificationChannelCount} 启用</strong>
-          <small>Telegram-only</small>
-        </article>
-        <article className="admin-action-card">
-          <p>事件开关</p>
-          <strong>{enabledNotificationTypeCount} / {notificationTypeCount} 启用</strong>
-          <small>上线 / 离线 / 异常</small>
-        </article>
-        <article className={`admin-action-card ${failedNotificationDeliveryCount > 0 ? 'is-warning' : 'is-good'}`}>
-          <p>最近通知</p>
-          <strong>{failedNotificationDeliveryCount} 失败 / {notificationDeliveryCount} 记录</strong>
-          <small>{failedNotificationDeliveryCount > 0 ? '进入通知页查看发送结果' : '最近发送没有失败记录'}</small>
-        </article>
-      </div>
-      <p className="admin-overview-note">从上方导航进入具体模块；列表页只显示关键状态，所有编辑动作都在弹窗中完成。</p>
-    </section>
   )
 }
 

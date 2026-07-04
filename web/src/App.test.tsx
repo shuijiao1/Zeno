@@ -210,7 +210,7 @@ const settings: AdminSettings = {
   updatedAt: '2026-07-04T12:00:00Z',
 }
 
-function renderAdmin(section: 'overview' | 'nodes' | 'targets' | 'notifications' | 'settings' = 'overview') {
+function renderAdmin(section: 'nodes' | 'targets' | 'notifications' | 'settings' = 'nodes') {
   return renderToStaticMarkup(
     <AdminDashboard
       onHome={() => {}}
@@ -307,7 +307,7 @@ describe('HomeTopPanel', () => {
 })
 
 describe('AdminDashboard', () => {
-  it('uses the same card shell and introduces separated backend navigation', () => {
+  it('uses the same card shell and opens backend directly on the server list', () => {
     const html = renderAdmin()
 
     expect(html).toContain('home-top-card')
@@ -316,23 +316,14 @@ describe('AdminDashboard', () => {
     expect(html).toContain('列表只保留关键字段')
     expect(html).toContain('admin-section-nav')
     expect(html).toContain('后台导航')
-    expect(html).toContain('概览')
     expect(html).toContain('服务器')
     expect(html).toContain('延迟监控')
     expect(html).toContain('1 异常 / 2 类型')
-    expect(html).toContain('当前异常')
-    expect(html).toContain('1 个命中')
-    expect(html).toContain('进入通知页查看明细')
-    expect(html).toContain('通知渠道')
-    expect(html).toContain('1 / 1 启用')
-    expect(html).toContain('Telegram-only')
-    expect(html).toContain('通知类型')
-    expect(html).toContain('1 / 3 启用')
-    expect(html).toContain('最近通知')
-    expect(html).toContain('1 失败 / 1 记录')
-    expect(html).toContain('进入通知页查看发送结果')
     expect(html).toContain('设置')
     expect(html).toContain('通知')
+    expect(html).toContain('服务器列表')
+    expect(html).toContain('Hytron')
+    expect(html).not.toContain('admin-overview-panel')
   })
 
   it('renders settings as a lightweight appearance configuration page', () => {

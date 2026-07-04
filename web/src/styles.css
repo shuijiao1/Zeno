@@ -464,7 +464,6 @@ svg { display: block; }
 .admin-section-nav button[data-active='true'] { background: var(--secondary); }
 .admin-section-nav span { font-size: 14px; font-weight: 600; }
 .admin-section-nav em { color: var(--muted); font-size: 11px; font-style: normal; font-weight: 500; }
-.admin-overview-panel { margin-top: 16px; }
 .admin-overview-note {
   margin: 12px 2px 0;
   color: var(--muted);
