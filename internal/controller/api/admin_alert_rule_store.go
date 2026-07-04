@@ -145,7 +145,7 @@ func (s *SQLiteStore) AdminAlertRules(ctx context.Context) ([]AdminAlertRule, er
 	if err := rows.Err(); err != nil {
 		return nil, err
 	}
-	return rules, nil
+	return s.attachAlertRuleScopes(ctx, rules)
 }
 
 func (s *SQLiteStore) AdminAlertRuleStates(ctx context.Context) ([]AdminAlertRuleState, error) {
@@ -153,7 +153,12 @@ func (s *SQLiteStore) AdminAlertRuleStates(ctx context.Context) ([]AdminAlertRul
 		SELECT ars.node_id, n.display_name, n.status, n.disabled, n.last_seen_at,
 		       ar.id, ar.name, ar.category, ar.metric, ar.comparator, ar.threshold,
 		       ar.threshold_unit, ar.duration_sec, ar.enabled, ars.last_value, ars.active,
-		       ar.notification_event_type, ars.first_seen_at, ars.last_seen_at, ars.updated_at
+		       ar.notification_event_type, ars.first_seen_at, ars.last_seen_at, ars.updated_at,
+		       CASE
+		         WHEN NOT EXISTS (SELECT 1 FROM alert_rule_node_scopes scope_all WHERE scope_all.rule_id = ar.id)
+		           OR EXISTS (SELECT 1 FROM alert_rule_node_scopes scope_node WHERE scope_node.rule_id = ar.id AND scope_node.node_id = ars.node_id)
+		         THEN 1 ELSE 0
+		       END AS scope_applies
 		FROM alert_rule_states ars
 		JOIN alert_rules ar ON ar.id = ars.rule_id
 		JOIN nodes n ON n.id = ars.node_id
@@ -170,7 +175,7 @@ func (s *SQLiteStore) AdminAlertRuleStates(ctx context.Context) ([]AdminAlertRul
 		var state AdminAlertRuleState
 		var storedNodeStatus string
 		var nodeLastSeenAt, firstSeenAt, lastSeenAt, updatedAt sql.NullInt64
-		var enabled, active, disabled int
+		var enabled, active, disabled, scopeApplies int
 		var lastValue sql.NullFloat64
 		if err := rows.Scan(
 			&state.NodeID,
@@ -193,6 +198,7 @@ func (s *SQLiteStore) AdminAlertRuleStates(ctx context.Context) ([]AdminAlertRul
 			&firstSeenAt,
 			&lastSeenAt,
 			&updatedAt,
+			&scopeApplies,
 		); err != nil {
 			return nil, err
 		}
@@ -202,7 +208,7 @@ func (s *SQLiteStore) AdminAlertRuleStates(ctx context.Context) ([]AdminAlertRul
 		if lastValue.Valid {
 			valueMatchesCurrentRule = compareAlertRuleValue(lastValue.Float64, state.Comparator, state.Threshold)
 		}
-		state.Active = state.Enabled && !nodeDisabled && valueMatchesCurrentRule
+		state.Active = state.Enabled && !nodeDisabled && scopeApplies != 0 && valueMatchesCurrentRule
 		state.NodeStatus = publicNodeStatus(storedNodeStatus, nodeLastSeenAt, now)
 		if nodeDisabled {
 			state.NodeStatus = "disabled"
@@ -230,8 +236,14 @@ func (s *SQLiteStore) UpdateAdminAlertRule(ctx context.Context, ruleID string, u
 	if err := update.normalize(); err != nil {
 		return AdminAlertRule{}, err
 	}
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return AdminAlertRule{}, err
+	}
+	defer rollbackUnlessCommitted(tx)
+
 	var exists int
-	if err := s.db.QueryRowContext(ctx, `SELECT 1 FROM alert_rules WHERE id = ?`, ruleID).Scan(&exists); err != nil {
+	if err := tx.QueryRowContext(ctx, `SELECT 1 FROM alert_rules WHERE id = ?`, ruleID).Scan(&exists); err != nil {
 		if err == sql.ErrNoRows {
 			return AdminAlertRule{}, errAlertRuleNotFound
 		}
@@ -255,14 +267,27 @@ func (s *SQLiteStore) UpdateAdminAlertRule(ctx context.Context, ruleID string, u
 		sets = append(sets, "duration_sec = ?")
 		args = append(args, *update.DurationSec)
 	}
-	if len(sets) == 0 {
-		return AdminAlertRule{}, errInvalidAdminAlertRuleUpdate
+	now := time.Now().UTC().Unix()
+	if len(sets) > 0 {
+		sets = append(sets, "updated_at = ?")
+		args = append(args, now, ruleID)
+		if _, err := tx.ExecContext(ctx, "UPDATE alert_rules SET "+strings.Join(sets, ", ")+" WHERE id = ?", args...); err != nil {
+			return AdminAlertRule{}, err
+		}
+	} else if update.ScopeNodeIDs != nil {
+		if _, err := tx.ExecContext(ctx, `UPDATE alert_rules SET updated_at = ? WHERE id = ?`, now, ruleID); err != nil {
+			return AdminAlertRule{}, err
+		}
 	}
-	sets = append(sets, "updated_at = ?")
-	args = append(args, time.Now().UTC().Unix(), ruleID)
-	if _, err := s.db.ExecContext(ctx, "UPDATE alert_rules SET "+strings.Join(sets, ", ")+" WHERE id = ?", args...); err != nil {
+	if update.ScopeNodeIDs != nil {
+		if err := replaceAlertRuleNodeScopes(ctx, tx, ruleID, *update.ScopeNodeIDs, now); err != nil {
+			return AdminAlertRule{}, err
+		}
+	}
+	if err := tx.Commit(); err != nil {
 		return AdminAlertRule{}, err
 	}
+	tx = nil
 	return s.adminAlertRuleByID(ctx, ruleID)
 }
 
@@ -273,7 +298,82 @@ func (s *SQLiteStore) adminAlertRuleByID(ctx context.Context, ruleID string) (Ad
 		FROM alert_rules
 		WHERE id = ?
 	`, ruleID)
-	return scanAdminAlertRule(row)
+	rule, err := scanAdminAlertRule(row)
+	if err != nil {
+		return AdminAlertRule{}, err
+	}
+	rules, err := s.attachAlertRuleScopes(ctx, []AdminAlertRule{rule})
+	if err != nil {
+		return AdminAlertRule{}, err
+	}
+	if len(rules) == 0 {
+		return AdminAlertRule{}, errAlertRuleNotFound
+	}
+	return rules[0], nil
+}
+
+func (s *SQLiteStore) attachAlertRuleScopes(ctx context.Context, rules []AdminAlertRule) ([]AdminAlertRule, error) {
+	if len(rules) == 0 {
+		return rules, nil
+	}
+	for index := range rules {
+		scopeNodeIDs, err := s.alertRuleScopeNodeIDs(ctx, rules[index].ID)
+		if err != nil {
+			return nil, err
+		}
+		rules[index].ScopeNodeIDs = scopeNodeIDs
+	}
+	return rules, nil
+}
+
+func (s *SQLiteStore) alertRuleScopeNodeIDs(ctx context.Context, ruleID string) ([]string, error) {
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT scope.node_id
+		FROM alert_rule_node_scopes scope
+		LEFT JOIN nodes n ON n.id = scope.node_id
+		WHERE scope.rule_id = ?
+		ORDER BY COALESCE(n.display_order, 0) ASC, scope.node_id ASC
+	`, ruleID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	nodeIDs := make([]string, 0)
+	for rows.Next() {
+		var nodeID string
+		if err := rows.Scan(&nodeID); err != nil {
+			return nil, err
+		}
+		nodeIDs = append(nodeIDs, nodeID)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return nodeIDs, nil
+}
+
+func replaceAlertRuleNodeScopes(ctx context.Context, tx *sql.Tx, ruleID string, nodeIDs []string, now int64) error {
+	for _, nodeID := range nodeIDs {
+		var exists int
+		if err := tx.QueryRowContext(ctx, `SELECT 1 FROM nodes WHERE id = ?`, nodeID).Scan(&exists); err != nil {
+			if err == sql.ErrNoRows {
+				return errInvalidAdminAlertRuleUpdate
+			}
+			return err
+		}
+	}
+	if _, err := tx.ExecContext(ctx, `DELETE FROM alert_rule_node_scopes WHERE rule_id = ?`, ruleID); err != nil {
+		return err
+	}
+	for _, nodeID := range nodeIDs {
+		if _, err := tx.ExecContext(ctx, `
+			INSERT INTO alert_rule_node_scopes (rule_id, node_id, created_at)
+			VALUES (?, ?, ?)
+		`, ruleID, nodeID, now); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 type adminAlertRuleScanner interface {

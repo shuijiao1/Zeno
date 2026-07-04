@@ -97,6 +97,7 @@ export function shellStyleForSettings(settings: AdminSettings): CSSProperties | 
 export function reconcileAlertRuleStates(updatedRule: AdminAlertRule, states: AdminAlertRuleState[]): AdminAlertRuleState[] {
   return states.map((state) => {
     if (state.ruleId !== updatedRule.id) return state
+    const scopeApplies = alertRuleAppliesToNode(updatedRule, state.nodeId)
     return {
       ...state,
       ruleName: updatedRule.name,
@@ -107,7 +108,7 @@ export function reconcileAlertRuleStates(updatedRule: AdminAlertRule, states: Ad
       thresholdUnit: updatedRule.thresholdUnit,
       durationSec: updatedRule.durationSec,
       enabled: updatedRule.enabled,
-      active: updatedRule.enabled && state.nodeStatus !== 'disabled' && alertRuleStateMatchesCurrentThreshold(state, updatedRule.comparator, updatedRule.threshold),
+      active: scopeApplies && updatedRule.enabled && state.nodeStatus !== 'disabled' && alertRuleStateMatchesCurrentThreshold(state, updatedRule.comparator, updatedRule.threshold),
       notificationEventType: updatedRule.notificationEventType,
       notificationLabel: updatedRule.notificationLabel,
       updatedAt: updatedRule.updatedAt,
@@ -115,17 +116,24 @@ export function reconcileAlertRuleStates(updatedRule: AdminAlertRule, states: Ad
   })
 }
 
-export function reconcileAlertRuleStatesForNode(updatedNode: AdminNode, states: AdminAlertRuleState[]): AdminAlertRuleState[] {
+export function reconcileAlertRuleStatesForNode(updatedNode: AdminNode, states: AdminAlertRuleState[], rules: AdminAlertRule[] = []): AdminAlertRuleState[] {
+  const rulesById = new Map(rules.map((rule) => [rule.id, rule]))
   return states.map((state) => {
     if (state.nodeId !== updatedNode.id) return state
     const nodeDisabled = updatedNode.disabled || updatedNode.status === 'disabled'
+    const rule = rulesById.get(state.ruleId)
+    const scopeApplies = rule ? alertRuleAppliesToNode(rule, updatedNode.id) : true
     return {
       ...state,
       nodeName: updatedNode.displayName,
       nodeStatus: updatedNode.status,
-      active: !nodeDisabled && state.enabled && alertRuleStateMatchesCurrentThreshold(state, state.comparator, state.threshold),
+      active: scopeApplies && !nodeDisabled && state.enabled && alertRuleStateMatchesCurrentThreshold(state, state.comparator, state.threshold),
     }
   })
+}
+
+function alertRuleAppliesToNode(rule: AdminAlertRule, nodeId: string): boolean {
+  return rule.scopeNodeIds.length === 0 || rule.scopeNodeIds.includes(nodeId)
 }
 
 function alertRuleStateMatchesCurrentThreshold(state: AdminAlertRuleState, comparator: string, threshold: number): boolean {
@@ -343,7 +351,7 @@ export function App() {
             return {
               ...current,
               nodes: current.nodes.map((node) => node.id === updatedNode.id ? updatedNode : node),
-              alertRuleStates: reconcileAlertRuleStatesForNode(updatedNode, current.alertRuleStates),
+              alertRuleStates: reconcileAlertRuleStatesForNode(updatedNode, current.alertRuleStates, current.alertRules),
             }
           }
           return { kind: 'ready', nodes: [updatedNode], targets: [], notificationChannels: [], notificationTypes: [], notificationDeliveries: [], alertRules: [], alertRuleStates: [], maintenance: emptyAdminMaintenance }
@@ -836,6 +844,7 @@ export function AdminDashboard({
               <AdminAlertRulesSection
                 rules={adminState.alertRules}
                 states={adminState.alertRuleStates}
+                nodes={adminState.nodes}
                 onUpdate={onAdminAlertRuleUpdate}
               />
             )}
@@ -1489,7 +1498,7 @@ function AdminTargetEditModal({ target, nodes, onUpdate, onClose }: { target: Ad
   )
 }
 
-function AdminAlertRulesSection({ rules, states, onUpdate }: { rules: AdminAlertRule[]; states: AdminAlertRuleState[]; onUpdate: (ruleId: string, input: AdminAlertRuleUpdateInput) => void }) {
+function AdminAlertRulesSection({ rules, states, nodes, onUpdate }: { rules: AdminAlertRule[]; states: AdminAlertRuleState[]; nodes: AdminNode[]; onUpdate: (ruleId: string, input: AdminAlertRuleUpdateInput) => void }) {
   const [editingRule, setEditingRule] = useState<AdminAlertRule | null>(null)
   const activeStates = states.filter((state) => state.active)
 
@@ -1512,12 +1521,13 @@ function AdminAlertRulesSection({ rules, states, onUpdate }: { rules: AdminAlert
       <section className="admin-notification-block" aria-label="通知规则">
         <h4>通知规则</h4>
         {rules.length === 0 && <div className="admin-state-card">还没有状态规则。</div>}
-        {rules.length > 0 && <AdminAlertRuleList rules={rules} onEdit={setEditingRule} onUpdate={onUpdate} />}
+        {rules.length > 0 && <AdminAlertRuleList rules={rules} nodes={nodes} onEdit={setEditingRule} onUpdate={onUpdate} />}
       </section>
 
       {editingRule && (
         <AdminAlertRuleEditModal
           rule={editingRule}
+          nodes={nodes}
           onClose={() => setEditingRule(null)}
           onUpdate={(ruleId, input) => {
             onUpdate(ruleId, input)
@@ -1560,7 +1570,7 @@ function AdminAlertRuleStateList({ states }: { states: AdminAlertRuleState[] }) 
   )
 }
 
-function AdminAlertRuleList({ rules, onEdit, onUpdate }: { rules: AdminAlertRule[]; onEdit: (rule: AdminAlertRule) => void; onUpdate: (ruleId: string, input: AdminAlertRuleUpdateInput) => void }) {
+function AdminAlertRuleList({ rules, nodes, onEdit, onUpdate }: { rules: AdminAlertRule[]; nodes: AdminNode[]; onEdit: (rule: AdminAlertRule) => void; onUpdate: (ruleId: string, input: AdminAlertRuleUpdateInput) => void }) {
   return (
     <div className="admin-list admin-alert-rule-list" role="list" aria-label="状态规则列表">
       <div className="admin-list-head" aria-hidden="true">
@@ -1568,6 +1578,7 @@ function AdminAlertRuleList({ rules, onEdit, onUpdate }: { rules: AdminAlertRule
         <span>条件</span>
         <span>持续时间</span>
         <span>通知</span>
+        <span>范围</span>
         <span>状态</span>
         <span>操作</span>
       </div>
@@ -1580,6 +1591,7 @@ function AdminAlertRuleList({ rules, onEdit, onUpdate }: { rules: AdminAlertRule
           <span className="admin-rule-condition">{formatAlertRuleCondition(rule)}</span>
           <span>持续 {rule.durationSec}s</span>
           <span>通知：{rule.notificationLabel || rule.notificationEventType}<small> · {rule.notificationEventType}</small></span>
+          <span>{formatAlertRuleScope(rule, nodes)}</span>
           <span className={`admin-node-status status-${rule.enabled ? 'online' : 'disabled'}`}>{rule.enabled ? '启用中' : '已停用'}</span>
           <div className="admin-row-actions">
             <button className="admin-row-action" type="button" onClick={() => onEdit(rule)}>编辑规则</button>
@@ -1593,17 +1605,19 @@ function AdminAlertRuleList({ rules, onEdit, onUpdate }: { rules: AdminAlertRule
   )
 }
 
-function AdminAlertRuleEditModal({ rule, onUpdate, onClose }: { rule: AdminAlertRule; onUpdate: (ruleId: string, input: AdminAlertRuleUpdateInput) => void; onClose: () => void }) {
+function AdminAlertRuleEditModal({ rule, nodes, onUpdate, onClose }: { rule: AdminAlertRule; nodes: AdminNode[]; onUpdate: (ruleId: string, input: AdminAlertRuleUpdateInput) => void; onClose: () => void }) {
   const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
     const formData = new FormData(event.currentTarget)
     const threshold = Number(String(formData.get('rule-threshold') ?? '').trim())
     const durationSec = Number(String(formData.get('rule-duration-sec') ?? '').trim())
+    const scopeNodeIds = nodes.filter((node) => formData.get(`rule-scope-${node.id}`) === 'on').map((node) => node.id)
     if (!Number.isFinite(threshold) || threshold < 0 || !Number.isInteger(durationSec) || durationSec < 0) return
     onUpdate(rule.id, {
       enabled: formData.get('rule-enabled') === 'on',
       threshold,
       durationSec,
+      scopeNodeIds,
     })
   }
 
@@ -1611,6 +1625,7 @@ function AdminAlertRuleEditModal({ rule, onUpdate, onClose }: { rule: AdminAlert
     <AdminModal title={`编辑状态规则 · ${rule.name}`} eyebrow={rule.id} onClose={onClose}>
       <dl className="admin-modal-summary">
         <div><dt>条件</dt><dd>{formatAlertRuleCondition(rule)}</dd></div>
+        <div><dt>作用范围</dt><dd>{formatAlertRuleScope(rule, nodes)}</dd></div>
         <div><dt>通知类型</dt><dd>{rule.notificationLabel || rule.notificationEventType}</dd></div>
         <div><dt>当前状态</dt><dd>{rule.enabled ? '启用中' : '已停用'}</dd></div>
       </dl>
@@ -1627,6 +1642,17 @@ function AdminAlertRuleEditModal({ rule, onUpdate, onClose }: { rule: AdminAlert
           <input name="rule-enabled" type="checkbox" defaultChecked={rule.enabled} />
           <span>启用规则</span>
         </label>
+        {nodes.length > 0 && (
+          <fieldset className="admin-rule-scope-list admin-target-assignment-list">
+            <legend>作用服务器（不选=全部服务器）</legend>
+            {nodes.map((node) => (
+              <label className="admin-node-toggle admin-target-assignment-toggle" key={node.id}>
+                <input name={`rule-scope-${node.id}`} type="checkbox" defaultChecked={rule.scopeNodeIds.includes(node.id)} />
+                <span>{node.displayName || node.id}<small> · {node.id}</small></span>
+              </label>
+            ))}
+          </fieldset>
+        )}
         <div className="admin-modal-actions">
           <button type="submit">保存状态规则</button>
         </div>
@@ -2028,6 +2054,15 @@ function formatAlertRuleCondition(rule: AdminAlertRule): string {
 function formatAlertRuleThreshold(rule: AdminAlertRule): string {
   const threshold = Number.isInteger(rule.threshold) ? rule.threshold.toFixed(0) : String(rule.threshold)
   return `${threshold}${rule.thresholdUnit}`
+}
+
+function formatAlertRuleScope(rule: AdminAlertRule, nodes: AdminNode[]): string {
+  if (rule.scopeNodeIds.length === 0) return '全部服务器'
+  const labels = rule.scopeNodeIds.map((nodeId) => {
+    const node = nodes.find((candidate) => candidate.id === nodeId)
+    return node?.displayName ? `${node.displayName} (${nodeId})` : nodeId
+  })
+  return labels.join('、')
 }
 
 function formatAlertRuleStateCondition(state: AdminAlertRuleState): string {

@@ -187,6 +187,7 @@ interface ApiAdminAlertRule {
   notification_event_type: string
   notification_label: string
   description: string
+  scope_node_ids?: string[] | null
   created_at: string
   updated_at: string
 }
@@ -442,6 +443,7 @@ export interface AdminAlertRuleUpdateInput {
   enabled?: boolean
   threshold?: number
   durationSec?: number
+  scopeNodeIds?: string[]
 }
 
 export async function fetchPublicSettings(): Promise<AdminSettings> {
@@ -1068,6 +1070,7 @@ function serializeAdminAlertRuleUpdate(input: AdminAlertRuleUpdateInput) {
     ...(input.enabled !== undefined ? { enabled: input.enabled } : {}),
     ...(input.threshold !== undefined ? { threshold: input.threshold } : {}),
     ...(input.durationSec !== undefined ? { duration_sec: input.durationSec } : {}),
+    ...(input.scopeNodeIds !== undefined ? { scope_node_ids: input.scopeNodeIds } : {}),
   }
 }
 
@@ -1245,6 +1248,7 @@ function normalizeAdminAlertRule(rule: ApiAdminAlertRule): AdminAlertRule {
     notificationEventType: rule.notification_event_type,
     notificationLabel: rule.notification_label,
     description: rule.description,
+    scopeNodeIds: rule.scope_node_ids ?? [],
     createdAt: rule.created_at,
     updatedAt: rule.updated_at,
   }

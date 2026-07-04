@@ -24,7 +24,7 @@ func (s *SQLiteStore) RecordAgentProbeAlertRuleTransition(ctx context.Context, n
 	}
 	defer rollbackUnlessCommitted(tx)
 
-	rules, err := alertRulesForMetrics(ctx, tx, map[string]bool{"probe_median_ms": true, "probe_loss_percent": true})
+	rules, err := alertRulesForMetrics(ctx, tx, nodeID, map[string]bool{"probe_median_ms": true, "probe_loss_percent": true})
 	if err != nil {
 		return notificationStatusTransition{}, err
 	}
@@ -54,7 +54,7 @@ func (s *SQLiteStore) RecordAgentStateAlertRuleTransition(ctx context.Context, n
 	}
 	defer rollbackUnlessCommitted(tx)
 
-	rules, err := alertRulesForMetrics(ctx, tx, map[string]bool{"cpu_percent": true, "memory_percent": true, "disk_percent": true})
+	rules, err := alertRulesForMetrics(ctx, tx, nodeID, map[string]bool{"cpu_percent": true, "memory_percent": true, "disk_percent": true})
 	if err != nil {
 		return notificationStatusTransition{}, err
 	}
@@ -78,13 +78,15 @@ func (s *SQLiteStore) RecordAgentStateAlertRuleTransition(ctx context.Context, n
 	return transition, nil
 }
 
-func alertRulesForMetrics(ctx context.Context, tx *sql.Tx, metrics map[string]bool) ([]AdminAlertRule, error) {
+func alertRulesForMetrics(ctx context.Context, tx *sql.Tx, nodeID string, metrics map[string]bool) ([]AdminAlertRule, error) {
 	rows, err := tx.QueryContext(ctx, `
 		SELECT id, name, category, metric, comparator, threshold, threshold_unit, duration_sec,
 		       enabled, notification_event_type, description, created_at, updated_at
-		FROM alert_rules
+		FROM alert_rules ar
+		WHERE NOT EXISTS (SELECT 1 FROM alert_rule_node_scopes scope_all WHERE scope_all.rule_id = ar.id)
+		   OR EXISTS (SELECT 1 FROM alert_rule_node_scopes scope_node WHERE scope_node.rule_id = ar.id AND scope_node.node_id = ?)
 		ORDER BY sort_order ASC, id ASC
-	`)
+	`, nodeID)
 	if err != nil {
 		return nil, err
 	}
@@ -166,7 +168,11 @@ func aggregateAlertRuleStatus(ctx context.Context, tx *sql.Tx, nodeID string) (s
 		  AND ars.active = 1
 		  AND ar.enabled = 1
 		  AND ar.notification_event_type = 'probe_unhealthy'
-	`, nodeID).Scan(&activeRules); err != nil {
+		  AND (
+		    NOT EXISTS (SELECT 1 FROM alert_rule_node_scopes scope_all WHERE scope_all.rule_id = ar.id)
+		    OR EXISTS (SELECT 1 FROM alert_rule_node_scopes scope_node WHERE scope_node.rule_id = ar.id AND scope_node.node_id = ?)
+		  )
+	`, nodeID, nodeID).Scan(&activeRules); err != nil {
 		return "", err
 	}
 	if activeRules > 0 {

@@ -22,7 +22,7 @@ type probeHealthTransitionStore interface {
 
 type notificationEventStore interface {
 	NotificationNode(ctx context.Context, nodeID string) (notificationNodeSnapshot, error)
-	EnabledNotificationChannelsForEvent(ctx context.Context, eventType string) (string, []notificationDispatchChannel, error)
+	EnabledNotificationChannelsForEvent(ctx context.Context, eventType, nodeID string) (string, []notificationDispatchChannel, error)
 }
 
 type notificationDeliveryStore interface {
@@ -141,13 +141,13 @@ func (h *handler) dispatchAgentStatusNotification(store agentStore, transition n
 	if !ok {
 		return
 	}
-	label, channels, err := notificationStore.EnabledNotificationChannelsForEvent(context.Background(), eventType)
-	if err != nil || len(channels) == 0 {
-		return
-	}
 	node := transition.Current
 	if node.ID == "" {
 		node = transition.Previous
+	}
+	label, channels, err := notificationStore.EnabledNotificationChannelsForEvent(context.Background(), eventType, node.ID)
+	if err != nil || len(channels) == 0 {
+		return
 	}
 	event := notificationEvent{
 		EventType:      eventType,
@@ -231,13 +231,23 @@ func (s *SQLiteStore) NotificationNode(ctx context.Context, nodeID string) (noti
 	return snapshot, nil
 }
 
-func (s *SQLiteStore) EnabledNotificationChannelsForEvent(ctx context.Context, eventType string) (string, []notificationDispatchChannel, error) {
+func (s *SQLiteStore) EnabledNotificationChannelsForEvent(ctx context.Context, eventType, nodeID string) (string, []notificationDispatchChannel, error) {
 	label, ok := adminNotificationTypeLabel(eventType)
 	if !ok {
 		return "", nil, errNotificationTypeNotFound
 	}
 	var enabledRuleCount int
-	if err := s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM alert_rules WHERE notification_event_type = ? AND enabled = 1`, eventType).Scan(&enabledRuleCount); err != nil {
+	if err := s.db.QueryRowContext(ctx, `
+		SELECT COUNT(*)
+		FROM alert_rules ar
+		WHERE ar.notification_event_type = ?
+		  AND ar.enabled = 1
+		  AND (
+		    ? = ''
+		    OR NOT EXISTS (SELECT 1 FROM alert_rule_node_scopes scope_all WHERE scope_all.rule_id = ar.id)
+		    OR EXISTS (SELECT 1 FROM alert_rule_node_scopes scope_node WHERE scope_node.rule_id = ar.id AND scope_node.node_id = ?)
+		  )
+	`, eventType, strings.TrimSpace(nodeID), strings.TrimSpace(nodeID)).Scan(&enabledRuleCount); err != nil {
 		return "", nil, err
 	}
 	if enabledRuleCount == 0 {

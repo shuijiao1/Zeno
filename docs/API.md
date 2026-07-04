@@ -522,7 +522,7 @@ HTTP GET 示例：
 
 ### GET /api/admin/v1/alert-rules
 
-状态规则/通知规则库存。Controller 启动或迁移时会 seed 一组默认规则，后台可查看每条规则映射到哪个通知事件类型。响应只包含规则配置和通知事件标签，不返回 admin token、Agent token、token hash、通知渠道凭据、secret 或 credential 原文。
+状态规则/通知规则库存。Controller 启动或迁移时会 seed 一组默认规则，后台可查看每条规则映射到哪个通知事件类型。规则默认作用于全部服务器；`scope_node_ids` 非空时只作用于这些服务器。响应只包含规则配置、作用范围和通知事件标签，不返回 admin token、Agent token、token hash、通知渠道凭据、secret 或 credential 原文。
 
 默认规则覆盖：CPU、内存、磁盘、探测延迟、探测丢包、离线判定、恢复判定。资源/探测类规则映射到 `probe_unhealthy` / 异常；离线规则映射到 `node_offline` / 离线；恢复规则映射到 `node_online` / 上线。
 
@@ -531,7 +531,8 @@ Controller 会在 Agent 上报时实际使用这些规则：
 - `/api/agent/v1/state` 会按启用的资源规则评估 `cpu_percent`、内存使用率、磁盘使用率，超过阈值时把节点公共状态置为 `warning` 并进入 `probe_unhealthy` 通知链路。
 - `/api/agent/v1/probe-results` 会按启用的探测规则评估最高中位延迟和最高丢包率；成功但高延迟的探测也能触发 `warning`，禁用对应规则后不会因为该指标触发异常。
 - 资源/探测规则命中状态会记录在 Controller 内部的 `alert_rule_states` 表，用来避免某一类健康上报误清另一类仍活跃的异常；后台可通过 `GET /api/admin/v1/alert-rule-states` 查看脱敏后的当前命中状态。
-- 通知发送同时要求：状态转换存在、对应通知类型启用、至少一条映射到该事件类型的状态规则启用、且存在启用并配置好的通知渠道。
+- 如果规则配置了 `scope_node_ids`，Agent 上报、当前异常统计和通知发送都会只对这些服务器生效；空数组表示全部服务器。离线/恢复规则的范围用于通知资格，公共在线/离线状态仍按心跳新鲜度计算，避免隐藏失联服务器。
+- 通知发送同时要求：状态转换存在、对应通知类型启用、至少一条映射到该事件类型且对该服务器生效的状态规则启用、且存在启用并配置好的通知渠道。
 
 ```json
 {
@@ -549,6 +550,7 @@ Controller 会在 Agent 上报时实际使用这些规则：
       "notification_event_type": "probe_unhealthy",
       "notification_label": "异常",
       "description": "CPU 使用率连续高于阈值时标记为异常。",
+      "scope_node_ids": [],
       "created_at": "2026-07-03T00:00:00Z",
       "updated_at": "2026-07-03T00:00:00Z"
     },
@@ -565,6 +567,7 @@ Controller 会在 Agent 上报时实际使用这些规则：
       "notification_event_type": "node_offline",
       "notification_label": "离线",
       "description": "Agent 心跳超过阈值未更新时标记为离线。",
+      "scope_node_ids": ["hytron"],
       "created_at": "2026-07-03T00:00:00Z",
       "updated_at": "2026-07-03T00:00:00Z"
     }
@@ -574,7 +577,7 @@ Controller 会在 Agent 上报时实际使用这些规则：
 
 ### PATCH /api/admin/v1/alert-rules/{rule_id}
 
-部分更新状态规则的安全可调字段。当前只允许调整启用状态、阈值和持续时间；规则 id、名称、指标、比较符、通知事件类型等结构性字段由 seed/代码控制。
+部分更新状态规则的安全可调字段。当前允许调整启用状态、阈值、持续时间和作用服务器范围；规则 id、名称、指标、比较符、通知事件类型等结构性字段由 seed/代码控制。`scope_node_ids` 省略表示保持原范围不变，空数组表示作用于全部服务器，非空数组表示只作用于这些服务器；数组里的 node id 必须存在且不能重复。
 
 请求：
 
@@ -582,7 +585,8 @@ Controller 会在 Agent 上报时实际使用这些规则：
 {
   "enabled": true,
   "threshold": 85,
-  "duration_sec": 180
+  "duration_sec": 180,
+  "scope_node_ids": ["hytron", "backup"]
 }
 ```
 
@@ -603,6 +607,7 @@ Controller 会在 Agent 上报时实际使用这些规则：
     "notification_event_type": "probe_unhealthy",
     "notification_label": "异常",
     "description": "CPU 使用率连续高于阈值时标记为异常。",
+    "scope_node_ids": ["hytron", "backup"],
     "created_at": "2026-07-03T00:00:00Z",
     "updated_at": "2026-07-03T00:05:00Z"
   }

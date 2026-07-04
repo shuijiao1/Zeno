@@ -641,12 +641,13 @@ func (request AdminNotificationTypeUpdateRequest) normalize() error {
 }
 
 type AdminAlertRuleUpdateRequest struct {
-	Enabled     *bool    `json:"enabled,omitempty"`
-	Threshold   *float64 `json:"threshold,omitempty"`
-	DurationSec *int     `json:"duration_sec,omitempty"`
+	Enabled      *bool     `json:"enabled,omitempty"`
+	Threshold    *float64  `json:"threshold,omitempty"`
+	DurationSec  *int      `json:"duration_sec,omitempty"`
+	ScopeNodeIDs *[]string `json:"scope_node_ids,omitempty"`
 }
 
-func (request AdminAlertRuleUpdateRequest) normalize() error {
+func (request *AdminAlertRuleUpdateRequest) normalize() error {
 	changed := false
 	if request.Enabled != nil {
 		changed = true
@@ -663,6 +664,20 @@ func (request AdminAlertRuleUpdateRequest) normalize() error {
 			return errInvalidAdminAlertRuleUpdate
 		}
 	}
+	if request.ScopeNodeIDs != nil {
+		changed = true
+		normalized := make([]string, 0, len(*request.ScopeNodeIDs))
+		seen := map[string]bool{}
+		for _, rawNodeID := range *request.ScopeNodeIDs {
+			nodeID := normalizeAdminNodeID(rawNodeID)
+			if nodeID == "" || seen[nodeID] {
+				return errInvalidAdminAlertRuleUpdate
+			}
+			seen[nodeID] = true
+			normalized = append(normalized, nodeID)
+		}
+		request.ScopeNodeIDs = &normalized
+	}
 	if !changed {
 		return errInvalidAdminAlertRuleUpdate
 	}
@@ -670,20 +685,21 @@ func (request AdminAlertRuleUpdateRequest) normalize() error {
 }
 
 type AdminAlertRule struct {
-	ID                    string  `json:"id"`
-	Name                  string  `json:"name"`
-	Category              string  `json:"category"`
-	Metric                string  `json:"metric"`
-	Comparator            string  `json:"comparator"`
-	Threshold             float64 `json:"threshold"`
-	ThresholdUnit         string  `json:"threshold_unit"`
-	DurationSec           int     `json:"duration_sec"`
-	Enabled               bool    `json:"enabled"`
-	NotificationEventType string  `json:"notification_event_type"`
-	NotificationLabel     string  `json:"notification_label"`
-	Description           string  `json:"description"`
-	CreatedAt             string  `json:"created_at"`
-	UpdatedAt             string  `json:"updated_at"`
+	ID                    string   `json:"id"`
+	Name                  string   `json:"name"`
+	Category              string   `json:"category"`
+	Metric                string   `json:"metric"`
+	Comparator            string   `json:"comparator"`
+	Threshold             float64  `json:"threshold"`
+	ThresholdUnit         string   `json:"threshold_unit"`
+	DurationSec           int      `json:"duration_sec"`
+	Enabled               bool     `json:"enabled"`
+	NotificationEventType string   `json:"notification_event_type"`
+	NotificationLabel     string   `json:"notification_label"`
+	Description           string   `json:"description"`
+	ScopeNodeIDs          []string `json:"scope_node_ids"`
+	CreatedAt             string   `json:"created_at"`
+	UpdatedAt             string   `json:"updated_at"`
 }
 
 type AdminAlertRuleState struct {

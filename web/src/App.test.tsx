@@ -130,6 +130,7 @@ const alertRules: AdminAlertRule[] = [
     notificationEventType: 'probe_unhealthy',
     notificationLabel: '异常',
     description: 'CPU 使用率持续超过阈值时进入异常通知类型。',
+    scopeNodeIds: [],
     createdAt: '2026-07-03T00:00:00Z',
     updatedAt: '2026-07-03T00:00:00Z',
   },
@@ -146,6 +147,7 @@ const alertRules: AdminAlertRule[] = [
     notificationEventType: 'node_offline',
     notificationLabel: '离线',
     description: 'Agent 心跳超过离线窗口后映射为离线通知类型。',
+    scopeNodeIds: ['backup'],
     createdAt: '2026-07-03T00:00:00Z',
     updatedAt: '2026-07-03T00:00:00Z',
   },
@@ -424,6 +426,8 @@ describe('AdminDashboard', () => {
     expect(html).toContain('&gt;= 90%')
     expect(html).toContain('持续 300s')
     expect(html).toContain('通知：异常')
+    expect(html).toContain('全部服务器')
+    expect(html).toContain('Backup (backup)')
     expect(html).toContain('离线判定')
     expect(html).toContain('node_offline')
     expect(html).toContain('编辑规则')
@@ -447,6 +451,9 @@ describe('AdminDashboard', () => {
     const legacyState: AdminAlertRuleState = { ...alertRuleStates[0], lastValue: null, active: true }
     const [legacyWithoutValue] = reconcileAlertRuleStates({ ...alertRules[0], threshold: 99 }, [legacyState])
     expect(legacyWithoutValue.active).toBe(true)
+
+    const [scopedAway] = reconcileAlertRuleStates({ ...alertRules[0], scopeNodeIds: ['backup'] }, alertRuleStates)
+    expect(scopedAway.active).toBe(false)
   })
 
   it('reconciles current anomalies immediately when a node is disabled', () => {
@@ -454,6 +461,17 @@ describe('AdminDashboard', () => {
 
     expect(state.nodeName).toBe('Hytron Renamed')
     expect(state.nodeStatus).toBe('disabled')
+    expect(state.active).toBe(false)
+  })
+
+  it('keeps scoped-away current anomalies inactive when a node is edited', () => {
+    const [state] = reconcileAlertRuleStatesForNode(
+      { ...hytronNode, displayName: 'Hytron Renamed' },
+      [{ ...alertRuleStates[0], active: false }],
+      [{ ...alertRules[0], scopeNodeIds: ['backup'] }],
+    )
+
+    expect(state.nodeName).toBe('Hytron Renamed')
     expect(state.active).toBe(false)
   })
 

@@ -1035,6 +1035,7 @@ describe('admin alert rules', () => {
           notification_event_type: 'probe_unhealthy',
           notification_label: '异常',
           description: 'CPU 使用率持续超过阈值时进入异常通知类型。',
+          scope_node_ids: ['hytron'],
           created_at: '2026-07-03T00:00:00Z',
           updated_at: '2026-07-03T00:00:00Z',
         },
@@ -1044,6 +1045,7 @@ describe('admin alert rules', () => {
     expect(normalized.rules[0].thresholdUnit).toBe('%')
     expect(normalized.rules[0].durationSec).toBe(300)
     expect(normalized.rules[0].notificationLabel).toBe('异常')
+    expect(normalized.rules[0].scopeNodeIds).toEqual(['hytron'])
 
     const fetchMock = vi.fn(async () => new Response(JSON.stringify(apiPayload), { status: 200, headers: { 'Content-Type': 'application/json' } }))
     globalThis.fetch = fetchMock as unknown as typeof fetch
@@ -1073,17 +1075,19 @@ describe('admin alert rules', () => {
         notification_event_type: 'probe_unhealthy',
         notification_label: '异常',
         description: 'CPU 使用率持续超过阈值时进入异常通知类型。',
+        scope_node_ids: ['hytron', 'backup'],
         created_at: '2026-07-03T00:00:00Z',
         updated_at: '2026-07-03T00:10:00Z',
       },
     }), { status: 200, headers: { 'Content-Type': 'application/json' } }))
     globalThis.fetch = fetchMock as unknown as typeof fetch
 
-    const rule = await updateAdminAlertRule('admin-pass', 'cpu_high', { enabled: false, threshold: 95.5, durationSec: 600 })
+    const rule = await updateAdminAlertRule('admin-pass', 'cpu_high', { enabled: false, threshold: 95.5, durationSec: 600, scopeNodeIds: ['hytron', 'backup'] })
 
     expect(rule.enabled).toBe(false)
     expect(rule.threshold).toBe(95.5)
     expect(rule.durationSec).toBe(600)
+    expect(rule.scopeNodeIds).toEqual(['hytron', 'backup'])
     expect(fetchMock).toHaveBeenCalledWith('/api/admin/v1/alert-rules/cpu_high', {
       method: 'PATCH',
       headers: {
@@ -1091,7 +1095,7 @@ describe('admin alert rules', () => {
         'Content-Type': 'application/json',
         'X-Admin-Token': 'admin-pass',
       },
-      body: JSON.stringify({ enabled: false, threshold: 95.5, duration_sec: 600 }),
+      body: JSON.stringify({ enabled: false, threshold: 95.5, duration_sec: 600, scope_node_ids: ['hytron', 'backup'] }),
     })
     const calls = fetchMock.mock.calls as unknown as Array<[RequestInfo | URL, RequestInit?]>
     expect(String(calls[0]?.[0])).not.toContain('admin-pass')

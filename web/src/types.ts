@@ -206,6 +206,7 @@ export interface AdminAlertRule {
   notificationEventType: string
   notificationLabel: string
   description: string
+  scopeNodeIds: string[]
   createdAt: string
   updatedAt: string
 }
