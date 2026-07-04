@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"math"
 	"net/http"
 	"net/http/httptest"
@@ -305,6 +306,95 @@ func TestSeedPreviewDataDoesNotFakeAgentOnlineStatus(t *testing.T) {
 	}
 	if summary.Nodes[0].Status != "online" {
 		t.Fatalf("node status after heartbeat and reseed = %q, want online", summary.Nodes[0].Status)
+	}
+}
+
+func TestPublicSummaryAndDetailsHideGuestHiddenNodesAndTargets(t *testing.T) {
+	store, err := OpenSQLiteStore(filepath.Join(t.TempDir(), "zeno.db"))
+	if err != nil {
+		t.Fatalf("open sqlite store: %v", err)
+	}
+	defer store.Close()
+
+	ctx := context.Background()
+	now := time.Now().UTC().Truncate(time.Second).Unix()
+	if _, err := store.db.ExecContext(ctx, `
+		INSERT INTO nodes (id, display_name, token_hash, status, hide_for_guest, created_at, updated_at, last_seen_at)
+		VALUES
+		  ('visible', 'Visible', 'hash-visible', 'online', 0, ?, ?, ?),
+		  ('hidden', 'Hidden', 'hash-hidden', 'online', 1, ?, ?, ?)
+	`, now, now, now, now, now, now); err != nil {
+		t.Fatalf("insert nodes: %v", err)
+	}
+	if _, err := store.db.ExecContext(ctx, `
+		INSERT INTO probe_targets (id, name, type, address, port, count, timeout_ms, interval_sec, enabled, hide_for_guest, created_at, updated_at)
+		VALUES
+		  ('visible-target', 'Visible Target', 'tcping', 'example.com', 443, 3, 1000, 60, 1, 0, ?, ?),
+		  ('hidden-target', 'Hidden Target', 'tcping', 'example.org', 443, 3, 1000, 60, 1, 1, ?, ?)
+	`, now, now, now, now); err != nil {
+		t.Fatalf("insert targets: %v", err)
+	}
+	if _, err := store.db.ExecContext(ctx, `
+		INSERT INTO node_probe_targets (node_id, target_id, enabled)
+		VALUES ('visible', 'visible-target', 1), ('visible', 'hidden-target', 1), ('hidden', 'visible-target', 1)
+	`); err != nil {
+		t.Fatalf("insert assignments: %v", err)
+	}
+	if _, err := store.db.ExecContext(ctx, `
+		INSERT INTO probe_rounds (node_id, target_id, ts, type, sent, received, loss_percent, median_ms, avg_ms)
+		VALUES
+		  ('visible', 'hidden-target', ?, 'tcping', 3, 3, 0, 99, 99),
+		  ('visible', 'visible-target', ?, 'tcping', 3, 3, 0, 11, 11),
+		  ('hidden', 'visible-target', ?, 'tcping', 3, 3, 0, 22, 22)
+	`, now-20, now-10, now-10); err != nil {
+		t.Fatalf("insert probe rounds: %v", err)
+	}
+
+	summary, err := store.Summary(ctx)
+	if err != nil {
+		t.Fatalf("summary: %v", err)
+	}
+	if len(summary.Nodes) != 1 || summary.Nodes[0].ID != "visible" {
+		t.Fatalf("summary nodes = %+v, want only visible node", summary.Nodes)
+	}
+	if summary.Nodes[0].LatencySummary == nil || summary.Nodes[0].LatencySummary.TargetID != "visible-target" {
+		t.Fatalf("latency summary = %+v, want visible target only", summary.Nodes[0].LatencySummary)
+	}
+	if len(summary.LatencyPoints) != 1 || summary.LatencyPoints[0].TargetID != "visible-target" {
+		t.Fatalf("summary latency points = %+v, want hidden targets filtered", summary.LatencyPoints)
+	}
+	if _, err := store.NodeLatency(ctx, "hidden", latencyWindow{Name: "1h", Samples: 12, Step: 5 * time.Minute}); !errors.Is(err, errNodeNotFound) {
+		t.Fatalf("hidden node latency err = %v, want errNodeNotFound", err)
+	}
+	if _, err := store.NodeState(ctx, "hidden", latencyWindow{Name: "1h", Samples: 12, Step: 5 * time.Minute}); !errors.Is(err, errNodeNotFound) {
+		t.Fatalf("hidden node state err = %v, want errNodeNotFound", err)
+	}
+
+	adminNodes, err := store.AdminNodes(ctx)
+	if err != nil {
+		t.Fatalf("admin nodes: %v", err)
+	}
+	foundHiddenNode := false
+	for _, node := range adminNodes {
+		if node.ID == "hidden" && node.HideForGuest {
+			foundHiddenNode = true
+		}
+	}
+	if len(adminNodes) != 2 || !foundHiddenNode {
+		t.Fatalf("admin nodes = %+v, want hidden node visible to admin", adminNodes)
+	}
+	adminTargets, err := store.AdminProbeTargets(ctx)
+	if err != nil {
+		t.Fatalf("admin targets: %v", err)
+	}
+	foundHiddenTarget := false
+	for _, target := range adminTargets {
+		if target.ID == "hidden-target" && target.HideForGuest {
+			foundHiddenTarget = true
+		}
+	}
+	if !foundHiddenTarget {
+		t.Fatalf("admin targets = %+v, want hidden target visible to admin", adminTargets)
 	}
 }
 

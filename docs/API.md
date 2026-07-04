@@ -66,6 +66,8 @@ X-Agent-Version: <version>
 
 `public_ipv4`、`public_ipv6`、`country_code` 由 Agent 轻量自动识别后 best-effort 上报。字段可省略；Controller 只用非空且合法的值更新节点元数据，识别失败不会清空后台已有 IPv4 / IPv6 / 国家码。
 
+Public API 会过滤后台标记为 `hide_for_guest` 的服务器和探测目标；Admin API 仍可看到和管理这些对象，Agent 上报/探测不受影响。
+
 ### POST /api/agent/v1/state
 
 请求：
@@ -353,7 +355,7 @@ X-Admin-Token: <admin-token>
 
 ### GET /api/admin/v1/nodes
 
-节点管理列表，返回 enabled + disabled 节点、状态、地区、到期日、账单周期、显示顺序、公网 IPv4/IPv6、流量计费口径、月流量重置日、配额、last seen、host info 和 agent version。列表按 `display_order ASC, id ASC` 排序；后台 UI 用 `country_code` 渲染国旗。
+节点管理列表，返回 enabled + disabled 节点、状态、地区、到期日、账单周期、显示顺序、公网 IPv4/IPv6、流量计费口径、月流量重置日、游客隐藏、配额、last seen、host info 和 agent version。列表按 `display_order ASC, id ASC` 排序；后台 UI 用 `country_code` 渲染国旗。
 
 响应字段重点：
 
@@ -375,6 +377,7 @@ X-Admin-Token: <admin-token>
       "public_ipv4": "198.51.100.8",
       "public_ipv6": "2001:db8::8",
       "monthly_quota_bytes": 1099511627776,
+      "hide_for_guest": false,
       "last_seen_at": "2026-07-03T00:00:00Z",
       "created_at": "2026-07-02T00:00:00Z",
       "updated_at": "2026-07-03T00:00:00Z",
@@ -402,11 +405,12 @@ X-Admin-Token: <admin-token>
   "display_order": 10,
   "public_ipv4": "198.51.100.8",
   "public_ipv6": "2001:db8::8",
-  "monthly_quota_bytes": 1099511627776
+  "monthly_quota_bytes": 1099511627776,
+  "hide_for_guest": false
 }
 ```
 
-响应返回新节点 DTO，但不会返回 Agent token 原文或 token hash。新节点默认 `status=no_data`，并自动分配当前启用的探针目标。`billing_mode` 可选 `both`、`in`、`out`、`max`，默认 `both`；`monthly_reset_day` 范围 1–31，默认 1。`expiry_date` 为空时清空到期日；非空时必须是 `YYYY-MM-DD`。`display_order` 必须是非负整数；`public_ipv4` / `public_ipv6` 为空可省略，非空时会校验 IP 版本。
+响应返回新节点 DTO，但不会返回 Agent token 原文或 token hash。新节点默认 `status=no_data`，并自动分配当前启用的探针目标。`billing_mode` 可选 `both`、`in`、`out`、`max`，默认 `both`；`monthly_reset_day` 范围 1–31，默认 1。`hide_for_guest=true` 会从 Public API / 游客首页隐藏该服务器，但后台和 Agent 上报不受影响。`expiry_date` 为空时清空到期日；非空时必须是 `YYYY-MM-DD`。`display_order` 必须是非负整数；`public_ipv4` / `public_ipv6` 为空可省略，非空时会校验 IP 版本。
 
 ### PATCH /api/admin/v1/nodes/{node_id}
 
@@ -427,11 +431,12 @@ X-Admin-Token: <admin-token>
   "public_ipv4": "198.51.100.8",
   "public_ipv6": "2001:db8::8",
   "monthly_quota_bytes": 1099511627776,
+  "hide_for_guest": false,
   "disabled": false
 }
 ```
 
-字段均可部分提交；`monthly_quota_bytes: null` 表示清空月配额；`expiry_date` / `billing_cycle` / `public_ipv4` / `public_ipv6` 提交空字符串表示清空。`billing_mode` 可选 `both`（入站+出站）、`in`（只算入站）、`out`（只算出站）、`max`（入/出取较大）；`monthly_reset_day` 范围 1–31。`display_name` 不能为空，`expiry_date` 非空时必须是 `YYYY-MM-DD`，`display_order` 必须是非负整数，公网 IP 会分别校验 IPv4 / IPv6。
+字段均可部分提交；`monthly_quota_bytes: null` 表示清空月配额；`expiry_date` / `billing_cycle` / `public_ipv4` / `public_ipv6` 提交空字符串表示清空。`billing_mode` 可选 `both`（入站+出站）、`in`（只算入站）、`out`（只算出站）、`max`（入/出取较大）；`monthly_reset_day` 范围 1–31；`hide_for_guest` 控制游客可见性。`display_name` 不能为空，`expiry_date` 非空时必须是 `YYYY-MM-DD`，`display_order` 必须是非负整数，公网 IP 会分别校验 IPv4 / IPv6。
 
 响应：
 
@@ -450,9 +455,10 @@ X-Admin-Token: <admin-token>
     "billing_cycle": "月付",
     "display_order": 10,
     "public_ipv4": "198.51.100.8",
-    "public_ipv6": "2001:db8::8",
-    "monthly_quota_bytes": 1099511627776,
-    "created_at": "2026-07-02T00:00:00Z",
+      "public_ipv6": "2001:db8::8",
+      "monthly_quota_bytes": 1099511627776,
+      "hide_for_guest": false,
+      "created_at": "2026-07-02T00:00:00Z",
     "updated_at": "2026-07-03T00:00:00Z"
   }
 }
@@ -460,7 +466,7 @@ X-Admin-Token: <admin-token>
 
 ### GET /api/admin/v1/probe-targets
 
-探针目标管理列表，返回 enabled + disabled 目标及分配到哪些节点。不会返回 Agent token、token hash 或 secret 字段。
+探针目标管理列表，返回 enabled + disabled 目标、游客隐藏状态及分配到哪些节点。不会返回 Agent token、token hash 或 secret 字段。
 
 响应：
 
@@ -477,6 +483,7 @@ X-Admin-Token: <admin-token>
       "timeout_ms": 1200,
       "interval_sec": 60,
       "enabled": true,
+      "hide_for_guest": false,
       "assignments": [
         {
           "node_id": "hytron",
@@ -495,6 +502,7 @@ X-Admin-Token: <admin-token>
       "timeout_ms": 1500,
       "interval_sec": 60,
       "enabled": true,
+      "hide_for_guest": false,
       "assignments": []
     }
   ]
@@ -517,13 +525,16 @@ HTTP GET 示例：
   "port": null,
   "count": 2,
   "timeout_ms": 1500,
-  "interval_sec": 60
+  "interval_sec": 60,
+  "hide_for_guest": false
 }
 ```
 
+`hide_for_guest=true` 时 Agent 仍继续执行该目标，后台仍显示历史和分配，但 Public summary / 延迟图不会展示该目标。
+
 ### PATCH /api/admin/v1/probe-targets/{target_id}
 
-更新探针目标配置或节点分配。`assignments` 省略表示不改变分配；传入时按 `node_id` 更新启用状态。
+更新探针目标配置、游客可见性或节点分配。`assignments` 省略表示不改变分配；传入时按 `node_id` 更新启用状态。
 
 切换到 `http_get` 时必须同时保证最终 `address` 是完整 URL；Controller 会清空旧 TCP `port` 并以 `null` 返回。切回 `tcping` 时必须提交有效 `port`。
 

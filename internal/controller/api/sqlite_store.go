@@ -53,6 +53,7 @@ func (s *SQLiteStore) ensureSchema(ctx context.Context) error {
 			billing_mode TEXT NOT NULL DEFAULT 'both',
 			monthly_quota_bytes INTEGER,
 			monthly_reset_day INTEGER NOT NULL DEFAULT 1,
+			hide_for_guest INTEGER NOT NULL DEFAULT 0,
 			disabled INTEGER NOT NULL DEFAULT 0,
 			created_at INTEGER NOT NULL,
 			updated_at INTEGER NOT NULL,
@@ -118,6 +119,7 @@ func (s *SQLiteStore) ensureSchema(ctx context.Context) error {
 			timeout_ms INTEGER NOT NULL,
 			interval_sec INTEGER NOT NULL,
 			enabled INTEGER NOT NULL DEFAULT 1,
+			hide_for_guest INTEGER NOT NULL DEFAULT 0,
 			created_at INTEGER NOT NULL,
 			updated_at INTEGER NOT NULL
 		);`,
@@ -244,14 +246,25 @@ func (s *SQLiteStore) ensureSchema(ctx context.Context) error {
 		}
 	}
 	nodeColumns := map[string]string{
-		"expiry_date":   "TEXT",
-		"billing_cycle": "TEXT",
-		"display_order": "INTEGER NOT NULL DEFAULT 0",
-		"public_ipv4":   "TEXT",
-		"public_ipv6":   "TEXT",
+		"expiry_date":       "TEXT",
+		"billing_cycle":     "TEXT",
+		"display_order":     "INTEGER NOT NULL DEFAULT 0",
+		"public_ipv4":       "TEXT",
+		"public_ipv6":       "TEXT",
+		"hide_for_guest":    "INTEGER NOT NULL DEFAULT 0",
+		"billing_mode":      "TEXT NOT NULL DEFAULT 'both'",
+		"monthly_reset_day": "INTEGER NOT NULL DEFAULT 1",
 	}
 	for column, columnType := range nodeColumns {
 		if err := s.ensureColumn(ctx, "nodes", column, columnType); err != nil {
+			return err
+		}
+	}
+	probeTargetColumns := map[string]string{
+		"hide_for_guest": "INTEGER NOT NULL DEFAULT 0",
+	}
+	for column, columnType := range probeTargetColumns {
+		if err := s.ensureColumn(ctx, "probe_targets", column, columnType); err != nil {
 			return err
 		}
 	}
@@ -370,7 +383,7 @@ func (s *SQLiteStore) AdminNodes(ctx context.Context) ([]AdminNode, error) {
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT n.id, n.display_name, n.status, n.country_code, n.region, n.disabled,
 		       n.billing_mode, n.monthly_reset_day, n.expiry_date, n.billing_cycle, n.display_order, n.public_ipv4, n.public_ipv6,
-		       n.monthly_quota_bytes, n.last_seen_at, n.created_at, n.updated_at,
+		       n.monthly_quota_bytes, n.hide_for_guest, n.last_seen_at, n.created_at, n.updated_at,
 		       h.hostname, h.os_name, h.os_version, h.kernel, h.arch, h.virtualization,
 		       h.cpu_model, h.cpu_cores, h.memory_total_bytes, h.disk_total_bytes,
 		       h.boot_time, h.agent_version
@@ -389,7 +402,7 @@ func (s *SQLiteStore) AdminNodes(ctx context.Context) ([]AdminNode, error) {
 		var node AdminNode
 		var status string
 		var countryCode, region, billingMode, expiryDate, billingCycle, publicIPv4, publicIPv6 sql.NullString
-		var disabled int
+		var disabled, hideForGuest int
 		var monthlyResetDay int
 		var displayOrder int
 		var quota, lastSeenAt, createdAt, updatedAt sql.NullInt64
@@ -398,7 +411,7 @@ func (s *SQLiteStore) AdminNodes(ctx context.Context) ([]AdminNode, error) {
 		if err := rows.Scan(
 			&node.ID, &node.DisplayName, &status, &countryCode, &region, &disabled,
 			&billingMode, &monthlyResetDay, &expiryDate, &billingCycle, &displayOrder, &publicIPv4, &publicIPv6,
-			&quota, &lastSeenAt, &createdAt, &updatedAt,
+			&quota, &hideForGuest, &lastSeenAt, &createdAt, &updatedAt,
 			&hostname, &osName, &osVersion, &kernel, &arch, &virtualization,
 			&cpuModel, &cpuCores, &memoryTotal, &diskTotal,
 			&bootTime, &agentVersion,
@@ -406,6 +419,7 @@ func (s *SQLiteStore) AdminNodes(ctx context.Context) ([]AdminNode, error) {
 			return nil, err
 		}
 		node.Disabled = disabled != 0
+		node.HideForGuest = hideForGuest != 0
 		node.Status = publicNodeStatus(status, lastSeenAt, now)
 		if node.Disabled {
 			node.Status = "disabled"
@@ -448,7 +462,7 @@ func (s *SQLiteStore) AdminNodes(ctx context.Context) ([]AdminNode, error) {
 
 func (s *SQLiteStore) AdminProbeTargets(ctx context.Context) ([]AdminProbeTarget, error) {
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT pt.id, pt.name, pt.type, pt.address, pt.port, pt.count, pt.timeout_ms, pt.interval_sec, pt.enabled,
+		SELECT pt.id, pt.name, pt.type, pt.address, pt.port, pt.count, pt.timeout_ms, pt.interval_sec, pt.enabled, pt.hide_for_guest,
 		       npt.node_id, n.display_name, npt.enabled
 		FROM probe_targets pt
 		LEFT JOIN node_probe_targets npt ON npt.target_id = pt.id
@@ -465,10 +479,10 @@ func (s *SQLiteStore) AdminProbeTargets(ctx context.Context) ([]AdminProbeTarget
 	for rows.Next() {
 		var target AdminProbeTarget
 		var port sql.NullInt64
-		var targetEnabled int
+		var targetEnabled, hideForGuest int
 		var nodeID, nodeDisplayName sql.NullString
 		var assignmentEnabled sql.NullInt64
-		if err := rows.Scan(&target.ID, &target.Name, &target.Type, &target.Address, &port, &target.Count, &target.TimeoutMS, &target.IntervalSec, &targetEnabled, &nodeID, &nodeDisplayName, &assignmentEnabled); err != nil {
+		if err := rows.Scan(&target.ID, &target.Name, &target.Type, &target.Address, &port, &target.Count, &target.TimeoutMS, &target.IntervalSec, &targetEnabled, &hideForGuest, &nodeID, &nodeDisplayName, &assignmentEnabled); err != nil {
 			return nil, err
 		}
 		if existingIndex, exists := indexByID[target.ID]; exists {
@@ -482,6 +496,7 @@ func (s *SQLiteStore) AdminProbeTargets(ctx context.Context) ([]AdminProbeTarget
 			target.Port = &converted
 		}
 		target.Enabled = targetEnabled != 0
+		target.HideForGuest = hideForGuest != 0
 		target.Assignments = []AdminProbeTargetAssignment{}
 		if nodeID.Valid {
 			target.Assignments = append(target.Assignments, AdminProbeTargetAssignment{NodeID: nodeID.String, NodeDisplayName: nullStringOr(nodeDisplayName, ""), Enabled: assignmentEnabled.Valid && assignmentEnabled.Int64 != 0})
@@ -511,6 +526,10 @@ func (s *SQLiteStore) CreateAdminProbeTarget(ctx context.Context, create AdminPr
 	if create.Enabled != nil && !*create.Enabled {
 		enabled = 0
 	}
+	hideForGuest := 0
+	if create.HideForGuest {
+		hideForGuest = 1
+	}
 	now := time.Now().UTC().Unix()
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
@@ -518,9 +537,9 @@ func (s *SQLiteStore) CreateAdminProbeTarget(ctx context.Context, create AdminPr
 	}
 	defer rollbackUnlessCommitted(tx)
 	result, err := tx.ExecContext(ctx, `
-		INSERT OR IGNORE INTO probe_targets (id, name, type, address, port, count, timeout_ms, interval_sec, enabled, created_at, updated_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-	`, targetID, create.Name, create.Type, create.Address, adminOptionalInt64SQLValue(create.Port), create.Count, create.TimeoutMS, create.IntervalSec, enabled, now, now)
+		INSERT OR IGNORE INTO probe_targets (id, name, type, address, port, count, timeout_ms, interval_sec, enabled, hide_for_guest, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+	`, targetID, create.Name, create.Type, create.Address, adminOptionalInt64SQLValue(create.Port), create.Count, create.TimeoutMS, create.IntervalSec, enabled, hideForGuest, now, now)
 	if err != nil {
 		return AdminProbeTarget{}, err
 	}
@@ -608,6 +627,14 @@ func (s *SQLiteStore) UpdateAdminProbeTarget(ctx context.Context, targetID strin
 	if update.Enabled != nil {
 		sets = append(sets, "enabled = ?")
 		if *update.Enabled {
+			args = append(args, 1)
+		} else {
+			args = append(args, 0)
+		}
+	}
+	if update.HideForGuest != nil {
+		sets = append(sets, "hide_for_guest = ?")
+		if *update.HideForGuest {
 			args = append(args, 1)
 		} else {
 			args = append(args, 0)
@@ -790,6 +817,14 @@ func (s *SQLiteStore) UpdateAdminNode(ctx context.Context, nodeID string, update
 			args = append(args, nil)
 		}
 	}
+	if update.HideForGuest != nil {
+		sets = append(sets, "hide_for_guest = ?")
+		if *update.HideForGuest {
+			args = append(args, 1)
+		} else {
+			args = append(args, 0)
+		}
+	}
 	if update.Disabled != nil {
 		sets = append(sets, "disabled = ?")
 		if *update.Disabled {
@@ -840,6 +875,7 @@ func (s *SQLiteStore) nodes(ctx context.Context) ([]Node, error) {
 			SELECT id FROM state_samples WHERE node_id = n.id ORDER BY ts DESC, id DESC LIMIT 1
 		)
 		WHERE n.disabled = 0
+		  AND n.hide_for_guest = 0
 		ORDER BY n.display_order ASC, n.id ASC
 	`)
 	if err != nil {
@@ -893,7 +929,7 @@ func (s *SQLiteStore) nodes(ctx context.Context) ([]Node, error) {
 
 func (s *SQLiteStore) nodeExists(ctx context.Context, nodeID string) (bool, error) {
 	var exists int
-	if err := s.db.QueryRowContext(ctx, `SELECT 1 FROM nodes WHERE id = ? AND disabled = 0`, nodeID).Scan(&exists); err != nil {
+	if err := s.db.QueryRowContext(ctx, `SELECT 1 FROM nodes WHERE id = ? AND disabled = 0 AND hide_for_guest = 0`, nodeID).Scan(&exists); err != nil {
 		if err == sql.ErrNoRows {
 			return false, nil
 		}
@@ -911,7 +947,11 @@ func (s *SQLiteStore) latestLatencySummary(ctx context.Context, nodeID string) (
 		SELECT pr.target_id, pt.name, pr.median_ms, pr.avg_ms, pr.loss_percent, pr.ts
 		FROM probe_rounds pr
 		JOIN probe_targets pt ON pt.id = pr.target_id
+		LEFT JOIN node_probe_targets npt ON npt.node_id = pr.node_id AND npt.target_id = pr.target_id
 		WHERE pr.node_id = ?
+		  AND pt.enabled = 1
+		  AND pt.hide_for_guest = 0
+		  AND COALESCE(npt.enabled, 1) = 1
 		ORDER BY pr.ts DESC, pr.id DESC
 		LIMIT 1
 	`, nodeID).Scan(&targetID, &targetName, &median, &avg, &loss, &ts)
@@ -942,6 +982,7 @@ func (s *SQLiteStore) latencyPoints(ctx context.Context, nodeID string, window l
 		WHERE pr.node_id = ?
 		  AND pr.ts >= ?
 		  AND pt.enabled = 1
+		  AND pt.hide_for_guest = 0
 		  AND COALESCE(npt.enabled, 1) = 1
 		ORDER BY pr.ts ASC, pt.name ASC, pr.id ASC
 	`, nodeID, since)

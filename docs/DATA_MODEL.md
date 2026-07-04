@@ -22,6 +22,7 @@ CREATE TABLE nodes (
   billing_mode TEXT NOT NULL DEFAULT 'both',
   monthly_quota_bytes INTEGER,
   monthly_reset_day INTEGER NOT NULL DEFAULT 1,
+  hide_for_guest INTEGER NOT NULL DEFAULT 0,
   disabled INTEGER NOT NULL DEFAULT 0,
   created_at INTEGER NOT NULL,
   updated_at INTEGER NOT NULL,
@@ -37,6 +38,7 @@ CREATE TABLE nodes (
 - `public_ipv4` / `public_ipv6` 可由后台编辑，也会由新 Agent best-effort 自动识别后上报；识别失败不会清空已有值。
 - `billing_mode` 控制月流量口径：`both`、`in`、`out`、`max`。
 - `monthly_reset_day` 控制账单周期从每月第几天开始，范围 1–31。
+- `hide_for_guest` 为 1 时后台仍显示和接收 Agent 上报，但 Public API / 游客首页隐藏该服务器。
 - `token_hash` 只存 hash，不通过 API 返回。
 
 ## host_info
@@ -126,6 +128,7 @@ CREATE TABLE probe_targets (
   timeout_ms INTEGER NOT NULL,
   interval_sec INTEGER NOT NULL,
   enabled INTEGER NOT NULL DEFAULT 1,
+  hide_for_guest INTEGER NOT NULL DEFAULT 0,
   created_at INTEGER NOT NULL,
   updated_at INTEGER NOT NULL
 );
@@ -136,6 +139,8 @@ CREATE TABLE probe_targets (
 - `tcping`：TCP connect，必须带 `port`。
 - `ping`：ICMP ping，不带 `port`。
 - `http_get`：HTTP/HTTPS GET，不带 `port`。
+
+`hide_for_guest` 为 1 时 Agent 仍继续探测、后台仍显示，但 Public latency summary / latency chart 会隐藏该目标。
 
 ## node_probe_targets
 

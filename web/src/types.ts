@@ -121,6 +121,7 @@ export interface AdminNode {
   publicIPv4?: string
   publicIPv6?: string
   monthlyQuotaBytes: number | null
+  hideForGuest: boolean
   lastSeenAt?: string
   createdAt: string
   updatedAt: string
@@ -159,6 +160,7 @@ export interface AdminProbeTarget {
   timeoutMs: number
   intervalSec: number
   enabled: boolean
+  hideForGuest: boolean
   assignments: AdminProbeTargetAssignment[]
 }
 
