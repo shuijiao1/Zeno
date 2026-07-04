@@ -284,6 +284,11 @@ type AdminAlertRulesResponse struct {
 	Rules []AdminAlertRule `json:"rules"`
 }
 
+type AdminAlertRuleStatesResponse struct {
+	States      []AdminAlertRuleState `json:"states"`
+	ActiveCount int                   `json:"active_count"`
+}
+
 type AdminAlertRuleResponse struct {
 	Rule AdminAlertRule `json:"rule"`
 }
@@ -428,6 +433,28 @@ type AdminAlertRule struct {
 	Description           string  `json:"description"`
 	CreatedAt             string  `json:"created_at"`
 	UpdatedAt             string  `json:"updated_at"`
+}
+
+type AdminAlertRuleState struct {
+	NodeID                string   `json:"node_id"`
+	NodeName              string   `json:"node_name"`
+	NodeStatus            string   `json:"node_status"`
+	RuleID                string   `json:"rule_id"`
+	RuleName              string   `json:"rule_name"`
+	Category              string   `json:"category"`
+	Metric                string   `json:"metric"`
+	Comparator            string   `json:"comparator"`
+	Threshold             float64  `json:"threshold"`
+	ThresholdUnit         string   `json:"threshold_unit"`
+	DurationSec           int      `json:"duration_sec"`
+	Enabled               bool     `json:"enabled"`
+	LastValue             *float64 `json:"last_value"`
+	Active                bool     `json:"active"`
+	NotificationEventType string   `json:"notification_event_type"`
+	NotificationLabel     string   `json:"notification_label"`
+	FirstSeenAt           string   `json:"first_seen_at"`
+	LastSeenAt            string   `json:"last_seen_at"`
+	UpdatedAt             string   `json:"updated_at"`
 }
 
 type AdminNotificationChannel struct {

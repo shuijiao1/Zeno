@@ -201,6 +201,7 @@ func (s *SQLiteStore) ensureSchema(ctx context.Context) error {
 			active INTEGER NOT NULL DEFAULT 0,
 			first_seen_at INTEGER,
 			last_seen_at INTEGER,
+			last_value REAL,
 			updated_at INTEGER NOT NULL,
 			PRIMARY KEY (node_id, rule_id)
 		);`,
@@ -227,6 +228,14 @@ func (s *SQLiteStore) ensureSchema(ctx context.Context) error {
 	}
 	for column, columnType := range stateSampleColumns {
 		if err := s.ensureColumn(ctx, "state_samples", column, columnType); err != nil {
+			return err
+		}
+	}
+	alertRuleStateColumns := map[string]string{
+		"last_value": "REAL",
+	}
+	for column, columnType := range alertRuleStateColumns {
+		if err := s.ensureColumn(ctx, "alert_rule_states", column, columnType); err != nil {
 			return err
 		}
 	}

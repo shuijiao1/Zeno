@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { createAdminNode, createAdminNotificationChannel, createAdminProbeTarget, deleteAdminNotificationChannel, deleteAdminProbeTarget, fetchAdminAlertRules, fetchAdminNodes, fetchAdminNotificationChannels, fetchAdminNotificationDeliveries, fetchAdminNotificationTypes, fetchAdminProbeTargets, normalizeAdminAlertRules, normalizeAdminNodes, normalizeAdminNotificationChannels, normalizeAdminNotificationDeliveries, normalizeAdminNotificationTypes, normalizeAdminProbeTargets, normalizeNodeLatency, normalizeNodeState, normalizeSummary, requestAdminNodeInstallCommand, testAdminNotificationChannel, updateAdminAlertRule, updateAdminNode, updateAdminNotificationChannel, updateAdminNotificationType, updateAdminProbeTarget } from './client'
+import { createAdminNode, createAdminNotificationChannel, createAdminProbeTarget, deleteAdminNotificationChannel, deleteAdminProbeTarget, fetchAdminAlertRules, fetchAdminAlertRuleStates, fetchAdminNodes, fetchAdminNotificationChannels, fetchAdminNotificationDeliveries, fetchAdminNotificationTypes, fetchAdminProbeTargets, normalizeAdminAlertRules, normalizeAdminAlertRuleStates, normalizeAdminNodes, normalizeAdminNotificationChannels, normalizeAdminNotificationDeliveries, normalizeAdminNotificationTypes, normalizeAdminProbeTargets, normalizeNodeLatency, normalizeNodeState, normalizeSummary, requestAdminNodeInstallCommand, testAdminNotificationChannel, updateAdminAlertRule, updateAdminNode, updateAdminNotificationChannel, updateAdminNotificationType, updateAdminProbeTarget } from './client'
 
 describe('normalizeSummary', () => {
   it('maps controller snake_case JSON into frontend camelCase models', () => {
@@ -817,7 +817,55 @@ describe('admin alert rules', () => {
       },
       body: JSON.stringify({ enabled: false, threshold: 95.5, duration_sec: 600 }),
     })
-    const calls = fetchMock.mock.calls as Array<[RequestInfo | URL, RequestInit?]>
+    const calls = fetchMock.mock.calls as unknown as Array<[RequestInfo | URL, RequestInit?]>
+    expect(String(calls[0]?.[0])).not.toContain('admin-pass')
+  })
+
+  it('normalizes active rule states and fetches current hits with X-Admin-Token only', async () => {
+    const apiPayload = {
+      states: [
+        {
+          node_id: 'hytron',
+          node_name: 'Hytron',
+          node_status: 'warning',
+          rule_id: 'cpu_high',
+          rule_name: 'CPU 使用率',
+          category: 'resource',
+          metric: 'cpu_percent',
+          comparator: '>=',
+          threshold: 90,
+          threshold_unit: '%',
+          duration_sec: 300,
+          enabled: true,
+          last_value: 95.25,
+          active: true,
+          notification_event_type: 'probe_unhealthy',
+          notification_label: '异常',
+          first_seen_at: '2026-07-04T11:00:00Z',
+          last_seen_at: '2026-07-04T11:00:00Z',
+          updated_at: '2026-07-04T11:00:01Z',
+        },
+      ],
+      active_count: 1,
+    }
+    const normalized = normalizeAdminAlertRuleStates(apiPayload)
+    expect(normalized.states[0].nodeName).toBe('Hytron')
+    expect(normalized.states[0].ruleName).toBe('CPU 使用率')
+    expect(normalized.states[0].lastValue).toBe(95.25)
+    expect(normalized.activeCount).toBe(1)
+
+    const fetchMock = vi.fn(async () => new Response(JSON.stringify(apiPayload), { status: 200, headers: { 'Content-Type': 'application/json' } }))
+    globalThis.fetch = fetchMock as unknown as typeof fetch
+
+    const fetched = await fetchAdminAlertRuleStates('admin-pass')
+    expect(fetched.states[0].metric).toBe('cpu_percent')
+    expect(fetchMock).toHaveBeenCalledWith('/api/admin/v1/alert-rule-states', {
+      headers: {
+        Accept: 'application/json',
+        'X-Admin-Token': 'admin-pass',
+      },
+    })
+    const calls = fetchMock.mock.calls as unknown as Array<[RequestInfo | URL, RequestInit?]>
     expect(String(calls[0]?.[0])).not.toContain('admin-pass')
   })
 })
@@ -959,7 +1007,7 @@ describe('notification writes', () => {
       },
       body: JSON.stringify({ enabled: true }),
     })
-    const calls = fetchMock.mock.calls as Array<[RequestInfo | URL, RequestInit?]>
+    const calls = fetchMock.mock.calls as unknown as Array<[RequestInfo | URL, RequestInit?]>
     expect(String(calls[0]?.[0])).not.toContain('webhook-secret')
   })
 

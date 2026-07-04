@@ -125,8 +125,8 @@ func setAlertRuleStates(ctx context.Context, tx *sql.Tx, nodeID string, ts time.
 		if active {
 			anyActive = true
 			if _, err := tx.ExecContext(ctx, `
-				INSERT INTO alert_rule_states (node_id, rule_id, active, first_seen_at, last_seen_at, updated_at)
-				VALUES (?, ?, 1, ?, ?, ?)
+				INSERT INTO alert_rule_states (node_id, rule_id, active, first_seen_at, last_seen_at, last_value, updated_at)
+				VALUES (?, ?, 1, ?, ?, ?, ?)
 				ON CONFLICT(node_id, rule_id) DO UPDATE SET
 					active = 1,
 					first_seen_at = CASE
@@ -134,17 +134,22 @@ func setAlertRuleStates(ctx context.Context, tx *sql.Tx, nodeID string, ts time.
 						ELSE excluded.first_seen_at
 					END,
 					last_seen_at = excluded.last_seen_at,
+					last_value = excluded.last_value,
 					updated_at = excluded.updated_at
-			`, nodeID, rule.ID, seenAt, seenAt, now); err != nil {
+			`, nodeID, rule.ID, seenAt, seenAt, *value, now); err != nil {
 				return false, false, err
 			}
 			continue
 		}
+		var lastValue any
+		if value != nil {
+			lastValue = *value
+		}
 		if _, err := tx.ExecContext(ctx, `
 			UPDATE alert_rule_states
-			SET active = 0, last_seen_at = ?, updated_at = ?
+			SET active = 0, last_seen_at = ?, last_value = ?, updated_at = ?
 			WHERE node_id = ? AND rule_id = ?
-		`, seenAt, now, nodeID, rule.ID); err != nil {
+		`, seenAt, lastValue, now, nodeID, rule.ID); err != nil {
 			return false, false, err
 		}
 	}

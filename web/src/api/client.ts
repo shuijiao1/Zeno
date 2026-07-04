@@ -1,4 +1,4 @@
-import type { AdminAlertRule, AdminNode, AdminNodeInstallCommand, AdminNotificationChannel, AdminNotificationDelivery, AdminNotificationType, AdminProbeTarget, HomeCardNode, LatencyPoint, ProbeType, StatePoint } from '../types'
+import type { AdminAlertRule, AdminAlertRuleState, AdminNode, AdminNodeInstallCommand, AdminNotificationChannel, AdminNotificationDelivery, AdminNotificationType, AdminProbeTarget, HomeCardNode, LatencyPoint, ProbeType, StatePoint } from '../types'
 
 interface ApiLatencySummary {
   target_id: string
@@ -162,6 +162,28 @@ interface ApiAdminAlertRule {
   updated_at: string
 }
 
+interface ApiAdminAlertRuleState {
+  node_id: string
+  node_name: string
+  node_status: string
+  rule_id: string
+  rule_name: string
+  category: string
+  metric: string
+  comparator: string
+  threshold: number
+  threshold_unit: string
+  duration_sec: number
+  enabled: boolean
+  last_value: number | null
+  active: boolean
+  notification_event_type: string
+  notification_label: string
+  first_seen_at: string
+  last_seen_at: string
+  updated_at: string
+}
+
 export interface ApiSummaryResponse {
   nodes: ApiNode[] | null
   latency_points: ApiLatencyPoint[] | null
@@ -228,6 +250,11 @@ export interface ApiAdminAlertRulesResponse {
   rules: ApiAdminAlertRule[]
 }
 
+export interface ApiAdminAlertRuleStatesResponse {
+  states: ApiAdminAlertRuleState[] | null
+  active_count: number
+}
+
 export interface ApiAdminAlertRuleResponse {
   rule: ApiAdminAlertRule
 }
@@ -271,6 +298,11 @@ export interface AdminNotificationDeliveriesData {
 
 export interface AdminAlertRulesData {
   rules: AdminAlertRule[]
+}
+
+export interface AdminAlertRuleStatesData {
+  states: AdminAlertRuleState[]
+  activeCount: number
 }
 
 export interface AdminNodeUpdateInput {
@@ -437,6 +469,19 @@ export async function fetchAdminAlertRules(adminToken: string): Promise<AdminAle
     throw new Error(`admin alert rules request failed: ${response.status}`)
   }
   return normalizeAdminAlertRules(await response.json() as ApiAdminAlertRulesResponse)
+}
+
+export async function fetchAdminAlertRuleStates(adminToken: string): Promise<AdminAlertRuleStatesData> {
+  const response = await fetch('/api/admin/v1/alert-rule-states', {
+    headers: {
+      Accept: 'application/json',
+      'X-Admin-Token': adminToken,
+    },
+  })
+  if (!response.ok) {
+    throw new Error(`admin alert rule states request failed: ${response.status}`)
+  }
+  return normalizeAdminAlertRuleStates(await response.json() as ApiAdminAlertRuleStatesResponse)
 }
 
 export async function createAdminNode(adminToken: string, input: AdminNodeCreateInput): Promise<AdminNode> {
@@ -687,6 +732,13 @@ export function normalizeAdminNotificationDeliveries(input: ApiAdminNotification
 export function normalizeAdminAlertRules(input: ApiAdminAlertRulesResponse): AdminAlertRulesData {
   return {
     rules: (input.rules ?? []).map(normalizeAdminAlertRule),
+  }
+}
+
+export function normalizeAdminAlertRuleStates(input: ApiAdminAlertRuleStatesResponse): AdminAlertRuleStatesData {
+  return {
+    states: (input.states ?? []).map(normalizeAdminAlertRuleState),
+    activeCount: input.active_count ?? 0,
   }
 }
 
@@ -947,5 +999,29 @@ function normalizeAdminAlertRule(rule: ApiAdminAlertRule): AdminAlertRule {
     description: rule.description,
     createdAt: rule.created_at,
     updatedAt: rule.updated_at,
+  }
+}
+
+function normalizeAdminAlertRuleState(state: ApiAdminAlertRuleState): AdminAlertRuleState {
+  return {
+    nodeId: state.node_id,
+    nodeName: state.node_name,
+    nodeStatus: state.node_status,
+    ruleId: state.rule_id,
+    ruleName: state.rule_name,
+    category: state.category,
+    metric: state.metric,
+    comparator: state.comparator,
+    threshold: state.threshold,
+    thresholdUnit: state.threshold_unit,
+    durationSec: state.duration_sec,
+    enabled: state.enabled,
+    lastValue: state.last_value ?? null,
+    active: state.active,
+    notificationEventType: state.notification_event_type,
+    notificationLabel: state.notification_label,
+    firstSeenAt: state.first_seen_at,
+    lastSeenAt: state.last_seen_at,
+    updatedAt: state.updated_at,
   }
 }

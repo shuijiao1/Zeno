@@ -395,7 +395,7 @@ Controller 会在 Agent 上报时实际使用这些规则：
 
 - `/api/agent/v1/state` 会按启用的资源规则评估 `cpu_percent`、内存使用率、磁盘使用率，超过阈值时把节点公共状态置为 `warning` 并进入 `probe_unhealthy` 通知链路。
 - `/api/agent/v1/probe-results` 会按启用的探测规则评估最高中位延迟和最高丢包率；成功但高延迟的探测也能触发 `warning`，禁用对应规则后不会因为该指标触发异常。
-- 资源/探测规则命中状态会记录在 Controller 内部的 `alert_rule_states` 表，用来避免某一类健康上报误清另一类仍活跃的异常；该表不通过 Admin/Public API 暴露。
+- 资源/探测规则命中状态会记录在 Controller 内部的 `alert_rule_states` 表，用来避免某一类健康上报误清另一类仍活跃的异常；后台可通过 `GET /api/admin/v1/alert-rule-states` 查看脱敏后的当前命中状态。
 - 通知发送同时要求：状态转换存在、对应通知类型启用、至少一条映射到该事件类型的状态规则启用、且存在启用并配置好的通知渠道。
 
 ```json
@@ -475,6 +475,41 @@ Controller 会在 Agent 上报时实际使用这些规则：
 ```
 
 关系说明：状态规则决定“什么时候形成某类状态事件”；`notification_types` 决定该事件类型是否允许发送；`notification_channels` 决定发送到哪些启用渠道；`notification_deliveries` 只记录脱敏后的发送结果。
+
+### GET /api/admin/v1/alert-rule-states
+
+当前状态规则命中列表，用于后台“当前异常”面板。只返回节点、规则、当前值、阈值、通知事件类型和时间戳；不返回 Admin token、Agent token、token hash、通知渠道 destination、Webhook URL、Telegram Bot 凭据、Authorization header、secret 或 credential 原文。
+
+```json
+{
+  "states": [
+    {
+      "node_id": "hytron",
+      "node_name": "Hytron",
+      "node_status": "warning",
+      "rule_id": "cpu_high",
+      "rule_name": "CPU 使用率",
+      "category": "resource",
+      "metric": "cpu_percent",
+      "comparator": ">=",
+      "threshold": 90,
+      "threshold_unit": "%",
+      "duration_sec": 300,
+      "enabled": true,
+      "last_value": 95.25,
+      "active": true,
+      "notification_event_type": "probe_unhealthy",
+      "notification_label": "异常",
+      "first_seen_at": "2026-07-04T11:00:00Z",
+      "last_seen_at": "2026-07-04T11:00:00Z",
+      "updated_at": "2026-07-04T11:00:01Z"
+    }
+  ],
+  "active_count": 1
+}
+```
+
+`active_count` 只统计当前仍 active、对应规则仍启用、且节点未被禁用的命中项。规则停用或节点禁用后旧状态行可继续作为最近状态显示，但不会被计入 active，也不会触发新的通知发送。
 
 ### GET /api/admin/v1/notification-channels
 

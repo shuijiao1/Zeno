@@ -148,6 +148,80 @@ func (s *SQLiteStore) AdminAlertRules(ctx context.Context) ([]AdminAlertRule, er
 	return rules, nil
 }
 
+func (s *SQLiteStore) AdminAlertRuleStates(ctx context.Context) ([]AdminAlertRuleState, error) {
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT ars.node_id, n.display_name, n.status, n.disabled, n.last_seen_at,
+		       ar.id, ar.name, ar.category, ar.metric, ar.comparator, ar.threshold,
+		       ar.threshold_unit, ar.duration_sec, ar.enabled, ars.last_value, ars.active,
+		       ar.notification_event_type, ars.first_seen_at, ars.last_seen_at, ars.updated_at
+		FROM alert_rule_states ars
+		JOIN alert_rules ar ON ar.id = ars.rule_id
+		JOIN nodes n ON n.id = ars.node_id
+		ORDER BY ars.active DESC, ars.updated_at DESC, ar.sort_order ASC, ar.id ASC, n.display_name ASC
+	`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	states := make([]AdminAlertRuleState, 0)
+	now := time.Now().UTC()
+	for rows.Next() {
+		var state AdminAlertRuleState
+		var storedNodeStatus string
+		var nodeLastSeenAt, firstSeenAt, lastSeenAt, updatedAt sql.NullInt64
+		var enabled, active, disabled int
+		var lastValue sql.NullFloat64
+		if err := rows.Scan(
+			&state.NodeID,
+			&state.NodeName,
+			&storedNodeStatus,
+			&disabled,
+			&nodeLastSeenAt,
+			&state.RuleID,
+			&state.RuleName,
+			&state.Category,
+			&state.Metric,
+			&state.Comparator,
+			&state.Threshold,
+			&state.ThresholdUnit,
+			&state.DurationSec,
+			&enabled,
+			&lastValue,
+			&active,
+			&state.NotificationEventType,
+			&firstSeenAt,
+			&lastSeenAt,
+			&updatedAt,
+		); err != nil {
+			return nil, err
+		}
+		state.Enabled = enabled != 0
+		nodeDisabled := disabled != 0
+		valueMatchesCurrentRule := active != 0
+		if lastValue.Valid {
+			valueMatchesCurrentRule = compareAlertRuleValue(lastValue.Float64, state.Comparator, state.Threshold)
+		}
+		state.Active = state.Enabled && !nodeDisabled && valueMatchesCurrentRule
+		state.NodeStatus = publicNodeStatus(storedNodeStatus, nodeLastSeenAt, now)
+		if nodeDisabled {
+			state.NodeStatus = "disabled"
+		}
+		state.LastValue = floatPtr(lastValue)
+		if label, ok := adminNotificationTypeLabel(state.NotificationEventType); ok {
+			state.NotificationLabel = label
+		}
+		state.FirstSeenAt = unixStringOr(firstSeenAt, now)
+		state.LastSeenAt = unixStringOr(lastSeenAt, now)
+		state.UpdatedAt = unixStringOr(updatedAt, now)
+		states = append(states, state)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return states, nil
+}
+
 func (s *SQLiteStore) UpdateAdminAlertRule(ctx context.Context, ruleID string, update AdminAlertRuleUpdateRequest) (AdminAlertRule, error) {
 	ruleID = strings.TrimSpace(ruleID)
 	if ruleID == "" {

@@ -53,6 +53,7 @@ func NewHandler(options ...HandlerOptions) http.Handler {
 	mux.HandleFunc("/api/admin/v1/notification-channels/", h.handleAdminNotificationChannelResource)
 	mux.HandleFunc("/api/admin/v1/notification-deliveries", h.handleAdminNotificationDeliveries)
 	mux.HandleFunc("/api/admin/v1/alert-rules", h.handleAdminAlertRules)
+	mux.HandleFunc("/api/admin/v1/alert-rule-states", h.handleAdminAlertRuleStates)
 	mux.HandleFunc("/api/admin/v1/alert-rules/", h.handleAdminAlertRuleResource)
 	mux.HandleFunc("/api/admin/v1/notification-types", h.handleAdminNotificationTypes)
 	mux.HandleFunc("/api/admin/v1/notification-types/", h.handleAdminNotificationTypeResource)

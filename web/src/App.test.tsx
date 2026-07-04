@@ -1,7 +1,7 @@
 import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it } from 'vitest'
-import { AdminDashboard, HomeTopPanel } from './App'
-import type { AdminAlertRule, AdminNode, AdminNotificationChannel, AdminNotificationDelivery, AdminNotificationType, AdminProbeTarget } from './types'
+import { AdminDashboard, HomeTopPanel, reconcileAlertRuleStates, reconcileAlertRuleStatesForNode } from './App'
+import type { AdminAlertRule, AdminAlertRuleState, AdminNode, AdminNotificationChannel, AdminNotificationDelivery, AdminNotificationType, AdminProbeTarget } from './types'
 
 const overviewProps = {
   totalCount: 11,
@@ -165,6 +165,30 @@ const notificationDeliveries: AdminNotificationDelivery[] = [
   },
 ]
 
+const alertRuleStates: AdminAlertRuleState[] = [
+  {
+    nodeId: 'hytron',
+    nodeName: 'Hytron',
+    nodeStatus: 'warning',
+    ruleId: 'cpu_high',
+    ruleName: 'CPU 使用率',
+    category: 'resource',
+    metric: 'cpu_percent',
+    comparator: '>=',
+    threshold: 90,
+    thresholdUnit: '%',
+    durationSec: 300,
+    enabled: true,
+    lastValue: 95.25,
+    active: true,
+    notificationEventType: 'probe_unhealthy',
+    notificationLabel: '异常',
+    firstSeenAt: '2026-07-04T11:00:00Z',
+    lastSeenAt: '2026-07-04T11:00:00Z',
+    updatedAt: '2026-07-04T11:00:01Z',
+  },
+]
+
 function renderAdmin(section: 'overview' | 'nodes' | 'targets' | 'notifications' | 'rules' = 'overview') {
   return renderToStaticMarkup(
     <AdminDashboard
@@ -179,6 +203,7 @@ function renderAdmin(section: 'overview' | 'nodes' | 'targets' | 'notifications'
         notificationTypes,
         notificationDeliveries,
         alertRules,
+        alertRuleStates,
       }}
       onAdminTokenSubmit={() => {}}
       onAdminTokenClear={() => {}}
@@ -283,11 +308,15 @@ describe('AdminDashboard', () => {
     expect(html).not.toContain('告警')
   })
 
-  it('renders status rules as their own notification-rule management page', () => {
+  it('renders status rules as their own notification-rule management page with current active hits', () => {
     const html = renderAdmin('rules')
 
     expect(html).toContain('状态规则')
     expect(html).toContain('通知规则')
+    expect(html).toContain('当前异常')
+    expect(html).toContain('Hytron')
+    expect(html).toContain('warning')
+    expect(html).toContain('当前值 95.25%')
     expect(html).toContain('CPU 使用率')
     expect(html).toContain('cpu_percent')
     expect(html).toContain('&gt;= 90%')
@@ -299,6 +328,31 @@ describe('AdminDashboard', () => {
     expect(html).toContain('停用规则')
     expect(html).not.toContain('告警')
     expect(html).not.toContain('webhook-secret')
+  })
+
+  it('reconciles current anomalies immediately when a status rule is disabled or its threshold changes', () => {
+    const [disabledState] = reconcileAlertRuleStates({ ...alertRules[0], enabled: false, threshold: 85, durationSec: 120 }, alertRuleStates)
+
+    expect(disabledState.enabled).toBe(false)
+    expect(disabledState.active).toBe(false)
+    expect(disabledState.threshold).toBe(85)
+    expect(disabledState.durationSec).toBe(120)
+
+    const [belowRaisedThreshold] = reconcileAlertRuleStates({ ...alertRules[0], threshold: 99 }, alertRuleStates)
+    expect(belowRaisedThreshold.enabled).toBe(true)
+    expect(belowRaisedThreshold.active).toBe(false)
+
+    const legacyState: AdminAlertRuleState = { ...alertRuleStates[0], lastValue: null, active: true }
+    const [legacyWithoutValue] = reconcileAlertRuleStates({ ...alertRules[0], threshold: 99 }, [legacyState])
+    expect(legacyWithoutValue.active).toBe(true)
+  })
+
+  it('reconciles current anomalies immediately when a node is disabled', () => {
+    const [state] = reconcileAlertRuleStatesForNode({ ...hytronNode, disabled: true, status: 'disabled', displayName: 'Hytron Renamed' }, alertRuleStates)
+
+    expect(state.nodeName).toBe('Hytron Renamed')
+    expect(state.nodeStatus).toBe('disabled')
+    expect(state.active).toBe(false)
   })
 
   it('renders a unified username and password login screen when unauthenticated', () => {
