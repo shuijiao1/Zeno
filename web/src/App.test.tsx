@@ -1,7 +1,7 @@
 import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it } from 'vitest'
-import { AdminDashboard, HomeTopPanel, reconcileAlertRuleStates, reconcileAlertRuleStatesForNode, shellStyleForSettings, validateAdminSettingsInput } from './App'
-import type { AdminAlertRule, AdminAlertRuleState, AdminNode, AdminNotificationChannel, AdminNotificationType, AdminProbeTarget, AdminSettings } from './types'
+import { AdminDashboard, HomeTopPanel, shellStyleForSettings, validateAdminSettingsInput } from './App'
+import type { AdminAlertRule, AdminNode, AdminNotificationChannel, AdminProbeTarget, AdminSettings } from './types'
 
 const overviewProps = {
   totalCount: 11,
@@ -114,12 +114,6 @@ const telegramChannel: AdminNotificationChannel = {
   updatedAt: '2026-07-03T00:00:00Z',
 }
 
-const notificationTypes: AdminNotificationType[] = [
-  { eventType: 'node_online', label: '上线', enabled: true, updatedAt: '2026-07-03T00:00:00Z' },
-  { eventType: 'node_offline', label: '离线', enabled: false },
-  { eventType: 'probe_unhealthy', label: '异常', enabled: false },
-]
-
 const alertRules: AdminAlertRule[] = [
   {
     id: 'cpu_high',
@@ -157,30 +151,6 @@ const alertRules: AdminAlertRule[] = [
   },
 ]
 
-const alertRuleStates: AdminAlertRuleState[] = [
-  {
-    nodeId: 'hytron',
-    nodeName: 'Hytron',
-    nodeStatus: 'warning',
-    ruleId: 'cpu_high',
-    ruleName: 'CPU 使用率',
-    category: 'resource',
-    metric: 'cpu_percent',
-    comparator: '>=',
-    threshold: 90,
-    thresholdUnit: '%',
-    durationSec: 300,
-    enabled: true,
-    lastValue: 95.25,
-    active: true,
-    notificationEventType: 'probe_unhealthy',
-    notificationLabel: '异常',
-    firstSeenAt: '2026-07-04T11:00:00Z',
-    lastSeenAt: '2026-07-04T11:00:00Z',
-    updatedAt: '2026-07-04T11:00:01Z',
-  },
-]
-
 const settings: AdminSettings = {
   siteTitle: '水饺监控',
   siteSubtitle: 'VPS 状态总览',
@@ -206,7 +176,6 @@ function renderAdmin(section: 'nodes' | 'targets' | 'notifications' | 'account' 
         nodes: [hytronNode, backupNode],
         targets: [hytronTarget, pingTarget, httpTarget],
         notificationChannels: [telegramChannel],
-        notificationTypes,
         alertRules,
       }}
       onAdminLogin={() => {}}
@@ -220,7 +189,6 @@ function renderAdmin(section: 'nodes' | 'targets' | 'notifications' | 'account' 
       onAdminProbeTargetUpdate={() => {}}
       onAdminNotificationChannelCreate={() => {}}
       onAdminNotificationChannelUpdate={() => {}}
-      onAdminNotificationTypeUpdate={() => {}}
       onAdminAlertRuleUpdate={() => {}}
       onAdminSettingsUpdate={() => {}}
     />,
@@ -387,8 +355,8 @@ describe('AdminDashboard', () => {
     expect(html).toContain('Zeno Telegram')
     expect(html).toContain('7579942307')
     expect(html).toContain('凭据已设置')
-    expect(html).toContain('node_online')
-    expect(html).toContain('上线')
+    expect(html).toContain('添加通知类型')
+    expect(html).toContain('CPU 使用率')
     expect(html).toContain('启用中')
     expect(html).toContain('添加通知渠道')
     expect(html).toContain('编辑渠道')
@@ -414,8 +382,9 @@ describe('AdminDashboard', () => {
     expect(html).toContain('Backup (backup)')
     expect(html).toContain('离线判定')
     expect(html).toContain('node_offline')
+    expect(html).toContain('添加通知类型')
     expect(html).toContain('编辑通知类型')
-    expect(html).toContain('停用通知类型')
+    expect(html).toContain('移除')
     expect(html).not.toContain('触发条件</h4>')
     expect(html).not.toContain('当前异常')
     expect(html).not.toContain('当前值 95.25%')
@@ -424,44 +393,6 @@ describe('AdminDashboard', () => {
     expect(html).not.toContain('telegram-bot-secret')
   })
 
-  it('reconciles current anomalies immediately when a notification type is disabled or its threshold changes', () => {
-    const [disabledState] = reconcileAlertRuleStates({ ...alertRules[0], enabled: false, threshold: 85, durationSec: 120 }, alertRuleStates)
-
-    expect(disabledState.enabled).toBe(false)
-    expect(disabledState.active).toBe(false)
-    expect(disabledState.threshold).toBe(85)
-    expect(disabledState.durationSec).toBe(120)
-
-    const [belowRaisedThreshold] = reconcileAlertRuleStates({ ...alertRules[0], threshold: 99 }, alertRuleStates)
-    expect(belowRaisedThreshold.enabled).toBe(true)
-    expect(belowRaisedThreshold.active).toBe(false)
-
-    const legacyState: AdminAlertRuleState = { ...alertRuleStates[0], lastValue: null, active: true }
-    const [legacyWithoutValue] = reconcileAlertRuleStates({ ...alertRules[0], threshold: 99 }, [legacyState])
-    expect(legacyWithoutValue.active).toBe(true)
-
-    const [scopedAway] = reconcileAlertRuleStates({ ...alertRules[0], scopeNodeIds: ['backup'] }, alertRuleStates)
-    expect(scopedAway.active).toBe(false)
-  })
-
-  it('reconciles current anomalies immediately when a node is disabled', () => {
-    const [state] = reconcileAlertRuleStatesForNode({ ...hytronNode, disabled: true, status: 'disabled', displayName: 'Hytron Renamed' }, alertRuleStates)
-
-    expect(state.nodeName).toBe('Hytron Renamed')
-    expect(state.nodeStatus).toBe('disabled')
-    expect(state.active).toBe(false)
-  })
-
-  it('keeps scoped-away current anomalies inactive when a node is edited', () => {
-    const [state] = reconcileAlertRuleStatesForNode(
-      { ...hytronNode, displayName: 'Hytron Renamed' },
-      [{ ...alertRuleStates[0], active: false }],
-      [{ ...alertRules[0], scopeNodeIds: ['backup'] }],
-    )
-
-    expect(state.nodeName).toBe('Hytron Renamed')
-    expect(state.active).toBe(false)
-  })
 
   it('renders a unified username and password login screen when unauthenticated', () => {
     const html = renderToStaticMarkup(<AdminDashboard onHome={() => {}} />)
@@ -485,14 +416,16 @@ describe('AdminDashboard', () => {
     expect(html).toContain('Hytron')
     expect(html).toContain('online')
     expect(html).toContain('agent-test')
-    expect(html).toContain('v4 198.51.100.8')
-    expect(html).toContain('v6 2001:db8::8')
+    expect(html).toContain('198.51.100.8')
+    expect(html).toContain('2001:db8::8')
+    expect(html).not.toContain('v4 198.51.100.8')
+    expect(html).not.toContain('v6 2001:db8::8')
     expect(html).toContain('admin-ip-stack')
     expect(html).not.toContain('debian 13')
     expect(html).not.toContain('2026-08-01')
     expect(html).not.toContain('月付')
-    expect(html).toContain('顺序 10')
-    expect(html).toContain('🇭🇰')
+    expect(html).not.toContain('sharon · 🇭🇰 HK · 顺序 10')
+    expect(html).not.toContain('顺序 10')
     expect(html).toContain('整理顺序')
     expect(html).not.toContain('上移')
     expect(html).not.toContain('下移')

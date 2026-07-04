@@ -505,7 +505,7 @@ X-Admin-Token: <admin-token>
 
 ### GET /api/admin/v1/nodes
 
-节点管理列表，返回 enabled + disabled 节点、状态、地区、到期日、账单周期、显示顺序、公网 IPv4/IPv6、流量计费口径、月流量重置日、配额、last seen、host info 和 agent version。列表按 `display_order ASC, id ASC` 排序；后台 UI 用 `country_code` 渲染国旗；列表操作只保留编辑服务器，显示顺序可通过整理顺序或编辑表单写回 `display_order`。
+节点管理列表，返回 enabled + disabled 节点、状态、地区、到期日、账单周期、显示顺序、公网 IPv4/IPv6、流量计费口径、月流量重置日、配额、last seen、host info 和 agent version。列表按 `display_order ASC, id ASC` 排序；后台 UI 的服务器列表只展示名称、状态、公网 IP、Agent 和编辑操作；IPv4/IPv6 分行显示且不加 v4/v6 前缀；显示顺序可通过整理顺序或编辑表单写回 `display_order`。
 
 响应字段重点：
 
@@ -690,7 +690,7 @@ HTTP GET 示例：
 
 ### GET /api/admin/v1/alert-rules
 
-通知类型触发条件库存。Controller 启动或迁移时会 seed 一组默认规则，后台可查看每条规则映射到哪个通知事件类型。规则默认作用于全部服务器；`scope_node_ids` 非空时只作用于这些服务器。响应只包含规则配置、作用范围和通知事件标签，不返回 admin token、Agent token、token hash、通知渠道凭据、secret 或 credential 原文。
+通知类型触发条件库存。Controller 启动或迁移时会 seed 一组默认规则。后台通知页只展示已启用/已添加的规则，未启用的预置规则通过“添加通知类型”弹窗选择。规则默认作用于全部服务器；`scope_node_ids` 非空时只作用于这些服务器。响应只包含规则配置、作用范围和通知事件标签，不返回 admin token、Agent token、token hash、通知渠道凭据、secret 或 credential 原文。
 
 默认规则覆盖：CPU、内存、磁盘、探测延迟、探测丢包、离线判定、恢复判定。资源/探测类规则映射到 `probe_unhealthy` / 异常；离线规则映射到 `node_offline` / 离线；恢复规则映射到 `node_online` / 上线。
 
@@ -745,7 +745,7 @@ Controller 会在 Agent 上报时实际使用这些规则：
 
 ### PATCH /api/admin/v1/alert-rules/{rule_id}
 
-部分更新通知类型触发条件的安全可调字段。当前允许调整启用状态、阈值、持续时间和作用服务器范围；规则 id、名称、指标、比较符、通知事件类型等结构性字段由 seed/代码控制。`scope_node_ids` 省略表示保持原范围不变，空数组表示作用于全部服务器，非空数组表示只作用于这些服务器；数组里的 node id 必须存在且不能重复。
+部分更新通知类型触发条件的安全可调字段。当前允许调整启用状态、阈值、持续时间和作用服务器范围；启用状态在 Admin 中表现为添加 / 移除通知类型。规则 id、名称、指标、比较符、通知事件类型等结构性字段由 seed/代码控制。`scope_node_ids` 省略表示保持原范围不变，空数组表示作用于全部服务器，非空数组表示只作用于这些服务器；数组里的 node id 必须存在且不能重复。
 
 请求：
 

@@ -1,11 +1,11 @@
 import { type CSSProperties, type FormEvent, type ReactNode, useEffect, useState } from 'react'
-import { createAdminNode, createAdminNotificationChannel, createAdminProbeTarget, deleteAdminNotificationChannel, fetchAdminAccount, fetchAdminAlertRules, fetchAdminNodes, fetchAdminNotificationChannels, fetchAdminNotificationTypes, fetchAdminProbeTargets, fetchAdminSettings, fetchNodeLatency, fetchNodeState, fetchPublicSettings, fetchServiceLatency, fetchSummary, loginAdmin, logoutAdmin, requestAdminNodeInstallCommand, testAdminNotificationChannel, updateAdminAccount, updateAdminAlertRule, updateAdminNode, updateAdminNotificationChannel, updateAdminNotificationType, updateAdminProbeTarget, updateAdminSettings, type AdminAccountData, type AdminAlertRuleUpdateInput, type AdminNodeCreateInput, type AdminNodeUpdateInput, type AdminNotificationChannelCreateInput, type AdminNotificationChannelUpdateInput, type AdminProbeTargetInput, type AdminProbeTargetUpdateInput, type AdminSettingsUpdateInput, type NodeLatencyData, type NodeStateData, type ServiceLatencyData, type SummaryData } from './api/client'
+import { createAdminNode, createAdminNotificationChannel, createAdminProbeTarget, deleteAdminNotificationChannel, fetchAdminAccount, fetchAdminAlertRules, fetchAdminNodes, fetchAdminNotificationChannels, fetchAdminProbeTargets, fetchAdminSettings, fetchNodeLatency, fetchNodeState, fetchPublicSettings, fetchServiceLatency, fetchSummary, loginAdmin, logoutAdmin, requestAdminNodeInstallCommand, testAdminNotificationChannel, updateAdminAccount, updateAdminAlertRule, updateAdminNode, updateAdminNotificationChannel, updateAdminNotificationType, updateAdminProbeTarget, updateAdminSettings, type AdminAccountData, type AdminAlertRuleUpdateInput, type AdminNodeCreateInput, type AdminNodeUpdateInput, type AdminNotificationChannelCreateInput, type AdminNotificationChannelUpdateInput, type AdminProbeTargetInput, type AdminProbeTargetUpdateInput, type AdminSettingsUpdateInput, type NodeLatencyData, type NodeStateData, type ServiceLatencyData, type SummaryData } from './api/client'
 import { LatencyDetail } from './components/LatencyDetail'
 import { LatencyChart } from './components/LatencyChart'
 import { ServerCard } from './components/ServerCard'
 import { startLiveRefresh } from './lib/liveRefresh'
 import { nodePath, parseDashboardRoute, servicePath, type DashboardRoute } from './lib/route'
-import type { AdminAlertRule, AdminAlertRuleState, AdminNode, AdminNotificationChannel, AdminNotificationType, AdminProbeTarget, AdminSettings, LatencyPoint, ProbeType, ServiceTarget } from './types'
+import type { AdminAlertRule, AdminNode, AdminNotificationChannel, AdminProbeTarget, AdminSettings, LatencyPoint, ProbeType, ServiceTarget } from './types'
 
 type LoadState =
   | { kind: 'loading' }
@@ -33,7 +33,7 @@ type ServiceLatencyLoadState =
 type AdminLoadState =
   | { kind: 'idle' }
   | { kind: 'loading' }
-  | { kind: 'ready'; account: AdminAccountData; nodes: AdminNode[]; targets: AdminProbeTarget[]; notificationChannels: AdminNotificationChannel[]; notificationTypes: AdminNotificationType[]; alertRules: AdminAlertRule[] }
+  | { kind: 'ready'; account: AdminAccountData; nodes: AdminNode[]; targets: AdminProbeTarget[]; notificationChannels: AdminNotificationChannel[]; alertRules: AdminAlertRule[] }
   | { kind: 'error'; message: string }
 
 type AdminAuthState =
@@ -92,70 +92,8 @@ export function shellStyleForSettings(settings: AdminSettings): CSSProperties | 
   } as CSSProperties
 }
 
-export function reconcileAlertRuleStates(updatedRule: AdminAlertRule, states: AdminAlertRuleState[]): AdminAlertRuleState[] {
-  return states.map((state) => {
-    if (state.ruleId !== updatedRule.id) return state
-    const scopeApplies = alertRuleAppliesToNode(updatedRule, state.nodeId)
-    return {
-      ...state,
-      ruleName: updatedRule.name,
-      category: updatedRule.category,
-      metric: updatedRule.metric,
-      comparator: updatedRule.comparator,
-      threshold: updatedRule.threshold,
-      thresholdUnit: updatedRule.thresholdUnit,
-      durationSec: updatedRule.durationSec,
-      enabled: updatedRule.enabled,
-      active: scopeApplies && updatedRule.enabled && state.nodeStatus !== 'disabled' && alertRuleStateMatchesCurrentThreshold(state, updatedRule.comparator, updatedRule.threshold),
-      notificationEventType: updatedRule.notificationEventType,
-      notificationLabel: updatedRule.notificationLabel,
-      updatedAt: updatedRule.updatedAt,
-    }
-  })
-}
-
-export function reconcileAlertRuleStatesForNode(updatedNode: AdminNode, states: AdminAlertRuleState[], rules: AdminAlertRule[] = []): AdminAlertRuleState[] {
-  const rulesById = new Map(rules.map((rule) => [rule.id, rule]))
-  return states.map((state) => {
-    if (state.nodeId !== updatedNode.id) return state
-    const nodeDisabled = updatedNode.disabled || updatedNode.status === 'disabled'
-    const rule = rulesById.get(state.ruleId)
-    const scopeApplies = rule ? alertRuleAppliesToNode(rule, updatedNode.id) : true
-    return {
-      ...state,
-      nodeName: updatedNode.displayName,
-      nodeStatus: updatedNode.status,
-      active: scopeApplies && !nodeDisabled && state.enabled && alertRuleStateMatchesCurrentThreshold(state, state.comparator, state.threshold),
-    }
-  })
-}
-
 function alertRuleAppliesToNode(rule: AdminAlertRule, nodeId: string): boolean {
   return rule.scopeNodeIds.length === 0 || rule.scopeNodeIds.includes(nodeId)
-}
-
-function alertRuleStateMatchesCurrentThreshold(state: AdminAlertRuleState, comparator: string, threshold: number): boolean {
-  if (state.lastValue === null) return state.active
-  return alertRuleValueMatches(state.lastValue, comparator, threshold)
-}
-
-function alertRuleValueMatches(value: number | null, comparator: string, threshold: number): boolean {
-  if (value === null || !Number.isFinite(value)) return false
-  switch (comparator.trim()) {
-    case '>=':
-      return value >= threshold
-    case '>':
-      return value > threshold
-    case '<=':
-      return value <= threshold
-    case '<':
-      return value < threshold
-    case '=':
-    case '==':
-      return value === threshold
-    default:
-      return false
-  }
 }
 
 export function App() {
@@ -306,12 +244,12 @@ export function App() {
     let loadedOnce = false
     const loadAdminNodes = () => {
       if (!loadedOnce) setAdminState({ kind: 'loading' })
-      Promise.all([fetchAdminSettings(adminToken), fetchAdminAccount(adminToken), fetchAdminNodes(adminToken), fetchAdminProbeTargets(adminToken), fetchAdminNotificationChannels(adminToken), fetchAdminNotificationTypes(adminToken), fetchAdminAlertRules(adminToken)])
-        .then(([settingsData, accountData, nodesData, targetsData, channelsData, typesData, alertRulesData]) => {
+      Promise.all([fetchAdminSettings(adminToken), fetchAdminAccount(adminToken), fetchAdminNodes(adminToken), fetchAdminProbeTargets(adminToken), fetchAdminNotificationChannels(adminToken), fetchAdminAlertRules(adminToken)])
+        .then(([settingsData, accountData, nodesData, targetsData, channelsData, alertRulesData]) => {
           loadedOnce = true
           if (!cancelled) {
             setSettings(settingsData)
-            setAdminState({ kind: 'ready', account: accountData, nodes: nodesData.nodes, targets: targetsData.targets, notificationChannels: channelsData.channels, notificationTypes: typesData.types, alertRules: alertRulesData.rules })
+            setAdminState({ kind: 'ready', account: accountData, nodes: nodesData.nodes, targets: targetsData.targets, notificationChannels: channelsData.channels, alertRules: alertRulesData.rules })
           }
         })
         .catch((error: unknown) => {
@@ -366,10 +304,10 @@ export function App() {
   const refreshAdminNodes = () => {
     if (adminToken === '') return
     setAdminState({ kind: 'loading' })
-    Promise.all([fetchAdminSettings(adminToken), fetchAdminAccount(adminToken), fetchAdminNodes(adminToken), fetchAdminProbeTargets(adminToken), fetchAdminNotificationChannels(adminToken), fetchAdminNotificationTypes(adminToken), fetchAdminAlertRules(adminToken)])
-      .then(([settingsData, accountData, nodesData, targetsData, channelsData, typesData, alertRulesData]) => {
+    Promise.all([fetchAdminSettings(adminToken), fetchAdminAccount(adminToken), fetchAdminNodes(adminToken), fetchAdminProbeTargets(adminToken), fetchAdminNotificationChannels(adminToken), fetchAdminAlertRules(adminToken)])
+      .then(([settingsData, accountData, nodesData, targetsData, channelsData, alertRulesData]) => {
         setSettings(settingsData)
-        setAdminState({ kind: 'ready', account: accountData, nodes: nodesData.nodes, targets: targetsData.targets, notificationChannels: channelsData.channels, notificationTypes: typesData.types, alertRules: alertRulesData.rules })
+        setAdminState({ kind: 'ready', account: accountData, nodes: nodesData.nodes, targets: targetsData.targets, notificationChannels: channelsData.channels, alertRules: alertRulesData.rules })
       })
       .catch((error: unknown) => setAdminState({ kind: 'error', message: error instanceof Error ? error.message : 'unknown error' }))
   }
@@ -382,7 +320,7 @@ export function App() {
           if (current.kind === 'ready') {
             return { ...current, nodes: sortAdminNodes([...current.nodes, createdNode]) }
           }
-          return { kind: 'ready', account: { username: 'admin' }, nodes: [createdNode], targets: [], notificationChannels: [], notificationTypes: [], alertRules: [] }
+          return { kind: 'ready', account: { username: 'admin' }, nodes: [createdNode], targets: [], notificationChannels: [], alertRules: [] }
         })
       })
       .catch((error: unknown) => setAdminState({ kind: 'error', message: error instanceof Error ? error.message : 'unknown error' }))
@@ -404,7 +342,7 @@ export function App() {
               nodes: sortAdminNodes(current.nodes.map((node) => node.id === updatedNode.id ? updatedNode : node)),
             }
           }
-          return { kind: 'ready', account: { username: 'admin' }, nodes: [updatedNode], targets: [], notificationChannels: [], notificationTypes: [], alertRules: [] }
+          return { kind: 'ready', account: { username: 'admin' }, nodes: [updatedNode], targets: [], notificationChannels: [], alertRules: [] }
         })
       })
       .catch((error: unknown) => setAdminState({ kind: 'error', message: error instanceof Error ? error.message : 'unknown error' }))
@@ -418,7 +356,7 @@ export function App() {
           if (current.kind === 'ready') {
             return { ...current, targets: sortAdminProbeTargets([...current.targets, createdTarget], 'order') }
           }
-          return { kind: 'ready', account: { username: 'admin' }, nodes: [], targets: [createdTarget], notificationChannels: [], notificationTypes: [], alertRules: [] }
+          return { kind: 'ready', account: { username: 'admin' }, nodes: [], targets: [createdTarget], notificationChannels: [], alertRules: [] }
         })
       })
       .catch((error: unknown) => setAdminState({ kind: 'error', message: error instanceof Error ? error.message : 'unknown error' }))
@@ -432,7 +370,7 @@ export function App() {
           if (current.kind === 'ready') {
             return { ...current, targets: sortAdminProbeTargets(current.targets.map((target) => target.id === updatedTarget.id ? updatedTarget : target), 'order') }
           }
-          return { kind: 'ready', account: { username: 'admin' }, nodes: [], targets: [updatedTarget], notificationChannels: [], notificationTypes: [], alertRules: [] }
+          return { kind: 'ready', account: { username: 'admin' }, nodes: [], targets: [updatedTarget], notificationChannels: [], alertRules: [] }
         })
       })
       .catch((error: unknown) => setAdminState({ kind: 'error', message: error instanceof Error ? error.message : 'unknown error' }))
@@ -446,7 +384,7 @@ export function App() {
           if (current.kind === 'ready') {
             return { ...current, notificationChannels: [...current.notificationChannels, createdChannel] }
           }
-          return { kind: 'ready', account: { username: 'admin' }, nodes: [], targets: [], notificationChannels: [createdChannel], notificationTypes: [], alertRules: [] }
+          return { kind: 'ready', account: { username: 'admin' }, nodes: [], targets: [], notificationChannels: [createdChannel], alertRules: [] }
         })
       })
       .catch((error: unknown) => setAdminState({ kind: 'error', message: error instanceof Error ? error.message : 'unknown error' }))
@@ -460,7 +398,7 @@ export function App() {
           if (current.kind === 'ready') {
             return { ...current, notificationChannels: current.notificationChannels.map((channel) => channel.id === updatedChannel.id ? updatedChannel : channel) }
           }
-          return { kind: 'ready', account: { username: 'admin' }, nodes: [], targets: [], notificationChannels: [updatedChannel], notificationTypes: [], alertRules: [] }
+          return { kind: 'ready', account: { username: 'admin' }, nodes: [], targets: [], notificationChannels: [updatedChannel], alertRules: [] }
         })
       })
       .catch((error: unknown) => setAdminState({ kind: 'error', message: error instanceof Error ? error.message : 'unknown error' }))
@@ -485,24 +423,13 @@ export function App() {
       .catch((error: unknown) => setAdminState({ kind: 'error', message: error instanceof Error ? error.message : 'unknown error' }))
   }
 
-  const updateAdminNotificationTypeDetails = (eventType: string, enabled: boolean) => {
-    if (adminToken === '') return
-    updateAdminNotificationType(adminToken, eventType, enabled)
-      .then((updatedType) => {
-        setAdminState((current) => {
-          if (current.kind === 'ready') {
-            return { ...current, notificationTypes: current.notificationTypes.map((notificationType) => notificationType.eventType === updatedType.eventType ? updatedType : notificationType) }
-          }
-          return { kind: 'ready', account: { username: 'admin' }, nodes: [], targets: [], notificationChannels: [], notificationTypes: [updatedType], alertRules: [] }
-        })
-      })
-      .catch((error: unknown) => setAdminState({ kind: 'error', message: error instanceof Error ? error.message : 'unknown error' }))
-  }
-
   const updateAdminAlertRuleDetails = (ruleId: string, input: AdminAlertRuleUpdateInput) => {
     if (adminToken === '') return
     updateAdminAlertRule(adminToken, ruleId, input)
-      .then((updatedRule) => {
+      .then(async (updatedRule) => {
+        if (input.enabled === true) {
+          await updateAdminNotificationType(adminToken, updatedRule.notificationEventType, true)
+        }
         setAdminState((current) => {
           if (current.kind === 'ready') {
             return {
@@ -510,7 +437,7 @@ export function App() {
               alertRules: current.alertRules.map((rule) => rule.id === updatedRule.id ? updatedRule : rule),
             }
           }
-          return { kind: 'ready', account: { username: 'admin' }, nodes: [], targets: [], notificationChannels: [], notificationTypes: [], alertRules: [updatedRule] }
+          return { kind: 'ready', account: { username: 'admin' }, nodes: [], targets: [], notificationChannels: [], alertRules: [updatedRule] }
         })
       })
       .catch((error: unknown) => setAdminState({ kind: 'error', message: error instanceof Error ? error.message : 'unknown error' }))
@@ -581,7 +508,6 @@ export function App() {
           onAdminNotificationChannelUpdate={updateAdminNotificationChannelDetails}
           onAdminNotificationChannelDelete={deleteAdminNotificationChannelDetails}
           onAdminNotificationChannelTest={testAdminNotificationChannelDetails}
-          onAdminNotificationTypeUpdate={updateAdminNotificationTypeDetails}
           onAdminAlertRuleUpdate={updateAdminAlertRuleDetails}
           onAdminSettingsUpdate={updateAdminSettingsDetails}
         />
@@ -807,7 +733,6 @@ interface AdminDashboardProps {
   onAdminNotificationChannelUpdate?: (channelId: string, input: AdminNotificationChannelUpdateInput) => void
   onAdminNotificationChannelDelete?: (channelId: string) => void
   onAdminNotificationChannelTest?: (channelId: string) => void
-  onAdminNotificationTypeUpdate?: (eventType: string, enabled: boolean) => void
   onAdminAlertRuleUpdate?: (ruleId: string, input: AdminAlertRuleUpdateInput) => void
   onAdminSettingsUpdate?: (input: AdminSettingsUpdateInput) => void
 }
@@ -832,7 +757,6 @@ export function AdminDashboard({
   onAdminNotificationChannelUpdate = () => {},
   onAdminNotificationChannelDelete = () => {},
   onAdminNotificationChannelTest = () => {},
-  onAdminNotificationTypeUpdate = () => {},
   onAdminAlertRuleUpdate = () => {},
   onAdminSettingsUpdate = () => {},
 }: AdminDashboardProps) {
@@ -849,7 +773,7 @@ export function AdminDashboard({
 
   const nodeCount = adminState.kind === 'ready' ? adminState.nodes.length : 0
   const targetCount = adminState.kind === 'ready' ? adminState.targets.length : 0
-  const ruleCount = adminState.kind === 'ready' ? adminState.alertRules.length : 0
+  const ruleCount = adminState.kind === 'ready' ? adminState.alertRules.filter((rule) => rule.enabled).length : 0
 
   return (
     <div className="kulin-container admin-container">
@@ -922,12 +846,10 @@ export function AdminDashboard({
             {adminState.kind === 'ready' && activeSection === 'notifications' && (
               <AdminNotificationsSection
                 channels={adminState.notificationChannels}
-                types={adminState.notificationTypes}
                 onChannelCreate={onAdminNotificationChannelCreate}
                 onChannelUpdate={onAdminNotificationChannelUpdate}
                 onChannelDelete={onAdminNotificationChannelDelete}
                 onChannelTest={onAdminNotificationChannelTest}
-                onTypeUpdate={onAdminNotificationTypeUpdate}
                 rules={adminState.alertRules}
                 nodes={adminState.nodes}
                 onRuleUpdate={onAdminAlertRuleUpdate}
@@ -1214,12 +1136,11 @@ function AdminNodeList({ nodes, onEdit }: { nodes: AdminNode[]; onEdit: (nodeId:
         <article className="admin-list-row" role="listitem" key={node.id}>
           <div className="admin-list-main">
             <strong>{node.displayName}</strong>
-            <small>{node.id} · {countryCodeToFlag(node.countryCode)} {formatAdminLocation(node)} · 顺序 {node.displayOrder}</small>
           </div>
           <span data-label="状态" className={`admin-node-status status-${node.disabled ? 'disabled' : node.status}`}>{node.disabled ? 'disabled' : node.status}</span>
           <span data-label="公网 IP" className={`admin-ip-stack${node.publicIPv6 ? '' : ' is-single'}`}>
-            {node.publicIPv4 && <span>v4 {node.publicIPv4}</span>}
-            {node.publicIPv6 && <span>v6 {node.publicIPv6}</span>}
+            {node.publicIPv4 && <span>{node.publicIPv4}</span>}
+            {node.publicIPv6 && <span>{node.publicIPv6}</span>}
             {!node.publicIPv4 && !node.publicIPv6 && <span>—</span>}
           </span>
           <span data-label="Agent">{node.agentVersion || '—'}</span>
@@ -1278,61 +1199,75 @@ function AdminNodeCreateModal({ onCreate, onClose }: { onCreate: (input: AdminNo
 
   return (
     <AdminModal title="添加服务器" eyebrow="Servers" onClose={onClose}>
-      <form className="admin-node-create-form admin-node-edit-form" aria-label="添加服务器" onSubmit={handleSubmit}>
-        <label>
-          <span>服务器名称</span>
-          <input name="new-display-name" autoComplete="off" placeholder="New Server" />
-        </label>
-        <label>
-          <span>节点 ID（可选）</span>
-          <input name="new-node-id" autoComplete="off" placeholder="自动生成" />
-        </label>
-        <label>
-          <span>国家</span>
-          <input name="new-country-code" autoComplete="off" placeholder="HK" />
-        </label>
-        <label>
-          <span>地区</span>
-          <input name="new-region" autoComplete="off" placeholder="Hong Kong" />
-        </label>
-        <label>
-          <span>到期日</span>
-          <input name="new-expiry-date" type="date" autoComplete="off" />
-        </label>
-        <label>
-          <span>账单周期</span>
-          <input name="new-billing-cycle" autoComplete="off" placeholder="月付 / 年付" />
-        </label>
-        <label>
-          <span>流量计费口径</span>
-          <select name="new-billing-mode" defaultValue="both">
-            <option value="both">入站 + 出站</option>
-            <option value="in">只算入站</option>
-            <option value="out">只算出站</option>
-            <option value="max">入/出取较大值</option>
-          </select>
-        </label>
-        <label>
-          <span>月流量重置日</span>
-          <input name="new-monthly-reset-day" type="number" min="1" max="31" step="1" defaultValue="1" />
-        </label>
-        <label>
-          <span>显示顺序</span>
-          <input name="new-display-order" type="number" min="0" step="1" defaultValue="0" />
-        </label>
-        <label>
-          <span>公网 IPv4</span>
-          <input name="new-public-ipv4" autoComplete="off" placeholder="198.51.100.8" />
-        </label>
-        <label>
-          <span>公网 IPv6</span>
-          <input name="new-public-ipv6" autoComplete="off" placeholder="2001:db8::8" />
-        </label>
-        <label>
-          <span>月配额 GB</span>
-          <input name="new-monthly-quota-gb" type="number" min="0" step="0.01" />
-        </label>
-        <button type="submit">添加服务器</button>
+      <form className="admin-node-create-form admin-node-edit-form is-sectioned" aria-label="添加服务器" onSubmit={handleSubmit}>
+        <AdminFormSection title="基础信息">
+          <div className="admin-form-grid">
+            <label>
+              <span>服务器名称</span>
+              <input name="new-display-name" autoComplete="off" placeholder="New Server" />
+            </label>
+            <label>
+              <span>节点 ID（可选）</span>
+              <input name="new-node-id" autoComplete="off" placeholder="自动生成" />
+            </label>
+            <label>
+              <span>国家</span>
+              <input name="new-country-code" autoComplete="off" placeholder="HK" />
+            </label>
+            <label>
+              <span>地区</span>
+              <input name="new-region" autoComplete="off" placeholder="Hong Kong" />
+            </label>
+            <label>
+              <span>显示顺序</span>
+              <input name="new-display-order" type="number" min="0" step="1" defaultValue="0" />
+            </label>
+          </div>
+        </AdminFormSection>
+        <AdminFormSection title="公网地址">
+          <div className="admin-form-grid">
+            <label>
+              <span>公网 IPv4</span>
+              <input name="new-public-ipv4" autoComplete="off" placeholder="198.51.100.8" />
+            </label>
+            <label>
+              <span>公网 IPv6</span>
+              <input name="new-public-ipv6" autoComplete="off" placeholder="2001:db8::8" />
+            </label>
+          </div>
+        </AdminFormSection>
+        <AdminFormSection title="账单与流量">
+          <div className="admin-form-grid">
+            <label>
+              <span>到期日</span>
+              <input name="new-expiry-date" type="date" autoComplete="off" />
+            </label>
+            <label>
+              <span>账单周期</span>
+              <input name="new-billing-cycle" autoComplete="off" placeholder="月付 / 年付" />
+            </label>
+            <label>
+              <span>流量计费口径</span>
+              <select name="new-billing-mode" defaultValue="both">
+                <option value="both">入站 + 出站</option>
+                <option value="in">只算入站</option>
+                <option value="out">只算出站</option>
+                <option value="max">入/出取较大值</option>
+              </select>
+            </label>
+            <label>
+              <span>月流量重置日</span>
+              <input name="new-monthly-reset-day" type="number" min="1" max="31" step="1" defaultValue="1" />
+            </label>
+            <label>
+              <span>月配额 GB</span>
+              <input name="new-monthly-quota-gb" type="number" min="0" step="0.01" />
+            </label>
+          </div>
+        </AdminFormSection>
+        <div className="admin-modal-actions">
+          <button type="submit">添加服务器</button>
+        </div>
       </form>
     </AdminModal>
   )
@@ -1385,79 +1320,92 @@ function AdminNodeEditModal({ node, onUpdate, onInstallCommand, onClose }: { nod
     <AdminModal title={`编辑服务器 · ${node.displayName}`} eyebrow={node.id} onClose={onClose}>
       <dl className="admin-modal-summary">
         <div><dt>状态</dt><dd>{node.disabled ? 'disabled' : node.status}</dd></div>
-        <div><dt>账单</dt><dd>{formatAdminBilling(node)}</dd></div>
         <div><dt>公网 IP</dt><dd>{formatAdminPublicIPs(node)}</dd></div>
         <div><dt>顺序</dt><dd>{node.displayOrder}</dd></div>
         <div><dt>系统</dt><dd>{formatAdminSystem(node)}</dd></div>
         <div><dt>资源</dt><dd>{formatAdminResources(node)}</dd></div>
-        <div><dt>最近在线</dt><dd>{formatAdminDate(node.lastSeenAt)}</dd></div>
       </dl>
-      <form className="admin-node-edit-form" aria-label={`${node.displayName} 节点编辑`} onSubmit={handleSubmit}>
-        <label>
-          <span>显示名</span>
-          <input name="display-name" defaultValue={node.displayName} autoComplete="off" />
-        </label>
-        <label>
-          <span>国家</span>
-          <input name="country-code" defaultValue={node.countryCode ?? ''} autoComplete="off" />
-        </label>
-        <label>
-          <span>地区</span>
-          <input name="region" defaultValue={node.region ?? ''} autoComplete="off" />
-        </label>
-        <label>
-          <span>到期日</span>
-          <input name="expiry-date" type="date" defaultValue={node.expiryDate ?? ''} autoComplete="off" />
-        </label>
-        <label>
-          <span>账单周期</span>
-          <input name="billing-cycle" defaultValue={node.billingCycle ?? ''} autoComplete="off" />
-        </label>
-        <label>
-          <span>流量计费口径</span>
-          <select name="billing-mode" defaultValue={node.billingMode || 'both'}>
-            <option value="both">入站 + 出站</option>
-            <option value="in">只算入站</option>
-            <option value="out">只算出站</option>
-            <option value="max">入/出取较大值</option>
-          </select>
-        </label>
-        <label>
-          <span>月流量重置日</span>
-          <input name="monthly-reset-day" type="number" min="1" max="31" step="1" defaultValue={node.monthlyResetDay || 1} />
-        </label>
-        <label>
-          <span>显示顺序</span>
-          <input name="display-order" type="number" min="0" step="1" defaultValue={node.displayOrder} />
-        </label>
-        <label>
-          <span>公网 IPv4</span>
-          <input name="public-ipv4" defaultValue={node.publicIPv4 ?? ''} autoComplete="off" />
-        </label>
-        <label>
-          <span>公网 IPv6</span>
-          <input name="public-ipv6" defaultValue={node.publicIPv6 ?? ''} autoComplete="off" />
-        </label>
-        <label>
-          <span>月配额 GB</span>
-          <input name="monthly-quota-gb" type="number" min="0" step="0.01" defaultValue={formatQuotaGigabytes(node.monthlyQuotaBytes)} />
-        </label>
-        <label className="admin-node-toggle">
-          <input name="disabled" type="checkbox" defaultChecked={node.disabled} />
-          <span>禁用节点</span>
-        </label>
+      <form className="admin-node-edit-form is-sectioned" aria-label={`${node.displayName} 节点编辑`} onSubmit={handleSubmit}>
+        <AdminFormSection title="基础信息">
+          <div className="admin-form-grid">
+            <label>
+              <span>显示名</span>
+              <input name="display-name" defaultValue={node.displayName} autoComplete="off" />
+            </label>
+            <label>
+              <span>国家</span>
+              <input name="country-code" defaultValue={node.countryCode ?? ''} autoComplete="off" />
+            </label>
+            <label>
+              <span>地区</span>
+              <input name="region" defaultValue={node.region ?? ''} autoComplete="off" />
+            </label>
+            <label>
+              <span>显示顺序</span>
+              <input name="display-order" type="number" min="0" step="1" defaultValue={node.displayOrder} />
+            </label>
+            <label className="admin-node-toggle">
+              <input name="disabled" type="checkbox" defaultChecked={node.disabled} />
+              <span>禁用节点</span>
+            </label>
+          </div>
+        </AdminFormSection>
+        <AdminFormSection title="公网地址">
+          <div className="admin-form-grid">
+            <label>
+              <span>公网 IPv4</span>
+              <input name="public-ipv4" defaultValue={node.publicIPv4 ?? ''} autoComplete="off" />
+            </label>
+            <label>
+              <span>公网 IPv6</span>
+              <input name="public-ipv6" defaultValue={node.publicIPv6 ?? ''} autoComplete="off" />
+            </label>
+          </div>
+        </AdminFormSection>
+        <AdminFormSection title="账单与流量">
+          <div className="admin-form-grid">
+            <label>
+              <span>到期日</span>
+              <input name="expiry-date" type="date" defaultValue={node.expiryDate ?? ''} autoComplete="off" />
+            </label>
+            <label>
+              <span>账单周期</span>
+              <input name="billing-cycle" defaultValue={node.billingCycle ?? ''} autoComplete="off" />
+            </label>
+            <label>
+              <span>流量计费口径</span>
+              <select name="billing-mode" defaultValue={node.billingMode || 'both'}>
+                <option value="both">入站 + 出站</option>
+                <option value="in">只算入站</option>
+                <option value="out">只算出站</option>
+                <option value="max">入/出取较大值</option>
+              </select>
+            </label>
+            <label>
+              <span>月流量重置日</span>
+              <input name="monthly-reset-day" type="number" min="1" max="31" step="1" defaultValue={node.monthlyResetDay || 1} />
+            </label>
+            <label>
+              <span>月配额 GB</span>
+              <input name="monthly-quota-gb" type="number" min="0" step="0.01" defaultValue={formatQuotaGigabytes(node.monthlyQuotaBytes)} />
+            </label>
+          </div>
+        </AdminFormSection>
+        <AdminFormSection title="Agent 接入" description="生成安装命令会轮换该服务器的 Agent Token；已在线服务器执行新命令前会停止上报。">
+          <div className="admin-inline-actions">
+            <button type="button" onClick={handleInstallCommand} disabled={installCommandState.kind === 'loading'}>{installCommandState.kind === 'loading' ? '生成中…' : '轮换并生成安装命令'}</button>
+            <button type="button" onClick={handleCopyInstallCommand} disabled={installCommandState.kind !== 'ready'}>复制安装命令</button>
+          </div>
+          {installCommandState.kind === 'ready' && (
+            <textarea className="admin-install-command" aria-label={`${node.displayName} Agent 安装命令`} readOnly value={installCommandState.command} />
+          )}
+          {installCopyState.kind !== 'idle' && <div className={`admin-install-error${installCopyState.kind === 'ready' ? ' is-success' : ''}`}>{installCopyState.message}</div>}
+          {installCommandState.kind === 'error' && <div className="admin-install-error">安装命令生成失败：{installCommandState.message}</div>}
+        </AdminFormSection>
         <div className="admin-modal-actions">
           <button type="submit">保存服务器</button>
-          <button type="button" onClick={handleInstallCommand} disabled={installCommandState.kind === 'loading'}>{installCommandState.kind === 'loading' ? '生成中…' : '轮换并生成安装命令'}</button>
-          <button type="button" onClick={handleCopyInstallCommand} disabled={installCommandState.kind !== 'ready'}>复制安装命令</button>
         </div>
       </form>
-      <p className="admin-help-note">安装命令会轮换该服务器的 Agent Token；已在线服务器执行新命令前会停止上报。</p>
-      {installCommandState.kind === 'ready' && (
-        <textarea className="admin-install-command" aria-label={`${node.displayName} Agent 安装命令`} readOnly value={installCommandState.command} />
-      )}
-      {installCopyState.kind !== 'idle' && <div className={`admin-install-error${installCopyState.kind === 'ready' ? ' is-success' : ''}`}>{installCopyState.message}</div>}
-      {installCommandState.kind === 'error' && <div className="admin-install-error">安装命令生成失败：{installCommandState.message}</div>}
     </AdminModal>
   )
 }
@@ -1580,46 +1528,56 @@ function AdminTargetCreateModal({ onCreate, onClose }: { onCreate: (input: Admin
 
   return (
     <AdminModal title="添加延迟监控目标" eyebrow="Latency" onClose={onClose}>
-      <form className="admin-target-create-form admin-node-edit-form" aria-label="添加探针目标" onSubmit={handleSubmit}>
-        <label>
-          <span>目标名称</span>
-          <input name="new-target-name" autoComplete="off" placeholder="Example HTTPS" />
-        </label>
-        <label>
-          <span>类型</span>
-          <select name="new-target-type" value={targetType} onChange={(event) => setTargetType(normalizeTargetFormType(event.currentTarget.value))}>
-            <option value="tcping">TCP Ping</option>
-            <option value="ping">ICMP Ping</option>
-            <option value="http_get">HTTP GET</option>
-          </select>
-        </label>
-        <label>
-          <span>地址</span>
-          <input name="new-target-address" autoComplete="off" placeholder="example.com" />
-        </label>
-        {targetType === 'tcping' && (
-          <label>
-            <span>端口</span>
-            <input name="new-target-port" type="number" min="1" max="65535" defaultValue="443" />
-          </label>
-        )}
-        <label>
-          <span>次数</span>
-          <input name="new-target-count" type="number" min="1" defaultValue="3" />
-        </label>
-        <label>
-          <span>超时 ms</span>
-          <input name="new-target-timeout-ms" type="number" min="1" defaultValue="1200" />
-        </label>
-        <label>
-          <span>间隔 s</span>
-          <input name="new-target-interval-sec" type="number" min="1" defaultValue="60" />
-        </label>
-        <label>
-          <span>显示顺序</span>
-          <input name="new-target-display-order" type="number" min="0" step="1" defaultValue="0" />
-        </label>
-        <button type="submit">添加目标</button>
+      <form className="admin-target-create-form admin-node-edit-form is-sectioned" aria-label="添加探针目标" onSubmit={handleSubmit}>
+        <AdminFormSection title="目标信息">
+          <div className="admin-form-grid">
+            <label>
+              <span>目标名称</span>
+              <input name="new-target-name" autoComplete="off" placeholder="Example HTTPS" />
+            </label>
+            <label>
+              <span>类型</span>
+              <select name="new-target-type" value={targetType} onChange={(event) => setTargetType(normalizeTargetFormType(event.currentTarget.value))}>
+                <option value="tcping">TCP Ping</option>
+                <option value="ping">ICMP Ping</option>
+                <option value="http_get">HTTP GET</option>
+              </select>
+            </label>
+            <label>
+              <span>地址</span>
+              <input name="new-target-address" autoComplete="off" placeholder="example.com" />
+            </label>
+            {targetType === 'tcping' && (
+              <label>
+                <span>端口</span>
+                <input name="new-target-port" type="number" min="1" max="65535" defaultValue="443" />
+              </label>
+            )}
+            <label>
+              <span>显示顺序</span>
+              <input name="new-target-display-order" type="number" min="0" step="1" defaultValue="0" />
+            </label>
+          </div>
+        </AdminFormSection>
+        <AdminFormSection title="探测参数">
+          <div className="admin-form-grid">
+            <label>
+              <span>次数</span>
+              <input name="new-target-count" type="number" min="1" defaultValue="3" />
+            </label>
+            <label>
+              <span>超时 ms</span>
+              <input name="new-target-timeout-ms" type="number" min="1" defaultValue="1200" />
+            </label>
+            <label>
+              <span>间隔 s</span>
+              <input name="new-target-interval-sec" type="number" min="1" defaultValue="60" />
+            </label>
+          </div>
+        </AdminFormSection>
+        <div className="admin-modal-actions">
+          <button type="submit">添加目标</button>
+        </div>
       </form>
     </AdminModal>
   )
@@ -1664,59 +1622,68 @@ function AdminTargetEditModal({ target, nodes, onUpdate, onClose }: { target: Ad
         <div><dt>顺序</dt><dd>{target.displayOrder}</dd></div>
         <div><dt>节点</dt><dd>{formatTargetAssignmentSummary(target)}</dd></div>
       </dl>
-      <form className="admin-target-edit-form admin-node-edit-form" aria-label={`${target.name} 探针目标编辑`} onSubmit={handleSubmit}>
-        <label>
-          <span>目标名</span>
-          <input name="target-name" defaultValue={target.name} autoComplete="off" />
-        </label>
-        <label>
-          <span>类型</span>
-          <select name="target-type" value={targetType} onChange={(event) => setTargetType(normalizeTargetFormType(event.currentTarget.value))}>
-            <option value="tcping">TCP Ping</option>
-            <option value="ping">ICMP Ping</option>
-            <option value="http_get">HTTP GET</option>
-          </select>
-        </label>
-        <label>
-          <span>地址</span>
-          <input name="target-address" defaultValue={target.address} autoComplete="off" />
-        </label>
-        {targetType === 'tcping' && (
-          <label>
-            <span>端口</span>
-            <input name="target-port" type="number" min="1" max="65535" defaultValue={target.port ?? ''} />
-          </label>
-        )}
-        <label>
-          <span>次数</span>
-          <input name="target-count" type="number" min="1" defaultValue={target.count} />
-        </label>
-        <label>
-          <span>超时 ms</span>
-          <input name="target-timeout-ms" type="number" min="1" defaultValue={target.timeoutMs} />
-        </label>
-        <label>
-          <span>间隔 s</span>
-          <input name="target-interval-sec" type="number" min="1" defaultValue={target.intervalSec} />
-        </label>
-        <label>
-          <span>显示顺序</span>
-          <input name="target-display-order" type="number" min="0" step="1" defaultValue={target.displayOrder} />
-        </label>
-        <label className="admin-node-toggle">
-          <input name="target-enabled" type="checkbox" defaultChecked={target.enabled} />
-          <span>启用目标</span>
-        </label>
-        {assignmentRows.length > 0 && (
-          <fieldset className="admin-target-assignment-list">
-            <legend>按节点启用</legend>
-            {assignmentRows.map((assignment) => (
-              <label className="admin-node-toggle admin-target-assignment-toggle" key={assignment.nodeId}>
-                <input name={`target-assignment-${assignment.nodeId}`} type="checkbox" defaultChecked={assignment.enabled} />
-                <span>{assignment.nodeDisplayName || assignment.nodeId}</span>
+      <form className="admin-target-edit-form admin-node-edit-form is-sectioned" aria-label={`${target.name} 探针目标编辑`} onSubmit={handleSubmit}>
+        <AdminFormSection title="目标信息">
+          <div className="admin-form-grid">
+            <label>
+              <span>目标名</span>
+              <input name="target-name" defaultValue={target.name} autoComplete="off" />
+            </label>
+            <label>
+              <span>类型</span>
+              <select name="target-type" value={targetType} onChange={(event) => setTargetType(normalizeTargetFormType(event.currentTarget.value))}>
+                <option value="tcping">TCP Ping</option>
+                <option value="ping">ICMP Ping</option>
+                <option value="http_get">HTTP GET</option>
+              </select>
+            </label>
+            <label>
+              <span>地址</span>
+              <input name="target-address" defaultValue={target.address} autoComplete="off" />
+            </label>
+            {targetType === 'tcping' && (
+              <label>
+                <span>端口</span>
+                <input name="target-port" type="number" min="1" max="65535" defaultValue={target.port ?? ''} />
               </label>
-            ))}
-          </fieldset>
+            )}
+            <label>
+              <span>显示顺序</span>
+              <input name="target-display-order" type="number" min="0" step="1" defaultValue={target.displayOrder} />
+            </label>
+            <label className="admin-node-toggle">
+              <input name="target-enabled" type="checkbox" defaultChecked={target.enabled} />
+              <span>启用目标</span>
+            </label>
+          </div>
+        </AdminFormSection>
+        <AdminFormSection title="探测参数">
+          <div className="admin-form-grid">
+            <label>
+              <span>次数</span>
+              <input name="target-count" type="number" min="1" defaultValue={target.count} />
+            </label>
+            <label>
+              <span>超时 ms</span>
+              <input name="target-timeout-ms" type="number" min="1" defaultValue={target.timeoutMs} />
+            </label>
+            <label>
+              <span>间隔 s</span>
+              <input name="target-interval-sec" type="number" min="1" defaultValue={target.intervalSec} />
+            </label>
+          </div>
+        </AdminFormSection>
+        {assignmentRows.length > 0 && (
+          <AdminFormSection title="按节点启用">
+            <div className="admin-target-assignment-list">
+              {assignmentRows.map((assignment) => (
+                <label className="admin-node-toggle admin-target-assignment-toggle" key={assignment.nodeId}>
+                  <input name={`target-assignment-${assignment.nodeId}`} type="checkbox" defaultChecked={assignment.enabled} />
+                  <span>{assignment.nodeDisplayName || assignment.nodeId}</span>
+                </label>
+              ))}
+            </div>
+          </AdminFormSection>
         )}
         <div className="admin-modal-actions">
           <button type="submit">保存目标</button>
@@ -1726,27 +1693,33 @@ function AdminTargetEditModal({ target, nodes, onUpdate, onClose }: { target: Ad
   )
 }
 
-function AdminAlertRulesSection({ types, rules, nodes, onTypeUpdate, onUpdate }: { types: AdminNotificationType[]; rules: AdminAlertRule[]; nodes: AdminNode[]; onTypeUpdate: (eventType: string, enabled: boolean) => void; onUpdate: (ruleId: string, input: AdminAlertRuleUpdateInput) => void }) {
+function AdminAlertRulesSection({ rules, nodes, onUpdate }: { rules: AdminAlertRule[]; nodes: AdminNode[]; onUpdate: (ruleId: string, input: AdminAlertRuleUpdateInput) => void }) {
   const [editingRule, setEditingRule] = useState<AdminAlertRule | null>(null)
+  const [addingRule, setAddingRule] = useState(false)
+  const addedRules = rules.filter((rule) => rule.enabled)
+  const availableRules = rules.filter((rule) => !rule.enabled)
 
   return (
     <section className="admin-notification-block admin-alert-rule-section" aria-label="通知类型规则">
-      <h4>通知类型</h4>
-      <p className="admin-help-note">资源、探测和在线状态会按这里的条件映射到上线、离线或异常通知。</p>
-      <div className="admin-notification-type-grid">
-        {types.map((notificationType) => (
-          <article className="admin-action-card admin-notification-type-card" key={notificationType.eventType}>
-            <p>{notificationType.label}</p>
-            <strong>{notificationType.eventType}</strong>
-            <span className={`admin-node-status status-${notificationType.enabled ? 'online' : 'disabled'}`}>{notificationType.enabled ? '启用中' : '已停用'}</span>
-            <button className="admin-row-action" type="button" onClick={() => onTypeUpdate(notificationType.eventType, !notificationType.enabled)}>
-              {notificationType.enabled ? '停用通知类型' : '启用通知类型'}
-            </button>
-          </article>
-        ))}
+      <div className="admin-block-heading">
+        <h4>通知类型</h4>
+        <button className="admin-row-action" type="button" onClick={() => setAddingRule(true)}>添加通知类型</button>
       </div>
-      {rules.length === 0 && <div className="admin-state-card">还没有通知类型。</div>}
-      {rules.length > 0 && <AdminAlertRuleList rules={rules} nodes={nodes} onEdit={setEditingRule} onUpdate={onUpdate} />}
+      <p className="admin-help-note">资源、探测和在线状态会按这里的条件映射到上线、离线或异常通知。</p>
+      {addedRules.length === 0 && <div className="admin-state-card">还没有添加通知类型。</div>}
+      {addedRules.length > 0 && <AdminAlertRuleList rules={addedRules} nodes={nodes} onEdit={setEditingRule} onUpdate={onUpdate} />}
+
+      {addingRule && (
+        <AdminAlertRuleAddModal
+          rules={availableRules}
+          nodes={nodes}
+          onClose={() => setAddingRule(false)}
+          onAdd={(ruleId) => {
+            onUpdate(ruleId, { enabled: true })
+            setAddingRule(false)
+          }}
+        />
+      )}
 
       {editingRule && (
         <AdminAlertRuleEditModal
@@ -1786,13 +1759,30 @@ function AdminAlertRuleList({ rules, nodes, onEdit, onUpdate }: { rules: AdminAl
           <span data-label="状态" className={`admin-node-status status-${rule.enabled ? 'online' : 'disabled'}`}>{rule.enabled ? '启用中' : '已停用'}</span>
           <div className="admin-row-actions">
             <button className="admin-row-action" type="button" onClick={() => onEdit(rule)}>编辑通知类型</button>
-            <button className="admin-row-action" type="button" onClick={() => onUpdate(rule.id, { enabled: !rule.enabled })}>
-              {rule.enabled ? '停用通知类型' : '启用通知类型'}
-            </button>
+            <button className="admin-row-action" type="button" onClick={() => onUpdate(rule.id, { enabled: false })}>移除</button>
           </div>
         </article>
       ))}
     </div>
+  )
+}
+
+function AdminAlertRuleAddModal({ rules, nodes, onAdd, onClose }: { rules: AdminAlertRule[]; nodes: AdminNode[]; onAdd: (ruleId: string) => void; onClose: () => void }) {
+  return (
+    <AdminModal title="添加通知类型" eyebrow="Notify" onClose={onClose}>
+      <div className="admin-rule-picker" role="list" aria-label="可添加通知类型">
+        {rules.length === 0 && <div className="admin-state-card">所有通知类型都已添加。</div>}
+        {rules.map((rule) => (
+          <article className="admin-rule-picker-row" role="listitem" key={rule.id}>
+            <div className="admin-list-main">
+              <strong>{rule.name}</strong>
+              <small>{formatAlertRuleCondition(rule)} · {formatAlertRuleScope(rule, nodes)}</small>
+            </div>
+            <button className="admin-row-action" type="button" onClick={() => onAdd(rule.id)}>添加</button>
+          </article>
+        ))}
+      </div>
+    </AdminModal>
   )
 }
 
@@ -1820,29 +1810,34 @@ function AdminAlertRuleEditModal({ rule, nodes, onUpdate, onClose }: { rule: Adm
         <div><dt>通知类型</dt><dd>{rule.notificationLabel || rule.notificationEventType}</dd></div>
         <div><dt>当前状态</dt><dd>{rule.enabled ? '启用中' : '已停用'}</dd></div>
       </dl>
-      <form className="admin-alert-rule-edit-form admin-node-edit-form" aria-label={`${rule.name} 通知类型编辑`} onSubmit={handleSubmit}>
-        <label>
-          <span>阈值</span>
-          <input name="rule-threshold" type="number" min="0" step="0.01" defaultValue={rule.threshold} />
-        </label>
-        <label>
-          <span>持续时间 s</span>
-          <input name="rule-duration-sec" type="number" min="0" step="1" defaultValue={rule.durationSec} />
-        </label>
-        <label className="admin-node-toggle">
-          <input name="rule-enabled" type="checkbox" defaultChecked={rule.enabled} />
-          <span>启用通知类型</span>
-        </label>
+      <form className="admin-alert-rule-edit-form admin-node-edit-form is-sectioned" aria-label={`${rule.name} 通知类型编辑`} onSubmit={handleSubmit}>
+        <AdminFormSection title="触发条件">
+          <div className="admin-form-grid">
+            <label>
+              <span>阈值</span>
+              <input name="rule-threshold" type="number" min="0" step="0.01" defaultValue={rule.threshold} />
+            </label>
+            <label>
+              <span>持续时间 s</span>
+              <input name="rule-duration-sec" type="number" min="0" step="1" defaultValue={rule.durationSec} />
+            </label>
+            <label className="admin-node-toggle">
+              <input name="rule-enabled" type="checkbox" defaultChecked={rule.enabled} />
+              <span>启用通知类型</span>
+            </label>
+          </div>
+        </AdminFormSection>
         {nodes.length > 0 && (
-          <fieldset className="admin-rule-scope-list admin-target-assignment-list">
-            <legend>作用服务器（不选=全部服务器）</legend>
-            {nodes.map((node) => (
-              <label className="admin-node-toggle admin-target-assignment-toggle" key={node.id}>
-                <input name={`rule-scope-${node.id}`} type="checkbox" defaultChecked={rule.scopeNodeIds.includes(node.id)} />
-                <span>{node.displayName || node.id}<small> · {node.id}</small></span>
-              </label>
-            ))}
-          </fieldset>
+          <AdminFormSection title="作用服务器" description="不选表示全部服务器。">
+            <div className="admin-rule-scope-list admin-target-assignment-list">
+              {nodes.map((node) => (
+                <label className="admin-node-toggle admin-target-assignment-toggle" key={node.id}>
+                  <input name={`rule-scope-${node.id}`} type="checkbox" defaultChecked={rule.scopeNodeIds.includes(node.id)} />
+                  <span>{node.displayName || node.id}<small> · {node.id}</small></span>
+                </label>
+              ))}
+            </div>
+          </AdminFormSection>
         )}
         <div className="admin-modal-actions">
           <button type="submit">保存通知类型</button>
@@ -1852,7 +1847,7 @@ function AdminAlertRuleEditModal({ rule, nodes, onUpdate, onClose }: { rule: Adm
   )
 }
 
-function AdminNotificationsSection({ channels, types, rules, nodes, onChannelCreate, onChannelUpdate, onChannelDelete, onChannelTest, onTypeUpdate, onRuleUpdate }: { channels: AdminNotificationChannel[]; types: AdminNotificationType[]; rules: AdminAlertRule[]; nodes: AdminNode[]; onChannelCreate: (input: AdminNotificationChannelCreateInput) => void; onChannelUpdate: (channelId: string, input: AdminNotificationChannelUpdateInput) => void; onChannelDelete: (channelId: string) => void; onChannelTest: (channelId: string) => void; onTypeUpdate: (eventType: string, enabled: boolean) => void; onRuleUpdate: (ruleId: string, input: AdminAlertRuleUpdateInput) => void }) {
+function AdminNotificationsSection({ channels, rules, nodes, onChannelCreate, onChannelUpdate, onChannelDelete, onChannelTest, onRuleUpdate }: { channels: AdminNotificationChannel[]; rules: AdminAlertRule[]; nodes: AdminNode[]; onChannelCreate: (input: AdminNotificationChannelCreateInput) => void; onChannelUpdate: (channelId: string, input: AdminNotificationChannelUpdateInput) => void; onChannelDelete: (channelId: string) => void; onChannelTest: (channelId: string) => void; onRuleUpdate: (ruleId: string, input: AdminAlertRuleUpdateInput) => void }) {
   const [creatingChannel, setCreatingChannel] = useState(false)
   const [editingChannel, setEditingChannel] = useState<AdminNotificationChannel | null>(null)
 
@@ -1872,7 +1867,7 @@ function AdminNotificationsSection({ channels, types, rules, nodes, onChannelCre
         {channels.length > 0 && <AdminNotificationChannelList channels={channels} onUpdate={onChannelUpdate} onDelete={onChannelDelete} onTest={onChannelTest} onEdit={setEditingChannel} />}
       </section>
 
-      <AdminAlertRulesSection types={types} rules={rules} nodes={nodes} onTypeUpdate={onTypeUpdate} onUpdate={onRuleUpdate} />
+      <AdminAlertRulesSection rules={rules} nodes={nodes} onUpdate={onRuleUpdate} />
 
       {creatingChannel && (
         <AdminNotificationChannelCreateModal
@@ -1953,23 +1948,27 @@ function AdminNotificationChannelEditModal({ channel, onUpdate, onClose }: { cha
 
   return (
     <AdminModal title="编辑通知渠道" eyebrow="Notify" onClose={onClose}>
-      <form className="admin-notification-edit-form admin-node-edit-form" aria-label="编辑通知渠道" onSubmit={handleSubmit}>
-        <label>
-          <span>渠道名称</span>
-          <input name="channel-name" autoComplete="off" defaultValue={channel.name} />
-        </label>
-        <label>
-          <span>Telegram Chat ID</span>
-          <input name="channel-destination" autoComplete="off" defaultValue={channel.destination} />
-        </label>
-        <label>
-          <span>Telegram Bot Token</span>
-          <input name="channel-credential" type="password" autoComplete="new-password" placeholder={channel.credentialSet ? '留空则保留当前 Bot Token' : '仅写入，不回显'} />
-        </label>
-        <label className="admin-node-toggle">
-          <input name="channel-enabled" type="checkbox" defaultChecked={channel.enabled} />
-          <span>启用渠道</span>
-        </label>
+      <form className="admin-notification-edit-form admin-node-edit-form is-sectioned" aria-label="编辑通知渠道" onSubmit={handleSubmit}>
+        <AdminFormSection title="渠道配置">
+          <div className="admin-form-grid">
+            <label>
+              <span>渠道名称</span>
+              <input name="channel-name" autoComplete="off" defaultValue={channel.name} />
+            </label>
+            <label>
+              <span>Telegram Chat ID</span>
+              <input name="channel-destination" autoComplete="off" defaultValue={channel.destination} />
+            </label>
+            <label>
+              <span>Telegram Bot Token</span>
+              <input name="channel-credential" type="password" autoComplete="new-password" placeholder={channel.credentialSet ? '留空则保留当前 Bot Token' : '仅写入，不回显'} />
+            </label>
+            <label className="admin-node-toggle">
+              <input name="channel-enabled" type="checkbox" defaultChecked={channel.enabled} />
+              <span>启用渠道</span>
+            </label>
+          </div>
+        </AdminFormSection>
         <div className="admin-modal-actions">
           <button type="submit">保存通知渠道</button>
         </div>
@@ -1996,23 +1995,27 @@ function AdminNotificationChannelCreateModal({ onCreate, onClose }: { onCreate: 
 
   return (
     <AdminModal title="添加通知渠道" eyebrow="Notify" onClose={onClose}>
-      <form className="admin-notification-create-form admin-node-edit-form" aria-label="添加通知渠道" onSubmit={handleSubmit}>
-        <label>
-          <span>渠道名称</span>
-          <input name="new-channel-name" autoComplete="off" placeholder="Zeno Telegram" />
-        </label>
-        <label>
-          <span>Telegram Chat ID</span>
-          <input name="new-channel-destination" autoComplete="off" placeholder="7579942307" />
-        </label>
-        <label>
-          <span>Telegram Bot Token</span>
-          <input name="new-channel-credential" type="password" autoComplete="new-password" placeholder="仅写入，不回显" />
-        </label>
-        <label className="admin-node-toggle">
-          <input name="new-channel-enabled" type="checkbox" defaultChecked />
-          <span>创建后启用渠道</span>
-        </label>
+      <form className="admin-notification-create-form admin-node-edit-form is-sectioned" aria-label="添加通知渠道" onSubmit={handleSubmit}>
+        <AdminFormSection title="渠道配置">
+          <div className="admin-form-grid">
+            <label>
+              <span>渠道名称</span>
+              <input name="new-channel-name" autoComplete="off" placeholder="Zeno Telegram" />
+            </label>
+            <label>
+              <span>Telegram Chat ID</span>
+              <input name="new-channel-destination" autoComplete="off" placeholder="7579942307" />
+            </label>
+            <label>
+              <span>Telegram Bot Token</span>
+              <input name="new-channel-credential" type="password" autoComplete="new-password" placeholder="仅写入，不回显" />
+            </label>
+            <label className="admin-node-toggle">
+              <input name="new-channel-enabled" type="checkbox" defaultChecked />
+              <span>创建后启用渠道</span>
+            </label>
+          </div>
+        </AdminFormSection>
         <div className="admin-modal-actions">
           <button type="submit">保存通知渠道</button>
         </div>
@@ -2035,6 +2038,16 @@ function AdminModal({ title, eyebrow, onClose, children }: { title: string; eyeb
         {children}
       </section>
     </div>
+  )
+}
+
+function AdminFormSection({ title, description, children }: { title: string; description?: string; children: ReactNode }) {
+  return (
+    <fieldset className="admin-form-section">
+      <legend>{title}</legend>
+      {description && <p className="admin-form-section-note">{description}</p>}
+      {children}
+    </fieldset>
   )
 }
 
@@ -2183,40 +2196,8 @@ function parseQuotaGigabytes(value: string): number | null {
   return Math.round(parsed * (1024 ** 3))
 }
 
-function formatAdminLocation(node: AdminNode): string {
-  return [node.countryCode, node.region].filter(Boolean).join(' · ') || '—'
-}
-
 function formatAdminPublicIPs(node: AdminNode): string {
   return [node.publicIPv4, node.publicIPv6].filter(Boolean).join(' / ') || '—'
-}
-
-function formatAdminBilling(node: AdminNode): string {
-  const details = [node.expiryDate, node.billingCycle, billingModeLabel(node.billingMode), `每月 ${node.monthlyResetDay || 1} 日重置`].filter(Boolean)
-  return details.join(' · ') || '—'
-}
-
-function billingModeLabel(mode?: string): string {
-  switch (mode) {
-    case 'in':
-      return '只算入站'
-    case 'out':
-      return '只算出站'
-    case 'max':
-      return '入/出取较大'
-    default:
-      return '入站+出站'
-  }
-}
-
-function countryCodeToFlag(countryCode?: string): string {
-  const normalized = countryCode?.trim().toUpperCase()
-  if (!normalized || normalized.length !== 2 || !/^[A-Z]{2}$/.test(normalized)) return '🏳️'
-  const base = 127397
-  return normalized
-    .split('')
-    .map((char) => String.fromCodePoint(char.charCodeAt(0) + base))
-    .join('')
 }
 
 function formatAdminSystem(node: AdminNode): string {

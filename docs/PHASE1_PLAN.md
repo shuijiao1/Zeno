@@ -33,10 +33,10 @@ Zeno 当前已经具备完整预览闭环：
 - `tcping`、`ping`/ICMP、`http_get` 探针目标。
 - Public 服务详情页；首页只保留服务器卡片和优化后的整体概览，不单独展示监控服务列表。
 - Admin 单管理员登录、账户页修改账号/密码、退出登录、服务器、服务器排序、Agent 安装命令复制、Agent 接入 URL、探针目标、探针目标排序、节点分配、通知和外观设置；外观 / Agent 接入 URL 保存前会先校验格式。
-- Admin 手机端按卡片化列表和双列导航展示；后台各列表都按内容自然撑开并交给页面滚动；服务器行距保持紧凑但不过度贴合，避免宽表格挤压。
+- Admin 手机端按卡片化列表和双列导航展示；后台各列表都按内容自然撑开并交给页面滚动；服务器列表只保留名称、状态、公网 IP、Agent 和编辑操作，IPv4/IPv6 分行显示且无协议前缀。
 - Telegram-only 通知 dispatch、测试发送和 sanitized delivery history。
 - 服务器元数据：到期日、账单周期、显示顺序（后台可整理，也可在编辑里调整）、国家码/国旗、公网 IPv4、公网 IPv6，Agent 可自动识别公网 IP / GeoIP。
-- 通知类型触发条件支持按服务器范围生效。
+- 通知页只展示已添加通知类型；添加通知类型通过弹窗选择预置触发条件，通知类型触发条件支持按服务器范围生效。
 - Linux amd64 发布包（含 README/docs）、systemd 模板、本机 Controller 更新脚本、单独 Agent 安装脚本、GUKO 服务器清单导入脚本和自部署指南。
 - Hytron 预览部署：`/opt/zeno`，`zeno-controller.service`，`zeno-agent.service`。
 
@@ -44,7 +44,7 @@ Zeno 当前已经具备完整预览闭环：
 
 1. 继续按功能包推进：后端、前端、文档、测试、commit、必要时部署 smoke。
 2. 保持绿色项目边界：不加旧系统兼容，不引入远控/命令执行。
-3. 保持已确认 UI：主页卡片、详情页密度、Admin 分区和列表/弹窗结构不随手重设计。
+3. 保持已确认 UI：主页卡片、详情页密度、Admin 分区和列表/弹窗结构不随手重设计；弹窗表单统一按分区组织，避免所有字段挤在一块。
 4. Admin / Public API 响应继续使用 explicit DTO，不返回 token、secret、hash、credential、bearer 等敏感字段。
 5. 部署切片结束时清理 build/tmp，确认 Hytron 服务 active、`/health` OK、本地 git clean。
 
