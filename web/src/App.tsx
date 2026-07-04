@@ -736,6 +736,7 @@ export function AdminDashboard({
   const enabledTargetCount = adminState.kind === 'ready' ? adminState.targets.filter((target) => target.enabled).length : 0
   const ruleCount = adminState.kind === 'ready' ? adminState.alertRules.length : 0
   const enabledRuleCount = adminState.kind === 'ready' ? adminState.alertRules.filter((rule) => rule.enabled).length : 0
+  const activeIssueCount = adminState.kind === 'ready' ? adminState.alertRuleStates.filter((state) => state.active).length : 0
   const maintenanceCandidateCount = adminState.kind === 'ready' ? totalMaintenanceCandidates(adminState.maintenance.candidates) : 0
 
   return (
@@ -799,6 +800,7 @@ export function AdminDashboard({
                 nodeCount={nodeCount}
                 targetCount={targetCount}
                 ruleCount={ruleCount}
+                activeIssueCount={activeIssueCount}
                 maintenanceCandidateCount={maintenanceCandidateCount}
               />
               <div className="admin-section-actions">
@@ -818,6 +820,7 @@ export function AdminDashboard({
                 enabledTargetCount={enabledTargetCount}
                 ruleCount={ruleCount}
                 enabledRuleCount={enabledRuleCount}
+                activeIssueCount={activeIssueCount}
               />
             )}
 
@@ -880,12 +883,12 @@ export function AdminDashboard({
   )
 }
 
-function AdminSectionNav({ activeSection, onSectionChange, nodeCount, targetCount, ruleCount, maintenanceCandidateCount }: { activeSection: AdminSection; onSectionChange: (section: AdminSection) => void; nodeCount: number; targetCount: number; ruleCount: number; maintenanceCandidateCount: number }) {
+function AdminSectionNav({ activeSection, onSectionChange, nodeCount, targetCount, ruleCount, activeIssueCount, maintenanceCandidateCount }: { activeSection: AdminSection; onSectionChange: (section: AdminSection) => void; nodeCount: number; targetCount: number; ruleCount: number; activeIssueCount: number; maintenanceCandidateCount: number }) {
   const sections: Array<{ id: AdminSection; label: string; meta: string }> = [
     { id: 'overview', label: '概览', meta: 'Summary' },
     { id: 'nodes', label: '服务器', meta: `${nodeCount} 台` },
     { id: 'targets', label: '延迟监控', meta: `${targetCount} 个目标` },
-    { id: 'rules', label: '状态规则', meta: `${ruleCount} 条` },
+    { id: 'rules', label: '状态规则', meta: activeIssueCount > 0 ? `${activeIssueCount} 异常 / ${ruleCount} 规则` : `${ruleCount} 条` },
     { id: 'maintenance', label: '数据维护', meta: `${maintenanceCandidateCount} 条候选` },
     { id: 'settings', label: '设置', meta: 'Appearance' },
     { id: 'notifications', label: '通知', meta: 'Channels' },
@@ -908,10 +911,15 @@ function AdminSectionNav({ activeSection, onSectionChange, nodeCount, targetCoun
   )
 }
 
-function AdminOverviewPanel({ nodeCount, onlineNodeCount, targetCount, enabledTargetCount, ruleCount, enabledRuleCount }: { nodeCount: number; onlineNodeCount: number; targetCount: number; enabledTargetCount: number; ruleCount: number; enabledRuleCount: number }) {
+function AdminOverviewPanel({ nodeCount, onlineNodeCount, targetCount, enabledTargetCount, ruleCount, enabledRuleCount, activeIssueCount }: { nodeCount: number; onlineNodeCount: number; targetCount: number; enabledTargetCount: number; ruleCount: number; enabledRuleCount: number; activeIssueCount: number }) {
   return (
     <section className="admin-overview-panel" aria-label="admin overview">
       <div className="admin-action-grid" aria-label="admin modules">
+        <article className={`admin-action-card ${activeIssueCount > 0 ? 'is-warning' : 'is-good'}`}>
+          <p>当前异常</p>
+          <strong>{activeIssueCount} 个命中</strong>
+          <small>{activeIssueCount > 0 ? '进入状态规则查看明细' : '没有命中的状态规则'}</small>
+        </article>
         <article className="admin-action-card">
           <p>服务器</p>
           <strong>{onlineNodeCount} / {nodeCount} 在线</strong>

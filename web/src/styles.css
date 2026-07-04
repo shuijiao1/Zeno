@@ -388,6 +388,11 @@ svg { display: block; }
 }
 .admin-action-card p { margin: 0; color: var(--muted); font-size: 13px; font-weight: 500; }
 .admin-action-card strong { font-size: 17px; font-weight: 600; }
+.admin-action-card small { color: var(--muted); font-size: 12px; line-height: 1.4; }
+.admin-action-card.is-good { border-color: color-mix(in srgb, var(--green) 32%, var(--border)); background: color-mix(in srgb, var(--green) 9%, var(--metric-bg)); }
+.admin-action-card.is-warning { border-color: color-mix(in srgb, var(--orange) 38%, var(--border)); background: color-mix(in srgb, var(--orange) 12%, var(--metric-bg)); }
+.admin-action-card.is-good strong { color: var(--green); }
+.admin-action-card.is-warning strong { color: var(--orange); }
 .admin-login-card {
   margin-top: 16px;
   display: grid;
