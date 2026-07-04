@@ -867,8 +867,8 @@ function AdminSectionNav({ activeSection, onSectionChange, nodeCount, targetCoun
     { id: 'nodes', label: '服务器', meta: `${nodeCount} 台` },
     { id: 'targets', label: '延迟监控', meta: `${targetCount} 个目标` },
     { id: 'notifications', label: '通知', meta: `${ruleCount} 类型` },
-    { id: 'account', label: '账户', meta: 'Account' },
-    { id: 'settings', label: '设置', meta: 'Appearance' },
+    { id: 'account', label: '账户', meta: '账号密码' },
+    { id: 'settings', label: '设置', meta: '外观' },
   ]
 
   return (
@@ -927,27 +927,35 @@ function AdminAccountSection({ account, onUpdate }: { account: AdminAccountData;
     <section className="admin-account-section admin-workspace-panel" aria-label="账户设置">
       <header className="admin-section-heading">
         <div>
-          <p className="eyebrow">Account</p>
+          <p className="eyebrow">账号密码</p>
           <h3>账户</h3>
         </div>
       </header>
-      <form className="admin-account-form admin-node-edit-form" aria-label="修改账号和密码" onSubmit={handleSubmit}>
-        <label>
-          <span>账号</span>
-          <input name="account-username" autoComplete="username" defaultValue={account.username} />
-        </label>
-        <label>
-          <span>当前密码</span>
-          <input name="current-password" type="password" autoComplete="current-password" />
-        </label>
-        <label>
-          <span>新密码</span>
-          <input name="new-password" type="password" autoComplete="new-password" placeholder="留空则不修改" />
-        </label>
-        <label>
-          <span>确认新密码</span>
-          <input name="confirm-password" type="password" autoComplete="new-password" placeholder="留空则不修改" />
-        </label>
+      <form className="admin-account-form admin-node-edit-form is-sectioned" aria-label="修改账号和密码" onSubmit={handleSubmit}>
+        <AdminFormSection title="登录信息">
+          <div className="admin-form-grid">
+            <label>
+              <span>账号</span>
+              <input name="account-username" autoComplete="username" defaultValue={account.username} />
+            </label>
+            <label>
+              <span>当前密码</span>
+              <input name="current-password" type="password" autoComplete="current-password" />
+            </label>
+          </div>
+        </AdminFormSection>
+        <AdminFormSection title="修改密码" description="不改密码时，新密码和确认新密码可以留空。">
+          <div className="admin-form-grid">
+            <label>
+              <span>新密码</span>
+              <input name="new-password" type="password" autoComplete="new-password" placeholder="留空则不修改" />
+            </label>
+            <label>
+              <span>确认新密码</span>
+              <input name="confirm-password" type="password" autoComplete="new-password" placeholder="留空则不修改" />
+            </label>
+          </div>
+        </AdminFormSection>
         <div className="admin-modal-actions">
           <button type="submit" disabled={submitting}>{submitting ? '保存中…' : '保存账户'}</button>
         </div>
@@ -990,45 +998,55 @@ function AdminSettingsSection({ settings, onUpdate }: { settings: AdminSettings;
     <section className="admin-settings-section admin-workspace-panel" aria-label="admin settings">
       <header className="admin-section-heading">
         <div>
-          <p className="eyebrow">Appearance</p>
+          <p className="eyebrow">外观</p>
           <h3>站点设置</h3>
         </div>
       </header>
-      <form className="admin-settings-form admin-node-edit-form" aria-label="外观配置" onSubmit={handleSubmit}>
-        <label>
-          <span>站点标题</span>
-          <input name="site-title" autoComplete="off" defaultValue={settings.siteTitle} />
-        </label>
-        <label>
-          <span>站点副标题</span>
-          <input name="site-subtitle" autoComplete="off" defaultValue={settings.siteSubtitle} />
-        </label>
-        <label>
-          <span>头像 / Logo URL</span>
-          <input name="logo-url" autoComplete="off" defaultValue={settings.logoUrl} />
-        </label>
-        <p className="admin-help-note">图片字段只填 https:// 链接或 /assets/... 站内路径。</p>
-        <label>
-          <span>主题</span>
-          <select name="theme" defaultValue={settings.theme}>
-            <option value="system">跟随系统</option>
-            <option value="dark">深色</option>
-            <option value="light">浅色</option>
-          </select>
-        </label>
-        <label>
-          <span>Agent 接入 URL</span>
-          <input name="agent-controller-url" autoComplete="off" defaultValue={settings.agentControllerUrl} placeholder="留空则使用当前后台访问地址" />
-        </label>
-        <p className="admin-help-note">生成 Agent 安装命令时优先使用这个 URL；准备公网 HTTPS 入口后填入，例如 https://zeno.example.com。</p>
-        <label>
-          <span>电脑端背景图 URL</span>
-          <input name="desktop-background-url" autoComplete="off" defaultValue={settings.desktopBackgroundUrl || settings.backgroundUrl} placeholder="可留空" />
-        </label>
-        <label>
-          <span>手机端背景图 URL</span>
-          <input name="mobile-background-url" autoComplete="off" defaultValue={settings.mobileBackgroundUrl} placeholder="可留空，默认跟随电脑端" />
-        </label>
+      <form className="admin-settings-form admin-node-edit-form is-sectioned" aria-label="外观配置" onSubmit={handleSubmit}>
+        <AdminFormSection title="站点信息" description="图片字段只填 https:// 链接或 /assets/... 站内路径。">
+          <div className="admin-form-grid">
+            <label>
+              <span>站点标题</span>
+              <input name="site-title" autoComplete="off" defaultValue={settings.siteTitle} />
+            </label>
+            <label>
+              <span>站点副标题</span>
+              <input name="site-subtitle" autoComplete="off" defaultValue={settings.siteSubtitle} />
+            </label>
+            <label>
+              <span>头像 / Logo URL</span>
+              <input name="logo-url" autoComplete="off" defaultValue={settings.logoUrl} />
+            </label>
+          </div>
+        </AdminFormSection>
+        <AdminFormSection title="主题与背景">
+          <div className="admin-form-grid">
+            <label>
+              <span>主题</span>
+              <select name="theme" defaultValue={settings.theme}>
+                <option value="system">跟随系统</option>
+                <option value="dark">深色</option>
+                <option value="light">浅色</option>
+              </select>
+            </label>
+            <label>
+              <span>电脑端背景图 URL</span>
+              <input name="desktop-background-url" autoComplete="off" defaultValue={settings.desktopBackgroundUrl || settings.backgroundUrl} placeholder="可留空" />
+            </label>
+            <label>
+              <span>手机端背景图 URL</span>
+              <input name="mobile-background-url" autoComplete="off" defaultValue={settings.mobileBackgroundUrl} placeholder="可留空，默认跟随电脑端" />
+            </label>
+          </div>
+        </AdminFormSection>
+        <AdminFormSection title="Agent 接入" description="生成 Agent 安装命令时优先使用这个 URL；准备公网 HTTPS 入口后填入，例如 https://zeno.example.com。">
+          <div className="admin-form-grid">
+            <label>
+              <span>Agent 接入 URL</span>
+              <input name="agent-controller-url" autoComplete="off" defaultValue={settings.agentControllerUrl} placeholder="留空则使用当前后台访问地址" />
+            </label>
+          </div>
+        </AdminFormSection>
         {settings.updatedAt && <p className="admin-help-note">最近更新：{formatAdminDate(settings.updatedAt)}</p>}
         {settingsError && <p className="admin-install-error">{settingsError}</p>}
         <button type="submit">保存设置</button>
@@ -1137,7 +1155,7 @@ function AdminNodeList({ nodes, onEdit }: { nodes: AdminNode[]; onEdit: (nodeId:
           <div className="admin-list-main">
             <strong>{node.displayName}</strong>
           </div>
-          <span data-label="状态" className={`admin-node-status status-${node.disabled ? 'disabled' : node.status}`}>{node.disabled ? 'disabled' : node.status}</span>
+          <span data-label="状态" className={`admin-node-status status-${node.disabled ? 'disabled' : node.status}`}>{formatAdminNodeStatusLabel(node)}</span>
           <span data-label="公网 IP" className={`admin-ip-stack${node.publicIPv6 ? '' : ' is-single'}`}>
             {node.publicIPv4 && <span>{node.publicIPv4}</span>}
             {node.publicIPv6 && <span>{node.publicIPv6}</span>}
@@ -1319,7 +1337,7 @@ function AdminNodeEditModal({ node, onUpdate, onInstallCommand, onClose }: { nod
   return (
     <AdminModal title={`编辑服务器 · ${node.displayName}`} eyebrow={node.id} onClose={onClose}>
       <dl className="admin-modal-summary">
-        <div><dt>状态</dt><dd>{node.disabled ? 'disabled' : node.status}</dd></div>
+        <div><dt>状态</dt><dd>{formatAdminNodeStatusLabel(node)}</dd></div>
         <div><dt>公网 IP</dt><dd>{formatAdminPublicIPs(node)}</dd></div>
         <div><dt>顺序</dt><dd>{node.displayOrder}</dd></div>
         <div><dt>系统</dt><dd>{formatAdminSystem(node)}</dd></div>
@@ -1491,7 +1509,7 @@ function AdminTargetList({ targets, onEdit }: { targets: AdminProbeTarget[]; onE
           <div className="admin-list-main">
             <strong>{target.name}</strong>
           </div>
-          <span data-label="状态" className={`admin-node-status status-${target.enabled ? 'online' : 'disabled'}`}>{target.enabled ? 'enabled' : 'disabled'}</span>
+          <span data-label="状态" className={`admin-node-status status-${target.enabled ? 'online' : 'disabled'}`}>{formatAdminEnabledStatusLabel(target.enabled)}</span>
           <span data-label="地址">{formatTargetEndpoint(target)}</span>
           <span data-label="节点">{formatTargetAssignmentSummary(target)}</span>
           <div className="admin-row-actions">
@@ -1615,7 +1633,7 @@ function AdminTargetEditModal({ target, nodes, onUpdate, onClose }: { target: Ad
   return (
     <AdminModal title={`编辑延迟监控 · ${target.name}`} eyebrow={target.id} onClose={onClose}>
       <dl className="admin-modal-summary">
-        <div><dt>状态</dt><dd>{target.enabled ? 'enabled' : 'disabled'}</dd></div>
+        <div><dt>状态</dt><dd>{formatAdminEnabledStatusLabel(target.enabled)}</dd></div>
         <div><dt>类型</dt><dd>{formatTargetTypeLabel(target.type)}</dd></div>
         <div><dt>地址</dt><dd>{formatTargetEndpoint(target)}</dd></div>
         <div><dt>参数</dt><dd>{target.count} 次 / {target.timeoutMs}ms / {target.intervalSec}s</dd></div>
@@ -2194,6 +2212,19 @@ function parseQuotaGigabytes(value: string): number | null {
   const parsed = Number(trimmed)
   if (!Number.isFinite(parsed) || parsed < 0) return null
   return Math.round(parsed * (1024 ** 3))
+}
+
+function formatAdminNodeStatusLabel(node: AdminNode): string {
+  if (node.disabled) return '已禁用'
+  if (node.status === 'online') return '在线'
+  if (node.status === 'offline') return '离线'
+  if (node.status === 'warning') return '异常'
+  if (node.status === 'no_data') return '暂无数据'
+  return node.status
+}
+
+function formatAdminEnabledStatusLabel(enabled: boolean): string {
+  return enabled ? '启用中' : '已停用'
 }
 
 function formatAdminPublicIPs(node: AdminNode): string {

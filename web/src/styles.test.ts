@@ -19,7 +19,7 @@ describe('homepage and admin shell layout', () => {
   it('keeps homepage chrome and overview inside one shared card shell', () => {
     expect(styles).toContain('.home-top-card')
     expect(styles).toContain('.home-top-card .kulin-nav')
-    expect(styles).toContain('.home-top-card .server-overview')
+    expect(styles).toContain('.home-top-card .home-summary')
   })
 
   it('uses a compact homepage summary without duplicate server-stat tiles', () => {
@@ -33,15 +33,17 @@ describe('homepage and admin shell layout', () => {
 
   it('styles the backend/admin shell with the same card language as the front page', () => {
     expect(styles).toContain('.admin-panel')
-    expect(styles).toContain('.admin-action-card')
+    expect(styles).toContain('.admin-workspace-panel .admin-list')
     expect(styles).toContain('background: var(--card)')
   })
 
-  it('keeps authenticated node management in compact card shells', () => {
+  it('keeps authenticated node management in compact lists without old card shells', () => {
     expect(styles).toContain('.admin-login-card')
     expect(styles).toContain('.admin-node-section')
-    expect(styles).toContain('.admin-node-card')
     expect(styles).toContain('.admin-node-status')
+    expect(styles).not.toContain('.admin-node-card')
+    expect(styles).not.toContain('.admin-target-card')
+    expect(styles).not.toContain('.admin-node-grid')
   })
 
   it('lets admin lists size to content without internal scroll containers', () => {
@@ -53,8 +55,11 @@ describe('homepage and admin shell layout', () => {
     expect(styles).toContain('min-height: 58px')
     expect(styles).toContain('.admin-ip-stack')
     expect(styles).toContain('height: 28px')
+    expect(styles).toContain('repeat(auto-fit, minmax(96px, 1fr))')
     expect(styles).not.toContain('max-height: calc(100dvh - 300px)')
     expect(styles).not.toContain('max-height: calc(100dvh - 260px)')
+    expect(styles).not.toContain('.overview-card')
+    expect(styles).not.toContain('.server-overview')
   })
 })
 
