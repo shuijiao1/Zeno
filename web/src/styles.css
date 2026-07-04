@@ -491,7 +491,7 @@ svg { display: block; }
 .admin-list-main small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--muted); font-size: 10.5px; line-height: 1.24; font-weight: 500; }
 .admin-node-section .admin-list-head,
 .admin-node-section .admin-list-row {
-  grid-template-columns: minmax(190px, 1.22fr) minmax(92px, .52fr) minmax(230px, 1.08fr) minmax(110px, .55fr) auto;
+  grid-template-columns: minmax(190px, 1.22fr) minmax(230px, 1.08fr) minmax(110px, .55fr) auto;
 }
 .admin-target-list .admin-list-head,
 .admin-target-list .admin-list-row {
@@ -737,7 +737,7 @@ svg { display: block; }
 .admin-server-sort-item {
   min-width: 0;
   display: grid;
-  grid-template-columns: auto auto minmax(0, 1fr) auto;
+  grid-template-columns: auto auto minmax(0, 1fr);
   align-items: center;
   gap: 10px;
   padding: 11px 12px;
@@ -757,11 +757,6 @@ svg { display: block; }
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-.admin-server-sort-item span:last-child {
-  color: var(--muted);
-  font-size: 12px;
-  font-weight: 600;
 }
 .admin-drag-handle {
   color: var(--muted);
@@ -1361,8 +1356,6 @@ svg { display: block; }
   .admin-modal { max-height: 90vh; border-radius: 18px; padding: 14px; }
   .admin-modal-summary { grid-template-columns: 1fr; gap: 8px; }
   .admin-modal-summary div { padding: 10px; }
-  .admin-server-sort-item { grid-template-columns: auto auto minmax(0, 1fr); }
-  .admin-server-sort-item span:last-child { grid-column: 3; }
   .admin-node-edit-form,
   .admin-form-grid { grid-template-columns: 1fr; }
   .admin-section-heading { flex-direction: column; }

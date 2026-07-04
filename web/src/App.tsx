@@ -1,4 +1,5 @@
 import { type CSSProperties, type DragEvent, type FormEvent, type ReactNode, useEffect, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { createAdminNode, createAdminNotificationChannel, createAdminProbeTarget, deleteAdminNotificationChannel, fetchAdminAccount, fetchAdminAlertRules, fetchAdminNodes, fetchAdminNotificationChannels, fetchAdminProbeTargets, fetchAdminSettings, fetchNodeLatency, fetchNodeState, fetchPublicSettings, fetchServiceLatency, fetchSummary, loginAdmin, logoutAdmin, requestAdminNodeInstallCommand, testAdminNotificationChannel, updateAdminAccount, updateAdminAlertRule, updateAdminNode, updateAdminNotificationChannel, updateAdminNotificationType, updateAdminProbeTarget, updateAdminSettings, type AdminAccountData, type AdminAlertRuleUpdateInput, type AdminNodeCreateInput, type AdminNodeUpdateInput, type AdminNotificationChannelCreateInput, type AdminNotificationChannelUpdateInput, type AdminProbeTargetInput, type AdminProbeTargetUpdateInput, type AdminSettingsUpdateInput, type NodeLatencyData, type NodeStateData, type ServiceLatencyData, type SummaryData } from './api/client'
 import { LatencyDetail } from './components/LatencyDetail'
 import { LatencyChart } from './components/LatencyChart'
@@ -1147,7 +1148,6 @@ function AdminNodeList({ nodes, onEdit }: { nodes: AdminNode[]; onEdit: (nodeId:
     <div className="admin-list" role="list" aria-label="服务器列表">
       <div className="admin-list-head" aria-hidden="true">
         <span>服务器</span>
-        <span>状态</span>
         <span>公网 IP</span>
         <span>Agent</span>
         <span>操作</span>
@@ -1157,7 +1157,6 @@ function AdminNodeList({ nodes, onEdit }: { nodes: AdminNode[]; onEdit: (nodeId:
           <div className="admin-list-main">
             <strong>{node.displayName}</strong>
           </div>
-          <span data-label="状态" className={`admin-node-status status-${node.disabled ? 'disabled' : node.status}`}>{formatAdminNodeStatusLabel(node)}</span>
           <span data-label="公网 IP" className={`admin-ip-stack${node.publicIPv6 ? '' : ' is-single'}`}>
             {node.publicIPv4 && <span>{node.publicIPv4}</span>}
             {node.publicIPv6 && <span>{node.publicIPv6}</span>}
@@ -1216,7 +1215,7 @@ function AdminNodeSortModal({ nodes, onSave, onClose }: { nodes: AdminNode[]; on
   }
 
   return (
-    <div className="admin-modal-backdrop" role="presentation">
+    <AdminModalLayer><div className="admin-modal-backdrop" role="presentation">
       <div className="admin-modal" role="dialog" aria-modal="true" aria-label="服务器排序">
         <header className="admin-modal-header">
           <div>
@@ -1241,7 +1240,6 @@ function AdminNodeSortModal({ nodes, onSave, onClose }: { nodes: AdminNode[]; on
               <span className="admin-drag-handle" aria-hidden="true">⋮⋮</span>
               <span className="admin-server-sort-index">{index + 1}</span>
               <strong>{node.displayName}</strong>
-              <span>{formatAdminNodeStatusLabel(node)}</span>
             </article>
           ))}
         </div>
@@ -1250,7 +1248,7 @@ function AdminNodeSortModal({ nodes, onSave, onClose }: { nodes: AdminNode[]; on
           <button className="admin-primary-action" type="button" onClick={() => onSave(orderedNodes)}>保存排序</button>
         </div>
       </div>
-    </div>
+    </div></AdminModalLayer>
   )
 }
 
@@ -2104,8 +2102,14 @@ function AdminNotificationChannelCreateModal({ onCreate, onClose }: { onCreate: 
   )
 }
 
+function AdminModalLayer({ children }: { children: ReactNode }) {
+  if (typeof document === 'undefined') return <>{children}</>
+  return createPortal(children, document.body)
+}
+
 function AdminModal({ title, eyebrow, onClose, children }: { title: string; eyebrow: string; onClose: () => void; children: ReactNode }) {
   return (
+    <AdminModalLayer>
     <div className="admin-modal-backdrop" role="presentation">
       <section className="admin-modal" role="dialog" aria-modal="true" aria-label={title}>
         <header className="admin-modal-header">
@@ -2118,6 +2122,7 @@ function AdminModal({ title, eyebrow, onClose, children }: { title: string; eyeb
         {children}
       </section>
     </div>
+    </AdminModalLayer>
   )
 }
 
