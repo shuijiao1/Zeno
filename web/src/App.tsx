@@ -1,10 +1,10 @@
 import { type CSSProperties, type FormEvent, type ReactNode, useEffect, useState } from 'react'
-import { createAdminNode, createAdminNotificationChannel, createAdminProbeTarget, deleteAdminNotificationChannel, deleteAdminProbeTarget, fetchAdminAlertRules, fetchAdminAlertRuleStates, fetchAdminNodes, fetchAdminNotificationChannels, fetchAdminNotificationDeliveries, fetchAdminNotificationTypes, fetchAdminProbeTargets, fetchAdminSettings, fetchNodeLatency, fetchNodeState, fetchPublicSettings, fetchSummary, requestAdminNodeInstallCommand, testAdminNotificationChannel, updateAdminAlertRule, updateAdminNode, updateAdminNotificationChannel, updateAdminNotificationType, updateAdminProbeTarget, updateAdminSettings, type AdminAlertRuleUpdateInput, type AdminNodeCreateInput, type AdminNodeUpdateInput, type AdminNotificationChannelCreateInput, type AdminNotificationChannelUpdateInput, type AdminProbeTargetInput, type AdminProbeTargetUpdateInput, type AdminSettingsUpdateInput, type NodeLatencyData, type NodeStateData, type SummaryData } from './api/client'
+import { createAdminNode, createAdminNotificationChannel, createAdminProbeTarget, deleteAdminNotificationChannel, deleteAdminProbeTarget, fetchAdminAlertRules, fetchAdminAlertRuleStates, fetchAdminMaintenance, fetchAdminNodes, fetchAdminNotificationChannels, fetchAdminNotificationDeliveries, fetchAdminNotificationTypes, fetchAdminProbeTargets, fetchAdminSettings, fetchNodeLatency, fetchNodeState, fetchPublicSettings, fetchSummary, requestAdminNodeInstallCommand, runAdminMaintenanceCleanup, testAdminNotificationChannel, updateAdminAlertRule, updateAdminMaintenance, updateAdminNode, updateAdminNotificationChannel, updateAdminNotificationType, updateAdminProbeTarget, updateAdminSettings, type AdminAlertRuleUpdateInput, type AdminMaintenanceCleanupInput, type AdminMaintenanceUpdateInput, type AdminNodeCreateInput, type AdminNodeUpdateInput, type AdminNotificationChannelCreateInput, type AdminNotificationChannelUpdateInput, type AdminProbeTargetInput, type AdminProbeTargetUpdateInput, type AdminSettingsUpdateInput, type NodeLatencyData, type NodeStateData, type SummaryData } from './api/client'
 import { LatencyDetail } from './components/LatencyDetail'
 import { ServerCard } from './components/ServerCard'
 import { startLiveRefresh } from './lib/liveRefresh'
 import { nodePath, parseDashboardRoute, type DashboardRoute } from './lib/route'
-import type { AdminAlertRule, AdminAlertRuleState, AdminNode, AdminNotificationChannel, AdminNotificationDelivery, AdminNotificationType, AdminProbeTarget, AdminSettings, ProbeType } from './types'
+import type { AdminAlertRule, AdminAlertRuleState, AdminMaintenance, AdminMaintenanceCleanup, AdminMaintenanceStats, AdminNode, AdminNotificationChannel, AdminNotificationDelivery, AdminNotificationType, AdminProbeTarget, AdminSettings, ProbeType } from './types'
 
 type LoadState =
   | { kind: 'loading' }
@@ -26,10 +26,10 @@ type StateHistoryLoadState =
 type AdminLoadState =
   | { kind: 'idle' }
   | { kind: 'loading' }
-  | { kind: 'ready'; nodes: AdminNode[]; targets: AdminProbeTarget[]; notificationChannels: AdminNotificationChannel[]; notificationTypes: AdminNotificationType[]; notificationDeliveries: AdminNotificationDelivery[]; alertRules: AdminAlertRule[]; alertRuleStates: AdminAlertRuleState[] }
+  | { kind: 'ready'; nodes: AdminNode[]; targets: AdminProbeTarget[]; notificationChannels: AdminNotificationChannel[]; notificationTypes: AdminNotificationType[]; notificationDeliveries: AdminNotificationDelivery[]; alertRules: AdminAlertRule[]; alertRuleStates: AdminAlertRuleState[]; maintenance: AdminMaintenance }
   | { kind: 'error'; message: string }
 
-type AdminSection = 'overview' | 'nodes' | 'targets' | 'rules' | 'settings' | 'notifications'
+type AdminSection = 'overview' | 'nodes' | 'targets' | 'rules' | 'maintenance' | 'settings' | 'notifications'
 type AdminTargetSort = 'name' | 'status' | 'type' | 'assignments'
 
 function sum(values: Array<number | null | undefined>): number {
@@ -59,6 +59,21 @@ const defaultSettings: AdminSettings = {
   logoUrl: '/assets/logo/id.png',
   theme: 'system',
   backgroundUrl: '',
+}
+
+const emptyAdminMaintenance: AdminMaintenance = {
+  settings: {
+    enabled: false,
+    stateRetentionDays: 30,
+    probeRetentionDays: 30,
+    notificationRetentionDays: 90,
+  },
+  candidates: {
+    stateSamples: 0,
+    probeRounds: 0,
+    probeSamples: 0,
+    notificationDeliveries: 0,
+  },
 }
 
 export function shellStyleForSettings(settings: AdminSettings): CSSProperties | undefined {
@@ -246,12 +261,12 @@ export function App() {
     let loadedOnce = false
     const loadAdminNodes = () => {
       if (!loadedOnce) setAdminState({ kind: 'loading' })
-      Promise.all([fetchAdminSettings(adminToken), fetchAdminNodes(adminToken), fetchAdminProbeTargets(adminToken), fetchAdminNotificationChannels(adminToken), fetchAdminNotificationTypes(adminToken), fetchAdminNotificationDeliveries(adminToken), fetchAdminAlertRules(adminToken), fetchAdminAlertRuleStates(adminToken)])
-        .then(([settingsData, nodesData, targetsData, channelsData, typesData, deliveriesData, alertRulesData, alertRuleStatesData]) => {
+      Promise.all([fetchAdminSettings(adminToken), fetchAdminMaintenance(adminToken), fetchAdminNodes(adminToken), fetchAdminProbeTargets(adminToken), fetchAdminNotificationChannels(adminToken), fetchAdminNotificationTypes(adminToken), fetchAdminNotificationDeliveries(adminToken), fetchAdminAlertRules(adminToken), fetchAdminAlertRuleStates(adminToken)])
+        .then(([settingsData, maintenanceData, nodesData, targetsData, channelsData, typesData, deliveriesData, alertRulesData, alertRuleStatesData]) => {
           loadedOnce = true
           if (!cancelled) {
             setSettings(settingsData)
-            setAdminState({ kind: 'ready', nodes: nodesData.nodes, targets: targetsData.targets, notificationChannels: channelsData.channels, notificationTypes: typesData.types, notificationDeliveries: deliveriesData.deliveries, alertRules: alertRulesData.rules, alertRuleStates: alertRuleStatesData.states })
+            setAdminState({ kind: 'ready', nodes: nodesData.nodes, targets: targetsData.targets, notificationChannels: channelsData.channels, notificationTypes: typesData.types, notificationDeliveries: deliveriesData.deliveries, alertRules: alertRulesData.rules, alertRuleStates: alertRuleStatesData.states, maintenance: maintenanceData })
           }
         })
         .catch((error: unknown) => {
@@ -284,10 +299,10 @@ export function App() {
   const refreshAdminNodes = () => {
     if (adminToken === '') return
     setAdminState({ kind: 'loading' })
-    Promise.all([fetchAdminSettings(adminToken), fetchAdminNodes(adminToken), fetchAdminProbeTargets(adminToken), fetchAdminNotificationChannels(adminToken), fetchAdminNotificationTypes(adminToken), fetchAdminNotificationDeliveries(adminToken), fetchAdminAlertRules(adminToken), fetchAdminAlertRuleStates(adminToken)])
-      .then(([settingsData, nodesData, targetsData, channelsData, typesData, deliveriesData, alertRulesData, alertRuleStatesData]) => {
+    Promise.all([fetchAdminSettings(adminToken), fetchAdminMaintenance(adminToken), fetchAdminNodes(adminToken), fetchAdminProbeTargets(adminToken), fetchAdminNotificationChannels(adminToken), fetchAdminNotificationTypes(adminToken), fetchAdminNotificationDeliveries(adminToken), fetchAdminAlertRules(adminToken), fetchAdminAlertRuleStates(adminToken)])
+      .then(([settingsData, maintenanceData, nodesData, targetsData, channelsData, typesData, deliveriesData, alertRulesData, alertRuleStatesData]) => {
         setSettings(settingsData)
-        setAdminState({ kind: 'ready', nodes: nodesData.nodes, targets: targetsData.targets, notificationChannels: channelsData.channels, notificationTypes: typesData.types, notificationDeliveries: deliveriesData.deliveries, alertRules: alertRulesData.rules, alertRuleStates: alertRuleStatesData.states })
+        setAdminState({ kind: 'ready', nodes: nodesData.nodes, targets: targetsData.targets, notificationChannels: channelsData.channels, notificationTypes: typesData.types, notificationDeliveries: deliveriesData.deliveries, alertRules: alertRulesData.rules, alertRuleStates: alertRuleStatesData.states, maintenance: maintenanceData })
       })
       .catch((error: unknown) => setAdminState({ kind: 'error', message: error instanceof Error ? error.message : 'unknown error' }))
   }
@@ -298,9 +313,9 @@ export function App() {
       .then((createdNode) => {
         setAdminState((current) => {
           if (current.kind === 'ready') {
-            return { kind: 'ready', nodes: [...current.nodes, createdNode], targets: current.targets, notificationChannels: current.notificationChannels, notificationTypes: current.notificationTypes, notificationDeliveries: current.notificationDeliveries, alertRules: current.alertRules, alertRuleStates: current.alertRuleStates }
+            return { ...current, nodes: [...current.nodes, createdNode] }
           }
-          return { kind: 'ready', nodes: [createdNode], targets: [], notificationChannels: [], notificationTypes: [], notificationDeliveries: [], alertRules: [], alertRuleStates: [] }
+          return { kind: 'ready', nodes: [createdNode], targets: [], notificationChannels: [], notificationTypes: [], notificationDeliveries: [], alertRules: [], alertRuleStates: [], maintenance: emptyAdminMaintenance }
         })
       })
       .catch((error: unknown) => setAdminState({ kind: 'error', message: error instanceof Error ? error.message : 'unknown error' }))
@@ -318,17 +333,12 @@ export function App() {
         setAdminState((current) => {
           if (current.kind === 'ready') {
             return {
-              kind: 'ready',
+              ...current,
               nodes: current.nodes.map((node) => node.id === updatedNode.id ? updatedNode : node),
-              targets: current.targets,
-              notificationChannels: current.notificationChannels,
-              notificationTypes: current.notificationTypes,
-              notificationDeliveries: current.notificationDeliveries,
-              alertRules: current.alertRules,
               alertRuleStates: reconcileAlertRuleStatesForNode(updatedNode, current.alertRuleStates),
             }
           }
-          return { kind: 'ready', nodes: [updatedNode], targets: [], notificationChannels: [], notificationTypes: [], notificationDeliveries: [], alertRules: [], alertRuleStates: [] }
+          return { kind: 'ready', nodes: [updatedNode], targets: [], notificationChannels: [], notificationTypes: [], notificationDeliveries: [], alertRules: [], alertRuleStates: [], maintenance: emptyAdminMaintenance }
         })
       })
       .catch((error: unknown) => setAdminState({ kind: 'error', message: error instanceof Error ? error.message : 'unknown error' }))
@@ -340,9 +350,9 @@ export function App() {
       .then((createdTarget) => {
         setAdminState((current) => {
           if (current.kind === 'ready') {
-            return { kind: 'ready', nodes: current.nodes, targets: [...current.targets, createdTarget], notificationChannels: current.notificationChannels, notificationTypes: current.notificationTypes, notificationDeliveries: current.notificationDeliveries, alertRules: current.alertRules, alertRuleStates: current.alertRuleStates }
+            return { ...current, targets: [...current.targets, createdTarget] }
           }
-          return { kind: 'ready', nodes: [], targets: [createdTarget], notificationChannels: [], notificationTypes: [], notificationDeliveries: [], alertRules: [], alertRuleStates: [] }
+          return { kind: 'ready', nodes: [], targets: [createdTarget], notificationChannels: [], notificationTypes: [], notificationDeliveries: [], alertRules: [], alertRuleStates: [], maintenance: emptyAdminMaintenance }
         })
       })
       .catch((error: unknown) => setAdminState({ kind: 'error', message: error instanceof Error ? error.message : 'unknown error' }))
@@ -354,9 +364,9 @@ export function App() {
       .then((updatedTarget) => {
         setAdminState((current) => {
           if (current.kind === 'ready') {
-            return { kind: 'ready', nodes: current.nodes, targets: current.targets.map((target) => target.id === updatedTarget.id ? updatedTarget : target), notificationChannels: current.notificationChannels, notificationTypes: current.notificationTypes, notificationDeliveries: current.notificationDeliveries, alertRules: current.alertRules, alertRuleStates: current.alertRuleStates }
+            return { ...current, targets: current.targets.map((target) => target.id === updatedTarget.id ? updatedTarget : target) }
           }
-          return { kind: 'ready', nodes: [], targets: [updatedTarget], notificationChannels: [], notificationTypes: [], notificationDeliveries: [], alertRules: [], alertRuleStates: [] }
+          return { kind: 'ready', nodes: [], targets: [updatedTarget], notificationChannels: [], notificationTypes: [], notificationDeliveries: [], alertRules: [], alertRuleStates: [], maintenance: emptyAdminMaintenance }
         })
       })
       .catch((error: unknown) => setAdminState({ kind: 'error', message: error instanceof Error ? error.message : 'unknown error' }))
@@ -381,9 +391,9 @@ export function App() {
       .then((createdChannel) => {
         setAdminState((current) => {
           if (current.kind === 'ready') {
-            return { kind: 'ready', nodes: current.nodes, targets: current.targets, notificationChannels: [...current.notificationChannels, createdChannel], notificationTypes: current.notificationTypes, notificationDeliveries: current.notificationDeliveries, alertRules: current.alertRules, alertRuleStates: current.alertRuleStates }
+            return { ...current, notificationChannels: [...current.notificationChannels, createdChannel] }
           }
-          return { kind: 'ready', nodes: [], targets: [], notificationChannels: [createdChannel], notificationTypes: [], notificationDeliveries: [], alertRules: [], alertRuleStates: [] }
+          return { kind: 'ready', nodes: [], targets: [], notificationChannels: [createdChannel], notificationTypes: [], notificationDeliveries: [], alertRules: [], alertRuleStates: [], maintenance: emptyAdminMaintenance }
         })
       })
       .catch((error: unknown) => setAdminState({ kind: 'error', message: error instanceof Error ? error.message : 'unknown error' }))
@@ -395,9 +405,9 @@ export function App() {
       .then((updatedChannel) => {
         setAdminState((current) => {
           if (current.kind === 'ready') {
-            return { kind: 'ready', nodes: current.nodes, targets: current.targets, notificationChannels: current.notificationChannels.map((channel) => channel.id === updatedChannel.id ? updatedChannel : channel), notificationTypes: current.notificationTypes, notificationDeliveries: current.notificationDeliveries, alertRules: current.alertRules, alertRuleStates: current.alertRuleStates }
+            return { ...current, notificationChannels: current.notificationChannels.map((channel) => channel.id === updatedChannel.id ? updatedChannel : channel) }
           }
-          return { kind: 'ready', nodes: [], targets: [], notificationChannels: [updatedChannel], notificationTypes: [], notificationDeliveries: [], alertRules: [], alertRuleStates: [] }
+          return { kind: 'ready', nodes: [], targets: [], notificationChannels: [updatedChannel], notificationTypes: [], notificationDeliveries: [], alertRules: [], alertRuleStates: [], maintenance: emptyAdminMaintenance }
         })
       })
       .catch((error: unknown) => setAdminState({ kind: 'error', message: error instanceof Error ? error.message : 'unknown error' }))
@@ -433,9 +443,9 @@ export function App() {
       .then((updatedType) => {
         setAdminState((current) => {
           if (current.kind === 'ready') {
-            return { kind: 'ready', nodes: current.nodes, targets: current.targets, notificationChannels: current.notificationChannels, notificationTypes: current.notificationTypes.map((notificationType) => notificationType.eventType === updatedType.eventType ? updatedType : notificationType), notificationDeliveries: current.notificationDeliveries, alertRules: current.alertRules, alertRuleStates: current.alertRuleStates }
+            return { ...current, notificationTypes: current.notificationTypes.map((notificationType) => notificationType.eventType === updatedType.eventType ? updatedType : notificationType) }
           }
-          return { kind: 'ready', nodes: [], targets: [], notificationChannels: [], notificationTypes: [updatedType], notificationDeliveries: [], alertRules: [], alertRuleStates: [] }
+          return { kind: 'ready', nodes: [], targets: [], notificationChannels: [], notificationTypes: [updatedType], notificationDeliveries: [], alertRules: [], alertRuleStates: [], maintenance: emptyAdminMaintenance }
         })
       })
       .catch((error: unknown) => setAdminState({ kind: 'error', message: error instanceof Error ? error.message : 'unknown error' }))
@@ -453,7 +463,7 @@ export function App() {
               alertRuleStates: reconcileAlertRuleStates(updatedRule, current.alertRuleStates),
             }
           }
-          return { kind: 'ready', nodes: [], targets: [], notificationChannels: [], notificationTypes: [], notificationDeliveries: [], alertRules: [updatedRule], alertRuleStates: [] }
+          return { kind: 'ready', nodes: [], targets: [], notificationChannels: [], notificationTypes: [], notificationDeliveries: [], alertRules: [updatedRule], alertRuleStates: [], maintenance: emptyAdminMaintenance }
         })
       })
       .catch((error: unknown) => setAdminState({ kind: 'error', message: error instanceof Error ? error.message : 'unknown error' }))
@@ -464,6 +474,28 @@ export function App() {
     updateAdminSettings(adminToken, input)
       .then((updatedSettings) => setSettings(updatedSettings))
       .catch((error: unknown) => setAdminState({ kind: 'error', message: error instanceof Error ? error.message : 'unknown error' }))
+  }
+
+  const updateAdminMaintenanceDetails = (input: AdminMaintenanceUpdateInput) => {
+    if (adminToken === '') return
+    updateAdminMaintenance(adminToken, input)
+      .then((maintenance) => {
+        setAdminState((current) => current.kind === 'ready' ? { ...current, maintenance } : current)
+      })
+      .catch((error: unknown) => setAdminState({ kind: 'error', message: error instanceof Error ? error.message : 'unknown error' }))
+  }
+
+  const runAdminMaintenanceCleanupDetails = (input: AdminMaintenanceCleanupInput): Promise<AdminMaintenanceCleanup> => {
+    if (adminToken === '') return Promise.reject(new Error('missing admin token'))
+    return runAdminMaintenanceCleanup(adminToken, input)
+      .then((cleanup) => {
+        setAdminState((current) => current.kind === 'ready' ? { ...current, maintenance: { settings: cleanup.settings, candidates: cleanup.candidates } } : current)
+        return cleanup
+      })
+      .catch((error: unknown) => {
+        setAdminState({ kind: 'error', message: error instanceof Error ? error.message : 'unknown error' })
+        throw error
+      })
   }
 
   const navigateHome = () => {
@@ -518,6 +550,8 @@ export function App() {
           onAdminNotificationTypeUpdate={updateAdminNotificationTypeDetails}
           onAdminAlertRuleUpdate={updateAdminAlertRuleDetails}
           onAdminSettingsUpdate={updateAdminSettingsDetails}
+          onAdminMaintenanceUpdate={updateAdminMaintenanceDetails}
+          onAdminMaintenanceCleanup={runAdminMaintenanceCleanupDetails}
         />
       )}
 
@@ -638,6 +672,8 @@ interface AdminDashboardProps {
   onAdminNotificationTypeUpdate?: (eventType: string, enabled: boolean) => void
   onAdminAlertRuleUpdate?: (ruleId: string, input: AdminAlertRuleUpdateInput) => void
   onAdminSettingsUpdate?: (input: AdminSettingsUpdateInput) => void
+  onAdminMaintenanceUpdate?: (input: AdminMaintenanceUpdateInput) => void
+  onAdminMaintenanceCleanup?: (input: AdminMaintenanceCleanupInput) => Promise<AdminMaintenanceCleanup>
 }
 
 export function AdminDashboard({
@@ -662,6 +698,8 @@ export function AdminDashboard({
   onAdminNotificationTypeUpdate = () => {},
   onAdminAlertRuleUpdate = () => {},
   onAdminSettingsUpdate = () => {},
+  onAdminMaintenanceUpdate = () => {},
+  onAdminMaintenanceCleanup = () => Promise.reject(new Error('maintenance cleanup unavailable')),
 }: AdminDashboardProps) {
   const [activeSection, setActiveSection] = useState<AdminSection>(initialSection)
 
@@ -682,6 +720,7 @@ export function AdminDashboard({
   const enabledTargetCount = adminState.kind === 'ready' ? adminState.targets.filter((target) => target.enabled).length : 0
   const ruleCount = adminState.kind === 'ready' ? adminState.alertRules.length : 0
   const enabledRuleCount = adminState.kind === 'ready' ? adminState.alertRules.filter((rule) => rule.enabled).length : 0
+  const maintenanceCandidateCount = adminState.kind === 'ready' ? totalMaintenanceCandidates(adminState.maintenance.candidates) : 0
 
   return (
     <div className="kulin-container admin-container">
@@ -744,6 +783,7 @@ export function AdminDashboard({
                 nodeCount={nodeCount}
                 targetCount={targetCount}
                 ruleCount={ruleCount}
+                maintenanceCandidateCount={maintenanceCandidateCount}
               />
               <div className="admin-section-actions">
                 <button type="button" onClick={onAdminRefresh}>刷新</button>
@@ -792,6 +832,14 @@ export function AdminDashboard({
               />
             )}
 
+            {adminState.kind === 'ready' && activeSection === 'maintenance' && (
+              <AdminMaintenanceSection
+                maintenance={adminState.maintenance}
+                onUpdate={onAdminMaintenanceUpdate}
+                onCleanup={onAdminMaintenanceCleanup}
+              />
+            )}
+
             {adminState.kind === 'ready' && activeSection === 'settings' && (
               <AdminSettingsSection settings={settings} onUpdate={onAdminSettingsUpdate} />
             )}
@@ -815,12 +863,13 @@ export function AdminDashboard({
   )
 }
 
-function AdminSectionNav({ activeSection, onSectionChange, nodeCount, targetCount, ruleCount }: { activeSection: AdminSection; onSectionChange: (section: AdminSection) => void; nodeCount: number; targetCount: number; ruleCount: number }) {
+function AdminSectionNav({ activeSection, onSectionChange, nodeCount, targetCount, ruleCount, maintenanceCandidateCount }: { activeSection: AdminSection; onSectionChange: (section: AdminSection) => void; nodeCount: number; targetCount: number; ruleCount: number; maintenanceCandidateCount: number }) {
   const sections: Array<{ id: AdminSection; label: string; meta: string }> = [
     { id: 'overview', label: '概览', meta: 'Summary' },
     { id: 'nodes', label: '服务器', meta: `${nodeCount} 台` },
     { id: 'targets', label: '延迟监控', meta: `${targetCount} 个目标` },
     { id: 'rules', label: '状态规则', meta: `${ruleCount} 条` },
+    { id: 'maintenance', label: '数据维护', meta: `${maintenanceCandidateCount} 条候选` },
     { id: 'settings', label: '设置', meta: 'Appearance' },
     { id: 'notifications', label: '通知', meta: 'Channels' },
   ]
@@ -1515,6 +1564,98 @@ function AdminAlertRuleEditModal({ rule, onUpdate, onClose }: { rule: AdminAlert
   )
 }
 
+function AdminMaintenanceSection({ maintenance, onUpdate, onCleanup }: { maintenance: AdminMaintenance; onUpdate: (input: AdminMaintenanceUpdateInput) => void; onCleanup: (input: AdminMaintenanceCleanupInput) => Promise<AdminMaintenanceCleanup> }) {
+  const [cleanupState, setCleanupState] = useState<{ kind: 'idle' } | { kind: 'loading'; label: string } | { kind: 'ready'; cleanup: AdminMaintenanceCleanup } | { kind: 'error'; message: string }>({ kind: 'idle' })
+  const settings = maintenance.settings
+
+  const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    const formData = new FormData(event.currentTarget)
+    const stateRetentionDays = parsePositiveInt(String(formData.get('maintenance-state-retention-days') ?? ''))
+    const probeRetentionDays = parsePositiveInt(String(formData.get('maintenance-probe-retention-days') ?? ''))
+    const notificationRetentionDays = parsePositiveInt(String(formData.get('maintenance-notification-retention-days') ?? ''))
+    if (stateRetentionDays === null || probeRetentionDays === null || notificationRetentionDays === null) return
+    onUpdate({
+      enabled: formData.get('maintenance-enabled') === 'on',
+      stateRetentionDays,
+      probeRetentionDays,
+      notificationRetentionDays,
+    })
+  }
+
+  const handleCleanup = (dryRun: boolean) => {
+    if (!dryRun) {
+      const ok = typeof window === 'undefined' ? true : window.confirm('确认删除超过保留期的状态、探测和通知历史？此操作不可恢复。')
+      if (!ok) return
+    }
+    setCleanupState({ kind: 'loading', label: dryRun ? '正在预览清理…' : '正在清理历史数据…' })
+    onCleanup({ dryRun, confirm: !dryRun })
+      .then((cleanup) => setCleanupState({ kind: 'ready', cleanup }))
+      .catch((error: unknown) => setCleanupState({ kind: 'error', message: error instanceof Error ? error.message : 'unknown error' }))
+  }
+
+  return (
+    <section className="admin-maintenance-section admin-workspace-panel" aria-label="admin data maintenance">
+      <header className="admin-section-heading">
+        <div>
+          <p className="eyebrow">Maintenance</p>
+          <h3>数据维护</h3>
+          <p className="admin-overview-note">按保留期清理历史状态采样、探测结果和通知发送记录；清理前可以先预览候选数量。</p>
+        </div>
+      </header>
+
+      <section className="admin-notification-block" aria-label="维护候选数据">
+        <h4>候选数据</h4>
+        <div className="admin-action-grid admin-maintenance-stats">
+          <MaintenanceStatCard label="状态采样" value={maintenance.candidates.stateSamples} meta={`保留 ${settings.stateRetentionDays} 天`} />
+          <MaintenanceStatCard label="探测轮次" value={maintenance.candidates.probeRounds} meta={`保留 ${settings.probeRetentionDays} 天`} />
+          <MaintenanceStatCard label="探测明细" value={maintenance.candidates.probeSamples} meta={`随探测轮次清理`} />
+          <MaintenanceStatCard label="通知发送" value={maintenance.candidates.notificationDeliveries} meta={`保留 ${settings.notificationRetentionDays} 天`} />
+        </div>
+      </section>
+
+      <form className="admin-maintenance-form admin-node-edit-form" aria-label="数据维护设置" onSubmit={handleSubmit}>
+        <label className="admin-node-toggle">
+          <input name="maintenance-enabled" type="checkbox" defaultChecked={settings.enabled} />
+          <span>启用数据维护配置</span>
+        </label>
+        <label>
+          <span>状态采样保留天数</span>
+          <input name="maintenance-state-retention-days" type="number" min="1" max="3650" step="1" defaultValue={settings.stateRetentionDays} />
+        </label>
+        <label>
+          <span>探测历史保留天数</span>
+          <input name="maintenance-probe-retention-days" type="number" min="1" max="3650" step="1" defaultValue={settings.probeRetentionDays} />
+        </label>
+        <label>
+          <span>通知记录保留天数</span>
+          <input name="maintenance-notification-retention-days" type="number" min="1" max="3650" step="1" defaultValue={settings.notificationRetentionDays} />
+        </label>
+        <div className="admin-modal-actions">
+          <button type="submit">保存数据维护设置</button>
+          <button type="button" onClick={() => handleCleanup(true)} disabled={cleanupState.kind === 'loading'}>预览清理</button>
+          <button className="admin-row-action is-danger" type="button" onClick={() => handleCleanup(false)} disabled={cleanupState.kind === 'loading'}>确认清理</button>
+        </div>
+      </form>
+
+      {settings.updatedAt && <p className="admin-overview-note">维护设置最近更新：{formatAdminDate(settings.updatedAt)}</p>}
+      {cleanupState.kind === 'loading' && <div className="admin-state-card">{cleanupState.label}</div>}
+      {cleanupState.kind === 'ready' && <div className="admin-state-card">{cleanupState.cleanup.dryRun ? '预览完成' : '清理完成'}：{formatMaintenanceStats(cleanupState.cleanup.deleted)}；剩余候选 {formatMaintenanceStats(cleanupState.cleanup.candidates)}。</div>}
+      {cleanupState.kind === 'error' && <div className="admin-state-card is-error">数据维护失败：{cleanupState.message}</div>}
+    </section>
+  )
+}
+
+function MaintenanceStatCard({ label, value, meta }: { label: string; value: number; meta: string }) {
+  return (
+    <article className="admin-action-card admin-maintenance-stat-card">
+      <p>{label}</p>
+      <strong>{value.toLocaleString('zh-CN')} 条</strong>
+      <span>{meta}</span>
+    </article>
+  )
+}
+
 function AdminNotificationsSection({ channels, types, deliveries, onChannelCreate, onChannelUpdate, onChannelDelete, onChannelTest, onTypeUpdate }: { channels: AdminNotificationChannel[]; types: AdminNotificationType[]; deliveries: AdminNotificationDelivery[]; onChannelCreate: (input: AdminNotificationChannelCreateInput) => void; onChannelUpdate: (channelId: string, input: AdminNotificationChannelUpdateInput) => void; onChannelDelete: (channelId: string) => void; onChannelTest: (channelId: string) => void; onTypeUpdate: (eventType: string, enabled: boolean) => void }) {
   const [creatingChannel, setCreatingChannel] = useState(false)
   const [editingChannel, setEditingChannel] = useState<AdminNotificationChannel | null>(null)
@@ -1858,6 +1999,14 @@ function formatRuleCategory(category: string): string {
 
 function formatNotificationChannelType(type: AdminNotificationChannel['type']): string {
   return type === 'telegram' ? 'Telegram' : 'Webhook'
+}
+
+function totalMaintenanceCandidates(stats: AdminMaintenanceStats): number {
+  return stats.stateSamples + stats.probeRounds + stats.probeSamples + stats.notificationDeliveries
+}
+
+function formatMaintenanceStats(stats: AdminMaintenanceStats): string {
+  return `状态 ${stats.stateSamples}、探测轮次 ${stats.probeRounds}、探测明细 ${stats.probeSamples}、通知 ${stats.notificationDeliveries}`
 }
 
 function parsePositiveInt(value: string): number | null {

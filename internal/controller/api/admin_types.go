@@ -24,10 +24,84 @@ var (
 	errNotificationTypeNotFound             = errors.New("notification type not found")
 	errInvalidAdminAlertRuleUpdate          = errors.New("invalid admin alert rule update")
 	errAlertRuleNotFound                    = errors.New("alert rule not found")
+	errInvalidAdminMaintenanceUpdate        = errors.New("invalid admin maintenance update")
+	errInvalidAdminMaintenanceCleanup       = errors.New("invalid admin maintenance cleanup")
 )
 
 type AdminSettingsResponse struct {
 	Settings SiteSettings `json:"settings"`
+}
+
+type AdminMaintenanceResponse struct {
+	Settings   AdminMaintenanceSettings `json:"settings"`
+	Candidates AdminMaintenanceStats    `json:"candidates"`
+}
+
+type AdminMaintenanceCleanupResponse struct {
+	Settings   AdminMaintenanceSettings `json:"settings"`
+	Deleted    AdminMaintenanceStats    `json:"deleted"`
+	Candidates AdminMaintenanceStats    `json:"candidates"`
+	DryRun     bool                     `json:"dry_run"`
+}
+
+type AdminMaintenanceSettings struct {
+	Enabled                   bool   `json:"enabled"`
+	StateRetentionDays        int    `json:"state_retention_days"`
+	ProbeRetentionDays        int    `json:"probe_retention_days"`
+	NotificationRetentionDays int    `json:"notification_retention_days"`
+	UpdatedAt                 string `json:"updated_at,omitempty"`
+}
+
+type AdminMaintenanceStats struct {
+	StateSamples           int64 `json:"state_samples"`
+	ProbeRounds            int64 `json:"probe_rounds"`
+	ProbeSamples           int64 `json:"probe_samples"`
+	NotificationDeliveries int64 `json:"notification_deliveries"`
+}
+
+type AdminMaintenanceUpdateRequest struct {
+	Enabled                   *bool `json:"enabled,omitempty"`
+	StateRetentionDays        *int  `json:"state_retention_days,omitempty"`
+	ProbeRetentionDays        *int  `json:"probe_retention_days,omitempty"`
+	NotificationRetentionDays *int  `json:"notification_retention_days,omitempty"`
+}
+
+func (request *AdminMaintenanceUpdateRequest) normalize() error {
+	changed := false
+	if request.Enabled != nil {
+		changed = true
+	}
+	if request.StateRetentionDays != nil {
+		changed = true
+		if !validMaintenanceRetentionDays(*request.StateRetentionDays) {
+			return errInvalidAdminMaintenanceUpdate
+		}
+	}
+	if request.ProbeRetentionDays != nil {
+		changed = true
+		if !validMaintenanceRetentionDays(*request.ProbeRetentionDays) {
+			return errInvalidAdminMaintenanceUpdate
+		}
+	}
+	if request.NotificationRetentionDays != nil {
+		changed = true
+		if !validMaintenanceRetentionDays(*request.NotificationRetentionDays) {
+			return errInvalidAdminMaintenanceUpdate
+		}
+	}
+	if !changed {
+		return errInvalidAdminMaintenanceUpdate
+	}
+	return nil
+}
+
+func validMaintenanceRetentionDays(days int) bool {
+	return days >= 1 && days <= 3650
+}
+
+type AdminMaintenanceCleanupRequest struct {
+	DryRun  bool `json:"dry_run"`
+	Confirm bool `json:"confirm"`
 }
 
 type SiteSettings struct {

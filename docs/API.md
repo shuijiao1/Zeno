@@ -569,6 +569,87 @@ Controller 会在 Agent 上报时实际使用这些规则：
 
 `active_count` 只统计当前仍 active、对应规则仍启用、且节点未被禁用的命中项。规则停用或节点禁用后旧状态行可继续作为最近状态显示，但不会被计入 active，也不会触发新的通知发送。
 
+### GET /api/admin/v1/maintenance
+
+读取数据维护设置和按当前保留期计算出的清理候选数量。此接口只返回保留期、开关和聚合数量，不返回任何节点凭据、Admin token、Agent token、token hash、通知渠道凭据、secret 或 credential 原文。
+
+默认保留期：状态采样 30 天、探测历史 30 天、通知发送记录 90 天。`probe_samples` 会随过期 `probe_rounds` 一起清理。
+
+```json
+{
+  "settings": {
+    "enabled": false,
+    "state_retention_days": 30,
+    "probe_retention_days": 30,
+    "notification_retention_days": 90,
+    "updated_at": "2026-07-04T13:00:00Z"
+  },
+  "candidates": {
+    "state_samples": 1200,
+    "probe_rounds": 320,
+    "probe_samples": 960,
+    "notification_deliveries": 12
+  }
+}
+```
+
+### PATCH /api/admin/v1/maintenance
+
+部分更新数据维护设置。至少提交一个字段；保留天数必须是 `1..3650` 的整数。当前后台会保存该配置并据此计算候选数量；实际删除仍通过显式 cleanup 接口触发。
+
+请求：
+
+```json
+{
+  "enabled": true,
+  "state_retention_days": 30,
+  "probe_retention_days": 45,
+  "notification_retention_days": 90
+}
+```
+
+成功响应与 `GET /api/admin/v1/maintenance` 相同。
+
+### POST /api/admin/v1/maintenance/cleanup
+
+按当前保留期执行数据维护。建议先提交 `dry_run: true` 预览候选数量；真正删除必须提交 `confirm: true`，否则返回 `400`。删除范围仅限：过期 `state_samples`、过期 `probe_rounds`、这些过期轮次对应的 `probe_samples`、过期 `notification_deliveries`。
+
+请求：
+
+```json
+{
+  "dry_run": false,
+  "confirm": true
+}
+```
+
+响应：
+
+```json
+{
+  "settings": {
+    "enabled": true,
+    "state_retention_days": 30,
+    "probe_retention_days": 45,
+    "notification_retention_days": 90,
+    "updated_at": "2026-07-04T13:00:00Z"
+  },
+  "deleted": {
+    "state_samples": 1200,
+    "probe_rounds": 320,
+    "probe_samples": 960,
+    "notification_deliveries": 12
+  },
+  "candidates": {
+    "state_samples": 0,
+    "probe_rounds": 0,
+    "probe_samples": 0,
+    "notification_deliveries": 0
+  },
+  "dry_run": false
+}
+```
+
 ### GET /api/admin/v1/notification-channels
 
 通知渠道管理列表。渠道凭据只在写入时提交，响应只返回 `credential_set` 标记，不返回凭据原文。
