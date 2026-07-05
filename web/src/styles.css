@@ -187,38 +187,19 @@ svg { display: block; }
   border-top: 1px solid var(--border);
 }
 .home-summary__status-line {
-  min-width: 0;
+  min-width: max-content;
   display: inline-flex;
   align-items: center;
-  flex-wrap: wrap;
-  gap: 7px;
-  color: var(--muted);
-  font-size: 12px;
-  font-weight: 500;
+  color: var(--foreground);
+  font-variant-numeric: tabular-nums;
 }
 .home-summary__status-line strong {
   color: var(--foreground);
-  font-size: 15px;
+  font-size: 24px;
+  line-height: 1;
   font-weight: 600;
-  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.03em;
 }
-.home-summary__status-line > span:not(.home-health-pill) {
-  color: color-mix(in srgb, var(--foreground) 56%, transparent);
-}
-.home-health-pill {
-  flex: none;
-  display: inline-flex;
-  align-items: center;
-  min-height: 28px;
-  padding: 0 10px;
-  border-radius: 999px;
-  color: var(--muted);
-  background: color-mix(in srgb, var(--metric-bg) 86%, transparent);
-  font-size: 12px;
-  font-weight: 600;
-}
-.home-health-pill.is-good { color: var(--green); background: color-mix(in srgb, var(--green) 12%, transparent); }
-.home-health-pill.is-warning { color: var(--orange); background: color-mix(in srgb, var(--orange) 12%, transparent); }
 .home-summary__metrics {
   margin: 0;
   display: inline-flex;
@@ -1235,10 +1216,9 @@ svg { display: block; }
     font-size: 12px;
   }
   .server-card-list { margin-top: 18px; gap: 14px; }
-  .home-summary { padding: 9px 6px 7px; gap: 7px; }
-  .home-summary__status-line { width: 100%; justify-content: space-between; gap: 5px; font-size: 11px; }
-  .home-summary__status-line strong { font-size: 13px; }
-  .home-health-pill { min-height: 24px; padding: 0 8px; font-size: 11px; }
+  .home-summary { padding: 10px 6px 7px; gap: 8px; }
+  .home-summary__status-line { width: 100%; min-width: 0; justify-content: center; }
+  .home-summary__status-line strong { font-size: 22px; }
   .home-summary__metrics { width: 100%; justify-content: space-between; gap: 4px; }
   .home-summary__metrics > div { flex: 1 1 calc(50% - 4px); min-height: 28px; padding: 0 7px; }
   .home-summary__metrics dt { font-size: 10px; }

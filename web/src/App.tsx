@@ -2261,17 +2261,11 @@ function formatAdminDate(value?: string): string {
   return date.toLocaleString('zh-CN', { hour12: false })
 }
 
-export function HomeOverviewPanel({ totalCount, onlineCount, offlineCount, totalUp, totalDown, upSpeed, downSpeed }: HomeOverviewPanelProps) {
-  const nonOnlineCount = Math.max(totalCount - onlineCount, offlineCount, 0)
-  const healthLabel = totalCount === 0 ? '等待接入' : nonOnlineCount === 0 ? '全部在线' : `${nonOnlineCount} 台未在线`
-  const healthTone = totalCount > 0 && nonOnlineCount === 0 ? 'is-good' : totalCount > 0 ? 'is-warning' : ''
-
+export function HomeOverviewPanel({ totalCount, onlineCount, offlineCount: _offlineCount, totalUp, totalDown, upSpeed, downSpeed }: HomeOverviewPanelProps) {
   return (
     <section className="home-summary" aria-label="server overview">
       <div className="home-summary__status-line" aria-label="服务器在线摘要">
-        <span className={`home-health-pill ${healthTone}`}>{healthLabel}</span>
         <strong>{onlineCount} / {totalCount} 在线</strong>
-        <span>{totalCount} 台服务器</span>
       </div>
 
       <dl className="home-summary__metrics" aria-label="traffic totals and speeds">
