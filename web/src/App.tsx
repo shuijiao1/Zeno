@@ -1906,7 +1906,7 @@ function AdminAlertRulesSection({ rules, nodes, onUpdate }: { rules: AdminAlertR
     <section className="admin-notification-block admin-alert-rule-section" aria-label="通知类型规则">
       <div className="admin-block-heading">
         <h4>通知类型</h4>
-        <button className="admin-row-action" type="button" onClick={() => setAddingRule(true)}>添加通知类型</button>
+        <button className="admin-primary-action" type="button" onClick={() => setAddingRule(true)}>添加通知类型</button>
       </div>
       {addedRules.length === 0 && <div className="admin-state-card">还没有添加通知类型。</div>}
       {addedRules.length > 0 && <AdminAlertRuleList rules={addedRules} nodes={nodes} onEdit={setEditingRule} onUpdate={onUpdate} />}
@@ -1972,17 +1972,21 @@ function AdminAlertRuleList({ rules, nodes, onEdit, onUpdate }: { rules: AdminAl
 function AdminAlertRuleAddModal({ rules, nodes, onAdd, onClose }: { rules: AdminAlertRule[]; nodes: AdminNode[]; onAdd: (ruleId: string) => void; onClose: () => void }) {
   return (
     <AdminModal title="添加通知类型" eyebrow="Notify" onClose={onClose}>
-      <div className="admin-rule-picker" role="list" aria-label="可添加通知类型">
-        {rules.length === 0 && <div className="admin-state-card">所有通知类型都已添加。</div>}
-        {rules.map((rule) => (
-          <article className="admin-rule-picker-row" role="listitem" key={rule.id}>
-            <div className="admin-list-main">
-              <strong>{rule.name}</strong>
-              <small>{formatAlertRuleScope(rule, nodes)}</small>
-            </div>
-            <button className="admin-row-action" type="button" onClick={() => onAdd(rule.id)}>添加</button>
-          </article>
-        ))}
+      <div className="admin-alert-rule-add-form admin-node-edit-form is-sectioned" aria-label="添加通知类型">
+        <AdminFormSection title="通知类型">
+          <div className="admin-rule-picker" role="list" aria-label="可添加通知类型">
+            {rules.length === 0 && <div className="admin-state-card">所有通知类型都已添加。</div>}
+            {rules.map((rule) => (
+              <article className="admin-rule-picker-row" role="listitem" key={rule.id}>
+                <div className="admin-list-main">
+                  <strong>{rule.name}</strong>
+                  <small>{formatAlertRuleScope(rule, nodes)}</small>
+                </div>
+                <button className="admin-primary-action" type="button" onClick={() => onAdd(rule.id)}>添加</button>
+              </article>
+            ))}
+          </div>
+        </AdminFormSection>
       </div>
     </AdminModal>
   )

@@ -373,6 +373,7 @@ describe('AdminDashboard', () => {
     expect(html).toContain('7579942307')
     expect(html).toContain('凭据已设置')
     expect(html).toContain('添加通知类型')
+    expect(html).toContain('<button class="admin-primary-action" type="button">添加通知类型</button>')
     expect(html).toContain('CPU 使用率')
     expect(html).toContain('启用中')
     expect(html).toContain('添加通知渠道')
