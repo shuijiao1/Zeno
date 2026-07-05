@@ -218,12 +218,28 @@ function formatSystemSpec(node: HomeCardNode): string {
 }
 
 function formatCpuSpec(node: HomeCardNode): string {
-  return [node.cpuModel || '--', formatCores(node.cpuCores)].filter(Boolean).join(' · ')
+  return [node.cpuModel || '--', formatCores(node.cpuCores, node.virtualization)].filter(Boolean).join(' · ')
 }
 
-function formatCores(value: number | null | undefined): string {
-  if (value === null || value === undefined) return '-- Cores'
-  return `${Number.isInteger(value) ? value.toFixed(0) : value.toFixed(1)} Cores`
+function formatCores(value: number | null | undefined, virtualization?: string): string {
+  const label = coreTypeLabel(virtualization)
+  if (value === null || value === undefined) return `-- ${label.plural}`
+  const formatted = Number.isInteger(value) ? value.toFixed(0) : value.toFixed(1)
+  return `${formatted} ${value === 1 ? label.singular : label.plural}`
+}
+
+function coreTypeLabel(virtualization?: string): { singular: string; plural: string } {
+  const value = virtualization?.trim().toLowerCase() ?? ''
+  if (value === '') return { singular: 'Core', plural: 'Cores' }
+  const virtualMarkers = [
+    'virtual', 'kvm', 'qemu', 'standard pc', 'i440fx', 'piix', 'vmware', 'xen', 'hyper-v', 'bochs',
+    'parallels', 'bhyve', 'openvz', 'lxc', 'docker', 'container', 'cloud', 'ec2', 'compute engine',
+    'digitalocean', 'vultr', 'linode', 'alibaba', 'tencent', 'huawei', 'azure', 'google', 'amazon',
+  ]
+  if (virtualMarkers.some((marker) => value.includes(marker))) {
+    return { singular: 'Virtual Core', plural: 'Virtual Cores' }
+  }
+  return { singular: 'Physical Core', plural: 'Physical Cores' }
 }
 
 function formatBootTime(value: string | undefined): string {

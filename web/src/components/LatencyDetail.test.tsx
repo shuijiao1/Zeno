@@ -80,7 +80,8 @@ describe('LatencyDetail', () => {
     expect(html).toContain('detail-fact-strip')
     expect(html).toContain('Hytron')
     expect(html).toContain('AMD EPYC 7B13')
-    expect(html).toContain('2 Cores')
+    expect(html).toContain('2 Virtual Cores')
+    expect(html).not.toContain('2 Cores')
     expect(html).not.toContain('kvm')
     expect(html).not.toContain('Standard PC')
     expect(html).toContain('运行时间')
@@ -108,6 +109,38 @@ describe('LatencyDetail', () => {
     expect(html).not.toContain('Hytron 网络延迟')
     expect(html).not.toContain('1 天 · 0 个监控服务')
     expect(html).toContain('monitor services')
+  })
+
+  it('labels detail CPU cores as physical when the host does not look virtualized', () => {
+    const html = renderToStaticMarkup(
+      <LatencyDetail
+        node={{ ...node, virtualization: 'PowerEdge R740' }}
+        points={latencyPoints}
+        statePoints={statePoints}
+        stateLoading={false}
+        range="1d"
+        onBack={vi.fn()}
+        onRangeChange={vi.fn()}
+      />,
+    )
+
+    expect(html).toContain('2 Physical Cores')
+  })
+
+  it('keeps a neutral core label when virtualization is unknown', () => {
+    const html = renderToStaticMarkup(
+      <LatencyDetail
+        node={{ ...node, virtualization: '' }}
+        points={latencyPoints}
+        statePoints={statePoints}
+        stateLoading={false}
+        range="1d"
+        onBack={vi.fn()}
+        onRangeChange={vi.fn()}
+      />,
+    )
+
+    expect(html).toContain('2 Cores')
   })
 
   it('keeps detail facts and latency area reserved while live data is loading', () => {
