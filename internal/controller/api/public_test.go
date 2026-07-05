@@ -73,8 +73,8 @@ func TestSummaryEndpointReturnsMockHomeCardsWithoutSecrets(t *testing.T) {
 	if summary.Nodes[0].ExpiryLabel == "" {
 		t.Fatalf("first node should include a Kulin-style expiry label")
 	}
-	if len(summary.LatencyPoints) == 0 {
-		t.Fatal("summary should include latency points for the mock chart")
+	if len(summary.LatencyPoints) != 0 {
+		t.Fatalf("summary latency points len = %d, want 0 because details use dedicated websocket feeds", len(summary.LatencyPoints))
 	}
 	if len(summary.Services) == 0 || summary.Services[0].Name == "" || summary.Services[0].AssignedNodeCount == 0 {
 		t.Fatalf("summary services = %+v, want public monitor service status", summary.Services)

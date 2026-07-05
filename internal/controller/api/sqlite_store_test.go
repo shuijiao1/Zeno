@@ -165,8 +165,8 @@ func TestSQLiteBackedSummaryUsesPersistedNodeAndLatestLatency(t *testing.T) {
 	if node.LatencySummary == nil || node.LatencySummary.MedianMS == nil || *node.LatencySummary.MedianMS != 8.8 {
 		t.Fatalf("latency summary = %+v, want latest median 8.8", node.LatencySummary)
 	}
-	if len(summary.LatencyPoints) != 2 {
-		t.Fatalf("summary latency points len = %d, want persisted points", len(summary.LatencyPoints))
+	if len(summary.LatencyPoints) != 0 {
+		t.Fatalf("summary latency points len = %d, want 0 because latency charts use dedicated websocket feeds", len(summary.LatencyPoints))
 	}
 	if len(summary.Services) != 1 || summary.Services[0].ID != "google" || summary.Services[0].ReportingNodeCount != 1 || summary.Services[0].MedianMS == nil || *summary.Services[0].MedianMS != 8.8 {
 		t.Fatalf("summary services = %+v, want persisted google service status", summary.Services)

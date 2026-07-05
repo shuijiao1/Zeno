@@ -365,16 +365,7 @@ func (s *SQLiteStore) Summary(ctx context.Context) (SummaryResponse, error) {
 		return SummaryResponse{}, err
 	}
 
-	var points []LatencyPoint
-	if len(nodes) > 0 {
-		nodeID := preferredSummaryNodeID(nodes)
-		window, _ := resolveLatencyWindow("1h")
-		points, err = s.latencyPoints(ctx, nodeID, window)
-		if err != nil {
-			return SummaryResponse{}, err
-		}
-	}
-	return SummaryResponse{Nodes: nodes, Services: services, LatencyPoints: points}, nil
+	return SummaryResponse{Nodes: nodes, Services: services, LatencyPoints: []LatencyPoint{}}, nil
 }
 
 func (s *SQLiteStore) NodeLatency(ctx context.Context, nodeID string, window latencyWindow) (LatencyResponse, error) {
