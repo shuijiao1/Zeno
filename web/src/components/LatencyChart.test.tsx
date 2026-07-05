@@ -47,4 +47,21 @@ describe('LatencyChart', () => {
     expect(xAxisLabels.every((label) => !label.endsWith(':30'))).toBe(true)
     expect(new Set(xAxisLabels).size).toBeGreaterThan(2)
   })
+
+  it('auto-scales the delay axis like Kulin instead of anchoring every selected target to zero', () => {
+    const steadyHighLatencyPoints = [186.5, 187.2, 188.0].map((medianMs, index) => ({
+      ts: new Date(Date.UTC(2026, 6, 5, 0, index * 30)).toISOString(),
+      targetId: 'high',
+      targetName: 'High latency',
+      medianMs,
+      lossPercent: 0,
+    }))
+
+    const html = renderToStaticMarkup(<LatencyChart points={steadyHighLatencyPoints} activeTargetNames={['High latency']} />)
+    const labels = [...html.matchAll(/class="axis-label"[^>]*>([^<]+)<\/text>/g)].map((match) => match[1])
+    const yAxisLabels = labels.filter((label) => label.endsWith('ms'))
+
+    expect(yAxisLabels).not.toContain('0ms')
+    expect(yAxisLabels.some((label) => label.startsWith('186') || label.startsWith('187') || label.startsWith('188'))).toBe(true)
+  })
 })

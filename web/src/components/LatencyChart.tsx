@@ -209,8 +209,15 @@ function packetLossAreaPath(rows: KulinChartRow[], x: (createdAt: number) => num
 function yDomainForRows(rows: KulinChartRow[], keys: string[]): { min: number; max: number } {
   const values = rows.flatMap((row) => keys.map((key) => rowNumber(row, key)).filter((value): value is number => value !== null))
   if (values.length === 0) return { min: 0, max: 1 }
+  const min = Math.min(...values)
   const max = Math.max(...values)
-  return { min: 0, max: Math.max(1, Math.ceil(max * 1.2)) }
+  const span = max - min
+  if (span <= 0) {
+    const padding = Math.max(0.5, Math.abs(max) * 0.05)
+    return { min: Math.max(0, min - padding), max: max + padding }
+  }
+  const padding = Math.max(span * 0.15, max * 0.002, 0.05)
+  return { min: Math.max(0, min - padding), max: max + padding }
 }
 
 function rowNumber(row: KulinChartRow, key: string): number | null {
