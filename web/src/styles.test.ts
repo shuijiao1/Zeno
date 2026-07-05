@@ -17,6 +17,7 @@ describe('mobile latency target layout', () => {
     expect(styles).toContain('.latency-panel-skeleton')
     expect(styles).toContain('.resource-chart-frame')
     expect(styles).toContain('grid-template-columns: 46px minmax(0, 1fr)')
+    expect(styles).toContain('.latency-chart .axis-label { font-size: 10px; }')
   })
 })
 
@@ -74,6 +75,21 @@ describe('homepage and admin shell layout', () => {
     expect(styles).toContain('.nav-logout-button')
     expect(styles).toContain('min-height: 32px')
     expect(styles).not.toContain('.login-link { display: none; }')
+  })
+
+  it('polishes backend mobile navigation, modal actions, and save buttons without overlap', () => {
+    expect(styles).toContain('@media (max-width: 767px)')
+    expect(styles).toContain('.admin-section-nav {')
+    expect(styles).toContain('overflow-x: auto')
+    expect(styles).toContain('scroll-snap-type: x proximity')
+    expect(styles).toContain('.admin-modal { width: 100%; height: min(92dvh, 760px); max-height: calc(100dvh - 16px); border-radius: var(--radius-panel); padding: 0; }')
+    expect(styles).toContain('.admin-modal-actions {')
+    expect(styles).toContain('position: sticky')
+    expect(styles).toContain('bottom: 0')
+    expect(styles).toContain('max(10px, env(safe-area-inset-bottom))')
+    expect(styles).toContain('.admin-settings-form > button[type="submit"] { width: 100%; margin-top: 14px; }')
+    expect(styles).toContain('.admin-target-assignment-list,')
+    expect(styles).toContain('.admin-notification-list .admin-row-actions.admin-icon-actions,')
   })
 
   it('keeps authenticated node management in compact lists without old card shells', () => {

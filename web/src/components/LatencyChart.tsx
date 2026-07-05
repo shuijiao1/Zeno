@@ -45,7 +45,8 @@ export function LatencyChart({
   const timestamps = useMemo(() => rows.map((row) => row.created_at), [rows])
   const xStep = timestamps.length > 1 ? (width - pad.left - pad.right) / (timestamps.length - 1) : 0
   const xByTimestamp = useMemo(() => new Map(timestamps.map((timestamp, index) => [timestamp, pad.left + index * xStep])), [timestamps, xStep])
-  const axisTicks = useMemo(() => axisTicksForTimestamps(timestamps), [timestamps])
+  const maxAxisTicks = width <= 480 ? 4 : 12
+  const axisTicks = useMemo(() => axisTicksForTimestamps(timestamps, maxAxisTicks), [timestamps, maxAxisTicks])
   const plotHeight = height - pad.top - pad.bottom
   const domain = useMemo(() => yDomainForRows(rows, baseView.lineKeys), [rows, baseView.lineKeys])
   const packetLossSeries = baseView.showPacketLossArea
@@ -348,7 +349,7 @@ function avgPacketLoss(rows: KulinChartRow[]): number {
   return values.reduce((sum, value) => sum + value, 0) / values.length
 }
 
-function axisTicksForTimestamps(timestamps: number[]): number[] {
+function axisTicksForTimestamps(timestamps: number[], maxTicks: number): number[] {
   if (timestamps.length <= 1) return timestamps
   if (timestamps.length < 6) return [timestamps[0], timestamps.at(-1)!]
 
@@ -361,7 +362,7 @@ function axisTicksForTimestamps(timestamps: number[]): number[] {
       const date = new Date(timestamp)
       return index === 0 || index === lastIndex || date.getMinutes() === 0
     })
-    return thinTicks(ticks, 10)
+    return thinTicks(ticks, maxTicks)
   }
 
   if (spanHours <= 36) {
@@ -370,7 +371,7 @@ function axisTicksForTimestamps(timestamps: number[]): number[] {
       const date = new Date(timestamp)
       return date.getMinutes() === 0 && date.getHours() % 2 === 0
     })
-    return ticks.length >= 2 ? ticks : [start, end]
+    return thinTicks(ticks.length >= 2 ? ticks : [start, end], maxTicks)
   }
 
   if (spanHours <= 24 * 10) {
@@ -379,10 +380,10 @@ function axisTicksForTimestamps(timestamps: number[]): number[] {
       const date = new Date(timestamp)
       return date.getHours() % 12 === 0 && date.getMinutes() === 0
     })
-    return thinTicks(ticks.length >= 2 ? ticks : [start, end], 12)
+    return thinTicks(ticks.length >= 2 ? ticks : [start, end], maxTicks)
   }
 
-  return thinTicks(timestamps, 8)
+  return thinTicks(timestamps, maxTicks)
 }
 
 function thinTicks(ticks: number[], maxTicks: number): number[] {
