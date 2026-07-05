@@ -108,20 +108,24 @@ describe('state history layout', () => {
 })
 
 describe('Kulin-inspired color polish', () => {
-  it('uses an aurora glass palette instead of a flat grey shell', () => {
-    expect(styles).toContain('--zeno-glow-primary')
-    expect(styles).toContain('--zeno-glow-secondary')
-    expect(styles).toContain('var(--zeno-desktop-background-image, none),')
-    expect(styles).toContain('linear-gradient(135deg, var(--zeno-bg-a), var(--zeno-bg-b)')
-    expect(styles).toContain('blur(18px) saturate(1.35)')
+  it('keeps the overall shell and cards pure white instead of aurora/grey backgrounds', () => {
+    expect(styles).toContain('--background: #ffffff')
+    expect(styles).toContain('--card: #ffffff')
+    expect(styles).toContain('background-image: var(--zeno-desktop-background-image, none)')
+    expect(styles).not.toContain('--zeno-glow-primary')
+    expect(styles).not.toContain('radial-gradient(circle at')
+    expect(styles).not.toContain('linear-gradient(135deg, var(--zeno-bg-a)')
   })
 
-  it('gives important controls and chart cards visible accent colors', () => {
-    expect(styles).toContain('--zeno-accent-gradient')
+  it('adds focus with solid color text, icons, and active controls', () => {
     expect(styles).toContain('.home-summary__status-line strong')
+    expect(styles).toContain('color: var(--blue)')
+    expect(styles).toContain('.home-summary__metrics > div:nth-child(1) dd')
     expect(styles).toContain('.admin-section-nav button[data-active=\'true\']')
-    expect(styles).toContain('.state-history-chart-card.tone-green')
+    expect(styles).toContain('background: var(--blue)')
     expect(styles).toContain('.state-history-chart-card::before')
+    expect(styles).toContain('.state-history-chart-card.tone-green')
+    expect(styles).not.toContain('--zeno-accent-gradient')
   })
 })
 
