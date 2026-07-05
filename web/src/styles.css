@@ -288,42 +288,30 @@ svg { display: block; }
 .home-summary__metric {
   --summary-accent: var(--blue);
   min-width: 0;
-  min-height: 34px;
-  position: relative;
+  min-height: 30px;
   display: grid;
   grid-template-columns: auto minmax(0, 1fr);
   align-items: center;
   justify-content: center;
-  gap: 10px;
-  padding: 0 10px 0 11px;
-  border: 1px solid color-mix(in srgb, var(--summary-accent) 18%, var(--border));
-  border-left-width: 3px;
+  gap: 8px;
+  padding: 0 9px;
+  border: 1px solid color-mix(in srgb, var(--summary-accent) 14%, var(--border));
+  border-left-width: 2px;
   border-radius: var(--radius-field);
-  background: color-mix(in srgb, var(--control-bg) 91%, var(--summary-accent) 7%);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.38);
+  background: color-mix(in srgb, var(--control-bg) 96%, var(--summary-accent) 4%);
+  box-shadow: none;
   overflow: hidden;
 }
 .home-summary__metric--send,
 .home-summary__metric--upload-rate { --summary-accent: var(--blue); }
 .home-summary__metric--receive,
 .home-summary__metric--download-rate { --summary-accent: var(--purple); }
-.home-summary__metric::after {
-  content: "";
-  position: absolute;
-  right: 9px;
-  bottom: 6px;
-  width: 40px;
-  height: 1px;
-  border-radius: var(--radius-pill);
-  background: var(--summary-accent);
-  opacity: .22;
-}
 .home-summary__metrics dt {
   margin: 0;
   min-width: 34px;
   color: var(--summary-accent);
   font-size: 11px;
-  font-weight: 500;
+  font-weight: 400;
   line-height: 1;
   text-align: left;
 }
@@ -1681,8 +1669,7 @@ svg { display: block; }
   .home-summary__status-line::before { height: 20px; }
   .home-summary__status-line strong { font-size: 22px; }
   .home-summary__metrics { width: 100%; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; }
-  .home-summary__metric { min-height: 34px; grid-template-columns: auto minmax(0, 1fr); gap: 8px; padding: 0 9px; border-radius: var(--radius-field); }
-  .home-summary__metric::after { right: 8px; bottom: 5px; width: 32px; }
+  .home-summary__metric { min-height: 30px; grid-template-columns: auto minmax(0, 1fr); gap: 8px; padding: 0 9px; border-radius: var(--radius-field); }
   .home-summary__metrics dt { font-size: 10px; }
   .home-summary__metrics dd { font-size: 11px; }
   .home-summary__metrics svg { width: 11px; height: 11px; }

@@ -52,6 +52,8 @@ describe('homepage and admin shell layout', () => {
     expect(styles).toContain('--summary-accent')
     expect(styles).toContain('.home-summary__metric--send')
     expect(styles).toContain('.home-summary__metric--rate dd { font-weight: 600; }')
+    expect(styles).toContain('font-weight: 400')
+    expect(styles).not.toContain('.home-summary__metric::after')
     expect(styles).not.toContain('.home-summary__compact')
     expect(styles).not.toContain('.home-network-grid')
     expect(styles).not.toContain('.home-stat-grid')
