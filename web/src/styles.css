@@ -722,6 +722,8 @@ svg { display: block; }
 .admin-state-card.is-error { color: var(--red); }
 
 .kulin-node-card {
+  position: relative;
+  overflow: hidden;
   width: 100%;
   max-width: 360px;
   min-height: 394px;
@@ -743,22 +745,38 @@ svg { display: block; }
 }
 .kulin-node-card:hover { transform: translateY(-4px); box-shadow: 0 10px 15px -3px var(--shadow-stone), 0 4px 6px -4px var(--shadow-stone); }
 .kulin-node-card.is-offline {
-  align-items: center;
-  justify-content: center;
-  background: color-mix(in srgb, var(--card) 92%, transparent);
+  background: color-mix(in srgb, var(--card) 82%, #737373 18%);
 }
-.node-offline-state {
-  display: inline-flex;
+.kulin-node-card.is-offline::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  pointer-events: none;
+  background: linear-gradient(145deg, color-mix(in srgb, #fff 10%, transparent), color-mix(in srgb, #000 8%, transparent)), repeating-linear-gradient(135deg, color-mix(in srgb, #fff 10%, transparent) 0 1px, transparent 1px 11px);
+}
+.kulin-node-card.is-offline .node-head,
+.kulin-node-card.is-offline .node-specs,
+.kulin-node-card.is-offline .node-usage {
+  filter: grayscale(1);
+  opacity: .42;
+}
+.node-offline-watermark {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  pointer-events: none;
+  display: flex;
   align-items: center;
   justify-content: center;
-  gap: 8px;
-  color: var(--red);
-  font-size: 14px;
+  transform: rotate(-24deg);
+  color: color-mix(in srgb, var(--foreground) 26%, transparent);
+  font-size: 58px;
   font-weight: 600;
-}
-.node-offline-state .node-dot {
-  width: 8px;
-  height: 8px;
+  letter-spacing: .18em;
+  text-indent: .18em;
+  line-height: 1;
+  text-shadow: 0 1px 0 color-mix(in srgb, #fff 18%, transparent);
 }
 
 .node-head {

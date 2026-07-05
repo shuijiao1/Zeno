@@ -120,14 +120,6 @@ export function ServerCard({ node, onOpen }: ServerCardProps) {
         }
       }}
     >
-      {isOfflineCard && (
-        <div className="node-offline-state" aria-label={`${node.displayName} 离线`}>
-          <span className="node-dot status-offline" aria-hidden="true" />
-          <span>离线</span>
-        </div>
-      )}
-      {!isOfflineCard && (
-        <>
       <section className="node-head">
         <img alt={node.os} className="node-os" loading="lazy" src={osAsset[node.os]} />
         <div className="node-title-line">
@@ -158,8 +150,7 @@ export function ServerCard({ node, onOpen }: ServerCardProps) {
           </section>
         </div>
       </section>
-        </>
-      )}
+      {isOfflineCard && <span className="node-offline-watermark" aria-label="离线水印">离线</span>}
     </article>
   )
 }
