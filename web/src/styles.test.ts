@@ -94,8 +94,9 @@ describe('state history layout', () => {
     expect(styles).toContain('.state-sparkline--large')
   })
 
-  it('keeps uptime as a compact header badge', () => {
-    expect(styles).toContain('.state-uptime')
+  it('keeps uptime and load as compact badges in the top server card', () => {
+    expect(styles).toContain('.detail-hero__badges')
+    expect(styles).toContain('.detail-hero-badge')
     expect(styles).toContain('border-radius: 999px')
   })
 })

@@ -4,9 +4,10 @@ import { formatBps, formatPercent } from '../lib/format'
 
 interface StateHistoryPanelProps {
   points: StatePoint[]
-  rangeLabel: string
+  range: string
   loading?: boolean
   error?: string
+  onRangeChange?: (range: string) => void
 }
 
 interface MetricLine {
@@ -29,8 +30,15 @@ interface MetricConfig {
 const chartWidth = 900
 const chartHeight = 180
 const chartPad = { left: 48, right: 18, top: 18, bottom: 34 }
+const stateRangeOptions = [
+  { value: '1h', label: '实时' },
+  { value: '1d', label: '1 天' },
+  { value: '7d', label: '7 天' },
+  { value: '30d', label: '30 天' },
+]
 
-export function StateHistoryPanel({ points, rangeLabel, loading = false, error }: StateHistoryPanelProps) {
+export function StateHistoryPanel({ points, range, loading = false, error, onRangeChange = () => {} }: StateHistoryPanelProps) {
+  const rangeLabel = stateRangeOptions.find((option) => option.value === range)?.label ?? range
   const sampleCount = points.length
   const latestCpu = latest(points, (point) => point.cpuPercent)
   const latestMemory = latest(points, memoryPercent)
@@ -39,19 +47,12 @@ export function StateHistoryPanel({ points, rangeLabel, loading = false, error }
   const latestOutSpeed = latest(points, (point) => point.netOutSpeedBps)
   const latestInTotal = latest(points, (point) => point.netInTotalBytes)
   const latestOutTotal = latest(points, (point) => point.netOutTotalBytes)
-  const latestUptime = latest(points, (point) => point.uptimeSeconds)
   const latestLoad1 = latest(points, (point) => point.load1)
   const latestLoad5 = latest(points, (point) => point.load5)
   const latestLoad15 = latest(points, (point) => point.load15)
   const latestSwap = latest(points, swapPercent)
   const latestProcessCount = latest(points, (point) => point.processCount)
   const latestTcpConnectionCount = latest(points, (point) => point.tcpConnectionCount)
-  const stateFacts = [
-    latestLoad1 !== null && latestLoad5 !== null && latestLoad15 !== null ? `负载 ${formatFixed(latestLoad1, 2)} / ${formatFixed(latestLoad5, 2)} / ${formatFixed(latestLoad15, 2)}` : null,
-    latestSwap !== null ? `Swap ${formatPercent(latestSwap)}` : null,
-    latestProcessCount !== null ? `进程 ${Math.round(latestProcessCount)}` : null,
-    latestTcpConnectionCount !== null ? `TCP ${Math.round(latestTcpConnectionCount)}` : null,
-  ].filter((fact): fact is string => fact !== null)
 
   const metrics: MetricConfig[] = [
     {
@@ -144,12 +145,13 @@ export function StateHistoryPanel({ points, rangeLabel, loading = false, error }
           <h3>系统资源历史</h3>
           <p>{rangeLabel} · {sampleCount} 个状态采样</p>
         </div>
-        {(latestUptime !== null || stateFacts.length > 0) && (
-          <div className="state-metric-strip">
-            {latestUptime !== null && <strong className="state-uptime">运行 {formatUptime(latestUptime)}</strong>}
-            {stateFacts.map((fact) => <span key={fact} className="state-fact">{fact}</span>)}
+        <div className="monitor-heading-actions">
+          <div className="detail-range-row state-range-row" aria-label="resource history range selector">
+            {stateRangeOptions.map((option) => (
+              <button key={option.value} type="button" className={range === option.value ? 'is-active' : ''} onClick={() => onRangeChange(option.value)}>{option.label}</button>
+            ))}
           </div>
-        )}
+        </div>
       </header>
 
       {loading && <div className="detail-state">正在读取系统资源…</div>}
@@ -213,17 +215,6 @@ function latest(points: StatePoint[], read: (point: StatePoint) => number | null
     if (value !== null) return value
   }
   return null
-}
-
-function formatUptime(seconds: number): string {
-  const safeSeconds = Math.max(0, Math.floor(seconds))
-  const days = Math.floor(safeSeconds / 86_400)
-  const hours = Math.floor((safeSeconds % 86_400) / 3_600)
-  const minutes = Math.floor((safeSeconds % 3_600) / 60)
-
-  if (days > 0) return `${days} 天 ${hours} 小时`
-  if (hours > 0) return `${hours} 小时 ${minutes} 分钟`
-  return `${Math.max(1, minutes)} 分钟`
 }
 
 function memoryPercent(point: StatePoint): number | null {

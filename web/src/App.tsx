@@ -126,6 +126,7 @@ export function App() {
   const [state, setState] = useState<LoadState>({ kind: 'loading' })
   const [route, setRoute] = useState<DashboardRoute>(() => parseDashboardRoute(window.location.pathname))
   const [latencyRange, setLatencyRange] = useState('1d')
+  const [stateRange, setStateRange] = useState('1h')
   const [latencyState, setLatencyState] = useState<LatencyLoadState>({ kind: 'idle' })
   const [stateHistoryState, setStateHistoryState] = useState<StateHistoryLoadState>({ kind: 'idle' })
   const [serviceLatencyState, setServiceLatencyState] = useState<ServiceLatencyLoadState>({ kind: 'idle' })
@@ -213,7 +214,7 @@ export function App() {
     let loadedOnce = false
     const loadStateHistory = () => {
       if (!loadedOnce) setStateHistoryState({ kind: 'loading' })
-      fetchNodeState(route.nodeId, latencyRange)
+      fetchNodeState(route.nodeId, stateRange)
         .then((data) => {
           loadedOnce = true
           if (!cancelled) setStateHistoryState({ kind: 'ready', data })
@@ -230,7 +231,7 @@ export function App() {
       cancelled = true
       stopRefresh()
     }
-  }, [route, latencyRange])
+  }, [route, stateRange])
 
   useEffect(() => {
     if (route.kind !== 'service') {
@@ -484,6 +485,7 @@ export function App() {
   const navigateNode = (nodeId: string) => {
     window.history.pushState(null, '', nodePath(nodeId))
     setLatencyRange('1d')
+    setStateRange('1h')
     setRoute({ kind: 'node', nodeId })
   }
 
@@ -564,12 +566,14 @@ export function App() {
           points={latencyState.kind === 'ready' ? latencyState.data.points : []}
           statePoints={stateHistoryState.kind === 'ready' ? stateHistoryState.data.points : []}
           range={latencyRange}
+          stateRange={stateRange}
           loading={latencyState.kind === 'loading'}
           error={latencyState.kind === 'error' ? latencyState.message : undefined}
           stateLoading={stateHistoryState.kind === 'loading'}
           stateError={stateHistoryState.kind === 'error' ? stateHistoryState.message : undefined}
           onBack={navigateHome}
           onRangeChange={setLatencyRange}
+          onStateRangeChange={setStateRange}
         />
       )}
 

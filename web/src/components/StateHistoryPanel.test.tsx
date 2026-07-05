@@ -49,16 +49,17 @@ const points: StatePoint[] = [
 describe('StateHistoryPanel', () => {
   it('renders real agent state history metrics and sparklines', () => {
     const html = renderToStaticMarkup(
-      <StateHistoryPanel points={points} rangeLabel="1 天" loading={false} />,
+      <StateHistoryPanel points={points} range="1h" loading={false} />,
     )
 
     expect(html).toContain('系统资源历史')
-    expect(html).toContain('1 天 · 2 个状态采样')
-    expect(html).toContain('运行 1 小时 1 分钟')
-    expect(html).toContain('负载 0.42 / 0.35 / 0.28')
-    expect(html).toContain('Swap 25.0%')
-    expect(html).toContain('进程 88')
-    expect(html).toContain('TCP 34')
+    expect(html).toContain('实时 · 2 个状态采样')
+    expect(html).toContain('resource history range selector')
+    expect(html).toContain('实时')
+    expect(html).toContain('1 天')
+    expect(html).toContain('7 天')
+    expect(html).toContain('30 天')
+    expect(html).not.toContain('运行 1 小时 1 分钟')
     expect(html).not.toContain('温度')
     expect(html).toContain('state-history-stack')
     expect(html).toContain('state-history-chart-card')
@@ -90,7 +91,7 @@ describe('StateHistoryPanel', () => {
 
   it('shows an explicit empty state instead of a blank chart', () => {
     const html = renderToStaticMarkup(
-      <StateHistoryPanel points={[]} rangeLabel="1 天" loading={false} />,
+      <StateHistoryPanel points={[]} range="1d" loading={false} />,
     )
 
     expect(html).toContain('暂无系统资源历史')
