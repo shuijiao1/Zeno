@@ -1123,7 +1123,7 @@ func TestAgentStateSamplesDrivePublicSummaryAndMonthlyTrafficDeltas(t *testing.T
 
 	ts := time.Now().UTC().Truncate(time.Second).Unix()
 	postState(ts, 1_000_000, 2_000_000, 12.5)
-	postState(ts+130, 1_400_000, 2_600_000, 22.5)
+	postState(ts+200, 1_400_000, 2_600_000, 22.5)
 
 	summary, err := store.Summary(ctx)
 	if err != nil {

@@ -115,7 +115,7 @@ type latencyWindow struct {
 func resolveLatencyWindow(rangeName string) (latencyWindow, bool) {
 	switch rangeName {
 	case "", "1h":
-		return latencyWindow{Name: "1h", Samples: 36, Step: 2 * time.Minute}, true
+		return latencyWindow{Name: "1h", Samples: 20, Step: 3 * time.Minute}, true
 	case "1d":
 		return latencyWindow{Name: "1d", Samples: 48, Step: 30 * time.Minute}, true
 	case "7d":
