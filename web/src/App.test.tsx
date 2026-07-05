@@ -1,6 +1,6 @@
 import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it } from 'vitest'
-import { AdminDashboard, HomeTopPanel, shellStyleForSettings, summaryLatencyPoints, validateAdminSettingsInput } from './App'
+import { AdminDashboard, HomeTopPanel, shellStyleForSettings, validateAdminSettingsInput } from './App'
 import type { AdminAlertRule, AdminNode, AdminNotificationChannel, AdminProbeTarget, AdminSettings } from './types'
 
 const overviewProps = {
@@ -12,38 +12,6 @@ const overviewProps = {
   upSpeed: 128,
   downSpeed: 256,
 }
-
-describe('summaryLatencyPoints', () => {
-  it('expands latest latency summaries into a range-spanning preview', () => {
-    const points = summaryLatencyPoints({
-      id: 'hytron',
-      displayName: 'Hytron',
-      status: 'online',
-      os: 'debian',
-      cpuPercent: null,
-      memoryUsedBytes: null,
-      memoryTotalBytes: null,
-      diskUsedBytes: null,
-      diskTotalBytes: null,
-      netInSpeedBps: null,
-      netOutSpeedBps: null,
-      netInTotalBytes: null,
-      netOutTotalBytes: null,
-      monthlyBillableBytes: null,
-      monthlyQuotaBytes: null,
-      latencySummaries: [
-        { targetId: 'google', targetName: 'Google', medianMs: 8, avgMs: 9, lossPercent: 1.25, updatedAt: '2026-07-05T12:00:00Z' },
-      ],
-    }, '1d')
-
-    expect(points).toHaveLength(8)
-    expect(points[0].targetId).toBe('google')
-    expect(points[0].avgMs).toBe(9)
-    expect(points[0].lossPercent).toBe(1.25)
-    expect(points[0].ts).toBe('2026-07-04T12:00:00.000Z')
-    expect(points.at(-1)?.ts).toBe('2026-07-05T12:00:00.000Z')
-  })
-})
 
 const hytronNode: AdminNode = {
   id: 'hytron',

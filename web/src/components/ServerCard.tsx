@@ -6,7 +6,6 @@ import { ServerFlag } from './ServerFlag'
 interface ServerCardProps {
   node: HomeCardNode
   onOpen?: (nodeId: string) => void
-  onPrefetch?: (nodeId: string) => void
 }
 
 const osAsset: Record<HomeCardNode['os'], string> = {
@@ -76,13 +75,12 @@ function formatTrafficLabel(): string {
   return '流量'
 }
 
-export function ServerCard({ node, onOpen, onPrefetch }: ServerCardProps) {
+export function ServerCard({ node, onOpen }: ServerCardProps) {
   const memoryPercent = ratio(node.memoryUsedBytes, node.memoryTotalBytes)
   const diskPercent = ratio(node.diskUsedBytes, node.diskTotalBytes)
   const trafficPercent = ratio(node.monthlyBillableBytes, node.monthlyQuotaBytes)
   const latency = node.latencySummary
   const open = () => onOpen?.(node.id)
-  const prefetch = () => onPrefetch?.(node.id)
   const visualStatus = node.status === 'online' ? 'online' : 'offline'
   const isOfflineCard = visualStatus === 'offline'
 
@@ -91,9 +89,6 @@ export function ServerCard({ node, onOpen, onPrefetch }: ServerCardProps) {
       className={`kulin-node-card${isOfflineCard ? ' is-offline' : ''}`}
       role={onOpen ? 'link' : undefined}
       tabIndex={onOpen ? 0 : undefined}
-      onPointerEnter={prefetch}
-      onFocus={prefetch}
-      onTouchStart={prefetch}
       onClick={open}
       onKeyDown={(event) => {
         if (!onOpen) return
