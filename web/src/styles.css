@@ -1304,6 +1304,7 @@ svg { display: block; }
 .detail-fact:not(.is-wide) strong { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; overflow-wrap: normal; }
 .detail-fact.is-wide p { font-size: 10.5px; }
 .detail-fact.is-wide strong { font-size: 13px; line-height: 1.22; }
+.detail-fact.is-pending strong { color: color-mix(in srgb, var(--foreground) 48%, transparent); }
 
 .detail-range-row {
   display: flex;
@@ -1555,6 +1556,10 @@ svg { display: block; }
   text-align: left;
 }
 .latency-target-grid button[data-active='true'] { border-color: color-mix(in srgb, var(--blue) 48%, var(--border)); background: var(--surface-strong); color: var(--foreground); box-shadow: 0 8px 22px -18px var(--blue); }
+.latency-target-grid.is-loading button { pointer-events: none; background: color-mix(in srgb, var(--surface-soft) 96%, var(--blue) 4%); color: var(--muted); }
+.latency-target-grid.is-loading span,
+.latency-target-grid.is-loading strong,
+.latency-target-grid.is-loading em { color: color-mix(in srgb, var(--foreground) 38%, transparent); }
 .latency-target-grid span,
 .latency-target-grid strong,
 .latency-target-grid em { width: 100%; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -1570,6 +1575,14 @@ svg { display: block; }
   background: var(--surface-soft);
 }
 .latency-panel.is-compact { margin-top: 24px; }
+.latency-panel-skeleton { min-height: 320px; display: flex; align-items: stretch; justify-content: stretch; }
+.latency-chart-skeleton {
+  width: 100%;
+  min-height: 280px;
+  border: 1px dashed color-mix(in srgb, var(--border) 78%, transparent);
+  border-radius: var(--radius-card);
+  background: color-mix(in srgb, var(--surface-soft) 94%, var(--blue) 3%);
+}
 .latency-panel__header {
   display: flex;
   align-items: center;

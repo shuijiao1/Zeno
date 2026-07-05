@@ -50,10 +50,12 @@ export function LatencyDetail({
   const rangeLabel = rangeOptions.find((option) => option.value === range)?.label ?? range
   const latestState = latestStatePoint(statePoints)
   const visualStatus = node.status === 'online' ? 'online' : 'offline'
-  const uptimeValue = latestState?.uptimeSeconds !== null && latestState?.uptimeSeconds !== undefined ? formatUptime(latestState.uptimeSeconds) : null
+  const uptimeValue = latestState?.uptimeSeconds !== null && latestState?.uptimeSeconds !== undefined ? formatUptime(latestState.uptimeSeconds) : formatUptimeFromBootTime(node.bootTime)
   const loadValue = latestState && latestState.load1 !== null && latestState.load5 !== null && latestState.load15 !== null
     ? `${formatFixed(latestState.load1, 2)} / ${formatFixed(latestState.load5, 2)} / ${formatFixed(latestState.load15, 2)}`
-    : null
+    : '-- / -- / --'
+  const hasLatencyData = points.length > 0 || targetSummaries.length > 0
+  const showLatencySkeleton = loading && !hasLatencyData && !error
   const toggleTarget = (targetId: string) => {
     setActiveTargetIds((current) => (
       current.includes(targetId) ? current.filter((id) => id !== targetId) : [...current, targetId]
@@ -79,8 +81,8 @@ export function LatencyDetail({
           <InfoFact label="内存" value={formatBinaryBytes(node.memoryTotalBytes)} />
           <InfoFact label="磁盘" value={formatBinaryBytes(node.diskTotalBytes)} />
           <InfoFact label="开机时间" value={formatBootTime(node.bootTime)} />
-          {uptimeValue && <InfoFact label="运行时间" value={uptimeValue} />}
-          {loadValue && <InfoFact label="负载" value={loadValue} />}
+          <InfoFact label="运行时间" value={uptimeValue ?? '--'} pending={!uptimeValue} />
+          <InfoFact label="负载" value={loadValue} pending={loadValue === '-- / -- / --'} />
           <InfoFact label="累计流量" value={`↑${formatBinaryBytes(node.netOutTotalBytes)} ↓${formatBinaryBytes(node.netInTotalBytes)}`} />
         </section>
       </section>
@@ -96,7 +98,7 @@ export function LatencyDetail({
                 <b>平滑</b>
               </label>
             </div>
-            <p>{targetSummaries.length} 个监控服务</p>
+            <p>{showLatencySkeleton ? '同步监控服务…' : `${targetSummaries.length} 个监控服务`}</p>
           </div>
           <div className="monitor-heading-actions">
             <div className="detail-range-row" aria-label="latency range selector">
@@ -114,10 +116,10 @@ export function LatencyDetail({
           </div>
         </header>
 
-        {loading && <div className="detail-state">正在读取网络延迟…</div>}
+        {showLatencySkeleton && <LatencyLoadingSkeleton />}
         {error && <div className="detail-state is-error">网络延迟读取失败：{error}</div>}
 
-        {!loading && !error && (
+        {!showLatencySkeleton && !error && hasLatencyData && (
           <>
             <div className="latency-target-grid" aria-label="monitor services">
               {targetSummaries.map((target) => (
@@ -146,6 +148,7 @@ export function LatencyDetail({
             />
           </>
         )}
+        {!showLatencySkeleton && !error && !hasLatencyData && <div className="detail-state">暂无网络延迟历史</div>}
       </section>
 
       <StateHistoryPanel
@@ -159,13 +162,40 @@ export function LatencyDetail({
   )
 }
 
-function InfoFact({ label, value, wide = false }: { label: string; value: string; wide?: boolean }) {
+function LatencyLoadingSkeleton() {
   return (
-    <article className={`detail-fact${wide ? ' is-wide' : ''}`} title={`${label}: ${value}`}>
+    <>
+      <div className="latency-target-grid is-loading" aria-label="monitor services loading" aria-hidden="true">
+        {Array.from({ length: 7 }).map((_, index) => (
+          <button key={index} type="button" disabled>
+            <span>同步中</span>
+            <strong>-- ms</strong>
+            <em>丢包 --</em>
+          </button>
+        ))}
+      </div>
+      <section className="latency-panel latency-panel-skeleton" aria-hidden="true">
+        <div className="latency-chart-skeleton" />
+      </section>
+    </>
+  )
+}
+
+function InfoFact({ label, value, wide = false, pending = false }: { label: string; value: string; wide?: boolean; pending?: boolean }) {
+  return (
+    <article className={`detail-fact${wide ? ' is-wide' : ''}${pending ? ' is-pending' : ''}`} title={`${label}: ${value}`}>
       <p>{label}</p>
       <strong>{value}</strong>
     </article>
   )
+}
+
+function formatUptimeFromBootTime(value: string | undefined): string | null {
+  if (!value) return null
+  const startedAt = Date.parse(value)
+  if (!Number.isFinite(startedAt)) return null
+  const seconds = Math.max(0, Math.floor((Date.now() - startedAt) / 1000))
+  return formatUptime(seconds)
 }
 
 function formatStatusLabel(status: HomeCardNode['status']): string {

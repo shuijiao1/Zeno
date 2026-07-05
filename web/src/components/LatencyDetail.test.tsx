@@ -1,6 +1,6 @@
 import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it, vi } from 'vitest'
-import type { HomeCardNode, StatePoint } from '../types'
+import type { HomeCardNode, LatencyPoint, StatePoint } from '../types'
 import { LatencyDetail } from './LatencyDetail'
 
 const node = {
@@ -53,12 +53,16 @@ const statePoints: StatePoint[] = [
   },
 ]
 
+const latencyPoints: LatencyPoint[] = [
+  { ts: '2026-07-02T12:01:00Z', targetId: 'telegram', targetName: 'Telegram', medianMs: 32.5, avgMs: 33.1, lossPercent: 0 },
+]
+
 describe('LatencyDetail', () => {
   it('includes the agent state history panel without removing the latency monitor', () => {
     const html = renderToStaticMarkup(
       <LatencyDetail
         node={node}
-        points={[]}
+        points={latencyPoints}
         statePoints={statePoints}
         stateLoading={false}
         range="1d"
@@ -100,6 +104,29 @@ describe('LatencyDetail', () => {
     expect(html).not.toContain('Hytron 网络延迟')
     expect(html).not.toContain('1 天 · 0 个监控服务')
     expect(html).toContain('monitor services')
+  })
+
+  it('keeps detail facts and latency area reserved while live data is loading', () => {
+    const html = renderToStaticMarkup(
+      <LatencyDetail
+        node={node}
+        points={[]}
+        loading
+        statePoints={[]}
+        stateLoading
+        range="1d"
+        onBack={vi.fn()}
+        onRangeChange={vi.fn()}
+      />,
+    )
+
+    expect(html).toContain('运行时间')
+    expect(html).toContain('负载')
+    expect(html).toContain('-- / -- / --')
+    expect(html).toContain('累计流量')
+    expect(html).toContain('latency-target-grid is-loading')
+    expect(html).toContain('latency-panel-skeleton')
+    expect(html).not.toContain('正在读取网络延迟')
   })
 
   it('maps non-online detail status to offline', () => {
