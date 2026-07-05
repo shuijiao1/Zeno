@@ -69,13 +69,6 @@ export function LatencyDetail({
         </section>
       </section>
 
-      <StateHistoryPanel
-        points={statePoints}
-        rangeLabel={rangeLabel}
-        loading={stateLoading}
-        error={stateError}
-      />
-
       <section className="monitor-panel" aria-label={`${node.displayName} network latency`}>
         <header className="monitor-heading">
           <div>
@@ -134,6 +127,13 @@ export function LatencyDetail({
           </>
         )}
       </section>
+
+      <StateHistoryPanel
+        points={statePoints}
+        rangeLabel={rangeLabel}
+        loading={stateLoading}
+        error={stateError}
+      />
     </div>
   )
 }

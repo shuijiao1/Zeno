@@ -22,12 +22,12 @@ describe('homepage and admin shell layout', () => {
     expect(styles).toContain('.home-top-card .home-summary')
   })
 
-  it('uses a compact homepage summary without duplicate server-stat tiles', () => {
-    expect(styles).toContain('.home-summary__compact')
-    expect(styles).toContain('grid-template-columns: minmax(200px, .72fr) minmax(0, 1.28fr)')
-    expect(styles).toContain('.home-network-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); }')
-    expect(styles).toContain('.home-summary__compact { grid-template-columns: minmax(108px, .78fr) minmax(0, 1.22fr); gap: 8px; }')
-    expect(styles).toContain('.home-network-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; }')
+  it('uses a compact homepage summary without duplicate title/online-rate tiles', () => {
+    expect(styles).toContain('.home-summary__status-line')
+    expect(styles).toContain('.home-summary__metrics')
+    expect(styles).toContain('.home-summary__metrics > div')
+    expect(styles).not.toContain('.home-summary__compact')
+    expect(styles).not.toContain('.home-network-grid')
     expect(styles).not.toContain('.home-stat-grid')
   })
 
@@ -48,6 +48,7 @@ describe('homepage and admin shell layout', () => {
   it('keeps authenticated node management in compact lists without old card shells', () => {
     expect(styles).toContain('.admin-login-card')
     expect(styles).toContain('.admin-node-section')
+    expect(styles).toContain(".admin-section-nav button[data-active='true']")
     expect(styles).toContain('.admin-node-status')
     expect(styles).toContain('.admin-server-sort-list')
     expect(styles).toContain('.admin-server-sort-item')
@@ -85,9 +86,10 @@ describe('state history layout', () => {
     expect(styles).not.toContain('.detail-info-card')
   })
 
-  it('renders resource history as separated full-width chart cards on phones too', () => {
+  it('renders resource history as a compact chart grid like Kulin on desktop', () => {
     expect(styles).toContain('.state-history-stack')
-    expect(styles).toContain('flex-direction: column')
+    expect(styles).toContain('grid-template-columns: repeat(2, minmax(0, 1fr))')
+    expect(styles).toContain('grid-template-columns: 1fr')
     expect(styles).toContain('.state-history-chart-card')
     expect(styles).toContain('.state-sparkline--large')
   })

@@ -6,7 +6,7 @@ import { LatencyChart } from './components/LatencyChart'
 import { ServerCard } from './components/ServerCard'
 import { startLiveRefresh } from './lib/liveRefresh'
 import { nodePath, parseDashboardRoute, servicePath, type DashboardRoute } from './lib/route'
-import type { AdminAlertRule, AdminNode, AdminNotificationChannel, AdminProbeTarget, AdminSettings, LatencyPoint, ProbeType, ServiceTarget } from './types'
+import type { AdminAlertRule, AdminNode, AdminNotificationChannel, AdminProbeTarget, AdminSettings, AdminTheme, LatencyPoint, ProbeType, ServiceTarget } from './types'
 
 type LoadState =
   | { kind: 'loading' }
@@ -80,6 +80,32 @@ function backgroundImageValue(url: string): string {
   return `linear-gradient(rgba(24, 21, 18, 0.78), rgba(24, 21, 18, 0.78)), url("${url.replaceAll('"', '%22')}")`
 }
 
+function storedThemeOverride(): AdminTheme | null {
+  if (typeof window === 'undefined') return null
+  const value = window.localStorage.getItem('zeno_theme_override')
+  return value === 'light' || value === 'dark' ? value : null
+}
+
+function storedBackgroundEnabled(): boolean {
+  if (typeof window === 'undefined') return true
+  return window.localStorage.getItem('zeno_background_enabled') !== 'false'
+}
+
+function systemTheme(): Exclude<AdminTheme, 'system'> {
+  if (typeof window !== 'undefined' && window.matchMedia?.('(prefers-color-scheme: dark)').matches) return 'dark'
+  return 'light'
+}
+
+function resolvedTheme(theme: AdminTheme): Exclude<AdminTheme, 'system'> {
+  return theme === 'system' ? systemTheme() : theme
+}
+
+function settingsForChrome(settings: AdminSettings, themeOverride: AdminTheme | null, backgroundEnabled: boolean): AdminSettings {
+  const nextSettings = { ...settings, theme: themeOverride ?? settings.theme }
+  if (backgroundEnabled) return nextSettings
+  return { ...nextSettings, backgroundUrl: '', desktopBackgroundUrl: '', mobileBackgroundUrl: '' }
+}
+
 export function shellStyleForSettings(settings: AdminSettings): CSSProperties | undefined {
   const desktopBackgroundUrl = (settings.desktopBackgroundUrl || settings.backgroundUrl).trim()
   const mobileBackgroundUrl = settings.mobileBackgroundUrl.trim()
@@ -107,6 +133,8 @@ export function App() {
   const [adminAuthState, setAdminAuthState] = useState<AdminAuthState>({ kind: 'idle' })
   const [adminState, setAdminState] = useState<AdminLoadState>({ kind: 'idle' })
   const [settings, setSettings] = useState<AdminSettings>(defaultSettings)
+  const [themeOverride, setThemeOverride] = useState<AdminTheme | null>(() => storedThemeOverride())
+  const [backgroundEnabled, setBackgroundEnabled] = useState(() => storedBackgroundEnabled())
 
   useEffect(() => {
     let cancelled = false
@@ -465,6 +493,24 @@ export function App() {
     setRoute({ kind: 'service', targetId })
   }
 
+  const toggleTheme = () => {
+    setThemeOverride((current) => {
+      const currentTheme = resolvedTheme(current ?? settings.theme)
+      const nextTheme: AdminTheme = currentTheme === 'dark' ? 'light' : 'dark'
+      window.localStorage.setItem('zeno_theme_override', nextTheme)
+      return nextTheme
+    })
+  }
+
+  const toggleBackground = () => {
+    setBackgroundEnabled((current) => {
+      const nextValue = !current
+      window.localStorage.setItem('zeno_background_enabled', String(nextValue))
+      return nextValue
+    })
+  }
+
+  const effectiveSettings = settingsForChrome(settings, themeOverride, backgroundEnabled)
   const nodes = state.kind === 'ready' ? state.data.nodes : []
   const services = state.kind === 'ready' ? state.data.services : []
   const selectedNode = route.kind === 'node' ? nodes.find((node) => node.id === route.nodeId) : undefined
@@ -478,13 +524,14 @@ export function App() {
   const downSpeed = sum(nodes.map((node) => node.netInSpeedBps))
 
   return (
-    <main className="kulin-shell" data-theme={settings.theme} style={shellStyleForSettings(settings)}>
-      {(route.kind === 'node' || route.kind === 'service') && <DashboardHeader settings={settings} onHome={navigateHome} onAdmin={navigateAdmin} />}
+    <main className="kulin-shell" data-theme={effectiveSettings.theme} style={shellStyleForSettings(effectiveSettings)}>
+      {(route.kind === 'node' || route.kind === 'service') && <DashboardHeader settings={effectiveSettings} onHome={navigateHome} onAdmin={navigateAdmin} onThemeToggle={toggleTheme} onBackgroundToggle={toggleBackground} backgroundEnabled={backgroundEnabled} />}
 
       {route.kind === 'admin' && (
         <AdminDashboard
           onHome={navigateHome}
           settings={settings}
+          chromeSettings={effectiveSettings}
           hasAdminToken={adminToken !== ''}
           authState={adminAuthState}
           adminState={adminState}
@@ -502,6 +549,9 @@ export function App() {
           onAdminNotificationChannelTest={testAdminNotificationChannelDetails}
           onAdminAlertRuleUpdate={updateAdminAlertRuleDetails}
           onAdminSettingsUpdate={updateAdminSettingsDetails}
+          onThemeToggle={toggleTheme}
+          onBackgroundToggle={toggleBackground}
+          backgroundEnabled={backgroundEnabled}
         />
       )}
 
@@ -546,7 +596,7 @@ export function App() {
       {state.kind === 'ready' && route.kind === 'home' && (
         <div className="kulin-container">
           <HomeTopPanel
-            settings={settings}
+            settings={effectiveSettings}
             totalCount={totalCount}
             onlineCount={onlineCount}
             offlineCount={offlineCount}
@@ -556,6 +606,9 @@ export function App() {
             downSpeed={downSpeed}
             onHome={navigateHome}
             onAdmin={navigateAdmin}
+            onThemeToggle={toggleTheme}
+            onBackgroundToggle={toggleBackground}
+            backgroundEnabled={backgroundEnabled}
           />
 
           <section className="server-card-list" aria-label="server cards">
@@ -584,17 +637,23 @@ interface DashboardHeaderProps {
   onAdmin: () => void
   adminLabel?: string
   trailingAction?: ReactNode
+  onThemeToggle?: () => void
+  onBackgroundToggle?: () => void
+  backgroundEnabled?: boolean
 }
 
 interface HomeTopPanelProps extends HomeOverviewPanelProps {
   onHome: () => void
   onAdmin: () => void
+  onThemeToggle?: () => void
+  onBackgroundToggle?: () => void
+  backgroundEnabled?: boolean
 }
 
-export function HomeTopPanel({ settings = defaultSettings, onHome, onAdmin, ...overview }: HomeTopPanelProps) {
+export function HomeTopPanel({ settings = defaultSettings, onHome, onAdmin, onThemeToggle, onBackgroundToggle, backgroundEnabled = true, ...overview }: HomeTopPanelProps) {
   return (
     <section className="home-top-card" aria-label="homepage control panel">
-      <DashboardHeader settings={settings} onHome={onHome} onAdmin={onAdmin} />
+      <DashboardHeader settings={settings} onHome={onHome} onAdmin={onAdmin} onThemeToggle={onThemeToggle} onBackgroundToggle={onBackgroundToggle} backgroundEnabled={backgroundEnabled} />
       <HomeOverviewPanel settings={settings} {...overview} />
     </section>
   )
@@ -689,7 +748,8 @@ function formatServiceLoss(value: number | null | undefined): string {
   return `${value.toFixed(2)}%`
 }
 
-function DashboardHeader({ settings = defaultSettings, onHome, onAdmin, adminLabel = '后台', trailingAction }: DashboardHeaderProps) {
+function DashboardHeader({ settings = defaultSettings, onHome, onAdmin, adminLabel = '后台', trailingAction, onThemeToggle, onBackgroundToggle, backgroundEnabled = true }: DashboardHeaderProps) {
+  const currentTheme = resolvedTheme(settings.theme)
   return (
     <header className="kulin-nav">
       <button className="brand" type="button" onClick={onHome}>
@@ -699,8 +759,8 @@ function DashboardHeader({ settings = defaultSettings, onHome, onAdmin, adminLab
       <nav className="nav-actions" aria-label="dashboard actions">
         <button className="login-link" type="button" onClick={onAdmin}>{adminLabel}</button>
         <button className="nav-icon-button is-solid" type="button" aria-label="language"><MapIcon /></button>
-        <button className="nav-icon-button" type="button" aria-label="切换主题"><SunIcon /><span className="sr-only">切换主题</span></button>
-        <button className="nav-icon-button" type="button" aria-label="background"><ImageMinusIcon /></button>
+        <button className={`nav-icon-button${currentTheme === 'light' ? ' is-solid' : ''}`} type="button" aria-label={currentTheme === 'dark' ? '切换浅色模式' : '切换深色模式'} onClick={onThemeToggle}><SunIcon /><span className="sr-only">切换深浅色</span></button>
+        <button className={`nav-icon-button${backgroundEnabled ? '' : ' is-muted'}`} type="button" aria-label={backgroundEnabled ? '关闭背景图' : '开启背景图'} onClick={onBackgroundToggle}><ImageMinusIcon /><span className="sr-only">开关背景图</span></button>
         {trailingAction}
       </nav>
     </header>
@@ -710,6 +770,7 @@ function DashboardHeader({ settings = defaultSettings, onHome, onAdmin, adminLab
 interface AdminDashboardProps {
   onHome: () => void
   settings?: AdminSettings
+  chromeSettings?: AdminSettings
   hasAdminToken?: boolean
   authState?: AdminAuthState
   adminState?: AdminLoadState
@@ -728,11 +789,15 @@ interface AdminDashboardProps {
   onAdminNotificationChannelTest?: (channelId: string) => void
   onAdminAlertRuleUpdate?: (ruleId: string, input: AdminAlertRuleUpdateInput) => void
   onAdminSettingsUpdate?: (input: AdminSettingsUpdateInput) => void
+  onThemeToggle?: () => void
+  onBackgroundToggle?: () => void
+  backgroundEnabled?: boolean
 }
 
 export function AdminDashboard({
   onHome,
   settings = defaultSettings,
+  chromeSettings = settings,
   hasAdminToken = false,
   authState = { kind: 'idle' },
   adminState = { kind: 'idle' },
@@ -751,6 +816,9 @@ export function AdminDashboard({
   onAdminNotificationChannelTest = () => {},
   onAdminAlertRuleUpdate = () => {},
   onAdminSettingsUpdate = () => {},
+  onThemeToggle,
+  onBackgroundToggle,
+  backgroundEnabled = true,
 }: AdminDashboardProps) {
   const [activeSection, setActiveSection] = useState<AdminSection>(initialSection)
   const handleTokenSubmit = (event: FormEvent<HTMLFormElement>) => {
@@ -767,11 +835,14 @@ export function AdminDashboard({
     <div className="kulin-container admin-container">
       <section className="home-top-card admin-panel" aria-label="admin dashboard">
         <DashboardHeader
-          settings={settings}
+          settings={chromeSettings}
           onHome={onHome}
           onAdmin={onHome}
           adminLabel="前台"
           trailingAction={hasAdminToken ? <button className="nav-logout-button" type="button" onClick={onAdminTokenClear}>退出</button> : undefined}
+          onThemeToggle={onThemeToggle}
+          onBackgroundToggle={onBackgroundToggle}
+          backgroundEnabled={backgroundEnabled}
         />
 
         {!hasAdminToken && (
@@ -1142,7 +1213,7 @@ function AdminNodeList({ nodes, onEdit }: { nodes: AdminNode[]; onEdit: (nodeId:
       <div className="admin-list-head" aria-hidden="true">
         <span>服务器</span>
         <span>公网 IP</span>
-        <span>Agent</span>
+        <span>Agent 版本</span>
         <span>操作</span>
       </div>
       {nodes.map((node) => (
@@ -1155,7 +1226,7 @@ function AdminNodeList({ nodes, onEdit }: { nodes: AdminNode[]; onEdit: (nodeId:
             {node.publicIPv6 && <span>{node.publicIPv6}</span>}
             {!node.publicIPv4 && !node.publicIPv6 && <span>—</span>}
           </span>
-          <span data-label="Agent">{node.agentVersion || '—'}</span>
+          <span data-label="Agent 版本">{node.agentVersion || '—'}</span>
           <div className="admin-row-actions">
             <button className="admin-row-action" type="button" onClick={() => onEdit(node.id)}>编辑服务器</button>
           </div>
@@ -1393,7 +1464,7 @@ function AdminNodeEditModal({ node, onUpdate, onInstallCommand, onClose }: { nod
   }
 
   return (
-    <AdminModal title={`编辑服务器 · ${node.displayName}`} eyebrow={node.id} onClose={onClose}>
+    <AdminModal title={`编辑服务器 · ${node.displayName}`} eyebrow={node.agentVersion ? `Agent ${node.agentVersion}` : 'Agent 版本未知'} onClose={onClose}>
       <form className="admin-node-edit-form is-sectioned" aria-label={`${node.displayName} 节点编辑`} onSubmit={handleSubmit}>
         <AdminFormSection title="服务器名称">
           <div className="admin-form-grid">
@@ -1433,6 +1504,7 @@ function AdminNodeEditModal({ node, onUpdate, onInstallCommand, onClose }: { nod
           </div>
         </AdminFormSection>
         <AdminFormSection title="Agent 接入" description="生成安装命令会轮换该服务器的 Agent Token；已在线服务器执行新命令前会停止上报。">
+          <p className="admin-help-note">当前 Agent 版本：{node.agentVersion || '暂无上报'}</p>
           <div className="admin-inline-actions">
             <button type="button" onClick={handleInstallCommand} disabled={installCommandState.kind === 'loading'}>{installCommandState.kind === 'loading' ? '生成中…' : '轮换并生成安装命令'}</button>
             <button type="button" onClick={handleCopyInstallCommand} disabled={installCommandState.kind !== 'ready'}>复制安装命令</button>
@@ -1841,7 +1913,7 @@ function AdminAlertRuleEditModal({ rule, nodes, onUpdate, onClose }: { rule: Adm
               {nodes.map((node) => (
                 <label className="admin-node-toggle admin-target-assignment-toggle" key={node.id}>
                   <input name={`rule-scope-${node.id}`} type="checkbox" defaultChecked={rule.scopeNodeIds.includes(node.id)} />
-                  <span>{node.displayName || node.id}<small> · {node.id}</small></span>
+                  <span>{node.displayName || node.id}</span>
                 </label>
               ))}
             </div>
@@ -2125,7 +2197,7 @@ function formatAlertRuleScope(rule: AdminAlertRule, nodes: AdminNode[]): string 
   if (rule.scopeNodeIds.length === 0) return '全部服务器'
   const labels = rule.scopeNodeIds.map((nodeId) => {
     const node = nodes.find((candidate) => candidate.id === nodeId)
-    return node?.displayName ? `${node.displayName} (${nodeId})` : nodeId
+    return node?.displayName || nodeId
   })
   return labels.join('、')
 }
@@ -2185,65 +2257,37 @@ function formatAdminDate(value?: string): string {
   return date.toLocaleString('zh-CN', { hour12: false })
 }
 
-export function HomeOverviewPanel({ settings = defaultSettings, totalCount, onlineCount, offlineCount, totalUp, totalDown, upSpeed, downSpeed }: HomeOverviewPanelProps) {
-  const onlineRatio = totalCount > 0 ? Math.round((onlineCount / totalCount) * 100) : 0
+export function HomeOverviewPanel({ totalCount, onlineCount, offlineCount, totalUp, totalDown, upSpeed, downSpeed }: HomeOverviewPanelProps) {
   const nonOnlineCount = Math.max(totalCount - onlineCount, offlineCount, 0)
   const healthLabel = totalCount === 0 ? '等待接入' : nonOnlineCount === 0 ? '全部在线' : `${nonOnlineCount} 台未在线`
   const healthTone = totalCount > 0 && nonOnlineCount === 0 ? 'is-good' : totalCount > 0 ? 'is-warning' : ''
 
   return (
     <section className="home-summary" aria-label="server overview">
-      <div className="home-summary__intro">
+      <div className="home-summary__status-line" aria-label="服务器在线摘要">
+        <span className={`home-health-pill ${healthTone}`}>{healthLabel}</span>
+        <strong>{onlineCount} / {totalCount} 在线</strong>
+        <span>{totalCount} 台服务器</span>
+      </div>
+
+      <dl className="home-summary__metrics" aria-label="traffic totals and speeds">
         <div>
-          <p className="eyebrow">Zeno Overview</p>
-          <h1>服务器运行概览</h1>
-          {settings.siteSubtitle && settings.siteSubtitle !== '服务器运行概览' && <p className="home-summary__subtitle">{settings.siteSubtitle}</p>}
-          <div className="home-summary__meta" aria-label="服务器在线摘要">
-            <span>{totalCount} 台服务器</span>
-            <span>{onlineRatio}% 在线率</span>
-            <span>{nonOnlineCount} 台未在线</span>
-          </div>
+          <dt>上传</dt>
+          <dd>{compactBytes(totalUp)}</dd>
         </div>
-        <div className="home-summary__status">
-          <span className={`home-health-pill ${healthTone}`}>{healthLabel}</span>
-          <small>实时上报</small>
+        <div>
+          <dt>下载</dt>
+          <dd>{compactBytes(totalDown)}</dd>
         </div>
-      </div>
-
-      <div className="home-summary__compact">
-        <div className="home-health-block">
-          <div className="home-health-number">
-            <strong>{onlineCount}</strong>
-            <span>/ {totalCount} 在线</span>
-          </div>
-          <div className="home-health-bar" aria-label={`在线率 ${onlineRatio}%`}>
-            <span style={{ transform: `scaleX(${onlineRatio / 100})` }} />
-          </div>
-          <div className="home-health-breakdown">
-            <span>在线 {onlineCount}</span>
-            <span>未在线 {nonOnlineCount}</span>
-          </div>
+        <div>
+          <dt>实时</dt>
+          <dd><CircleArrowIcon direction="up" />{compactRate(upSpeed)}</dd>
         </div>
-
-        <dl className="home-network-grid" aria-label="traffic totals and speeds">
-          <div>
-            <dt>累计上传</dt>
-            <dd>{compactBytes(totalUp)}</dd>
-          </div>
-          <div>
-            <dt>累计下载</dt>
-            <dd>{compactBytes(totalDown)}</dd>
-          </div>
-          <div>
-            <dt>实时上传</dt>
-            <dd><CircleArrowIcon direction="up" />{compactRate(upSpeed)}</dd>
-          </div>
-          <div>
-            <dt>实时下载</dt>
-            <dd><CircleArrowIcon direction="down" />{compactRate(downSpeed)}</dd>
-          </div>
-        </dl>
-      </div>
+        <div>
+          <dt>实时</dt>
+          <dd><CircleArrowIcon direction="down" />{compactRate(downSpeed)}</dd>
+        </div>
+      </dl>
     </section>
   )
 }
