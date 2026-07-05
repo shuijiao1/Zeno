@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -315,8 +316,16 @@ func handleStatic(staticDir string) http.HandlerFunc {
 		}
 		filePath := filepath.Join(staticDir, strings.TrimPrefix(cleanPath, "/"))
 		if info, err := os.Stat(filePath); err == nil && !info.IsDir() {
+			setStaticCacheHeader(w, cleanPath)
 			fileServer.ServeHTTP(w, r)
 			return
+		}
+		if strings.HasPrefix(cleanPath, "/assets/") {
+			if assetPath, ok := fallbackReleaseAssetPath(staticDir, strings.TrimPrefix(cleanPath, "/assets/")); ok {
+				setStaticCacheHeader(w, cleanPath)
+				http.ServeFile(w, r, assetPath)
+				return
+			}
 		}
 
 		indexPath := filepath.Join(staticDir, "index.html")
@@ -324,8 +333,39 @@ func handleStatic(staticDir string) http.HandlerFunc {
 			writeError(w, http.StatusNotFound, "dashboard not built")
 			return
 		}
+		setStaticCacheHeader(w, "/index.html")
 		http.ServeFile(w, r, indexPath)
 	}
+}
+
+func setStaticCacheHeader(w http.ResponseWriter, cleanPath string) {
+	if cleanPath == "/index.html" || cleanPath == "/" {
+		w.Header().Set("Cache-Control", "no-store")
+		return
+	}
+	if strings.HasPrefix(cleanPath, "/assets/") {
+		w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
+	}
+}
+
+func fallbackReleaseAssetPath(staticDir string, assetName string) (string, bool) {
+	cleanAssetName := filepath.Clean(assetName)
+	if cleanAssetName == "." || strings.HasPrefix(cleanAssetName, "..") || filepath.IsAbs(cleanAssetName) {
+		return "", false
+	}
+
+	installDir := filepath.Dir(filepath.Dir(staticDir))
+	candidates, err := filepath.Glob(filepath.Join(installDir, "releases", "*", "web", "assets", cleanAssetName))
+	if err != nil || len(candidates) == 0 {
+		return "", false
+	}
+	sort.Sort(sort.Reverse(sort.StringSlice(candidates)))
+	for _, candidate := range candidates {
+		if info, err := os.Stat(candidate); err == nil && !info.IsDir() {
+			return candidate, true
+		}
+	}
+	return "", false
 }
 
 func writeJSON(w http.ResponseWriter, status int, value any) {

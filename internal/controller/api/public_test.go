@@ -513,6 +513,9 @@ func TestStaticWebFallbackServesIndexForDashboardRoutes(t *testing.T) {
 	if !strings.Contains(assetRecorder.Body.String(), "asset") {
 		t.Fatalf("asset body = %q, want asset content", assetRecorder.Body.String())
 	}
+	if got := assetRecorder.Header().Get("Cache-Control"); got != "public, max-age=31536000, immutable" {
+		t.Fatalf("asset cache-control = %q, want immutable asset cache", got)
+	}
 
 	spaRecorder := httptest.NewRecorder()
 	handler.ServeHTTP(spaRecorder, httptest.NewRequest(http.MethodGet, "/nodes/hytron", nil))
@@ -521,5 +524,36 @@ func TestStaticWebFallbackServesIndexForDashboardRoutes(t *testing.T) {
 	}
 	if !strings.Contains(spaRecorder.Body.String(), "Zeno UI") {
 		t.Fatalf("spa body = %q, want index.html", spaRecorder.Body.String())
+	}
+	if got := spaRecorder.Header().Get("Cache-Control"); got != "no-store" {
+		t.Fatalf("spa cache-control = %q, want no-store", got)
+	}
+}
+
+func TestStaticWebFallbackServesOldReleaseAssets(t *testing.T) {
+	installDir := t.TempDir()
+	currentWeb := filepath.Join(installDir, "current", "web")
+	oldAssets := filepath.Join(installDir, "releases", "zeno-old", "web", "assets")
+	if err := os.MkdirAll(filepath.Join(currentWeb, "assets"), 0o755); err != nil {
+		t.Fatalf("mkdir current: %v", err)
+	}
+	if err := os.MkdirAll(oldAssets, 0o755); err != nil {
+		t.Fatalf("mkdir old assets: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(currentWeb, "index.html"), []byte("current index"), 0o644); err != nil {
+		t.Fatalf("write current index: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(oldAssets, "stale.js"), []byte("console.log('old asset')"), 0o644); err != nil {
+		t.Fatalf("write stale asset: %v", err)
+	}
+
+	handler := NewHandler(HandlerOptions{StaticDir: currentWeb})
+	recorder := httptest.NewRecorder()
+	handler.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/assets/stale.js", nil))
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("stale asset status = %d, want %d", recorder.Code, http.StatusOK)
+	}
+	if !strings.Contains(recorder.Body.String(), "old asset") {
+		t.Fatalf("stale asset body = %q, want old release asset", recorder.Body.String())
 	}
 }
