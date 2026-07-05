@@ -137,7 +137,7 @@ export function ServerCard({ node, onOpen }: ServerCardProps) {
           <section className="node-footer-grid" aria-label={`${node.displayName} network and latency`}>
             <Metric tone="up" icon={<UploadIcon />} label="上传" value={formatRate(node.netOutSpeedBps)} />
             <Metric tone="down" icon={<DownloadIcon />} label="下载" value={formatRate(node.netInSpeedBps)} />
-            {latency && <Metric tone="latency" icon={<ActivityIcon />} label="延迟" value={formatLatency(latency.medianMs)} />}
+            {latency && <Metric tone="latency" icon={<ActivityIcon />} label="延迟" value={formatLatency(latency.avgMs ?? latency.medianMs)} />}
             {latency && <Metric tone="loss" icon={<TriangleAlertIcon />} label="丢包率" value={normalizeLoss(latency.lossPercent)} />}
           </section>
         </div>

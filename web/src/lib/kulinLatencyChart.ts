@@ -2,7 +2,7 @@ import type { LatencyPoint } from '../types'
 
 export interface KulinSeriesPoint {
   created_at: number
-  avg_delay: number
+  avg_delay: number | null
   packet_loss: number
 }
 
@@ -91,7 +91,7 @@ export function buildKulinTargetSeries(points: LatencyPoint[]): KulinTargetSerie
 
   return order.map((targetId) => {
     const targetPoints = [...byTarget.get(targetId)!].sort((a, b) => a.ts.localeCompare(b.ts))
-    const delays = targetPoints.map((point) => point.medianMs ?? 0)
+    const delays = targetPoints.map((point) => latencyDelay(point))
     const calculatedPacketLoss = calculateKulinPacketLoss(delays)
 
     return {
@@ -99,11 +99,15 @@ export function buildKulinTargetSeries(points: LatencyPoint[]): KulinTargetSerie
       targetName: targetPoints[0]?.targetName ?? targetId,
       points: targetPoints.map((point, index) => ({
         created_at: Date.parse(point.ts),
-        avg_delay: point.medianMs ?? 0,
+        avg_delay: latencyDelay(point),
         packet_loss: Number.isFinite(point.lossPercent) ? point.lossPercent : calculatedPacketLoss[index],
       })),
     }
   })
+}
+
+function latencyDelay(point: LatencyPoint): number | null {
+  return point.avgMs ?? point.medianMs ?? null
 }
 
 export function buildKulinChartRows(series: KulinTargetSeries[]): KulinChartRow[] {

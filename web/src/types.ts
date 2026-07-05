@@ -18,7 +18,7 @@ export interface LatencySummary {
   targetId: string
   targetName: string
   medianMs: number | null
-  avgMs: number | null
+  avgMs?: number | null
   lossPercent: number | null
   updatedAt: string
 }
@@ -61,6 +61,7 @@ export interface LatencyPoint {
   targetId: string
   targetName: string
   medianMs: number | null
+  avgMs?: number | null
   lossPercent: number
 }
 
@@ -73,6 +74,7 @@ export interface ServiceTarget {
   assignedNodeCount: number
   reportingNodeCount: number
   medianMs: number | null
+  avgMs: number | null
   lossPercent: number | null
   updatedAt?: string
 }

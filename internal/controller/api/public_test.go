@@ -345,14 +345,14 @@ func TestNodeLatencyEndpointUsesRangeSpecificWindows(t *testing.T) {
 	sevenDays := requestLatency(t, "/api/public/v1/nodes/sharon/latency?range=7d")
 	thirtyDays := requestLatency(t, "/api/public/v1/nodes/sharon/latency?range=30d")
 
-	if got := len(uniquePointTimes(oneDay.Points)); got != 48 {
-		t.Fatalf("1d timestamps = %d, want 48 half-hour samples", got)
+	if got := len(uniquePointTimes(oneDay.Points)); got != 1440 {
+		t.Fatalf("1d timestamps = %d, want 1440 one-minute samples", got)
 	}
-	if got := len(uniquePointTimes(sevenDays.Points)); got != 56 {
-		t.Fatalf("7d timestamps = %d, want 56 three-hour samples", got)
+	if got := len(uniquePointTimes(sevenDays.Points)); got != 336 {
+		t.Fatalf("7d timestamps = %d, want 336 thirty-minute samples", got)
 	}
-	if got := len(uniquePointTimes(thirtyDays.Points)); got != 60 {
-		t.Fatalf("30d timestamps = %d, want 60 twelve-hour samples", got)
+	if got := len(uniquePointTimes(thirtyDays.Points)); got != 360 {
+		t.Fatalf("30d timestamps = %d, want 360 two-hour samples", got)
 	}
 
 	if pointSpan(t, oneDay.Points) < 23*time.Hour {

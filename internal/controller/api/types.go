@@ -71,6 +71,7 @@ type LatencyPoint struct {
 	TargetID    string   `json:"target_id"`
 	TargetName  string   `json:"target_name"`
 	MedianMS    *float64 `json:"median_ms"`
+	AvgMS       *float64 `json:"avg_ms"`
 	LossPercent float64  `json:"loss_percent"`
 }
 
@@ -83,6 +84,7 @@ type ServiceTarget struct {
 	AssignedNodeCount  int      `json:"assigned_node_count"`
 	ReportingNodeCount int      `json:"reporting_node_count"`
 	MedianMS           *float64 `json:"median_ms"`
+	AvgMS              *float64 `json:"avg_ms"`
 	LossPercent        *float64 `json:"loss_percent"`
 	UpdatedAt          string   `json:"updated_at,omitempty"`
 }
@@ -92,6 +94,7 @@ type ServiceLatencyPoint struct {
 	NodeID      string   `json:"node_id"`
 	NodeName    string   `json:"node_name"`
 	MedianMS    *float64 `json:"median_ms"`
+	AvgMS       *float64 `json:"avg_ms"`
 	LossPercent float64  `json:"loss_percent"`
 }
 

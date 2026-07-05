@@ -698,7 +698,7 @@ function ServiceDetail({ target, points, range, loading, error, onBack, onRangeC
         <section className="detail-fact-strip" aria-label={`${target.name} service facts`}>
           <ServiceInfoFact label="类型" value={target.type} />
           <ServiceInfoFact label="地址" value={formatServiceEndpoint(target)} wide />
-          <ServiceInfoFact label="最新延迟" value={formatServiceLatency(target.medianMs)} />
+          <ServiceInfoFact label="最新延迟" value={formatServiceLatency(target.avgMs ?? target.medianMs)} />
           <ServiceInfoFact label="丢包" value={formatServiceLoss(target.lossPercent)} />
           <ServiceInfoFact label="更新时间" value={target.updatedAt ? formatAdminDate(target.updatedAt) : '--'} />
         </section>

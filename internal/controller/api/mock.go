@@ -127,10 +127,27 @@ func resolveLatencyWindow(rangeName string) (latencyWindow, bool) {
 	}
 }
 
+func resolveKulinLatencyGridWindow(rangeName string) (latencyWindow, bool) {
+	switch rangeName {
+	case "1d":
+		return latencyWindow{Name: "1d", Samples: 1440, Step: time.Minute}, true
+	case "7d":
+		return latencyWindow{Name: "7d", Samples: 336, Step: 30 * time.Minute}, true
+	case "30d":
+		return latencyWindow{Name: "30d", Samples: 360, Step: 2 * time.Hour}, true
+	default:
+		return latencyWindow{}, false
+	}
+}
+
 func mockLatencyPoints(nodeID string, rangeNames ...string) []LatencyPoint {
 	window, ok := resolveLatencyWindow("")
 	if len(rangeNames) > 0 {
-		window, ok = resolveLatencyWindow(rangeNames[0])
+		if gridWindow, gridOK := resolveKulinLatencyGridWindow(rangeNames[0]); gridOK {
+			window, ok = gridWindow, true
+		} else {
+			window, ok = resolveLatencyWindow(rangeNames[0])
+		}
 	}
 	if !ok {
 		window, _ = resolveLatencyWindow("")
@@ -182,7 +199,7 @@ func mockLatencyPoints(nodeID string, rangeNames ...string) []LatencyPoint {
 				medianPtr = ptr(median)
 			}
 
-			points = append(points, LatencyPoint{TS: ts, TargetID: target.id, TargetName: target.name, MedianMS: medianPtr, LossPercent: loss})
+			points = append(points, LatencyPoint{TS: ts, TargetID: target.id, TargetName: target.name, MedianMS: medianPtr, AvgMS: medianPtr, LossPercent: loss})
 		}
 	}
 	return points
@@ -199,7 +216,11 @@ func mockServiceTargets() []ServiceTarget {
 func mockServiceLatencyPoints(targetID string, rangeNames ...string) []ServiceLatencyPoint {
 	window, ok := resolveLatencyWindow("")
 	if len(rangeNames) > 0 {
-		window, ok = resolveLatencyWindow(rangeNames[0])
+		if gridWindow, gridOK := resolveKulinLatencyGridWindow(rangeNames[0]); gridOK {
+			window, ok = gridWindow, true
+		} else {
+			window, ok = resolveLatencyWindow(rangeNames[0])
+		}
 	}
 	if !ok {
 		window, _ = resolveLatencyWindow("")
@@ -216,7 +237,7 @@ func mockServiceLatencyPoints(targetID string, rangeNames ...string) []ServiceLa
 			}
 			median := base + float64((index+nodeIndex)%5)*1.7
 			loss := float64((index+nodeIndex)%4) * 0.05
-			points = append(points, ServiceLatencyPoint{TS: ts, NodeID: node.ID, NodeName: node.DisplayName, MedianMS: ptr(median), LossPercent: loss})
+			points = append(points, ServiceLatencyPoint{TS: ts, NodeID: node.ID, NodeName: node.DisplayName, MedianMS: ptr(median), AvgMS: ptr(median), LossPercent: loss})
 		}
 	}
 	return points

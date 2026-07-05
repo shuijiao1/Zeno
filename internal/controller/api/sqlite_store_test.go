@@ -84,8 +84,92 @@ func TestSQLiteBackedHandlerReturnsPersistedLatencyInsteadOfMock(t *testing.T) {
 	if point.MedianMS == nil || *point.MedianMS != 1.2 {
 		t.Fatalf("median_ms = %v, want 1.2", point.MedianMS)
 	}
+	if point.AvgMS == nil || *point.AvgMS != 1.3 {
+		t.Fatalf("avg_ms = %v, want 1.3", point.AvgMS)
+	}
 	if point.LossPercent != 0 {
 		t.Fatalf("loss_percent = %v, want 0", point.LossPercent)
+	}
+}
+
+func TestSQLiteBackedLatencyUsesKulinMinuteGridAndAverageDelay(t *testing.T) {
+	store, err := OpenSQLiteStore(filepath.Join(t.TempDir(), "zeno.db"))
+	if err != nil {
+		t.Fatalf("open sqlite store: %v", err)
+	}
+	defer store.Close()
+
+	ctx := context.Background()
+	now := time.Now().UTC().Truncate(time.Minute)
+	if _, err := store.db.ExecContext(ctx, `
+		INSERT INTO nodes (id, display_name, token_hash, status, country_code, created_at, updated_at, last_seen_at)
+		VALUES ('hytron', 'Hytron', 'hash-for-test', 'online', 'HK', ?, ?, ?);
+	`, now.Unix(), now.Unix(), now.Unix()); err != nil {
+		t.Fatalf("insert node: %v", err)
+	}
+	if _, err := store.db.ExecContext(ctx, `
+		INSERT INTO probe_targets (id, name, type, address, count, timeout_ms, interval_sec, enabled, created_at, updated_at)
+		VALUES ('google', 'Google', 'ping', '8.8.8.8', 3, 1000, 60, 1, ?, ?);
+	`, now.Unix(), now.Unix()); err != nil {
+		t.Fatalf("insert target: %v", err)
+	}
+	if _, err := store.db.ExecContext(ctx, `
+		INSERT INTO node_probe_targets (node_id, target_id, enabled)
+		VALUES ('hytron', 'google', 1);
+	`); err != nil {
+		t.Fatalf("insert node target: %v", err)
+	}
+	for _, row := range []struct {
+		offsetSec int
+		median    float64
+		avg       float64
+		loss      float64
+	}{
+		{offsetSec: 10, median: 10, avg: 12, loss: 0},
+		{offsetSec: 40, median: 20, avg: 30, loss: 2},
+	} {
+		if _, err := store.db.ExecContext(ctx, `
+			INSERT INTO probe_rounds (node_id, target_id, ts, type, sent, received, loss_percent, min_ms, avg_ms, median_ms, max_ms, stddev_ms)
+			VALUES ('hytron', 'google', ?, 'ping', 3, 3, ?, 1, ?, ?, 40, 0.2);
+		`, now.Add(time.Duration(row.offsetSec)*time.Second).Unix(), row.loss, row.avg, row.median); err != nil {
+			t.Fatalf("insert round: %v", err)
+		}
+	}
+
+	response, err := store.NodeLatency(ctx, "hytron", latencyWindow{Name: "1d", Samples: 48, Step: 30 * time.Minute})
+	if err != nil {
+		t.Fatalf("node latency: %v", err)
+	}
+	if got := len(uniquePointTimes(response.Points)); got != 1440 {
+		t.Fatalf("unique grid timestamps = %d, want 1440", got)
+	}
+	if len(response.Points) != 1440 {
+		t.Fatalf("points len = %d, want 1440 for one target", len(response.Points))
+	}
+	var bucketPoint *LatencyPoint
+	wantTS := now.Format(time.RFC3339)
+	for index := range response.Points {
+		if response.Points[index].TS == wantTS {
+			bucketPoint = &response.Points[index]
+			break
+		}
+	}
+	if bucketPoint == nil {
+		t.Fatalf("missing minute bucket %s", wantTS)
+	}
+	if bucketPoint.AvgMS == nil || *bucketPoint.AvgMS != 21 {
+		t.Fatalf("avg_ms = %v, want average delay 21", bucketPoint.AvgMS)
+	}
+	if bucketPoint.MedianMS == nil || *bucketPoint.MedianMS != 15 {
+		t.Fatalf("median_ms = %v, want bucket median average 15", bucketPoint.MedianMS)
+	}
+	if bucketPoint.LossPercent != 1 {
+		t.Fatalf("loss_percent = %v, want 1", bucketPoint.LossPercent)
+	}
+	for _, point := range response.Points {
+		if point.TS != wantTS && point.AvgMS != nil {
+			t.Fatalf("unexpected non-empty grid point outside source minute: %+v", point)
+		}
 	}
 }
 
@@ -168,7 +252,7 @@ func TestSQLiteBackedSummaryUsesPersistedNodeAndLatestLatency(t *testing.T) {
 	if len(summary.LatencyPoints) != 0 {
 		t.Fatalf("summary latency points len = %d, want 0 because latency charts use dedicated websocket feeds", len(summary.LatencyPoints))
 	}
-	if len(summary.Services) != 1 || summary.Services[0].ID != "google" || summary.Services[0].ReportingNodeCount != 1 || summary.Services[0].MedianMS == nil || *summary.Services[0].MedianMS != 8.8 {
+	if len(summary.Services) != 1 || summary.Services[0].ID != "google" || summary.Services[0].ReportingNodeCount != 1 || summary.Services[0].AvgMS == nil || *summary.Services[0].AvgMS != 8.8 {
 		t.Fatalf("summary services = %+v, want persisted google service status", summary.Services)
 	}
 

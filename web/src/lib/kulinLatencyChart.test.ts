@@ -16,13 +16,13 @@ describe('calculateKulinPacketLoss', () => {
 })
 
 describe('buildKulinTargetSeries', () => {
-  it('uses Kulin delay semantics: null loss samples become 0ms delay with 100% packet loss', () => {
+  it('uses avg_ms as Kulin avg_delay and keeps loss-only samples as gaps', () => {
     const series = buildKulinTargetSeries([
-      { ts: '2026-07-02T00:00:00Z', targetId: 'alpha', targetName: 'Alpha', medianMs: 12, lossPercent: 0 },
+      { ts: '2026-07-02T00:00:00Z', targetId: 'alpha', targetName: 'Alpha', medianMs: 12, avgMs: 14, lossPercent: 0 },
       { ts: '2026-07-02T00:01:00Z', targetId: 'alpha', targetName: 'Alpha', medianMs: null, lossPercent: 100 },
     ])
 
-    expect(series[0].points.map((point) => point.avg_delay)).toEqual([12, 0])
+    expect(series[0].points.map((point) => point.avg_delay)).toEqual([14, null])
     expect(series[0].points.map((point) => point.packet_loss)).toEqual([0, 100])
   })
 })

@@ -59,6 +59,7 @@ interface ApiLatencyPoint {
   target_id: string
   target_name: string
   median_ms: number | null
+  avg_ms?: number | null
   loss_percent: number
 }
 
@@ -71,6 +72,7 @@ interface ApiServiceTarget {
   assigned_node_count: number
   reporting_node_count: number
   median_ms: number | null
+  avg_ms?: number | null
   loss_percent: number | null
   updated_at?: string
 }
@@ -80,6 +82,7 @@ interface ApiServiceLatencyPoint {
   node_id: string
   node_name: string
   median_ms: number | null
+  avg_ms?: number | null
   loss_percent: number
 }
 
@@ -1217,6 +1220,7 @@ function normalizeLatencyPoint(point: ApiLatencyPoint): LatencyPoint {
     targetId: point.target_id,
     targetName: point.target_name,
     medianMs: point.median_ms,
+    avgMs: point.avg_ms ?? point.median_ms,
     lossPercent: point.loss_percent,
   }
 }
@@ -1231,6 +1235,7 @@ function normalizeServiceTarget(target: ApiServiceTarget): ServiceTarget {
     assignedNodeCount: target.assigned_node_count,
     reportingNodeCount: target.reporting_node_count,
     medianMs: target.median_ms,
+    avgMs: target.avg_ms ?? target.median_ms,
     lossPercent: target.loss_percent,
     updatedAt: target.updated_at,
   }
@@ -1242,6 +1247,7 @@ function normalizeServiceLatencyPoint(point: ApiServiceLatencyPoint): LatencyPoi
     targetId: point.node_id,
     targetName: point.node_name,
     medianMs: point.median_ms,
+    avgMs: point.avg_ms ?? point.median_ms,
     lossPercent: point.loss_percent,
   }
 }

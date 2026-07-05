@@ -211,7 +211,10 @@ function linePath(rows: KulinChartRow[], key: string, x: (createdAt: number) => 
   return rows
     .map((row) => {
       const value = rowNumber(row, key)
-      if (value === null) return ''
+      if (value === null) {
+        hasOpenSegment = false
+        return ''
+      }
       const command = hasOpenSegment ? 'L' : 'M'
       hasOpenSegment = true
       return `${command} ${x(row.created_at).toFixed(1)} ${y(value).toFixed(1)}`
