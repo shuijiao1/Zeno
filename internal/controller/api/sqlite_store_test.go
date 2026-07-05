@@ -260,9 +260,10 @@ func TestSQLiteBackedHandlerReturnsPersistedStateHistory(t *testing.T) {
 		t.Fatalf("seed preview data: %v", err)
 	}
 	now := time.Now().UTC().Truncate(time.Second)
+	bucket := time.Unix((now.Unix()/180)*180, 0).UTC()
 	for offset, cpu := range []float64{12.5, 18.75} {
 		if err := store.InsertAgentState(ctx, "hytron", AgentStateRequest{
-			TS:               now.Add(time.Duration(offset-1) * time.Minute).Unix(),
+			TS:               bucket.Add(time.Duration(offset-1) * 3 * time.Minute).Unix(),
 			CPUPercent:       cpu,
 			MemoryUsedBytes:  int64(3+offset) * 1024,
 			MemoryTotalBytes: 8 * 1024,

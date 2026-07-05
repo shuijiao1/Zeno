@@ -136,6 +136,38 @@ describe('subscribeSummary', () => {
     expect(onError).not.toHaveBeenCalled()
   })
 
+  it('reconnects websocket closes without surfacing a fatal API error', () => {
+    vi.useFakeTimers()
+    const instances: any[] = []
+    class FakeWebSocket {
+      url: string
+      onopen: (() => void) | null = null
+      onmessage: ((event: MessageEvent<string>) => void) | null = null
+      onerror: (() => void) | null = null
+      onclose: (() => void) | null = null
+      close = vi.fn(() => this.onclose?.())
+
+      constructor(url: string) {
+        this.url = url
+        instances.push(this)
+      }
+    }
+    Object.defineProperty(globalThis, 'WebSocket', { configurable: true, writable: true, value: FakeWebSocket })
+
+    const onSummary = vi.fn()
+    const onError = vi.fn()
+    const unsubscribe = subscribeSummary(onSummary, onError)
+    instances[0].onopen?.()
+    instances[0].onclose?.()
+    expect(onError).not.toHaveBeenCalled()
+
+    vi.advanceTimersByTime(1250)
+    expect(instances).toHaveLength(2)
+
+    unsubscribe?.()
+    vi.useRealTimers()
+  })
+
 })
 
 describe('detail websocket subscriptions', () => {

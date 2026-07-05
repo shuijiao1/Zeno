@@ -1145,12 +1145,8 @@ func (s *SQLiteStore) populateServiceTargetLatencySummary(ctx context.Context, t
 
 func (s *SQLiteStore) serviceLatencyPoints(ctx context.Context, targetID string, window latencyWindow) ([]ServiceLatencyPoint, error) {
 	since := time.Now().UTC().Add(-time.Duration(window.Samples) * window.Step).Unix()
-	stepSeconds := int64(window.Step.Seconds())
-	if stepSeconds <= 0 {
-		stepSeconds = 1
-	}
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT (pr.ts / ?) * ? AS bucket_ts, pr.node_id, n.display_name, AVG(pr.median_ms), AVG(pr.loss_percent)
+		SELECT pr.ts, pr.node_id, n.display_name, pr.median_ms, pr.loss_percent
 		FROM probe_rounds pr
 		JOIN nodes n ON n.id = pr.node_id
 		JOIN probe_targets pt ON pt.id = pr.target_id
@@ -1160,9 +1156,8 @@ func (s *SQLiteStore) serviceLatencyPoints(ctx context.Context, targetID string,
 		  AND pt.enabled = 1
 		  AND n.disabled = 0
 		  AND COALESCE(npt.enabled, 1) = 1
-		GROUP BY bucket_ts, pr.node_id, n.display_name, n.display_order
-		ORDER BY bucket_ts ASC, n.display_order ASC, n.display_name ASC
-	`, stepSeconds, stepSeconds, targetID, since)
+		ORDER BY pr.ts ASC, n.display_order ASC, n.display_name ASC, pr.id ASC
+	`, targetID, since)
 	if err != nil {
 		return nil, err
 	}
@@ -1187,12 +1182,8 @@ func (s *SQLiteStore) serviceLatencyPoints(ctx context.Context, targetID string,
 
 func (s *SQLiteStore) latencyPoints(ctx context.Context, nodeID string, window latencyWindow) ([]LatencyPoint, error) {
 	since := time.Now().UTC().Add(-time.Duration(window.Samples) * window.Step).Unix()
-	stepSeconds := int64(window.Step.Seconds())
-	if stepSeconds <= 0 {
-		stepSeconds = 1
-	}
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT (pr.ts / ?) * ? AS bucket_ts, pr.target_id, pt.name, AVG(pr.median_ms), AVG(pr.loss_percent)
+		SELECT pr.ts, pr.target_id, pt.name, pr.median_ms, pr.loss_percent
 		FROM probe_rounds pr
 		JOIN probe_targets pt ON pt.id = pr.target_id
 		LEFT JOIN node_probe_targets npt ON npt.node_id = pr.node_id AND npt.target_id = pr.target_id
@@ -1200,9 +1191,8 @@ func (s *SQLiteStore) latencyPoints(ctx context.Context, nodeID string, window l
 		  AND pr.ts >= ?
 		  AND pt.enabled = 1
 		  AND COALESCE(npt.enabled, 1) = 1
-		GROUP BY bucket_ts, pr.target_id, pt.name, pt.display_order
-		ORDER BY bucket_ts ASC, pt.display_order ASC, pt.name ASC
-	`, stepSeconds, stepSeconds, nodeID, since)
+		ORDER BY pr.ts ASC, pt.display_order ASC, pt.name ASC, pr.id ASC
+	`, nodeID, since)
 	if err != nil {
 		return nil, err
 	}

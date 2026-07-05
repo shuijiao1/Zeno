@@ -496,24 +496,53 @@ function liveWebSocketURL(path: string): string {
 function subscribeLiveWebSocket<T>(path: string, normalize: (payload: unknown) => T, onData: (data: T) => void, onError?: (error: Error) => void): (() => void) | null {
   if (typeof WebSocket === 'undefined') return null
   let closedByClient = false
-  const socket = new WebSocket(liveWebSocketURL(path))
-  socket.onmessage = (event) => {
-    try {
-      if (typeof event.data !== 'string') throw new Error('live websocket message must be text')
-      onData(normalize(JSON.parse(event.data) as unknown))
-    } catch (error) {
-      onError?.(error instanceof Error ? error : new Error('live websocket parse failed'))
+  let socket: WebSocket | null = null
+  let reconnectTimer: ReturnType<typeof setTimeout> | null = null
+  let reconnectAttempts = 0
+  const maxReconnectAttempts = 30
+
+  const clearReconnectTimer = () => {
+    if (reconnectTimer !== null) {
+      clearTimeout(reconnectTimer)
+      reconnectTimer = null
     }
   }
-  socket.onerror = () => {
-    if (!closedByClient) onError?.(new Error('live websocket disconnected'))
+
+  const connect = () => {
+    if (closedByClient) return
+    socket = new WebSocket(liveWebSocketURL(path))
+    socket.onopen = () => {
+      reconnectAttempts = 0
+    }
+    socket.onmessage = (event) => {
+      try {
+        if (typeof event.data !== 'string') throw new Error('live websocket message must be text')
+        onData(normalize(JSON.parse(event.data) as unknown))
+      } catch (error) {
+        onError?.(error instanceof Error ? error : new Error('live websocket parse failed'))
+      }
+    }
+    socket.onerror = () => {
+      socket?.close()
+    }
+    socket.onclose = () => {
+      if (closedByClient) return
+      if (reconnectAttempts >= maxReconnectAttempts) {
+        onError?.(new Error('live websocket closed'))
+        return
+      }
+      reconnectAttempts += 1
+      clearReconnectTimer()
+      reconnectTimer = setTimeout(connect, Math.min(1000 + reconnectAttempts * 250, 3000))
+    }
   }
-  socket.onclose = () => {
-    if (!closedByClient) onError?.(new Error('live websocket closed'))
-  }
+
+  connect()
   return () => {
     closedByClient = true
-    socket.close()
+    clearReconnectTimer()
+    socket?.close()
+    socket = null
   }
 }
 
