@@ -95,6 +95,7 @@ export interface StatePoint {
   netOutSpeedBps: number | null
   processCount: number | null
   tcpConnectionCount: number | null
+  udpConnectionCount: number | null
   uptimeSeconds: number | null
 }
 

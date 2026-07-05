@@ -181,10 +181,10 @@ func (s *SQLiteStore) InsertAgentState(ctx context.Context, nodeID string, state
 			node_id, ts, cpu_percent, load1, load5, load15,
 			memory_used_bytes, memory_total_bytes, swap_used_bytes, swap_total_bytes,
 			disk_used_bytes, disk_total_bytes, net_in_total_bytes, net_out_total_bytes,
-			net_in_speed_bps, net_out_speed_bps, process_count, tcp_connection_count, uptime_seconds
+			net_in_speed_bps, net_out_speed_bps, process_count, tcp_connection_count, udp_connection_count, uptime_seconds
 		)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-	`, nodeID, state.TS, state.CPUPercent, state.Load1, state.Load5, state.Load15, state.MemoryUsedBytes, state.MemoryTotalBytes, state.SwapUsedBytes, state.SwapTotalBytes, state.DiskUsedBytes, state.DiskTotalBytes, state.NetInTotalBytes, state.NetOutTotalBytes, state.NetInSpeedBps, state.NetOutSpeedBps, state.ProcessCount, state.TCPConnectionCount, state.UptimeSeconds); err != nil {
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+	`, nodeID, state.TS, state.CPUPercent, state.Load1, state.Load5, state.Load15, state.MemoryUsedBytes, state.MemoryTotalBytes, state.SwapUsedBytes, state.SwapTotalBytes, state.DiskUsedBytes, state.DiskTotalBytes, state.NetInTotalBytes, state.NetOutTotalBytes, state.NetInSpeedBps, state.NetOutSpeedBps, state.ProcessCount, state.TCPConnectionCount, state.UDPConnectionCount, state.UptimeSeconds); err != nil {
 		return err
 	}
 	if _, err := tx.ExecContext(ctx, `

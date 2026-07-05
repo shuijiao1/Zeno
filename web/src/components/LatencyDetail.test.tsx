@@ -48,6 +48,7 @@ const statePoints: StatePoint[] = [
     netOutSpeedBps: 512 * 1024,
     processCount: 88,
     tcpConnectionCount: 34,
+    udpConnectionCount: 12,
     uptimeSeconds: 3660,
   },
 ]
@@ -88,9 +89,26 @@ describe('LatencyDetail', () => {
     expect(html).not.toContain('↑256 B/s ↓128 B/s')
     expect(html).not.toContain('detail-info-card')
     expect(html).toContain('系统资源历史')
-    expect(html).toContain('实时 · 1 个状态采样')
+    expect(html).not.toContain('实时 · 1 个状态采样')
+    expect(html).not.toContain('个状态采样')
     expect(html).toContain('Hytron 网络延迟')
     expect(html).toContain('monitor services')
+  })
+
+  it('maps non-online detail status to offline', () => {
+    const html = renderToStaticMarkup(
+      <LatencyDetail
+        node={{ ...node, status: 'warning' }}
+        points={[]}
+        range="1d"
+        onBack={vi.fn()}
+        onRangeChange={vi.fn()}
+      />,
+    )
+
+    expect(html).toContain('detail-status-pill status-offline')
+    expect(html).toContain('离线')
+    expect(html).not.toContain('异常')
   })
 
   it('includes range controls with the latency chart actions', () => {

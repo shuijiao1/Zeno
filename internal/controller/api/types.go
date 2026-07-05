@@ -113,5 +113,6 @@ type StatePoint struct {
 	NetOutSpeedBps     *float64 `json:"net_out_speed_bps"`
 	ProcessCount       *float64 `json:"process_count"`
 	TCPConnectionCount *float64 `json:"tcp_connection_count"`
+	UDPConnectionCount *float64 `json:"udp_connection_count"`
 	UptimeSeconds      *float64 `json:"uptime_seconds"`
 }

@@ -94,6 +94,7 @@ func (s *SQLiteStore) ensureSchema(ctx context.Context) error {
 			net_out_speed_bps REAL,
 			process_count INTEGER,
 			tcp_connection_count INTEGER,
+			udp_connection_count INTEGER,
 			uptime_seconds INTEGER
 		);`,
 		`CREATE INDEX IF NOT EXISTS idx_state_samples_node_ts ON state_samples(node_id, ts);`,
@@ -243,6 +244,7 @@ func (s *SQLiteStore) ensureSchema(ctx context.Context) error {
 		"swap_total_bytes":     "INTEGER",
 		"process_count":        "INTEGER",
 		"tcp_connection_count": "INTEGER",
+		"udp_connection_count": "INTEGER",
 	}
 	for column, columnType := range stateSampleColumns {
 		if err := s.ensureColumn(ctx, "state_samples", column, columnType); err != nil {
@@ -1180,7 +1182,7 @@ func (s *SQLiteStore) statePoints(ctx context.Context, nodeID string, window lat
 		SELECT ts, cpu_percent, load1, load5, load15,
 		       memory_used_bytes, memory_total_bytes, swap_used_bytes, swap_total_bytes,
 		       disk_used_bytes, disk_total_bytes, net_in_total_bytes, net_out_total_bytes,
-		       net_in_speed_bps, net_out_speed_bps, process_count, tcp_connection_count, uptime_seconds
+		       net_in_speed_bps, net_out_speed_bps, process_count, tcp_connection_count, udp_connection_count, uptime_seconds
 		FROM state_samples
 		WHERE node_id = ?
 		  AND ts >= ?
@@ -1195,8 +1197,8 @@ func (s *SQLiteStore) statePoints(ctx context.Context, nodeID string, window lat
 	for rows.Next() {
 		var ts int64
 		var cpuPercent, load1, load5, load15, netInSpeed, netOutSpeed sql.NullFloat64
-		var memoryUsed, memoryTotal, swapUsed, swapTotal, diskUsed, diskTotal, netInTotal, netOutTotal, processCount, tcpConnectionCount, uptimeSeconds sql.NullInt64
-		if err := rows.Scan(&ts, &cpuPercent, &load1, &load5, &load15, &memoryUsed, &memoryTotal, &swapUsed, &swapTotal, &diskUsed, &diskTotal, &netInTotal, &netOutTotal, &netInSpeed, &netOutSpeed, &processCount, &tcpConnectionCount, &uptimeSeconds); err != nil {
+		var memoryUsed, memoryTotal, swapUsed, swapTotal, diskUsed, diskTotal, netInTotal, netOutTotal, processCount, tcpConnectionCount, udpConnectionCount, uptimeSeconds sql.NullInt64
+		if err := rows.Scan(&ts, &cpuPercent, &load1, &load5, &load15, &memoryUsed, &memoryTotal, &swapUsed, &swapTotal, &diskUsed, &diskTotal, &netInTotal, &netOutTotal, &netInSpeed, &netOutSpeed, &processCount, &tcpConnectionCount, &udpConnectionCount, &uptimeSeconds); err != nil {
 			return nil, err
 		}
 		points = append(points, StatePoint{
@@ -1217,6 +1219,7 @@ func (s *SQLiteStore) statePoints(ctx context.Context, nodeID string, window lat
 			NetOutSpeedBps:     floatPtr(netOutSpeed),
 			ProcessCount:       intPtr(processCount),
 			TCPConnectionCount: intPtr(tcpConnectionCount),
+			UDPConnectionCount: intPtr(udpConnectionCount),
 			UptimeSeconds:      intPtr(uptimeSeconds),
 		})
 	}

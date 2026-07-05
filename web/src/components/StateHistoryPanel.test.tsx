@@ -22,6 +22,7 @@ const points: StatePoint[] = [
     netOutSpeedBps: 256 * 1024,
     processCount: 80,
     tcpConnectionCount: 28,
+    udpConnectionCount: 10,
     uptimeSeconds: 3600,
   },
   {
@@ -42,6 +43,7 @@ const points: StatePoint[] = [
     netOutSpeedBps: 512 * 1024,
     processCount: 88,
     tcpConnectionCount: 34,
+    udpConnectionCount: 12,
     uptimeSeconds: 3660,
   },
 ]
@@ -53,7 +55,8 @@ describe('StateHistoryPanel', () => {
     )
 
     expect(html).toContain('系统资源历史')
-    expect(html).toContain('实时 · 2 个状态采样')
+    expect(html).not.toContain('实时 · 2 个状态采样')
+    expect(html).not.toContain('个状态采样')
     expect(html).toContain('resource history range selector')
     expect(html).toContain('实时')
     expect(html).toContain('1 天')
@@ -66,27 +69,30 @@ describe('StateHistoryPanel', () => {
     expect(html).toContain('viewBox="0 0 900 180"')
     expect(html).toContain('CPU')
     expect(html).toContain('18.8%')
-    expect(html).toContain('内存')
-    expect(html).toContain('50.0%')
+    expect(html).toContain('内存 / Swap')
+    expect(html).toContain('内存 50.0%')
+    expect(html).toContain('Swap 25.0%')
     expect(html).toContain('磁盘')
     expect(html).toContain('50.0%')
     expect(html).toContain('网络速率')
     expect(html).toContain('↑512.0 KiB/s')
     expect(html).toContain('↓64.0 KiB/s')
-    expect(html).toContain('系统负载')
-    expect(html).toContain('进程 / TCP')
-    expect(html).toContain('网络累计')
-    expect(html).toContain('↑24.00 KB')
-    expect(html).toContain('↓12.00 KB')
+    expect(html).toContain('进程数')
+    expect(html).toContain('TCP / UDP')
+    expect(html).toContain('UDP 12')
+    expect(html).not.toContain('系统负载')
+    expect(html).not.toContain('网络累计')
     expect(html).toContain('data-series="cpu"')
     expect(html).toContain('data-series="memory"')
     expect(html).toContain('data-series="disk"')
     expect(html).toContain('data-series="net-out"')
     expect(html).toContain('data-series="net-in"')
-    expect(html).toContain('data-series="load1"')
+    expect(html).toContain('data-series="swap"')
+    expect(html).not.toContain('data-series="load1"')
     expect(html).toContain('data-series="processes"')
     expect(html).toContain('data-series="tcp"')
-    expect(html).toContain('data-series="net-out-total"')
+    expect(html).toContain('data-series="udp"')
+    expect(html).not.toContain('data-series="net-out-total"')
   })
 
   it('shows an explicit empty state instead of a blank chart', () => {

@@ -1099,6 +1099,7 @@ func TestAgentStateSamplesDrivePublicSummaryAndMonthlyTrafficDeltas(t *testing.T
 			"net_out_speed_bps":    1024.25,
 			"process_count":        88,
 			"tcp_connection_count": 34,
+			"udp_connection_count": 12,
 			"uptime_seconds":       int64(3600),
 		}
 		payload, err := json.Marshal(body)
@@ -1148,8 +1149,8 @@ func TestAgentStateSamplesDrivePublicSummaryAndMonthlyTrafficDeltas(t *testing.T
 	if latest.SwapUsedBytes == nil || *latest.SwapUsedBytes != float64(512*1024*1024) || latest.SwapTotalBytes == nil || *latest.SwapTotalBytes != float64(2*1024*1024*1024) {
 		t.Fatalf("swap fields = %+v, want persisted swap usage", latest)
 	}
-	if latest.ProcessCount == nil || *latest.ProcessCount != 88 || latest.TCPConnectionCount == nil || *latest.TCPConnectionCount != 34 {
-		t.Fatalf("process/tcp counts = %+v, want persisted process and tcp connection counts", latest)
+	if latest.ProcessCount == nil || *latest.ProcessCount != 88 || latest.TCPConnectionCount == nil || *latest.TCPConnectionCount != 34 || latest.UDPConnectionCount == nil || *latest.UDPConnectionCount != 12 {
+		t.Fatalf("process/tcp/udp counts = %+v, want persisted process, tcp and udp connection counts", latest)
 	}
 	var samples int
 	if err := store.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM state_samples`).Scan(&samples); err != nil {
@@ -1238,7 +1239,7 @@ func TestAgentStateLegacyPayloadKeepsExtraMetricsNull(t *testing.T) {
 	if point.CPUPercent == nil || *point.CPUPercent != 18.75 {
 		t.Fatalf("cpu percent = %v, want persisted legacy metric", point.CPUPercent)
 	}
-	if point.Load1 != nil || point.Load5 != nil || point.Load15 != nil || point.SwapUsedBytes != nil || point.SwapTotalBytes != nil || point.ProcessCount != nil || point.TCPConnectionCount != nil {
+	if point.Load1 != nil || point.Load5 != nil || point.Load15 != nil || point.SwapUsedBytes != nil || point.SwapTotalBytes != nil || point.ProcessCount != nil || point.TCPConnectionCount != nil || point.UDPConnectionCount != nil {
 		t.Fatalf("legacy payload should keep extra metrics null, got %+v", point)
 	}
 }
@@ -1295,7 +1296,7 @@ func TestAgentStateSchemaMigratesExtraMetricColumnsAsNullable(t *testing.T) {
 			t.Fatalf("scan schema row: %v", err)
 		}
 		columns[name] = true
-		if (name == "load1" || name == "load5" || name == "load15" || name == "swap_used_bytes" || name == "swap_total_bytes" || name == "process_count" || name == "tcp_connection_count") && notNull != 0 {
+		if (name == "load1" || name == "load5" || name == "load15" || name == "swap_used_bytes" || name == "swap_total_bytes" || name == "process_count" || name == "tcp_connection_count" || name == "udp_connection_count") && notNull != 0 {
 			_ = rows.Close()
 			t.Fatalf("migrated column %s should be nullable", name)
 		}
@@ -1303,7 +1304,7 @@ func TestAgentStateSchemaMigratesExtraMetricColumnsAsNullable(t *testing.T) {
 	if err := rows.Close(); err != nil {
 		t.Fatalf("close schema rows: %v", err)
 	}
-	for _, column := range []string{"load1", "load5", "load15", "swap_used_bytes", "swap_total_bytes", "process_count", "tcp_connection_count"} {
+	for _, column := range []string{"load1", "load5", "load15", "swap_used_bytes", "swap_total_bytes", "process_count", "tcp_connection_count", "udp_connection_count"} {
 		if !columns[column] {
 			t.Fatalf("migrated state_samples missing column %s", column)
 		}

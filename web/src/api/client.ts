@@ -101,6 +101,7 @@ interface ApiStatePoint {
   net_out_speed_bps: number | null
   process_count?: number | null
   tcp_connection_count?: number | null
+  udp_connection_count?: number | null
   uptime_seconds: number | null
 }
 
@@ -1172,6 +1173,7 @@ function normalizeStatePoint(point: ApiStatePoint): StatePoint {
     netOutSpeedBps: point.net_out_speed_bps,
     processCount: point.process_count ?? null,
     tcpConnectionCount: point.tcp_connection_count ?? null,
+    udpConnectionCount: point.udp_connection_count ?? null,
     uptimeSeconds: point.uptime_seconds,
   }
 }

@@ -38,21 +38,16 @@ const stateRangeOptions = [
 ]
 
 export function StateHistoryPanel({ points, range, loading = false, error, onRangeChange = () => {} }: StateHistoryPanelProps) {
-  const rangeLabel = stateRangeOptions.find((option) => option.value === range)?.label ?? range
   const sampleCount = points.length
   const latestCpu = latest(points, (point) => point.cpuPercent)
   const latestMemory = latest(points, memoryPercent)
   const latestDisk = latest(points, diskPercent)
   const latestInSpeed = latest(points, (point) => point.netInSpeedBps)
   const latestOutSpeed = latest(points, (point) => point.netOutSpeedBps)
-  const latestInTotal = latest(points, (point) => point.netInTotalBytes)
-  const latestOutTotal = latest(points, (point) => point.netOutTotalBytes)
-  const latestLoad1 = latest(points, (point) => point.load1)
-  const latestLoad5 = latest(points, (point) => point.load5)
-  const latestLoad15 = latest(points, (point) => point.load15)
   const latestSwap = latest(points, swapPercent)
   const latestProcessCount = latest(points, (point) => point.processCount)
   const latestTcpConnectionCount = latest(points, (point) => point.tcpConnectionCount)
+  const latestUdpConnectionCount = latest(points, (point) => point.udpConnectionCount)
 
   const metrics: MetricConfig[] = [
     {
@@ -66,12 +61,15 @@ export function StateHistoryPanel({ points, range, loading = false, error, onRan
     },
     {
       key: 'memory',
-      label: '内存',
-      value: formatPercent(latestMemory),
+      label: '内存 / Swap',
+      value: <><span>内存 {formatPercent(latestMemory)}</span><span>Swap {formatPercent(latestSwap)}</span></>,
       tone: 'blue',
       unitLabel: '%',
       domainMax: 100,
-      lines: [{ key: 'memory', label: '内存', values: points.map(memoryPercent), color: '#2563eb' }],
+      lines: [
+        { key: 'memory', label: '内存', values: points.map(memoryPercent), color: '#2563eb' },
+        { key: 'swap', label: 'Swap', values: points.map(swapPercent), color: '#0ea5e9' },
+      ],
     },
     {
       key: 'disk',
@@ -94,46 +92,22 @@ export function StateHistoryPanel({ points, range, loading = false, error, onRan
       ],
     },
     {
-      key: 'load',
-      label: '系统负载',
-      value: latestLoad1 !== null && latestLoad5 !== null && latestLoad15 !== null ? `${formatFixed(latestLoad1, 2)} / ${formatFixed(latestLoad5, 2)} / ${formatFixed(latestLoad15, 2)}` : '--',
-      tone: 'green',
-      unitLabel: 'load',
-      lines: [
-        { key: 'load1', label: '1m', values: points.map((point) => finiteOrNull(point.load1)), color: '#22c55e' },
-        { key: 'load5', label: '5m', values: points.map((point) => finiteOrNull(point.load5)), color: '#84cc16' },
-        { key: 'load15', label: '15m', values: points.map((point) => finiteOrNull(point.load15)), color: '#14b8a6' },
-      ],
-    },
-    {
-      key: 'swap',
-      label: 'Swap',
-      value: formatPercent(latestSwap),
-      tone: 'blue',
-      unitLabel: '%',
-      domainMax: 100,
-      lines: [{ key: 'swap', label: 'Swap', values: points.map(swapPercent), color: '#0ea5e9' }],
+      key: 'processes',
+      label: '进程数',
+      value: latestProcessCount !== null ? Math.round(latestProcessCount) : '--',
+      tone: 'purple',
+      unitLabel: 'count',
+      lines: [{ key: 'processes', label: '进程', values: points.map((point) => finiteOrNull(point.processCount)), color: '#a855f7' }],
     },
     {
       key: 'connections',
-      label: '进程 / TCP',
-      value: <><span>进程 {latestProcessCount !== null ? Math.round(latestProcessCount) : '--'}</span><span>TCP {latestTcpConnectionCount !== null ? Math.round(latestTcpConnectionCount) : '--'}</span></>,
-      tone: 'purple',
+      label: 'TCP / UDP',
+      value: <><span>TCP {latestTcpConnectionCount !== null ? Math.round(latestTcpConnectionCount) : '--'}</span><span>UDP {latestUdpConnectionCount !== null ? Math.round(latestUdpConnectionCount) : '--'}</span></>,
+      tone: 'orange',
       unitLabel: 'count',
       lines: [
-        { key: 'processes', label: '进程', values: points.map((point) => finiteOrNull(point.processCount)), color: '#a855f7' },
         { key: 'tcp', label: 'TCP', values: points.map((point) => finiteOrNull(point.tcpConnectionCount)), color: '#ec4899' },
-      ],
-    },
-    {
-      key: 'traffic-total',
-      label: '网络累计',
-      value: <><span>↑{formatBinaryBytes(latestOutTotal)}</span><span>↓{formatBinaryBytes(latestInTotal)}</span></>,
-      tone: 'orange',
-      unitLabel: 'B',
-      lines: [
-        { key: 'net-out-total', label: '上传累计', values: points.map((point) => finiteOrNull(point.netOutTotalBytes)), color: '#fb923c' },
-        { key: 'net-in-total', label: '下载累计', values: points.map((point) => finiteOrNull(point.netInTotalBytes)), color: '#38bdf8' },
+        { key: 'udp', label: 'UDP', values: points.map((point) => finiteOrNull(point.udpConnectionCount)), color: '#38bdf8' },
       ],
     },
   ]
@@ -143,7 +117,6 @@ export function StateHistoryPanel({ points, range, loading = false, error, onRan
       <header className="monitor-heading">
         <div>
           <h3>系统资源历史</h3>
-          <p>{rangeLabel} · {sampleCount} 个状态采样</p>
         </div>
         <div className="monitor-heading-actions">
           <div className="detail-range-row state-range-row" aria-label="resource history range selector">
@@ -238,10 +211,6 @@ function ratioPercent(used: number | null | undefined, total: number | null | un
 
 function finiteOrNull(value: number | null | undefined): number | null {
   return typeof value === 'number' && Number.isFinite(value) ? value : null
-}
-
-function formatFixed(value: number, digits: number): string {
-  return value.toFixed(digits)
 }
 
 function formatBinaryBytes(value: number | null): string {

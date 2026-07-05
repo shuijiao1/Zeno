@@ -80,6 +80,7 @@ func (c *MetricsCollector) CollectState(now time.Time) StateSample {
 		NetOutSpeedBps:     outSpeed,
 		ProcessCount:       processCount(),
 		TCPConnectionCount: tcpConnectionCount(),
+		UDPConnectionCount: udpConnectionCount(),
 		UptimeSeconds:      uptimeSeconds(),
 	}
 }
@@ -240,6 +241,10 @@ func processCount() int64 {
 
 func tcpConnectionCount() int64 {
 	return tcpConnectionCountFromFile("/proc/net/tcp") + tcpConnectionCountFromFile("/proc/net/tcp6")
+}
+
+func udpConnectionCount() int64 {
+	return tcpConnectionCountFromFile("/proc/net/udp") + tcpConnectionCountFromFile("/proc/net/udp6")
 }
 
 func tcpConnectionCountFromFile(path string) int64 {

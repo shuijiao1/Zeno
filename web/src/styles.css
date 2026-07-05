@@ -745,7 +745,7 @@ svg { display: block; }
 }
 .kulin-node-card:hover { transform: translateY(-4px); box-shadow: 0 10px 15px -3px var(--shadow-stone), 0 4px 6px -4px var(--shadow-stone); }
 .kulin-node-card.is-offline {
-  background: color-mix(in srgb, var(--card) 82%, #737373 18%);
+  background: color-mix(in srgb, var(--card) 90%, #7dd3fc 10%);
 }
 .kulin-node-card.is-offline::before {
   content: '';
@@ -758,8 +758,7 @@ svg { display: block; }
 .kulin-node-card.is-offline .node-head,
 .kulin-node-card.is-offline .node-specs,
 .kulin-node-card.is-offline .node-usage {
-  filter: grayscale(1);
-  opacity: .42;
+  opacity: .56;
 }
 .node-offline-watermark {
   position: absolute;
@@ -1080,7 +1079,7 @@ svg { display: block; }
 
 .state-history-stack {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 12px;
   padding: 0 24px 24px;
 }

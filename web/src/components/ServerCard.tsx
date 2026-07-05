@@ -104,7 +104,8 @@ export function ServerCard({ node, onOpen }: ServerCardProps) {
   const trafficPercent = ratio(node.monthlyBillableBytes, node.monthlyQuotaBytes)
   const latency = node.latencySummary
   const open = () => onOpen?.(node.id)
-  const isOfflineCard = node.status === 'offline' || node.status === 'no_data'
+  const visualStatus = node.status === 'online' ? 'online' : 'offline'
+  const isOfflineCard = visualStatus === 'offline'
 
   return (
     <article
@@ -123,7 +124,7 @@ export function ServerCard({ node, onOpen }: ServerCardProps) {
       <section className="node-head">
         <img alt={node.os} className="node-os" loading="lazy" src={osAsset[node.os]} />
         <div className="node-title-line">
-          <span className={`node-dot status-${node.status}`} />
+          <span className={`node-dot status-${visualStatus}`} />
           <span className="node-flag">{flag(node.countryCode)}</span>
           <p>{node.displayName}</p>
         </div>

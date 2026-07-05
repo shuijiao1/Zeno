@@ -175,6 +175,7 @@ describe('normalizeNodeState', () => {
           net_out_speed_bps: 256,
           process_count: 88,
           tcp_connection_count: 34,
+          udp_connection_count: 12,
           uptime_seconds: 3601,
         },
       ],
@@ -192,6 +193,7 @@ describe('normalizeNodeState', () => {
     expect(data.points[0].netOutSpeedBps).toBe(256)
     expect(data.points[0].processCount).toBe(88)
     expect(data.points[0].tcpConnectionCount).toBe(34)
+    expect(data.points[0].udpConnectionCount).toBe(12)
     expect(data.points[0].uptimeSeconds).toBe(3601)
   })
 
@@ -220,6 +222,7 @@ describe('normalizeNodeState', () => {
     expect(data.points[0].swapUsedBytes).toBeNull()
     expect(data.points[0].processCount).toBeNull()
     expect(data.points[0].tcpConnectionCount).toBeNull()
+    expect(data.points[0].udpConnectionCount).toBeNull()
   })
 })
 

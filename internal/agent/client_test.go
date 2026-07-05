@@ -19,7 +19,7 @@ func TestClientAddsAgentAuthHeadersAndPostsState(t *testing.T) {
 		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 			t.Fatalf("decode state body: %v", err)
 		}
-		if body.TS != 1782990000 || body.CPUPercent != 12.5 || body.Load1 != 0.42 || body.Load5 != 0.35 || body.Load15 != 0.28 || body.SwapUsedBytes != 512 || body.SwapTotalBytes != 2048 || body.ProcessCount != 88 || body.TCPConnectionCount != 34 || body.NetOutSpeedBps != 1024 {
+		if body.TS != 1782990000 || body.CPUPercent != 12.5 || body.Load1 != 0.42 || body.Load5 != 0.35 || body.Load15 != 0.28 || body.SwapUsedBytes != 512 || body.SwapTotalBytes != 2048 || body.ProcessCount != 88 || body.TCPConnectionCount != 34 || body.UDPConnectionCount != 12 || body.NetOutSpeedBps != 1024 {
 			t.Fatalf("state body = %+v, want exact sample with extra metrics", body)
 		}
 		w.WriteHeader(http.StatusAccepted)
@@ -39,6 +39,7 @@ func TestClientAddsAgentAuthHeadersAndPostsState(t *testing.T) {
 		NetOutSpeedBps:     1024,
 		ProcessCount:       88,
 		TCPConnectionCount: 34,
+		UDPConnectionCount: 12,
 	}
 	err := client.PostState(context.Background(), sample)
 	if err != nil {

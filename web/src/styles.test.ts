@@ -88,7 +88,7 @@ describe('state history layout', () => {
 
   it('renders resource history as a compact chart grid like Kulin on desktop', () => {
     expect(styles).toContain('.state-history-stack')
-    expect(styles).toContain('grid-template-columns: repeat(2, minmax(0, 1fr))')
+    expect(styles).toContain('grid-template-columns: repeat(3, minmax(0, 1fr))')
     expect(styles).toContain('grid-template-columns: 1fr')
     expect(styles).toContain('.state-history-chart-card')
     expect(styles).toContain('.state-sparkline--large')
@@ -98,6 +98,12 @@ describe('state history layout', () => {
     expect(styles).toContain('.detail-hero__badges')
     expect(styles).toContain('.detail-hero-badge')
     expect(styles).toContain('border-radius: 999px')
+  })
+
+  it('keeps offline cards frozen without grayscale filtering', () => {
+    expect(styles).toContain('.kulin-node-card.is-offline')
+    expect(styles).toContain('.node-offline-watermark')
+    expect(styles).not.toContain('filter: grayscale')
   })
 })
 

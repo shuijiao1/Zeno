@@ -44,6 +44,7 @@ type StateSample struct {
 	NetOutSpeedBps     float64 `json:"net_out_speed_bps"`
 	ProcessCount       int64   `json:"process_count"`
 	TCPConnectionCount int64   `json:"tcp_connection_count"`
+	UDPConnectionCount int64   `json:"udp_connection_count"`
 	UptimeSeconds      int64   `json:"uptime_seconds"`
 }
 

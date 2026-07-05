@@ -48,6 +48,7 @@ export function LatencyDetail({
     .map((target) => target.targetName)
   const rangeLabel = rangeOptions.find((option) => option.value === range)?.label ?? range
   const latestState = latestStatePoint(statePoints)
+  const visualStatus = node.status === 'online' ? 'online' : 'offline'
   const uptimeLabel = latestState?.uptimeSeconds !== null && latestState?.uptimeSeconds !== undefined ? `运行 ${formatUptime(latestState.uptimeSeconds)}` : null
   const loadLabel = latestState && latestState.load1 !== null && latestState.load5 !== null && latestState.load15 !== null
     ? `负载 ${formatFixed(latestState.load1, 2)} / ${formatFixed(latestState.load5, 2)} / ${formatFixed(latestState.load15, 2)}`
@@ -69,7 +70,7 @@ export function LatencyDetail({
           <div className="detail-hero__badges" aria-label="server live status">
             {uptimeLabel && <span className="detail-hero-badge">{uptimeLabel}</span>}
             {loadLabel && <span className="detail-hero-badge">{loadLabel}</span>}
-            <span className={`detail-status-pill status-${node.status}`}>{formatStatusLabel(node.status)}</span>
+            <span className={`detail-status-pill status-${visualStatus}`}>{formatStatusLabel(node.status)}</span>
           </div>
         </div>
         <section className="detail-fact-strip" aria-label={`${node.displayName} server facts`}>
@@ -164,11 +165,7 @@ function InfoFact({ label, value, wide = false }: { label: string; value: string
 }
 
 function formatStatusLabel(status: HomeCardNode['status']): string {
-  if (status === 'online') return '在线'
-  if (status === 'offline') return '离线'
-  if (status === 'warning') return '异常'
-  if (status === 'no_data') return '暂无数据'
-  return status
+  return status === 'online' ? '在线' : '离线'
 }
 
 function formatOSLabel(node: HomeCardNode): string {
