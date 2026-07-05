@@ -14,8 +14,8 @@ describe('mobile latency target layout', () => {
     expect(styles).toContain('.latency-target-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); padding: 0 12px 12px; }')
     expect(styles).toContain('.latency-target-grid button')
     expect(styles).toContain('border-radius: var(--radius-field)')
-    expect(styles).toContain('.state-sparkline__axis { fill: color-mix(in srgb, var(--foreground) 52%, transparent); font-size: 24px; font-weight: 500; }')
-    expect(styles).toContain('.state-sparkline__time-axis { fill: color-mix(in srgb, var(--foreground) 42%, transparent); font-size: 22px; font-weight: 500; }')
+    expect(styles).toContain('.state-sparkline__axis { fill: color-mix(in srgb, var(--foreground) 52%, transparent); font-size: 34px; font-weight: 500; }')
+    expect(styles).toContain('.state-sparkline__time-axis { fill: color-mix(in srgb, var(--foreground) 42%, transparent); font-size: 30px; font-weight: 500; }')
   })
 })
 
@@ -116,8 +116,10 @@ describe('state history layout', () => {
     expect(styles).toContain('grid-template-columns: repeat(auto-fit, minmax(280px, 1fr))')
     expect(styles).toContain('grid-template-columns: 1fr')
     expect(styles).toContain('.state-history-chart-card')
+    expect(styles).toContain('background: var(--card)')
     expect(styles).toContain('.state-sparkline--large')
     expect(styles).toContain('.state-history-chart-card .state-sparkline--large { flex: 1 1 auto; min-height: 112px; }')
+    expect(styles).toContain('.state-sparkline__area { opacity: .18; stroke: none; pointer-events: none; }')
   })
 
   it('keeps uptime and load as compact pill badges in the top server card', () => {

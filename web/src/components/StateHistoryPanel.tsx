@@ -24,6 +24,7 @@ interface MetricConfig {
   tone: 'green' | 'blue' | 'purple' | 'orange'
   unitLabel: string
   domainMax?: number
+  fillArea?: boolean
   lines: MetricLine[]
 }
 
@@ -58,6 +59,7 @@ export function StateHistoryPanel({ points, range, loading = false, error, onRan
       tone: 'green',
       unitLabel: '%',
       domainMax: 100,
+      fillArea: true,
       lines: [{ key: 'cpu', label: 'CPU', values: points.map((point) => finiteOrNull(point.cpuPercent)), color: '#22c55e' }],
     },
     {
@@ -67,6 +69,7 @@ export function StateHistoryPanel({ points, range, loading = false, error, onRan
       tone: 'blue',
       unitLabel: '%',
       domainMax: 100,
+      fillArea: true,
       lines: [
         { key: 'memory', label: '内存', values: points.map(memoryPercent), color: '#2563eb' },
         { key: 'swap', label: 'Swap', values: points.map(swapPercent), color: '#0ea5e9' },
@@ -79,6 +82,7 @@ export function StateHistoryPanel({ points, range, loading = false, error, onRan
       tone: 'purple',
       unitLabel: '%',
       domainMax: 100,
+      fillArea: true,
       lines: [{ key: 'disk', label: '磁盘', values: points.map(diskPercent), color: '#9333ea' }],
     },
     {
@@ -98,6 +102,7 @@ export function StateHistoryPanel({ points, range, loading = false, error, onRan
       value: latestProcessCount !== null ? Math.round(latestProcessCount) : '--',
       tone: 'purple',
       unitLabel: 'count',
+      fillArea: true,
       lines: [{ key: 'processes', label: '进程', values: points.map((point) => finiteOrNull(point.processCount)), color: '#a855f7' }],
     },
     {
@@ -179,6 +184,15 @@ function MetricChartCard({ metric, timestamps }: { metric: MetricConfig; timesta
           >
             {formatStateAxisTime(tick.timestamp, timestamps)}
           </text>
+        ))}
+        {metric.fillArea && metric.lines.map((line) => (
+          <path
+            key={`${line.key}-area`}
+            d={sparklineAreaPath(line.values, domain)}
+            className="state-sparkline__area"
+            data-series={`${line.key}-area`}
+            style={{ fill: line.color }}
+          />
         ))}
         {metric.lines.map((line) => (
           <path
@@ -271,6 +285,40 @@ function sparklinePath(values: Array<number | null>, domain: { min: number; max:
     .join(' ')
 }
 
+function sparklineAreaPath(values: Array<number | null>, domain: { min: number; max: number }): string {
+  const plotHeight = chartHeight - chartPad.top - chartPad.bottom
+  const span = domain.max - domain.min || 1
+  const baseline = chartPad.top + plotHeight
+  let segment: Array<{ x: number; y: number }> = []
+  const segments: Array<Array<{ x: number; y: number }>> = []
+
+  values.forEach((value, index) => {
+    if (value === null) {
+      if (segment.length > 0) segments.push(segment)
+      segment = []
+      return
+    }
+    const x = xForIndex(index, values.length)
+    const y = chartPad.top + (1 - (value - domain.min) / span) * plotHeight
+    segment.push({ x, y })
+  })
+  if (segment.length > 0) segments.push(segment)
+
+  return segments
+    .filter((coords) => coords.length > 0)
+    .map((coords) => {
+      const first = coords[0]
+      const last = coords.at(-1)!
+      return [
+        `M ${first.x.toFixed(1)} ${baseline.toFixed(1)}`,
+        ...coords.map((coord) => `L ${coord.x.toFixed(1)} ${coord.y.toFixed(1)}`),
+        `L ${last.x.toFixed(1)} ${baseline.toFixed(1)}`,
+        'Z',
+      ].join(' ')
+    })
+    .join(' ')
+}
+
 function xForIndex(index: number, count: number): number {
   const plotWidth = chartWidth - chartPad.left - chartPad.right
   const xStep = count > 1 ? plotWidth / (count - 1) : 0
@@ -290,24 +338,29 @@ function stateAxisTicks(timestamps: number[]): StateAxisTick[] {
   if (valid.length === 0) return []
   if (valid.length === 1) return [{ ...valid[0], anchor: 'middle' }]
 
-  const middle = valid[Math.floor((valid.length - 1) / 2)]
   const candidates: StateAxisTick[] = [
     { ...valid[0], anchor: 'start' },
-    { ...middle, anchor: 'middle' },
     { ...valid.at(-1)!, anchor: 'end' },
   ]
   return candidates.filter((tick, index, all) => all.findIndex((item) => item.index === tick.index) === index)
 }
 
 function formatStateAxisTime(timestamp: number, timestamps: number[]): string {
-  const date = new Date(timestamp)
-  if (Number.isNaN(date.getTime())) return '--:--'
-  const start = timestamps.find(Number.isFinite) ?? timestamp
-  const end = [...timestamps].reverse().find(Number.isFinite) ?? timestamp
-  const spanHours = (end - start) / 3_600_000
-  const time = `${date.getHours()}:${date.getMinutes().toString().padStart(2, '0')}`
-  if (spanHours > 36) return `${date.getMonth() + 1}/${date.getDate()} ${time}`
-  return time
+  if (!Number.isFinite(timestamp)) return '--'
+  const latest = [...timestamps].reverse().find(Number.isFinite) ?? timestamp
+  const diffMs = Math.max(0, latest - timestamp)
+  return formatRelativeDuration(diffMs)
+}
+
+function formatRelativeDuration(diffMs: number): string {
+  const totalSeconds = Math.floor(diffMs / 1000)
+  const days = Math.floor(totalSeconds / 86_400)
+  const hours = Math.floor((totalSeconds % 86_400) / 3_600)
+  const minutes = Math.floor((totalSeconds % 3_600) / 60)
+  if (days > 0) return `${days}d`
+  if (hours > 0) return `${hours}h`
+  if (minutes > 0) return `${minutes}m`
+  return `${Math.max(totalSeconds, 0)}s`
 }
 
 function formatAxisValue(value: number, unitLabel: string): string {

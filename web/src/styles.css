@@ -1312,7 +1312,6 @@ svg { display: block; }
 }
 .state-history-chart-card {
   --tone-color: var(--blue);
-  --tone-bg: #ffffff;
   position: relative;
   overflow: hidden;
   min-width: 0;
@@ -1322,8 +1321,8 @@ svg { display: block; }
   padding: 12px 14px 10px;
   border: 1px solid var(--border);
   border-radius: var(--radius-card);
-  background: var(--surface-soft);
-  box-shadow: 0 1px 2px rgba(15, 23, 42, .04);
+  background: var(--card);
+  box-shadow: 0 12px 28px -24px rgba(15, 23, 42, .24), 0 1px 2px rgba(15, 23, 42, .04);
 }
 .state-history-chart-card.tone-green { --tone-color: var(--green); }
 .state-history-chart-card.tone-blue { --tone-color: var(--blue); }
@@ -1373,8 +1372,9 @@ svg { display: block; }
 .state-sparkline--large { margin-top: 2px; }
 .state-history-chart-card .state-sparkline--large { flex: 1 1 auto; min-height: 112px; }
 .state-sparkline__baseline { stroke: color-mix(in srgb, var(--tone-color) 16%, transparent); stroke-width: 1; }
-.state-sparkline__axis { fill: color-mix(in srgb, var(--foreground) 52%, transparent); font-size: 24px; font-weight: 500; }
-.state-sparkline__time-axis { fill: color-mix(in srgb, var(--foreground) 42%, transparent); font-size: 22px; font-weight: 500; }
+.state-sparkline__axis { fill: color-mix(in srgb, var(--foreground) 52%, transparent); font-size: 34px; font-weight: 500; }
+.state-sparkline__time-axis { fill: color-mix(in srgb, var(--foreground) 42%, transparent); font-size: 30px; font-weight: 500; }
+.state-sparkline__area { opacity: .18; stroke: none; pointer-events: none; }
 .state-sparkline__line { fill: none; stroke-width: 1.35; stroke-linecap: round; stroke-linejoin: round; }
 
 .latency-target-grid {
