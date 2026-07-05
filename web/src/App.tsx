@@ -1279,9 +1279,9 @@ function AdminNodeList({ nodes, onEdit, onDelete }: { nodes: AdminNode[]; onEdit
             {!node.publicIPv4 && !node.publicIPv6 && <span>—</span>}
           </span>
           <span data-label="Agent 版本">{node.agentVersion || '—'}</span>
-          <div className="admin-row-actions">
-            <button className="admin-row-action" type="button" onClick={() => onEdit(node.id)}>编辑服务器</button>
-            <button className="admin-row-action is-danger" type="button" onClick={() => confirmDelete(node)}>删除服务器</button>
+          <div className="admin-row-actions admin-icon-actions">
+            <button className="admin-row-action is-icon" type="button" aria-label={`编辑服务器 ${node.displayName}`} title="编辑服务器" onClick={() => onEdit(node.id)}><EditActionIcon /><span className="sr-only">编辑服务器</span></button>
+            <button className="admin-row-action is-icon is-danger" type="button" aria-label={`删除服务器 ${node.displayName}`} title="删除服务器" onClick={() => confirmDelete(node)}><TrashActionIcon /><span className="sr-only">删除服务器</span></button>
           </div>
         </article>
       ))}
@@ -1670,9 +1670,9 @@ function AdminTargetList({ targets, onEdit, onDelete }: { targets: AdminProbeTar
           </div>
           <span data-label="地址">{formatTargetEndpoint(target)}</span>
           <span data-label="节点">{formatTargetAssignmentSummary(target)}</span>
-          <div className="admin-row-actions">
-            <button className="admin-row-action" type="button" onClick={() => onEdit(target.id)}>编辑目标</button>
-            <button className="admin-row-action is-danger" type="button" onClick={() => confirmDelete(target)}>删除目标</button>
+          <div className="admin-row-actions admin-icon-actions">
+            <button className="admin-row-action is-icon" type="button" aria-label={`编辑目标 ${target.name}`} title="编辑目标" onClick={() => onEdit(target.id)}><EditActionIcon /><span className="sr-only">编辑目标</span></button>
+            <button className="admin-row-action is-icon is-danger" type="button" aria-label={`删除目标 ${target.name}`} title="删除目标" onClick={() => confirmDelete(target)}><TrashActionIcon /><span className="sr-only">删除目标</span></button>
           </div>
         </article>
       ))}
@@ -2368,6 +2368,26 @@ export function HomeOverviewPanel({ totalCount, onlineCount, offlineCount: _offl
         </div>
       </dl>
     </section>
+  )
+}
+
+function EditActionIcon() {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true">
+      <path d="M12 20h9" />
+      <path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z" />
+    </svg>
+  )
+}
+
+function TrashActionIcon() {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true">
+      <path d="M3 6h18" />
+      <path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+      <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" />
+      <path d="M10 11v6M14 11v6" />
+    </svg>
   )
 }
 
