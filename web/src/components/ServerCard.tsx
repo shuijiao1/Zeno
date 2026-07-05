@@ -104,10 +104,11 @@ export function ServerCard({ node, onOpen }: ServerCardProps) {
   const trafficPercent = ratio(node.monthlyBillableBytes, node.monthlyQuotaBytes)
   const latency = node.latencySummary
   const open = () => onOpen?.(node.id)
+  const isOfflineCard = node.status === 'offline' || node.status === 'no_data'
 
   return (
     <article
-      className="kulin-node-card"
+      className={`kulin-node-card${isOfflineCard ? ' is-offline' : ''}`}
       role={onOpen ? 'link' : undefined}
       tabIndex={onOpen ? 0 : undefined}
       onClick={open}
@@ -119,6 +120,14 @@ export function ServerCard({ node, onOpen }: ServerCardProps) {
         }
       }}
     >
+      {isOfflineCard && (
+        <div className="node-offline-state" aria-label={`${node.displayName} 离线`}>
+          <span className="node-dot status-offline" aria-hidden="true" />
+          <span>离线</span>
+        </div>
+      )}
+      {!isOfflineCard && (
+        <>
       <section className="node-head">
         <img alt={node.os} className="node-os" loading="lazy" src={osAsset[node.os]} />
         <div className="node-title-line">
@@ -149,6 +158,8 @@ export function ServerCard({ node, onOpen }: ServerCardProps) {
           </section>
         </div>
       </section>
+        </>
+      )}
     </article>
   )
 }

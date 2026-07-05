@@ -742,6 +742,24 @@ svg { display: block; }
   backdrop-filter: blur(8px);
 }
 .kulin-node-card:hover { transform: translateY(-4px); box-shadow: 0 10px 15px -3px var(--shadow-stone), 0 4px 6px -4px var(--shadow-stone); }
+.kulin-node-card.is-offline {
+  align-items: center;
+  justify-content: center;
+  background: color-mix(in srgb, var(--card) 92%, transparent);
+}
+.node-offline-state {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  color: var(--red);
+  font-size: 14px;
+  font-weight: 600;
+}
+.node-offline-state .node-dot {
+  width: 8px;
+  height: 8px;
+}
 
 .node-head {
   position: relative;
