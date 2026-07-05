@@ -919,9 +919,11 @@ export function AdminDashboard({
             {adminState.kind === 'ready' && activeSection === 'nodes' && (
               <AdminNodeSection
                 nodes={adminState.nodes}
+                targets={adminState.targets}
                 onCreate={onAdminNodeCreate}
                 onUpdate={onAdminNodeUpdate}
                 onDelete={onAdminNodeDelete}
+                onTargetUpdate={onAdminProbeTargetUpdate}
                 onInstallCommand={onAdminInstallCommand}
               />
             )}
@@ -1186,7 +1188,7 @@ function validAgentControllerURL(value: string): boolean {
   }
 }
 
-function AdminNodeSection({ nodes, onCreate, onUpdate, onDelete, onInstallCommand }: { nodes: AdminNode[]; onCreate: (input: AdminNodeCreateInput) => Promise<AdminNode | void>; onUpdate: (nodeId: string, input: AdminNodeUpdateInput) => void; onDelete: (nodeId: string) => void; onInstallCommand: (nodeId: string) => Promise<string> }) {
+function AdminNodeSection({ nodes, targets, onCreate, onUpdate, onDelete, onTargetUpdate, onInstallCommand }: { nodes: AdminNode[]; targets: AdminProbeTarget[]; onCreate: (input: AdminNodeCreateInput) => Promise<AdminNode | void>; onUpdate: (nodeId: string, input: AdminNodeUpdateInput) => void; onDelete: (nodeId: string) => void; onTargetUpdate: (targetId: string, input: AdminProbeTargetUpdateInput) => void; onInstallCommand: (nodeId: string) => Promise<string> }) {
   const [creatingNode, setCreatingNode] = useState(false)
   const [editingNodeId, setEditingNodeId] = useState<string | null>(null)
   const [sortingNodes, setSortingNodes] = useState(false)
@@ -1225,11 +1227,13 @@ function AdminNodeSection({ nodes, onCreate, onUpdate, onDelete, onInstallComman
         <AdminNodeEditModal
           key={editingNode.id}
           node={editingNode}
+          targets={targets}
           onClose={() => setEditingNodeId(null)}
           onUpdate={(nodeId, input) => {
             onUpdate(nodeId, input)
             setEditingNodeId(null)
           }}
+          onTargetUpdate={onTargetUpdate}
           onInstallCommand={onInstallCommand}
         />
       )}
@@ -1474,14 +1478,16 @@ function AdminNodeCreateModal({ onCreate, onInstallCommand, onClose }: { onCreat
   )
 }
 
-function AdminNodeEditModal({ node, onUpdate, onInstallCommand, onClose }: { node: AdminNode; onUpdate: (nodeId: string, input: AdminNodeUpdateInput) => void; onInstallCommand: (nodeId: string) => Promise<string>; onClose: () => void }) {
+function AdminNodeEditModal({ node, targets, onUpdate, onTargetUpdate, onInstallCommand, onClose }: { node: AdminNode; targets: AdminProbeTarget[]; onUpdate: (nodeId: string, input: AdminNodeUpdateInput) => void; onTargetUpdate: (targetId: string, input: AdminProbeTargetUpdateInput) => void; onInstallCommand: (nodeId: string) => Promise<string>; onClose: () => void }) {
   const [installCommandState, setInstallCommandState] = useState<{ kind: 'idle' } | { kind: 'loading' } | { kind: 'ready'; command: string } | { kind: 'error'; message: string }>({ kind: 'idle' })
   const [installCopyState, setInstallCopyState] = useState<{ kind: 'idle' } | { kind: 'ready'; message: string } | { kind: 'error'; message: string }>({ kind: 'idle' })
+  const sortedTargets = sortAdminProbeTargets(targets)
 
   const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
     const formData = new FormData(event.currentTarget)
     const displayName = String(formData.get('display-name') ?? '').trim()
+    const selectedTargets = new Set(formData.getAll('node-target-assignment').map((value) => String(value)))
     onUpdate(node.id, {
       displayName: displayName || node.displayName,
       expiryDate: String(formData.get('expiry-date') ?? '').trim(),
@@ -1489,6 +1495,13 @@ function AdminNodeEditModal({ node, onUpdate, onInstallCommand, onClose }: { nod
       billingMode: String(formData.get('billing-mode') ?? node.billingMode),
       monthlyResetDay: parseMonthlyResetDay(String(formData.get('monthly-reset-day') ?? '')) ?? node.monthlyResetDay,
       monthlyQuotaBytes: parseQuotaGigabytes(String(formData.get('monthly-quota-gb') ?? '')),
+    })
+    sortedTargets.forEach((target) => {
+      const currentEnabled = target.assignments.some((assignment) => assignment.nodeId === node.id && assignment.enabled)
+      const nextEnabled = selectedTargets.has(target.id)
+      if (currentEnabled !== nextEnabled) {
+        onTargetUpdate(target.id, { assignments: [{ nodeId: node.id, enabled: nextEnabled }] })
+      }
     })
   }
 
@@ -1522,6 +1535,23 @@ function AdminNodeEditModal({ node, onUpdate, onInstallCommand, onClose }: { nod
               <input name="display-name" defaultValue={node.displayName} autoComplete="off" />
             </label>
           </div>
+        </AdminFormSection>
+        <AdminFormSection title="关联延迟监控" description="选择这台服务器要执行的延迟监控目标。">
+          {sortedTargets.length === 0 ? (
+            <div className="admin-state-card is-compact">暂无延迟监控。</div>
+          ) : (
+            <div className="admin-target-assignment-list admin-node-target-assignment-list">
+              {sortedTargets.map((target) => {
+                const checked = target.assignments.some((assignment) => assignment.nodeId === node.id && assignment.enabled)
+                return (
+                  <label className="admin-node-toggle admin-target-assignment-toggle" key={target.id}>
+                    <input name="node-target-assignment" type="checkbox" value={target.id} defaultChecked={checked} />
+                    <span>{target.name}</span>
+                  </label>
+                )
+              })}
+            </div>
+          )}
         </AdminFormSection>
         <AdminFormSection title="账单与流量" description="账单信息可以留空，后续再补。">
           <div className="admin-form-grid">
