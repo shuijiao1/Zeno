@@ -8,14 +8,25 @@ const stylesPath = join(dirname(fileURLToPath(import.meta.url)), 'styles.css')
 const styles = readFileSync(stylesPath, 'utf8')
 
 describe('mobile latency target layout', () => {
-  it('keeps latency target buttons compact as card tiles on phones', () => {
+  it('keeps latency target buttons readable as card tiles on phones', () => {
     expect(styles).toContain('@media (max-width: 767px)')
-    expect(styles).toContain('grid-template-columns: repeat(7, minmax(0, 1fr))')
-    expect(styles).toContain('.latency-target-grid { grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 4px; padding: 0 12px 12px; }')
+    expect(styles).toContain('.latency-target-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; padding: 0 12px 12px; }')
     expect(styles).toContain('.latency-target-grid button')
     expect(styles).toContain('border-radius: var(--radius-field)')
     expect(styles).toContain('.resource-chart-frame')
     expect(styles).toContain('grid-template-columns: 46px minmax(0, 1fr)')
+  })
+})
+
+describe('mobile server detail layout', () => {
+  it('stacks dense desktop detail facts into readable mobile rows', () => {
+    expect(styles).toContain('@media (max-width: 767px)')
+    expect(styles).toContain('.detail-hero__main { align-items: center; flex-direction: row; gap: 10px; }')
+    expect(styles).toContain('.detail-fact-strip { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; }')
+    expect(styles).toContain('.detail-fact.is-wide { grid-column: 1 / -1; min-height: 54px; padding: 8px 9px; }')
+    expect(styles).toContain('.detail-fact:not(.is-wide) strong { overflow: visible; text-overflow: clip; white-space: normal; overflow-wrap: anywhere; }')
+    expect(styles).toContain('.monitor-heading { padding: 16px 14px 10px; flex-direction: column; align-items: stretch; gap: 10px; }')
+    expect(styles).toContain('.resource-history-header { padding: 16px 14px 10px; flex-direction: column; align-items: stretch; gap: 10px; }')
   })
 })
 
