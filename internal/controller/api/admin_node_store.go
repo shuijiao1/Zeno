@@ -235,7 +235,7 @@ Wants=network-online.target
 
 [Service]
 Type=simple
-ExecStart=/usr/local/bin/zeno-agent -controller-url %s -node-id %s -token-file /etc/zeno/agent-token -interval 60s%s
+ExecStart=/usr/local/bin/zeno-agent -controller-url %s -node-id %s -token-file /etc/zeno/agent-token -interval 15s%s
 Restart=always
 RestartSec=5s
 

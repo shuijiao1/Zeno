@@ -625,6 +625,9 @@ func TestAdminNodeInstallCommandRotatesAgentCredentialAndUsesRequestHost(t *test
 	if !strings.Contains(response.Command, "https://probe.example.com") || !strings.Contains(response.Command, "/api/public/v1/agent/linux-amd64") || !strings.Contains(response.Command, "-node-id 'hytron'") || !strings.Contains(response.Command, "-version 'testsha'") {
 		t.Fatalf("install command missing controller URL, binary endpoint, node id, or version: %s", response.Command)
 	}
+	if !strings.Contains(response.Command, "-interval 15s") {
+		t.Fatalf("install command should use realtime-friendly state interval: %s", response.Command)
+	}
 	if !strings.Contains(response.Command, "/usr/local/bin/zeno-agent") || !strings.Contains(response.Command, "/etc/zeno/agent-token") || !strings.Contains(response.Command, "zeno-agent.service") {
 		t.Fatalf("install command should use Zeno agent names and paths: %s", response.Command)
 	}

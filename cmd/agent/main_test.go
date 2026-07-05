@@ -6,9 +6,16 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"github.com/shuijiao1/zeno/internal/agent"
 )
+
+func TestDefaultReportIntervalIsRealtimeFriendly(t *testing.T) {
+	if defaultReportInterval != 15*time.Second {
+		t.Fatalf("default report interval = %s, want 15s", defaultReportInterval)
+	}
+}
 
 type staticIdentityDiscoverer struct {
 	identity agent.NetworkIdentity

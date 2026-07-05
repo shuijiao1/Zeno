@@ -18,7 +18,7 @@ Options:
   --node-id <id>              Required
   --token <token>             Write token to <data-dir>/agent-token
   --token-file <path>         Existing/written token file path
-  --interval <duration>       Default: 60s
+  --interval <duration>       Default: 15s
   --version <version>         Default: REVISION next to agent binary, or unknown
   --dry-run                   Copy/render but do not call systemctl
   -h, --help                  Show help
@@ -35,7 +35,7 @@ controller_url=""
 node_id=""
 token=""
 token_file=""
-interval="60s"
+interval="15s"
 version=""
 dry_run=0
 

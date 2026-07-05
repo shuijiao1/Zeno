@@ -12,6 +12,7 @@ import (
 )
 
 const defaultVersion = "zeno-agent-dev"
+const defaultReportInterval = 15 * time.Second
 
 type config struct {
 	ControllerURL           string
@@ -30,7 +31,7 @@ func main() {
 	flag.StringVar(&cfg.NodeID, "node-id", "hytron", "agent node id")
 	flag.StringVar(&cfg.Token, "token", "", "agent bearer token; prefer -token-file")
 	flag.StringVar(&cfg.TokenFile, "token-file", "", "file containing the agent bearer token")
-	flag.DurationVar(&cfg.Interval, "interval", time.Minute, "host/state/probe report interval")
+	flag.DurationVar(&cfg.Interval, "interval", defaultReportInterval, "host/state refresh interval; probe targets keep their own configured intervals")
 	flag.BoolVar(&cfg.Once, "once", false, "collect and report once, then exit")
 	flag.StringVar(&cfg.Version, "version", defaultVersion, "agent version string reported to controller")
 	flag.DurationVar(&cfg.IdentityRefreshInterval, "identity-refresh-interval", 6*time.Hour, "public IPv4/IPv6 and GeoIP refresh interval; best-effort and cached")
@@ -58,7 +59,7 @@ func run(ctx context.Context, cfg config) error {
 		return nil
 	}
 	if cfg.Interval <= 0 {
-		cfg.Interval = time.Minute
+		cfg.Interval = defaultReportInterval
 	}
 	ticker := time.NewTicker(cfg.Interval)
 	defer ticker.Stop()
