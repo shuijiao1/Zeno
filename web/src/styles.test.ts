@@ -140,6 +140,7 @@ describe('state history layout', () => {
     expect(styles).toContain('--usage-track-bg')
     expect(styles).toContain('--usage-track-border')
     expect(styles).toContain('background: var(--usage-track-bg)')
+    expect(styles).toContain('.usage-track { position: relative; width: 100%; height: 10px; overflow: hidden; border: 0;')
   })
 })
 
@@ -166,7 +167,8 @@ describe('Kulin-inspired color polish', () => {
     expect(styles).toContain('font-weight: 600; letter-spacing: -0.03em')
     expect(styles).toContain('.latency-monitor-heading .monitor-title-row h3 { font-weight: 600; }')
     expect(styles).toContain('.home-summary__status-line strong')
-    expect(styles.match(/font-weight: 600/g) ?? []).toHaveLength(6)
+    expect(styles).toContain('font-size: 25px')
+    expect(styles.match(/font-weight: 600/g) ?? []).toHaveLength(5)
     expect(styles).toContain('.latency-target-grid em { color: var(--muted)')
     expect(styles).toContain('.admin-section-nav button[data-active=\'true\']')
     expect(styles).toContain('background: var(--blue)')

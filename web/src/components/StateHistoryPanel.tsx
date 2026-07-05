@@ -1,4 +1,4 @@
-import { type MouseEvent, type ReactNode, useState } from 'react'
+import { type MouseEvent, type ReactNode, useMemo, useState } from 'react'
 import type { StatePoint } from '../types'
 import { formatBps, formatPercent } from '../lib/format'
 
@@ -38,17 +38,18 @@ const stateRangeOptions = [
 ]
 
 export function StateHistoryPanel({ points, range, loading = false, error, onRangeChange = () => {} }: StateHistoryPanelProps) {
-  const sampleCount = points.length
-  const latestCpu = latest(points, (point) => point.cpuPercent)
-  const latestMemory = latest(points, memoryPercent)
-  const latestDisk = latest(points, diskPercent)
-  const latestInSpeed = latest(points, (point) => point.netInSpeedBps)
-  const latestOutSpeed = latest(points, (point) => point.netOutSpeedBps)
-  const latestSwap = latest(points, swapPercent)
-  const latestProcessCount = latest(points, (point) => point.processCount)
-  const latestTcpConnectionCount = latest(points, (point) => point.tcpConnectionCount)
-  const latestUdpConnectionCount = latest(points, (point) => point.udpConnectionCount)
-  const timestamps = points.map((point) => Date.parse(point.ts))
+  const chartPoints = useMemo(() => downsampleStatePoints(points, range), [points, range])
+  const sampleCount = chartPoints.length
+  const latestCpu = latest(chartPoints, (point) => point.cpuPercent)
+  const latestMemory = latest(chartPoints, memoryPercent)
+  const latestDisk = latest(chartPoints, diskPercent)
+  const latestInSpeed = latest(chartPoints, (point) => point.netInSpeedBps)
+  const latestOutSpeed = latest(chartPoints, (point) => point.netOutSpeedBps)
+  const latestSwap = latest(chartPoints, swapPercent)
+  const latestProcessCount = latest(chartPoints, (point) => point.processCount)
+  const latestTcpConnectionCount = latest(chartPoints, (point) => point.tcpConnectionCount)
+  const latestUdpConnectionCount = latest(chartPoints, (point) => point.udpConnectionCount)
+  const timestamps = chartPoints.map((point) => Date.parse(point.ts))
 
   const metrics: MetricConfig[] = [
     {
@@ -59,7 +60,7 @@ export function StateHistoryPanel({ points, range, loading = false, error, onRan
       unitLabel: '%',
       domainMax: 100,
       fillArea: true,
-      lines: [{ key: 'cpu', label: 'CPU', values: points.map((point) => finiteOrNull(point.cpuPercent)), color: '#22c55e' }],
+      lines: [{ key: 'cpu', label: 'CPU', values: chartPoints.map((point) => finiteOrNull(point.cpuPercent)), color: '#22c55e' }],
     },
     {
       key: 'memory',
@@ -70,8 +71,8 @@ export function StateHistoryPanel({ points, range, loading = false, error, onRan
       domainMax: 100,
       fillArea: true,
       lines: [
-        { key: 'memory', label: '内存', values: points.map(memoryPercent), color: '#2563eb' },
-        { key: 'swap', label: 'Swap', values: points.map(swapPercent), color: '#0ea5e9' },
+        { key: 'memory', label: '内存', values: chartPoints.map(memoryPercent), color: '#2563eb' },
+        { key: 'swap', label: 'Swap', values: chartPoints.map(swapPercent), color: '#0ea5e9' },
       ],
     },
     {
@@ -82,7 +83,7 @@ export function StateHistoryPanel({ points, range, loading = false, error, onRan
       unitLabel: '%',
       domainMax: 100,
       fillArea: true,
-      lines: [{ key: 'disk', label: '磁盘', values: points.map(diskPercent), color: '#9333ea' }],
+      lines: [{ key: 'disk', label: '磁盘', values: chartPoints.map(diskPercent), color: '#9333ea' }],
     },
     {
       key: 'network',
@@ -91,8 +92,8 @@ export function StateHistoryPanel({ points, range, loading = false, error, onRan
       tone: 'orange',
       unitLabel: 'B/s',
       lines: [
-        { key: 'net-out', label: '上传', values: points.map((point) => finiteOrNull(point.netOutSpeedBps)), color: '#f97316' },
-        { key: 'net-in', label: '下载', values: points.map((point) => finiteOrNull(point.netInSpeedBps)), color: '#06b6d4' },
+        { key: 'net-out', label: '上传', values: chartPoints.map((point) => finiteOrNull(point.netOutSpeedBps)), color: '#f97316' },
+        { key: 'net-in', label: '下载', values: chartPoints.map((point) => finiteOrNull(point.netInSpeedBps)), color: '#06b6d4' },
       ],
     },
     {
@@ -102,7 +103,7 @@ export function StateHistoryPanel({ points, range, loading = false, error, onRan
       tone: 'purple',
       unitLabel: 'count',
       fillArea: true,
-      lines: [{ key: 'processes', label: '进程', values: points.map((point) => finiteOrNull(point.processCount)), color: '#a855f7' }],
+      lines: [{ key: 'processes', label: '进程', values: chartPoints.map((point) => finiteOrNull(point.processCount)), color: '#a855f7' }],
     },
     {
       key: 'connections',
@@ -111,8 +112,8 @@ export function StateHistoryPanel({ points, range, loading = false, error, onRan
       tone: 'orange',
       unitLabel: 'count',
       lines: [
-        { key: 'tcp', label: 'TCP', values: points.map((point) => finiteOrNull(point.tcpConnectionCount)), color: '#ec4899' },
-        { key: 'udp', label: 'UDP', values: points.map((point) => finiteOrNull(point.udpConnectionCount)), color: '#38bdf8' },
+        { key: 'tcp', label: 'TCP', values: chartPoints.map((point) => finiteOrNull(point.tcpConnectionCount)), color: '#ec4899' },
+        { key: 'udp', label: 'UDP', values: chartPoints.map((point) => finiteOrNull(point.udpConnectionCount)), color: '#38bdf8' },
       ],
     },
   ]
@@ -231,6 +232,80 @@ function clamp(value: number, min: number, max: number): number {
 
 function MetricValue({ label, value, ariaLabel }: { label: string; value: string; ariaLabel?: string }) {
   return <span aria-label={ariaLabel ?? `${label} ${value}`}><span className="metric-inline-label">{label}</span> {value}</span>
+}
+
+const stateNumericKeys = [
+  'cpuPercent',
+  'load1',
+  'load5',
+  'load15',
+  'memoryUsedBytes',
+  'memoryTotalBytes',
+  'swapUsedBytes',
+  'swapTotalBytes',
+  'diskUsedBytes',
+  'diskTotalBytes',
+  'netInTotalBytes',
+  'netOutTotalBytes',
+  'netInSpeedBps',
+  'netOutSpeedBps',
+  'processCount',
+  'tcpConnectionCount',
+  'udpConnectionCount',
+  'uptimeSeconds',
+] as const satisfies ReadonlyArray<keyof Omit<StatePoint, 'ts'>>
+
+type StateNumericKey = typeof stateNumericKeys[number]
+
+function downsampleStatePoints(points: StatePoint[], range: string): StatePoint[] {
+  const stepMs = stateRangeStepMs(range)
+  if (!stepMs || points.length <= 1) return points
+
+  const buckets = new Map<number, { sums: Record<StateNumericKey, number>; counts: Record<StateNumericKey, number> }>()
+  for (const point of points) {
+    const timestamp = Date.parse(point.ts)
+    if (!Number.isFinite(timestamp)) continue
+    const bucketTs = Math.floor(timestamp / stepMs) * stepMs
+    let bucket = buckets.get(bucketTs)
+    if (!bucket) {
+      bucket = { sums: emptyStateRecord(), counts: emptyStateRecord() }
+      buckets.set(bucketTs, bucket)
+    }
+    for (const key of stateNumericKeys) {
+      const value = point[key]
+      if (typeof value === 'number' && Number.isFinite(value)) {
+        bucket.sums[key] += value
+        bucket.counts[key] += 1
+      }
+    }
+  }
+
+  return [...buckets.entries()]
+    .sort(([left], [right]) => left - right)
+    .map(([timestamp, bucket]) => {
+      const point = { ts: new Date(timestamp).toISOString() } as StatePoint
+      for (const key of stateNumericKeys) {
+        point[key] = bucket.counts[key] > 0 ? bucket.sums[key] / bucket.counts[key] : null
+      }
+      return point
+    })
+}
+
+function emptyStateRecord(): Record<StateNumericKey, number> {
+  return Object.fromEntries(stateNumericKeys.map((key) => [key, 0])) as Record<StateNumericKey, number>
+}
+
+function stateRangeStepMs(range: string): number | null {
+  switch (range) {
+    case '1d':
+      return 30_000
+    case '7d':
+      return 30 * 60_000
+    case '30d':
+      return 2 * 60 * 60_000
+    default:
+      return null
+  }
 }
 
 function latest(points: StatePoint[], read: (point: StatePoint) => number | null | undefined): number | null {
