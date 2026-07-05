@@ -8,7 +8,6 @@ import (
 )
 
 var adminNotificationTypeCatalog = []AdminNotificationType{
-	{EventType: "node_online", Label: "上线"},
 	{EventType: "node_offline", Label: "离线"},
 	{EventType: "probe_unhealthy", Label: "异常"},
 }

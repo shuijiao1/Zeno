@@ -1878,8 +1878,8 @@ func TestAdminNotificationTypesListAndPatch(t *testing.T) {
 	if err := json.NewDecoder(bytes.NewBufferString(listRecorder.Body.String())).Decode(&listResponse); err != nil {
 		t.Fatalf("decode notification types: %v", err)
 	}
-	if len(listResponse.Types) != 3 || listResponse.Types[0].EventType != "node_online" || listResponse.Types[0].Label != "上线" || listResponse.Types[0].Enabled {
-		t.Fatalf("notification types = %+v, want disabled default online/offline/unhealthy types", listResponse.Types)
+	if len(listResponse.Types) != 2 || listResponse.Types[0].EventType != "node_offline" || listResponse.Types[0].Label != "离线" || listResponse.Types[0].Enabled {
+		t.Fatalf("notification types = %+v, want disabled default offline/unhealthy types", listResponse.Types)
 	}
 
 	patchRecorder := httptest.NewRecorder()

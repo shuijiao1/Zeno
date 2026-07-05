@@ -152,7 +152,7 @@ func TestAgentProbeResultsAcceptsSamplesAndUpdatesPublicLatency(t *testing.T) {
 	}
 }
 
-func TestAgentProbeResultsMarksNodeWarningAndDispatchesProbeUnhealthy(t *testing.T) {
+func TestAgentProbeResultsStoresLatencyWithoutProbeAlertNotification(t *testing.T) {
 	store, err := OpenSQLiteStore(filepath.Join(t.TempDir(), "zeno.db"))
 	if err != nil {
 		t.Fatalf("open sqlite store: %v", err)
@@ -191,23 +191,19 @@ func TestAgentProbeResultsMarksNodeWarningAndDispatchesProbeUnhealthy(t *testing
 	if err := store.db.QueryRowContext(ctx, `SELECT status FROM nodes WHERE id = 'hytron'`).Scan(&status); err != nil {
 		t.Fatalf("query node status: %v", err)
 	}
-	if status != "warning" {
-		t.Fatalf("node status = %q, want warning after all probe samples fail", status)
+	if status != "online" {
+		t.Fatalf("node status = %q, want online because probe alert rules were removed", status)
 	}
-	paths, forms, errors := telegram.waitForCalls(t, 1)
+	paths, forms, errors := telegram.waitForCalls(t, 0)
 	if len(errors) != 0 {
 		t.Fatalf("telegram handler errors = %+v", errors)
 	}
-	if len(paths) != 1 || paths[0] != "/bottelegram-bot-credential-value/sendMessage" {
-		t.Fatalf("telegram paths = %+v, want one sendMessage request", paths)
+	if len(paths) != 0 || len(forms) != 0 {
+		t.Fatalf("telegram calls paths=%+v forms=%+v, want no probe alert notification", paths, forms)
 	}
-	if len(forms) != 1 || !strings.Contains(forms[0], "chat_id=7579942307") || !strings.Contains(forms[0], "%E7%8A%B6%E6%80%81%E5%BC%82%E5%B8%B8") {
-		t.Fatalf("telegram forms = %+v, want probe unhealthy text", forms)
-	}
-	assertTelegramFormsDoNotLeakCredential(t, forms, "telegram-bot-credential-value")
 }
 
-func TestAgentProbeResultsUsesAlertRuleThresholdsForSuccessfulHighLatency(t *testing.T) {
+func TestAgentProbeResultsSuccessfulHighLatencyDoesNotChangeStatus(t *testing.T) {
 	store, err := OpenSQLiteStore(filepath.Join(t.TempDir(), "zeno.db"))
 	if err != nil {
 		t.Fatalf("open sqlite store: %v", err)
@@ -237,12 +233,12 @@ func TestAgentProbeResultsUsesAlertRuleThresholdsForSuccessfulHighLatency(t *tes
 	if err := store.db.QueryRowContext(ctx, `SELECT status FROM nodes WHERE id = 'hytron'`).Scan(&status); err != nil {
 		t.Fatalf("query node status: %v", err)
 	}
-	if status != "warning" {
-		t.Fatalf("node status = %q, want warning when enabled probe latency rule threshold is exceeded", status)
+	if status != "online" {
+		t.Fatalf("node status = %q, want online because probe latency alert rule was removed", status)
 	}
 }
 
-func TestAgentProbeResultsDisabledProbeRulesDoNotWarnOnFailedSamples(t *testing.T) {
+func TestAgentProbeResultsFailedSamplesDoNotWarn(t *testing.T) {
 	store, err := OpenSQLiteStore(filepath.Join(t.TempDir(), "zeno.db"))
 	if err != nil {
 		t.Fatalf("open sqlite store: %v", err)
@@ -252,14 +248,6 @@ func TestAgentProbeResultsDisabledProbeRulesDoNotWarnOnFailedSamples(t *testing.
 	if err := store.SeedPreviewData(ctx, PreviewSeedOptions{NodeID: "hytron", DisplayName: "Hytron", CountryCode: "HK", AgentToken: "test-agent-token"}); err != nil {
 		t.Fatalf("seed preview data: %v", err)
 	}
-	disabled := false
-	if _, err := store.UpdateAdminAlertRule(ctx, "probe_latency_high", AdminAlertRuleUpdateRequest{Enabled: &disabled}); err != nil {
-		t.Fatalf("disable probe latency rule: %v", err)
-	}
-	if _, err := store.UpdateAdminAlertRule(ctx, "probe_loss_high", AdminAlertRuleUpdateRequest{Enabled: &disabled}); err != nil {
-		t.Fatalf("disable probe loss rule: %v", err)
-	}
-
 	handler := NewHandler(HandlerOptions{Store: store})
 	now := time.Now().UTC().Truncate(time.Second)
 	postAgentHeartbeat(t, handler, now.Unix(), "online")
@@ -280,7 +268,7 @@ func TestAgentProbeResultsDisabledProbeRulesDoNotWarnOnFailedSamples(t *testing.
 		t.Fatalf("query node status: %v", err)
 	}
 	if status != "online" {
-		t.Fatalf("node status = %q, want online when probe warning rules are disabled", status)
+		t.Fatalf("node status = %q, want online when probe warning rules are removed", status)
 	}
 }
 
@@ -479,7 +467,7 @@ func TestAgentHeartbeatUpdatesNodeStatusAndLastSeen(t *testing.T) {
 	}
 }
 
-func TestAgentHeartbeatDispatchesEnabledTelegramOnNodeOnlineTransition(t *testing.T) {
+func TestAgentHeartbeatDispatchesEnabledTelegramOnNodeOfflineTransition(t *testing.T) {
 	store, err := OpenSQLiteStore(filepath.Join(t.TempDir(), "zeno.db"))
 	if err != nil {
 		t.Fatalf("open sqlite store: %v", err)
@@ -500,12 +488,16 @@ func TestAgentHeartbeatDispatchesEnabledTelegramOnNodeOnlineTransition(t *testin
 	}); err != nil {
 		t.Fatalf("create notification channel: %v", err)
 	}
-	if _, err := store.UpdateAdminNotificationType(ctx, "node_online", AdminNotificationTypeUpdateRequest{Enabled: &enabled}); err != nil {
+	if _, err := store.UpdateAdminNotificationType(ctx, "node_offline", AdminNotificationTypeUpdateRequest{Enabled: &enabled}); err != nil {
 		t.Fatalf("enable notification type: %v", err)
 	}
 
 	handler := NewHandler(telegram.handlerOptions(store))
-	postAgentHeartbeat(t, handler, time.Now().UTC().Truncate(time.Second).Unix(), "online")
+	now := time.Now().UTC().Truncate(time.Second)
+	if _, err := store.db.ExecContext(ctx, `UPDATE nodes SET status = 'online', last_seen_at = ? WHERE id = 'hytron'`, now.Unix()); err != nil {
+		t.Fatalf("set fresh heartbeat: %v", err)
+	}
+	postAgentHeartbeat(t, handler, now.Add(-nodeHeartbeatOfflineAfter-time.Minute).Unix(), "online")
 
 	paths, forms, errors := telegram.waitForCalls(t, 1)
 	if len(errors) != 0 {
@@ -514,8 +506,8 @@ func TestAgentHeartbeatDispatchesEnabledTelegramOnNodeOnlineTransition(t *testin
 	if len(paths) != 1 || paths[0] != "/bottelegram-bot-credential-value/sendMessage" {
 		t.Fatalf("telegram paths = %+v, want one sendMessage request", paths)
 	}
-	if len(forms) != 1 || !strings.Contains(forms[0], "chat_id=7579942307") || !strings.Contains(forms[0], "%E5%B7%B2%E4%B8%8A%E7%BA%BF") {
-		t.Fatalf("telegram forms = %+v, want online text", forms)
+	if len(forms) != 1 || !strings.Contains(forms[0], "chat_id=7579942307") || !strings.Contains(forms[0], "%E5%B7%B2%E7%A6%BB%E7%BA%BF") {
+		t.Fatalf("telegram forms = %+v, want offline text", forms)
 	}
 	assertTelegramFormsDoNotLeakCredential(t, forms, "telegram-bot-credential-value")
 }
@@ -561,12 +553,16 @@ func TestAgentHeartbeatDispatchesEnabledTelegramChannel(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("create telegram channel: %v", err)
 	}
-	if _, err := store.UpdateAdminNotificationType(ctx, "node_online", AdminNotificationTypeUpdateRequest{Enabled: &enabled}); err != nil {
+	if _, err := store.UpdateAdminNotificationType(ctx, "node_offline", AdminNotificationTypeUpdateRequest{Enabled: &enabled}); err != nil {
 		t.Fatalf("enable notification type: %v", err)
 	}
 
 	handler := NewHandler(HandlerOptions{Store: store, TelegramAPIBaseURL: telegramAPI.URL})
-	postAgentHeartbeat(t, handler, time.Now().UTC().Unix(), "online")
+	now := time.Now().UTC().Truncate(time.Second)
+	if _, err := store.db.ExecContext(ctx, `UPDATE nodes SET status = 'online', last_seen_at = ? WHERE id = 'hytron'`, now.Unix()); err != nil {
+		t.Fatalf("set fresh heartbeat: %v", err)
+	}
+	postAgentHeartbeat(t, handler, now.Add(-nodeHeartbeatOfflineAfter-time.Minute).Unix(), "online")
 
 	waitUntil(t, time.Second, func() bool {
 		captureMu.Lock()
@@ -584,8 +580,8 @@ func TestAgentHeartbeatDispatchesEnabledTelegramChannel(t *testing.T) {
 	if len(capturedPaths) != 1 || capturedPaths[0] != "/bottelegram-bot-credential-value/sendMessage" {
 		t.Fatalf("telegram paths = %+v, want sendMessage path with bot credential", capturedPaths)
 	}
-	if len(capturedForms) != 1 || !strings.Contains(capturedForms[0], "chat_id=7579942307") || !strings.Contains(capturedForms[0], "%E4%B8%8A%E7%BA%BF") {
-		t.Fatalf("telegram form = %+v, want chat id and online text", capturedForms)
+	if len(capturedForms) != 1 || !strings.Contains(capturedForms[0], "chat_id=7579942307") || !strings.Contains(capturedForms[0], "%E7%A6%BB%E7%BA%BF") {
+		t.Fatalf("telegram form = %+v, want chat id and offline text", capturedForms)
 	}
 	if strings.Contains(capturedForms[0], "telegram-bot-credential-value") {
 		t.Fatalf("telegram form leaked credential: %s", capturedForms[0])
@@ -616,12 +612,16 @@ func TestAgentHeartbeatNotificationDeliveryDoesNotBlockResponse(t *testing.T) {
 	if _, err := store.CreateAdminNotificationChannel(ctx, AdminNotificationChannelCreateRequest{ID: "slow-telegram", Name: "Slow Telegram", Destination: "7579942307", Credential: "telegram-bot-credential-value", Enabled: &enabled}); err != nil {
 		t.Fatalf("create notification channel: %v", err)
 	}
-	if _, err := store.UpdateAdminNotificationType(ctx, "node_online", AdminNotificationTypeUpdateRequest{Enabled: &enabled}); err != nil {
+	if _, err := store.UpdateAdminNotificationType(ctx, "node_offline", AdminNotificationTypeUpdateRequest{Enabled: &enabled}); err != nil {
 		t.Fatalf("enable notification type: %v", err)
 	}
 
 	started := time.Now()
-	postAgentHeartbeat(t, NewHandler(HandlerOptions{Store: store, NotificationClient: slowTelegram.Client(), TelegramAPIBaseURL: slowTelegram.URL}), time.Now().UTC().Unix(), "online")
+	now := time.Now().UTC().Truncate(time.Second)
+	if _, err := store.db.ExecContext(ctx, `UPDATE nodes SET status = 'online', last_seen_at = ? WHERE id = 'hytron'`, now.Unix()); err != nil {
+		t.Fatalf("set fresh heartbeat: %v", err)
+	}
+	postAgentHeartbeat(t, NewHandler(HandlerOptions{Store: store, NotificationClient: slowTelegram.Client(), TelegramAPIBaseURL: slowTelegram.URL}), now.Add(-nodeHeartbeatOfflineAfter-time.Minute).Unix(), "online")
 	elapsed := time.Since(started)
 	if elapsed > 150*time.Millisecond {
 		t.Fatalf("heartbeat response took %s, want notification delivery to be non-blocking", elapsed)
@@ -633,7 +633,7 @@ func TestAgentHeartbeatNotificationDeliveryDoesNotBlockResponse(t *testing.T) {
 	}
 }
 
-func TestAgentHeartbeatDispatchesOnlineAfterStaleHeartbeatOffline(t *testing.T) {
+func TestAgentHeartbeatDoesNotDispatchRecoveryAfterStaleHeartbeatOffline(t *testing.T) {
 	store, err := OpenSQLiteStore(filepath.Join(t.TempDir(), "zeno.db"))
 	if err != nil {
 		t.Fatalf("open sqlite store: %v", err)
@@ -653,28 +653,24 @@ func TestAgentHeartbeatDispatchesOnlineAfterStaleHeartbeatOffline(t *testing.T) 
 	if _, err := store.CreateAdminNotificationChannel(ctx, AdminNotificationChannelCreateRequest{ID: "ops-telegram", Name: "Ops Telegram", Destination: "7579942307", Credential: "telegram-bot-credential-value", Enabled: &enabled}); err != nil {
 		t.Fatalf("create notification channel: %v", err)
 	}
-	if _, err := store.UpdateAdminNotificationType(ctx, "node_online", AdminNotificationTypeUpdateRequest{Enabled: &enabled}); err != nil {
+	if _, err := store.UpdateAdminNotificationType(ctx, "node_offline", AdminNotificationTypeUpdateRequest{Enabled: &enabled}); err != nil {
 		t.Fatalf("enable notification type: %v", err)
 	}
 
 	postAgentHeartbeat(t, NewHandler(telegram.handlerOptions(store)), time.Now().UTC().Unix(), "online")
-	paths, forms, errors := telegram.waitForCalls(t, 1)
+	paths, forms, errors := telegram.waitForCalls(t, 0)
 	if len(errors) != 0 {
 		t.Fatalf("telegram handler errors = %+v", errors)
 	}
-	if len(paths) != 1 || len(forms) != 1 || !strings.Contains(forms[0], "%E5%B7%B2%E4%B8%8A%E7%BA%BF") {
-		t.Fatalf("telegram calls paths=%+v forms=%+v, want online notification after stale heartbeat offline", paths, forms)
+	if len(paths) != 0 || len(forms) != 0 {
+		t.Fatalf("telegram calls paths=%+v forms=%+v, want no recovery notification", paths, forms)
 	}
-	waitUntil(t, time.Second, func() bool {
-		deliveries, err := store.AdminNotificationDeliveries(ctx, 20)
-		return err == nil && len(deliveries) == 1
-	})
 	deliveries, err := store.AdminNotificationDeliveries(ctx, 20)
 	if err != nil {
 		t.Fatalf("list notification deliveries: %v", err)
 	}
-	if len(deliveries) != 1 || deliveries[0].PreviousStatus != "offline" {
-		t.Fatalf("deliveries = %+v, want previous status offline derived from stale last_seen_at", deliveries)
+	if len(deliveries) != 0 {
+		t.Fatalf("deliveries = %+v, want no recovery delivery", deliveries)
 	}
 }
 
@@ -758,11 +754,15 @@ func TestAgentHeartbeatNotificationFailureDoesNotRejectHeartbeat(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("create notification channel: %v", err)
 	}
-	if _, err := store.UpdateAdminNotificationType(ctx, "node_online", AdminNotificationTypeUpdateRequest{Enabled: &enabled}); err != nil {
+	if _, err := store.UpdateAdminNotificationType(ctx, "node_offline", AdminNotificationTypeUpdateRequest{Enabled: &enabled}); err != nil {
 		t.Fatalf("enable notification type: %v", err)
 	}
 
-	recorder := postAgentHeartbeat(t, NewHandler(HandlerOptions{Store: store, TelegramAPIBaseURL: closedURL}), time.Now().UTC().Unix(), "online")
+	now := time.Now().UTC().Truncate(time.Second)
+	if _, err := store.db.ExecContext(ctx, `UPDATE nodes SET status = 'online', last_seen_at = ? WHERE id = 'hytron'`, now.Unix()); err != nil {
+		t.Fatalf("set fresh heartbeat: %v", err)
+	}
+	recorder := postAgentHeartbeat(t, NewHandler(HandlerOptions{Store: store, TelegramAPIBaseURL: closedURL}), now.Add(-nodeHeartbeatOfflineAfter-time.Minute).Unix(), "online")
 	if recorder.Code != http.StatusAccepted {
 		t.Fatalf("heartbeat status = %d, want 202 even if notification send fails; body=%s", recorder.Code, recorder.Body.String())
 	}
@@ -771,7 +771,7 @@ func TestAgentHeartbeatNotificationFailureDoesNotRejectHeartbeat(t *testing.T) {
 		t.Fatalf("query node status: %v", err)
 	}
 	if status != "online" {
-		t.Fatalf("node status = %q, want online persisted despite notification failure", status)
+		t.Fatalf("stored node status = %q, want heartbeat status persisted despite notification failure", status)
 	}
 }
 
@@ -800,11 +800,15 @@ func TestAgentHeartbeatRecordsNotificationDeliveryHistoryWithoutCredentialLeak(t
 	}); err != nil {
 		t.Fatalf("create notification channel: %v", err)
 	}
-	if _, err := store.UpdateAdminNotificationType(ctx, "node_online", AdminNotificationTypeUpdateRequest{Enabled: &enabled}); err != nil {
+	if _, err := store.UpdateAdminNotificationType(ctx, "node_offline", AdminNotificationTypeUpdateRequest{Enabled: &enabled}); err != nil {
 		t.Fatalf("enable notification type: %v", err)
 	}
 
-	postAgentHeartbeat(t, NewHandler(HandlerOptions{Store: store, NotificationClient: telegramAPI.Client(), TelegramAPIBaseURL: telegramAPI.URL}), time.Now().UTC().Unix(), "online")
+	now := time.Now().UTC().Truncate(time.Second)
+	if _, err := store.db.ExecContext(ctx, `UPDATE nodes SET status = 'online', last_seen_at = ? WHERE id = 'hytron'`, now.Unix()); err != nil {
+		t.Fatalf("set fresh heartbeat: %v", err)
+	}
+	postAgentHeartbeat(t, NewHandler(HandlerOptions{Store: store, NotificationClient: telegramAPI.Client(), TelegramAPIBaseURL: telegramAPI.URL}), now.Add(-nodeHeartbeatOfflineAfter-time.Minute).Unix(), "online")
 	waitUntil(t, time.Second, func() bool {
 		deliveries, err := store.AdminNotificationDeliveries(ctx, 20)
 		return err == nil && len(deliveries) == 1
@@ -817,8 +821,8 @@ func TestAgentHeartbeatRecordsNotificationDeliveryHistoryWithoutCredentialLeak(t
 		t.Fatalf("deliveries len = %d, want one recorded dispatch", len(deliveries))
 	}
 	delivery := deliveries[0]
-	if delivery.EventType != "node_online" || delivery.Label != "上线" || delivery.ChannelID != "ops-telegram" || delivery.ChannelName != "Ops Telegram" || delivery.NodeID != "hytron" || delivery.NodeName != "Hytron" || delivery.PreviousStatus != "no_data" || delivery.Status != "online" || delivery.Success {
-		t.Fatalf("delivery = %+v, want failed node_online telegram delivery metadata", delivery)
+	if delivery.EventType != "node_offline" || delivery.Label != "离线" || delivery.ChannelID != "ops-telegram" || delivery.ChannelName != "Ops Telegram" || delivery.NodeID != "hytron" || delivery.NodeName != "Hytron" || delivery.PreviousStatus != "online" || delivery.Status != "offline" || delivery.Success {
+		t.Fatalf("delivery = %+v, want failed node_offline telegram delivery metadata", delivery)
 	}
 	if delivery.Error == "" || strings.Contains(delivery.Error, "telegram-bot-credential-value") || strings.Contains(delivery.Error, telegramAPI.URL) {
 		t.Fatalf("delivery error should be sanitized and useful, got %q", delivery.Error)

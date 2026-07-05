@@ -216,7 +216,7 @@ CREATE TABLE notification_types (
 
 ## alert_rules / alert_rule_node_scopes / alert_rule_states
 
-通知类型触发条件和内部命中状态。
+通知类型规则和内部命中状态。
 
 ```sql
 CREATE TABLE alert_rules (

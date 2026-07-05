@@ -47,8 +47,8 @@ func TestAdminAlertRulesListAndPatchWithoutSensitiveLeak(t *testing.T) {
 	if err := json.NewDecoder(bytes.NewBufferString(listRecorder.Body.String())).Decode(&listResponse); err != nil {
 		t.Fatalf("decode alert rules: %v", err)
 	}
-	if len(listResponse.Rules) < 7 {
-		t.Fatalf("default rules len = %d, want CPU/memory/disk/probe latency/probe loss/offline/recovery rules", len(listResponse.Rules))
+	if len(listResponse.Rules) != 4 {
+		t.Fatalf("default rules len = %d, want CPU/memory/disk/offline rules", len(listResponse.Rules))
 	}
 	rulesByID := map[string]struct {
 		ID                    string   `json:"id"`
@@ -72,8 +72,16 @@ func TestAdminAlertRulesListAndPatchWithoutSensitiveLeak(t *testing.T) {
 	if !ok || cpuRule.Name != "CPU 使用率" || cpuRule.Category != "resource" || cpuRule.Metric != "cpu_percent" || cpuRule.Comparator != ">=" || cpuRule.Threshold != 90 || cpuRule.ThresholdUnit != "%" || cpuRule.DurationSec != 300 || !cpuRule.Enabled || cpuRule.NotificationEventType != "probe_unhealthy" || cpuRule.NotificationLabel != "异常" {
 		t.Fatalf("cpu_high rule = %+v, want enabled resource CPU rule mapped to probe_unhealthy notification", cpuRule)
 	}
-	if rulesByID["node_offline"].NotificationEventType != "node_offline" || rulesByID["node_recovered"].NotificationEventType != "node_online" {
-		t.Fatalf("offline/recovery rules should map to existing online/offline notification types: %+v", rulesByID)
+	if cpuRule.Description != "" {
+		t.Fatalf("cpu_high description = %q, want empty", cpuRule.Description)
+	}
+	if rulesByID["node_offline"].Name != "离线通知" || rulesByID["node_offline"].NotificationEventType != "node_offline" {
+		t.Fatalf("offline rule should be the only liveness notification: %+v", rulesByID["node_offline"])
+	}
+	for _, retiredRuleID := range []string{"probe_latency_high", "probe_loss_high", "node_recovered"} {
+		if _, ok := rulesByID[retiredRuleID]; ok {
+			t.Fatalf("retired rule %s still present: %+v", retiredRuleID, rulesByID)
+		}
 	}
 
 	patchRecorder := httptest.NewRecorder()
@@ -154,27 +162,27 @@ func TestNotificationDispatchRequiresEnabledAlertRuleForEvent(t *testing.T) {
 	if _, err := store.CreateAdminNotificationChannel(ctx, AdminNotificationChannelCreateRequest{ID: "ops-telegram", Name: "Ops Telegram", Destination: "7579942307", Credential: "dispatch-credential-value", Enabled: &enabled}); err != nil {
 		t.Fatalf("create notification channel: %v", err)
 	}
-	if _, err := store.UpdateAdminNotificationType(ctx, "node_online", AdminNotificationTypeUpdateRequest{Enabled: &enabled}); err != nil {
-		t.Fatalf("enable node_online notification type: %v", err)
+	if _, err := store.UpdateAdminNotificationType(ctx, "node_offline", AdminNotificationTypeUpdateRequest{Enabled: &enabled}); err != nil {
+		t.Fatalf("enable node_offline notification type: %v", err)
 	}
-	label, channels, err := store.EnabledNotificationChannelsForEvent(ctx, "node_online", "hytron")
+	label, channels, err := store.EnabledNotificationChannelsForEvent(ctx, "node_offline", "hytron")
 	if err != nil {
 		t.Fatalf("enabled channels before disabling rule: %v", err)
 	}
-	if label != "上线" || len(channels) != 1 {
-		t.Fatalf("channels before disabling rule label=%q len=%d, want one node_online channel", label, len(channels))
+	if label != "离线" || len(channels) != 1 {
+		t.Fatalf("channels before disabling rule label=%q len=%d, want one node_offline channel", label, len(channels))
 	}
 
 	disabled := false
-	if _, err := store.UpdateAdminAlertRule(ctx, "node_recovered", AdminAlertRuleUpdateRequest{Enabled: &disabled}); err != nil {
-		t.Fatalf("disable node recovered rule: %v", err)
+	if _, err := store.UpdateAdminAlertRule(ctx, "node_offline", AdminAlertRuleUpdateRequest{Enabled: &disabled}); err != nil {
+		t.Fatalf("disable node offline rule: %v", err)
 	}
-	label, channels, err = store.EnabledNotificationChannelsForEvent(ctx, "node_online", "hytron")
+	label, channels, err = store.EnabledNotificationChannelsForEvent(ctx, "node_offline", "hytron")
 	if err != nil {
 		t.Fatalf("enabled channels after disabling rule: %v", err)
 	}
-	if label != "上线" || len(channels) != 0 {
-		t.Fatalf("channels after disabling node_recovered rule label=%q len=%d, want no dispatch channels", label, len(channels))
+	if label != "离线" || len(channels) != 0 {
+		t.Fatalf("channels after disabling node_offline rule label=%q len=%d, want no dispatch channels", label, len(channels))
 	}
 }
 
@@ -364,26 +372,26 @@ func TestNotificationDispatchRespectsAlertRuleNodeScope(t *testing.T) {
 	if _, err := store.CreateAdminNotificationChannel(ctx, AdminNotificationChannelCreateRequest{ID: "ops-telegram", Name: "Ops Telegram", Destination: "7579942307", Credential: "dispatch-credential-value", Enabled: &enabled}); err != nil {
 		t.Fatalf("create notification channel: %v", err)
 	}
-	if _, err := store.UpdateAdminNotificationType(ctx, "node_online", AdminNotificationTypeUpdateRequest{Enabled: &enabled}); err != nil {
-		t.Fatalf("enable node_online notification type: %v", err)
+	if _, err := store.UpdateAdminNotificationType(ctx, "node_offline", AdminNotificationTypeUpdateRequest{Enabled: &enabled}); err != nil {
+		t.Fatalf("enable node_offline notification type: %v", err)
 	}
 	scopeNodeIDs := []string{"backup"}
-	if _, err := store.UpdateAdminAlertRule(ctx, "node_recovered", AdminAlertRuleUpdateRequest{ScopeNodeIDs: &scopeNodeIDs}); err != nil {
-		t.Fatalf("scope node_recovered rule: %v", err)
+	if _, err := store.UpdateAdminAlertRule(ctx, "node_offline", AdminAlertRuleUpdateRequest{ScopeNodeIDs: &scopeNodeIDs}); err != nil {
+		t.Fatalf("scope node_offline rule: %v", err)
 	}
 
-	label, hytronChannels, err := store.EnabledNotificationChannelsForEvent(ctx, "node_online", "hytron")
+	label, hytronChannels, err := store.EnabledNotificationChannelsForEvent(ctx, "node_offline", "hytron")
 	if err != nil {
 		t.Fatalf("hytron channels: %v", err)
 	}
-	if label != "上线" || len(hytronChannels) != 0 {
+	if label != "离线" || len(hytronChannels) != 0 {
 		t.Fatalf("hytron channels label=%q len=%d, want no channels outside node scope", label, len(hytronChannels))
 	}
-	label, backupChannels, err := store.EnabledNotificationChannelsForEvent(ctx, "node_online", "backup")
+	label, backupChannels, err := store.EnabledNotificationChannelsForEvent(ctx, "node_offline", "backup")
 	if err != nil {
 		t.Fatalf("backup channels: %v", err)
 	}
-	if label != "上线" || len(backupChannels) != 1 {
+	if label != "离线" || len(backupChannels) != 1 {
 		t.Fatalf("backup channels label=%q len=%d, want one scoped channel", label, len(backupChannels))
 	}
 }

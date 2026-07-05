@@ -5,8 +5,6 @@ import (
 	"database/sql"
 	"strings"
 	"time"
-
-	"github.com/shuijiao1/zeno/internal/shared/probe"
 )
 
 type probeAlertRuleTransitionStore interface {
@@ -18,33 +16,7 @@ type stateAlertRuleTransitionStore interface {
 }
 
 func (s *SQLiteStore) RecordAgentProbeAlertRuleTransition(ctx context.Context, nodeID string, ts time.Time, rounds []preparedAgentProbeRound) (notificationStatusTransition, error) {
-	tx, err := s.db.BeginTx(ctx, nil)
-	if err != nil {
-		return notificationStatusTransition{}, err
-	}
-	defer rollbackUnlessCommitted(tx)
-
-	rules, err := alertRulesForMetrics(ctx, tx, nodeID, map[string]bool{"probe_median_ms": true, "probe_loss_percent": true})
-	if err != nil {
-		return notificationStatusTransition{}, err
-	}
-	values := probeAlertMetricValues(rounds)
-	if _, _, err := setAlertRuleStates(ctx, tx, nodeID, ts, rules, values); err != nil {
-		return notificationStatusTransition{}, err
-	}
-	status, err := aggregateAlertRuleStatus(ctx, tx, nodeID)
-	if err != nil {
-		return notificationStatusTransition{}, err
-	}
-	transition, err := updateNodeStatusForAlertRules(ctx, tx, nodeID, ts, status, false)
-	if err != nil {
-		return notificationStatusTransition{}, err
-	}
-	if err := tx.Commit(); err != nil {
-		return notificationStatusTransition{}, err
-	}
-	tx = nil
-	return transition, nil
+	return notificationStatusTransition{}, nil
 }
 
 func (s *SQLiteStore) RecordAgentStateAlertRuleTransition(ctx context.Context, nodeID string, ts time.Time, state AgentStateRequest) (notificationStatusTransition, error) {
@@ -214,25 +186,6 @@ func updateNodeStatusForAlertRules(ctx context.Context, tx *sql.Tx, nodeID strin
 	return notificationStatusTransition{Previous: previous, Current: current}, nil
 }
 
-func probeAlertMetricValues(rounds []preparedAgentProbeRound) map[string]*float64 {
-	var maxMedian *float64
-	var maxLoss *float64
-	for _, round := range rounds {
-		stats, err := probe.ComputeStats(round.samples)
-		if err != nil {
-			continue
-		}
-		if stats.MedianMS != nil {
-			maxMedian = maxFloatPtr(maxMedian, *stats.MedianMS)
-		}
-		maxLoss = maxFloatPtr(maxLoss, stats.LossPercent)
-	}
-	return map[string]*float64{
-		"probe_median_ms":    maxMedian,
-		"probe_loss_percent": maxLoss,
-	}
-}
-
 func stateAlertMetricValues(state AgentStateRequest) map[string]*float64 {
 	return map[string]*float64{
 		"cpu_percent":    floatValuePtr(state.CPUPercent),
@@ -269,12 +222,4 @@ func percentValuePtr(used, total int64) *float64 {
 	}
 	converted := float64(used) / float64(total) * 100
 	return &converted
-}
-
-func maxFloatPtr(current *float64, candidate float64) *float64 {
-	if current == nil || candidate > *current {
-		value := candidate
-		return &value
-	}
-	return current
 }

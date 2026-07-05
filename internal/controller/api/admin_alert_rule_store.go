@@ -19,7 +19,6 @@ var defaultAdminAlertRules = []AdminAlertRule{
 		DurationSec:           300,
 		Enabled:               true,
 		NotificationEventType: "probe_unhealthy",
-		Description:           "CPU 使用率持续超过阈值时进入异常通知类型。",
 	},
 	{
 		ID:                    "memory_high",
@@ -32,7 +31,6 @@ var defaultAdminAlertRules = []AdminAlertRule{
 		DurationSec:           300,
 		Enabled:               true,
 		NotificationEventType: "probe_unhealthy",
-		Description:           "内存使用率持续超过阈值时进入异常通知类型。",
 	},
 	{
 		ID:                    "disk_high",
@@ -45,37 +43,10 @@ var defaultAdminAlertRules = []AdminAlertRule{
 		DurationSec:           600,
 		Enabled:               true,
 		NotificationEventType: "probe_unhealthy",
-		Description:           "磁盘使用率持续超过阈值时进入异常通知类型。",
-	},
-	{
-		ID:                    "probe_latency_high",
-		Name:                  "探测延迟",
-		Category:              "probe",
-		Metric:                "probe_median_ms",
-		Comparator:            ">=",
-		Threshold:             800,
-		ThresholdUnit:         "ms",
-		DurationSec:           180,
-		Enabled:               true,
-		NotificationEventType: "probe_unhealthy",
-		Description:           "探测中位延迟持续超过阈值时进入异常通知类型。",
-	},
-	{
-		ID:                    "probe_loss_high",
-		Name:                  "探测丢包",
-		Category:              "probe",
-		Metric:                "probe_loss_percent",
-		Comparator:            ">=",
-		Threshold:             50,
-		ThresholdUnit:         "%",
-		DurationSec:           180,
-		Enabled:               true,
-		NotificationEventType: "probe_unhealthy",
-		Description:           "探测丢包持续超过阈值时进入异常通知类型。",
 	},
 	{
 		ID:                    "node_offline",
-		Name:                  "离线判定",
+		Name:                  "离线通知",
 		Category:              "liveness",
 		Metric:                "heartbeat_age_sec",
 		Comparator:            ">=",
@@ -84,22 +55,12 @@ var defaultAdminAlertRules = []AdminAlertRule{
 		DurationSec:           180,
 		Enabled:               true,
 		NotificationEventType: "node_offline",
-		Description:           "Agent 心跳超过离线窗口后映射为离线通知类型。",
-	},
-	{
-		ID:                    "node_recovered",
-		Name:                  "恢复判定",
-		Category:              "liveness",
-		Metric:                "public_status",
-		Comparator:            "transition_to_online",
-		Threshold:             0,
-		ThresholdUnit:         "status",
-		DurationSec:           0,
-		Enabled:               true,
-		NotificationEventType: "node_online",
-		Description:           "离线或异常恢复到在线时映射为上线通知类型。",
 	},
 }
+
+var retiredAdminAlertRuleIDs = []string{"probe_latency_high", "probe_loss_high", "node_recovered"}
+
+var retiredAdminNotificationEventTypes = []string{"node_online"}
 
 func (s *SQLiteStore) ensureDefaultAlertRules(ctx context.Context) error {
 	now := time.Now().UTC().Unix()
@@ -118,8 +79,36 @@ func (s *SQLiteStore) ensureDefaultAlertRules(ctx context.Context) error {
 		`, rule.ID, rule.Name, rule.Category, rule.Metric, rule.Comparator, rule.Threshold, rule.ThresholdUnit, rule.DurationSec, enabled, rule.NotificationEventType, rule.Description, sortOrder, now, now); err != nil {
 			return err
 		}
+		if _, err := s.db.ExecContext(ctx, `
+			UPDATE alert_rules
+			SET name = ?, description = '', sort_order = ?
+			WHERE id = ?
+		`, rule.Name, sortOrder, rule.ID); err != nil {
+			return err
+		}
 	}
 	return nil
+}
+
+func (s *SQLiteStore) pruneRetiredNotificationConfig(ctx context.Context) error {
+	for _, ruleID := range retiredAdminAlertRuleIDs {
+		if _, err := s.db.ExecContext(ctx, `DELETE FROM alert_rule_node_scopes WHERE rule_id = ?`, ruleID); err != nil {
+			return err
+		}
+		if _, err := s.db.ExecContext(ctx, `DELETE FROM alert_rule_states WHERE rule_id = ?`, ruleID); err != nil {
+			return err
+		}
+		if _, err := s.db.ExecContext(ctx, `DELETE FROM alert_rules WHERE id = ?`, ruleID); err != nil {
+			return err
+		}
+	}
+	for _, eventType := range retiredAdminNotificationEventTypes {
+		if _, err := s.db.ExecContext(ctx, `DELETE FROM notification_types WHERE event_type = ?`, eventType); err != nil {
+			return err
+		}
+	}
+	_, err := s.db.ExecContext(ctx, `UPDATE alert_rules SET description = '' WHERE description <> ''`)
+	return err
 }
 
 func (s *SQLiteStore) AdminAlertRules(ctx context.Context) ([]AdminAlertRule, error) {

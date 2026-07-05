@@ -36,7 +36,7 @@ Zeno 当前已经具备完整预览闭环：
 - Admin 手机端按卡片化列表和双列导航展示；后台各列表都按内容自然撑开并交给页面滚动；服务器列表只保留名称、状态、公网 IP、Agent 和编辑操作，IPv4/IPv6 分行显示且无协议前缀。
 - Telegram-only 通知 dispatch、测试发送和 sanitized delivery history。
 - 服务器元数据：到期日、账单周期、显示顺序（后台可整理，也可在编辑里调整）、国家码/国旗、公网 IPv4、公网 IPv6，Agent 可自动识别公网 IP / GeoIP。
-- 通知页只展示已添加通知类型；添加通知类型通过弹窗选择预置触发条件，通知类型触发条件支持按服务器范围生效。
+- 通知页只展示已添加通知类型；添加通知类型通过弹窗选择预置规则，并支持按服务器范围生效。
 - Linux amd64 发布包（含 README/docs）、systemd 模板、本机 Controller 更新脚本、单独 Agent 安装脚本、GUKO 服务器清单导入脚本和自部署指南。
 - Hytron 预览部署：`/opt/zeno`，`zeno-controller.service`，`zeno-agent.service`。
 

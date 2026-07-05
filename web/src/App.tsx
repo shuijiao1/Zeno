@@ -1105,7 +1105,7 @@ function AdminSettingsSection({ settings, onUpdate }: { settings: AdminSettings;
         </div>
       </header>
       <form className="admin-settings-form admin-node-edit-form is-sectioned" aria-label="外观配置" onSubmit={handleSubmit}>
-        <AdminFormSection title="站点信息" description="图片字段只填 https:// 链接或 /assets/... 站内路径。">
+        <AdminFormSection title="站点信息">
           <div className="admin-form-grid">
             <label>
               <span>站点标题</span>
@@ -1141,7 +1141,7 @@ function AdminSettingsSection({ settings, onUpdate }: { settings: AdminSettings;
             </label>
           </div>
         </AdminFormSection>
-        <AdminFormSection title="Agent 接入" description="生成 Agent 安装命令时优先使用这个 URL；准备公网 HTTPS 入口后填入，例如 https://zeno.example.com。">
+        <AdminFormSection title="Agent 接入">
           <div className="admin-form-grid">
             <label>
               <span>Agent 接入 URL</span>
@@ -1149,7 +1149,6 @@ function AdminSettingsSection({ settings, onUpdate }: { settings: AdminSettings;
             </label>
           </div>
         </AdminFormSection>
-        {settings.updatedAt && <p className="admin-help-note">最近更新：{formatAdminDate(settings.updatedAt)}</p>}
         {settingsError && <p className="admin-install-error">{settingsError}</p>}
         <button type="submit">保存设置</button>
       </form>
@@ -1889,7 +1888,6 @@ function AdminAlertRulesSection({ rules, nodes, onUpdate }: { rules: AdminAlertR
         <h4>通知类型</h4>
         <button className="admin-row-action" type="button" onClick={() => setAddingRule(true)}>添加通知类型</button>
       </div>
-      <p className="admin-help-note">资源、探测和在线状态会按这里的条件映射到上线、离线或异常通知。</p>
       {addedRules.length === 0 && <div className="admin-state-card">还没有添加通知类型。</div>}
       {addedRules.length > 0 && <AdminAlertRuleList rules={addedRules} nodes={nodes} onEdit={setEditingRule} onUpdate={onUpdate} />}
 
@@ -1921,12 +1919,15 @@ function AdminAlertRulesSection({ rules, nodes, onUpdate }: { rules: AdminAlertR
 }
 
 function AdminAlertRuleList({ rules, nodes, onEdit, onUpdate }: { rules: AdminAlertRule[]; nodes: AdminNode[]; onEdit: (rule: AdminAlertRule) => void; onUpdate: (ruleId: string, input: AdminAlertRuleUpdateInput) => void }) {
+  const confirmDelete = (rule: AdminAlertRule) => {
+    const ok = typeof window === 'undefined' ? true : window.confirm(`确认删除通知类型「${rule.name}」？`)
+    if (ok) onUpdate(rule.id, { enabled: false })
+  }
+
   return (
     <div className="admin-list admin-alert-rule-list" role="list" aria-label="通知类型列表">
       <div className="admin-list-head" aria-hidden="true">
         <span>通知类型</span>
-        <span>条件</span>
-        <span>持续时间</span>
         <span>范围</span>
         <span>状态</span>
         <span>操作</span>
@@ -1935,15 +1936,12 @@ function AdminAlertRuleList({ rules, nodes, onEdit, onUpdate }: { rules: AdminAl
         <article className="admin-list-row" role="listitem" key={rule.id}>
           <div className="admin-list-main">
             <strong>{rule.name}</strong>
-            <small>{rule.id} · {formatRuleCategory(rule.category)}</small>
           </div>
-          <span data-label="条件" className="admin-rule-condition">{formatAlertRuleCondition(rule)}</span>
-          <span data-label="持续时间">持续 {rule.durationSec}s</span>
           <span data-label="范围">{formatAlertRuleScope(rule, nodes)}</span>
           <span data-label="状态" className={`admin-node-status status-${rule.enabled ? 'online' : 'disabled'}`}>{rule.enabled ? '启用中' : '已停用'}</span>
-          <div className="admin-row-actions">
-            <button className="admin-row-action" type="button" onClick={() => onEdit(rule)}>编辑通知类型</button>
-            <button className="admin-row-action" type="button" onClick={() => onUpdate(rule.id, { enabled: false })}>移除</button>
+          <div className="admin-row-actions admin-icon-actions">
+            <button className="admin-row-action is-icon" type="button" aria-label={`编辑通知类型 ${rule.name}`} title="编辑通知类型" onClick={() => onEdit(rule)}><EditActionIcon /><span className="sr-only">编辑通知类型</span></button>
+            <button className="admin-row-action is-icon is-danger" type="button" aria-label={`删除通知类型 ${rule.name}`} title="删除通知类型" onClick={() => confirmDelete(rule)}><TrashActionIcon /><span className="sr-only">删除通知类型</span></button>
           </div>
         </article>
       ))}
@@ -1960,7 +1958,7 @@ function AdminAlertRuleAddModal({ rules, nodes, onAdd, onClose }: { rules: Admin
           <article className="admin-rule-picker-row" role="listitem" key={rule.id}>
             <div className="admin-list-main">
               <strong>{rule.name}</strong>
-              <small>{formatAlertRuleCondition(rule)} · {formatAlertRuleScope(rule, nodes)}</small>
+              <small>{formatAlertRuleScope(rule, nodes)}</small>
             </div>
             <button className="admin-row-action" type="button" onClick={() => onAdd(rule.id)}>添加</button>
           </article>
@@ -1974,14 +1972,9 @@ function AdminAlertRuleEditModal({ rule, nodes, onUpdate, onClose }: { rule: Adm
   const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
     const formData = new FormData(event.currentTarget)
-    const threshold = Number(String(formData.get('rule-threshold') ?? '').trim())
-    const durationSec = Number(String(formData.get('rule-duration-sec') ?? '').trim())
     const scopeNodeIds = nodes.filter((node) => formData.get(`rule-scope-${node.id}`) === 'on').map((node) => node.id)
-    if (!Number.isFinite(threshold) || threshold < 0 || !Number.isInteger(durationSec) || durationSec < 0) return
     onUpdate(rule.id, {
       enabled: formData.get('rule-enabled') === 'on',
-      threshold,
-      durationSec,
       scopeNodeIds,
     })
   }
@@ -1989,22 +1982,13 @@ function AdminAlertRuleEditModal({ rule, nodes, onUpdate, onClose }: { rule: Adm
   return (
     <AdminModal title={`编辑通知类型 · ${rule.name}`} eyebrow={rule.id} onClose={onClose}>
       <dl className="admin-modal-summary">
-        <div><dt>条件</dt><dd>{formatAlertRuleCondition(rule)}</dd></div>
         <div><dt>作用范围</dt><dd>{formatAlertRuleScope(rule, nodes)}</dd></div>
         <div><dt>通知类型</dt><dd>{rule.notificationLabel || rule.notificationEventType}</dd></div>
         <div><dt>当前状态</dt><dd>{rule.enabled ? '启用中' : '已停用'}</dd></div>
       </dl>
       <form className="admin-alert-rule-edit-form admin-node-edit-form is-sectioned" aria-label={`${rule.name} 通知类型编辑`} onSubmit={handleSubmit}>
-        <AdminFormSection title="触发条件">
+        <AdminFormSection title="通知设置">
           <div className="admin-form-grid">
-            <label>
-              <span>阈值</span>
-              <input name="rule-threshold" type="number" min="0" step="0.01" defaultValue={rule.threshold} />
-            </label>
-            <label>
-              <span>持续时间 s</span>
-              <input name="rule-duration-sec" type="number" min="0" step="1" defaultValue={rule.durationSec} />
-            </label>
             <label className="admin-node-toggle">
               <input name="rule-enabled" type="checkbox" defaultChecked={rule.enabled} />
               <span>启用通知类型</span>
@@ -2100,13 +2084,13 @@ function AdminNotificationChannelList({ channels, onUpdate, onDelete, onTest, on
           <span data-label="状态" className={`admin-node-status status-${channel.enabled ? 'online' : 'disabled'}`}>{channel.enabled ? '启用中' : '已停用'}</span>
           <span data-label="Chat ID" className="admin-notification-destination">{channel.destination}</span>
           <span data-label="Bot Token">{channel.credentialSet ? '凭据已设置' : '未设置凭据'}</span>
-          <div className="admin-row-actions">
+          <div className="admin-row-actions admin-icon-actions">
             <button className="admin-row-action" type="button" onClick={() => onTest(channel.id)}>测试发送</button>
-            <button className="admin-row-action" type="button" onClick={() => onEdit(channel)}>编辑渠道</button>
+            <button className="admin-row-action is-icon" type="button" aria-label={`编辑通知渠道 ${channel.name}`} title="编辑渠道" onClick={() => onEdit(channel)}><EditActionIcon /><span className="sr-only">编辑渠道</span></button>
             <button className="admin-row-action" type="button" onClick={() => onUpdate(channel.id, { enabled: !channel.enabled })}>
               {channel.enabled ? '停用渠道' : '启用渠道'}
             </button>
-            <button className="admin-row-action is-danger" type="button" onClick={() => confirmDelete(channel)}>删除渠道</button>
+            <button className="admin-row-action is-icon is-danger" type="button" aria-label={`删除通知渠道 ${channel.name}`} title="删除渠道" onClick={() => confirmDelete(channel)}><TrashActionIcon /><span className="sr-only">删除渠道</span></button>
           </div>
         </article>
       ))}
@@ -2328,15 +2312,6 @@ function formatTargetAssignmentSummary(target: AdminProbeTarget): string {
   return `${enabled} / ${target.assignments.length} 节点启用`
 }
 
-function formatAlertRuleCondition(rule: AdminAlertRule): string {
-  return `${rule.metric} ${rule.comparator} ${formatAlertRuleThreshold(rule)}`
-}
-
-function formatAlertRuleThreshold(rule: AdminAlertRule): string {
-  const threshold = Number.isInteger(rule.threshold) ? rule.threshold.toFixed(0) : String(rule.threshold)
-  return `${threshold}${rule.thresholdUnit}`
-}
-
 function formatAlertRuleScope(rule: AdminAlertRule, nodes: AdminNode[]): string {
   if (rule.scopeNodeIds.length === 0) return '全部服务器'
   const labels = rule.scopeNodeIds.map((nodeId) => {
@@ -2344,13 +2319,6 @@ function formatAlertRuleScope(rule: AdminAlertRule, nodes: AdminNode[]): string 
     return node?.displayName || nodeId
   })
   return labels.join('、')
-}
-
-function formatRuleCategory(category: string): string {
-  if (category === 'resource') return '资源'
-  if (category === 'probe') return '探测'
-  if (category === 'liveness') return '在线状态'
-  return category || '类型'
 }
 
 function parsePositiveInt(value: string): number | null {

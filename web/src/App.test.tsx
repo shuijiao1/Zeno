@@ -127,14 +127,14 @@ const alertRules: AdminAlertRule[] = [
     enabled: true,
     notificationEventType: 'probe_unhealthy',
     notificationLabel: '异常',
-    description: 'CPU 使用率持续超过阈值时进入异常通知类型。',
+    description: '',
     scopeNodeIds: [],
     createdAt: '2026-07-03T00:00:00Z',
     updatedAt: '2026-07-03T00:00:00Z',
   },
   {
     id: 'node_offline',
-    name: '离线判定',
+    name: '离线通知',
     category: 'liveness',
     metric: 'heartbeat_age_sec',
     comparator: '>=',
@@ -144,7 +144,7 @@ const alertRules: AdminAlertRule[] = [
     enabled: true,
     notificationEventType: 'node_offline',
     notificationLabel: '离线',
-    description: 'Agent 心跳超过离线窗口后映射为离线通知类型。',
+    description: '',
     scopeNodeIds: ['backup'],
     createdAt: '2026-07-03T00:00:00Z',
     updatedAt: '2026-07-03T00:00:00Z',
@@ -329,7 +329,8 @@ describe('AdminDashboard', () => {
     expect(html).toContain('Agent 接入 URL')
     expect(html).toContain('name="agent-controller-url"')
     expect(html).toContain('https://zeno.example.com')
-    expect(html).toContain('图片字段只填 https:// 链接或 /assets/... 站内路径')
+    expect(html).not.toContain(['图片字段', '只填 https:// 链接或 /assets/... 站内路径'].join(''))
+    expect(html).not.toContain(['最近', '更新：'].join(''))
     expect(html).toContain('name="desktop-background-url"')
     expect(html).toContain('https://example.com/desktop-bg.webp')
     expect(html).toContain('name="mobile-background-url"')
@@ -373,8 +374,8 @@ describe('AdminDashboard', () => {
     expect(html).toContain('CPU 使用率')
     expect(html).toContain('启用中')
     expect(html).toContain('添加通知渠道')
-    expect(html).toContain('编辑渠道')
-    expect(html).toContain('删除渠道')
+    expect(html).toContain('aria-label="编辑通知渠道 Zeno Telegram"')
+    expect(html).toContain('aria-label="删除通知渠道 Zeno Telegram"')
     expect(html).toContain('测试发送')
     expect(html).not.toContain('最近发送')
     expect(html).not.toContain('发送失败')
@@ -389,17 +390,16 @@ describe('AdminDashboard', () => {
 
     expect(html).toContain('通知类型')
     expect(html).toContain('CPU 使用率')
-    expect(html).toContain('cpu_percent')
-    expect(html).toContain('&gt;= 90%')
-    expect(html).toContain('持续 300s')
     expect(html).toContain('全部服务器')
     expect(html).toContain('Backup')
     expect(html).not.toContain('Backup (backup)')
-    expect(html).toContain('离线判定')
-    expect(html).toContain('node_offline')
+    expect(html).toContain('离线通知')
+    expect(html).not.toContain('node_offline')
     expect(html).toContain('添加通知类型')
-    expect(html).toContain('编辑通知类型')
-    expect(html).toContain('移除')
+    expect(html).toContain('aria-label="编辑通知类型 CPU 使用率"')
+    expect(html).toContain('aria-label="删除通知类型 CPU 使用率"')
+    expect(html).not.toContain('移除')
+    expect(html).not.toContain('cpu_high · 资源')
     expect(html).not.toContain('触发条件</h4>')
     expect(html).not.toContain('当前异常')
     expect(html).not.toContain('当前值 95.25%')

@@ -22,6 +22,7 @@ const width = 960
 const height = 320
 const pad = { left: 52, right: 24, top: 24, bottom: 44 }
 const palette = ['#22c55e', '#38bdf8', '#f59e0b', '#a78bfa', '#fb7185', '#14b8a6', '#84cc16', '#f97316', '#06b6d4', '#e879f9']
+const packetLossColor = '#94a3b8'
 
 export function LatencyChart({
   points,
@@ -92,8 +93,8 @@ export function LatencyChart({
           <path
             className="packet-loss-area"
             d={packetLossAreaPath(lossRows, x, yLoss)}
-            fill="hsl(45, 100%, 60%)"
-            fillOpacity={0.3}
+            fill={packetLossColor}
+            fillOpacity={0.18}
             stroke="none"
           />
         )}
@@ -152,7 +153,7 @@ export function LatencyChart({
           <span key={item.targetId}><i style={{ background: palette[(series.findIndex((seriesItem) => seriesItem.targetId === item.targetId) >= 0 ? series.findIndex((seriesItem) => seriesItem.targetId === item.targetId) : index) % palette.length] }} />{item.targetName}</span>
         ))}
         {baseView.showPacketLossArea && packetLossSeries && (
-          <span><i style={{ background: 'hsl(45, 100%, 60%)' }} />{packetLossSeries.targetName} 丢包 {formatPercent(avgPacketLoss(lossRows))}</span>
+          <span><i style={{ background: packetLossColor }} />{packetLossSeries.targetName} 丢包 {formatPercent(avgPacketLoss(lossRows))}</span>
         )}
       </div>
     </section>

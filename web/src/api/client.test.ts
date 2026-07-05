@@ -371,13 +371,13 @@ describe('normalizeAdminNotifications', () => {
     })
     const types = normalizeAdminNotificationTypes({
       types: [
-        { event_type: 'node_online', label: '上线', enabled: true, updated_at: '2026-07-03T00:00:00Z' },
+        { event_type: 'node_offline', label: '离线', enabled: true, updated_at: '2026-07-03T00:00:00Z' },
       ],
     })
 
     expect(channels.channels[0].credentialSet).toBe(true)
     expect(channels.channels[0]).not.toHaveProperty('credential')
-    expect(types.types[0].eventType).toBe('node_online')
+    expect(types.types[0].eventType).toBe('node_offline')
     expect(types.types[0].enabled).toBe(true)
   })
 })
@@ -1091,7 +1091,7 @@ describe('admin alert rules', () => {
           enabled: true,
           notification_event_type: 'probe_unhealthy',
           notification_label: '异常',
-          description: 'CPU 使用率持续超过阈值时进入异常通知类型。',
+          description: '',
           scope_node_ids: ['hytron'],
           created_at: '2026-07-03T00:00:00Z',
           updated_at: '2026-07-03T00:00:00Z',
@@ -1131,7 +1131,7 @@ describe('admin alert rules', () => {
         enabled: false,
         notification_event_type: 'probe_unhealthy',
         notification_label: '异常',
-        description: 'CPU 使用率持续超过阈值时进入异常通知类型。',
+        description: '',
         scope_node_ids: ['hytron', 'backup'],
         created_at: '2026-07-03T00:00:00Z',
         updated_at: '2026-07-03T00:10:00Z',
@@ -1244,7 +1244,7 @@ describe('notification writes', () => {
           },
         }), { status: 200, headers: { 'Content-Type': 'application/json' } })
       }
-      return new Response(JSON.stringify({ type: { event_type: 'node_online', label: '上线', enabled: true, updated_at: '2026-07-03T00:00:00Z' } }), { status: 200, headers: { 'Content-Type': 'application/json' } })
+      return new Response(JSON.stringify({ type: { event_type: 'node_offline', label: '离线', enabled: true, updated_at: '2026-07-03T00:00:00Z' } }), { status: 200, headers: { 'Content-Type': 'application/json' } })
     })
     globalThis.fetch = fetchMock as unknown as typeof fetch
 
@@ -1255,7 +1255,7 @@ describe('notification writes', () => {
       enabled: true,
     })
     const updated = await updateAdminNotificationChannel('admin-pass', 'zeno-telegram', { enabled: false })
-    const notificationType = await updateAdminNotificationType('admin-pass', 'node_online', true)
+    const notificationType = await updateAdminNotificationType('admin-pass', 'node_offline', true)
 
     expect(created.credentialSet).toBe(true)
     expect(updated.enabled).toBe(false)
@@ -1283,7 +1283,7 @@ describe('notification writes', () => {
       },
       body: JSON.stringify({ enabled: false }),
     })
-    expect(fetchMock).toHaveBeenNthCalledWith(3, '/api/admin/v1/notification-types/node_online', {
+    expect(fetchMock).toHaveBeenNthCalledWith(3, '/api/admin/v1/notification-types/node_offline', {
       method: 'PATCH',
       headers: {
         Accept: 'application/json',

@@ -427,7 +427,7 @@ svg { display: block; }
 }
 .admin-alert-rule-list .admin-list-head,
 .admin-alert-rule-list .admin-list-row {
-  grid-template-columns: minmax(160px, 1.05fr) minmax(132px, .85fr) minmax(86px, .55fr) minmax(130px, .85fr) minmax(84px, .55fr) auto;
+  grid-template-columns: minmax(180px, 1.2fr) minmax(130px, .9fr) minmax(84px, .55fr) auto;
 }
 .admin-list-head {
   position: sticky;
@@ -1294,8 +1294,8 @@ svg { display: block; }
 }
 .latency-target-grid button[data-active='true'] { background: color-mix(in srgb, var(--secondary) 70%, transparent); }
 .latency-target-grid span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 14px; font-weight: 500; }
-.latency-target-grid strong { color: var(--green); font-size: 20px; line-height: 1; font-weight: 600; font-variant-numeric: tabular-nums; }
-.latency-target-grid em { color: var(--orange); font-size: 12px; font-style: normal; font-weight: 500; font-variant-numeric: tabular-nums; }
+.latency-target-grid strong { color: var(--foreground); font-size: 20px; line-height: 1; font-weight: 400; font-variant-numeric: tabular-nums; }
+.latency-target-grid em { color: var(--muted); font-size: 12px; font-style: normal; font-weight: 400; font-variant-numeric: tabular-nums; }
 
 .latency-panel {
   margin: 24px;

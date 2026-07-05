@@ -284,6 +284,9 @@ func (s *SQLiteStore) ensureSchema(ctx context.Context) error {
 	if err := s.ensureDefaultAlertRules(ctx); err != nil {
 		return err
 	}
+	if err := s.pruneRetiredNotificationConfig(ctx); err != nil {
+		return err
+	}
 	return nil
 }
 

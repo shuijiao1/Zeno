@@ -121,8 +121,6 @@ func (event notificationEvent) messageText() string {
 	switch event.EventType {
 	case "test_notification":
 		return "Zeno：通知渠道测试"
-	case "node_online":
-		return fmt.Sprintf("Zeno：%s 已上线", nodeName)
 	case "node_offline":
 		return fmt.Sprintf("Zeno：%s 已离线", nodeName)
 	case "probe_unhealthy":
@@ -203,7 +201,7 @@ func notificationEventTypeForStatusChange(previousStatus, currentStatus string) 
 	}
 	switch currentStatus {
 	case "online":
-		return "node_online", true
+		return "", false
 	case "offline":
 		return "node_offline", true
 	case "warning":
