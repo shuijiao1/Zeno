@@ -783,9 +783,9 @@ function ServiceDetail({ target, points, range, loading, error, onBack, onRangeC
               ))}
             </div>
             <label className="peak-switch">
-              <input type="checkbox" aria-label="削峰" checked={peakCut} onChange={(event) => setPeakCut(event.target.checked)} />
+              <input type="checkbox" aria-label="平" checked={peakCut} onChange={(event) => setPeakCut(event.target.checked)} />
               <span />
-              <b>削峰</b>
+              <b>平</b>
             </label>
           </div>
         </header>

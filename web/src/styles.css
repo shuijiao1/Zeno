@@ -1014,7 +1014,7 @@ svg { display: block; }
 .server-flag { display: inline-flex; align-items: center; justify-content: center; line-height: 1; }
 .server-flag .fi { width: 1.333em; line-height: 1em; border-radius: 2px; box-shadow: 0 0 0 1px color-mix(in srgb, var(--foreground) 12%, transparent); }
 .node-title-line { min-width: 0; display: flex; align-items: center; justify-content: center; gap: 8px; }
-.node-title-line p { min-width: 0; margin: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--foreground); font-size: 13px; font-weight: 500; letter-spacing: -0.02em; }
+.node-title-line p { min-width: 0; margin: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--foreground); font-size: 13px; font-weight: 600; letter-spacing: -0.02em; }
 .node-dot { width: 8px; height: 8px; flex: none; border-radius: var(--radius-pill); background: var(--green); }
 .node-dot.status-offline { background: var(--red); }
 .node-dot.status-warning { background: #f59e0b; }
@@ -1172,7 +1172,7 @@ svg { display: block; }
   line-height: 1.2;
 }
 .detail-title-flag { flex: none; font-size: 16px; }
-.detail-title-button span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.detail-title-button span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; }
 .detail-title-button svg {
   width: 24px;
   height: 24px;
@@ -1388,11 +1388,33 @@ svg { display: block; }
   line-height: 1;
   font-variant-numeric: tabular-nums;
 }
-.resource-chart-plot { grid-column: 2; grid-row: 1; min-width: 0; min-height: 112px; }
+.resource-chart-plot { position: relative; grid-column: 2; grid-row: 1; min-width: 0; min-height: 112px; }
 .resource-chart-svg { width: 100%; height: 100%; min-height: 112px; overflow: visible; }
 .resource-grid-line { stroke: color-mix(in srgb, var(--tone-color) 16%, transparent); stroke-width: 1; }
 .resource-chart-area { opacity: .2; stroke: none; pointer-events: none; }
 .resource-chart-line { fill: none; stroke-width: 1.55; stroke-linecap: round; stroke-linejoin: round; }
+.resource-chart-hover-line { position: absolute; top: 0; bottom: 0; width: 1px; background: color-mix(in srgb, var(--foreground) 28%, transparent); pointer-events: none; transform: translateX(-50%); }
+.resource-chart-tooltip {
+  position: absolute;
+  z-index: 3;
+  top: 8px;
+  min-width: 150px;
+  max-width: min(220px, calc(100% - 8px));
+  padding: 9px 10px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--surface-strong) 96%, transparent);
+  box-shadow: 0 14px 30px -20px rgba(15, 23, 42, .45);
+  pointer-events: none;
+  transform: translateX(-50%);
+}
+.resource-chart-tooltip.is-left-edge { transform: translateX(0); }
+.resource-chart-tooltip.is-right-edge { transform: translateX(-100%); }
+.resource-chart-tooltip time { display: block; margin-bottom: 7px; color: var(--foreground); font-size: 11px; font-weight: 500; white-space: nowrap; }
+.resource-chart-tooltip span { display: grid; grid-template-columns: 8px minmax(0, 1fr) auto; align-items: center; gap: 7px; color: var(--muted); font-size: 11px; line-height: 1.45; }
+.resource-chart-tooltip i { width: 7px; height: 7px; border-radius: 999px; }
+.resource-chart-tooltip b { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 500; }
+.resource-chart-tooltip strong { color: var(--foreground); font-weight: 500; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .resource-x-spacer { grid-column: 1; grid-row: 2; }
 .resource-x-axis {
   grid-column: 2;

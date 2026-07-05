@@ -366,6 +366,26 @@ func TestNodeLatencyEndpointUsesRangeSpecificWindows(t *testing.T) {
 	}
 }
 
+func TestNodeStateEndpointUsesKulinHistoricalWindows(t *testing.T) {
+	oneDay := requestState(t, "/api/public/v1/nodes/hytron/state?range=1d")
+	sevenDays := requestState(t, "/api/public/v1/nodes/hytron/state?range=7d")
+	thirtyDays := requestState(t, "/api/public/v1/nodes/hytron/state?range=30d")
+
+	if got := len(oneDay.Points); got != 2880 {
+		t.Fatalf("1d state points = %d, want Kulin 2880 thirty-second samples", got)
+	}
+	if got := len(sevenDays.Points); got != 336 {
+		t.Fatalf("7d state points = %d, want Kulin 336 thirty-minute samples", got)
+	}
+	if got := len(thirtyDays.Points); got != 360 {
+		t.Fatalf("30d state points = %d, want Kulin 360 two-hour samples", got)
+	}
+
+	if pointSpan(t, statePointsAsLatency(oneDay.Points)) < 23*time.Hour {
+		t.Fatalf("1d state span = %s, want roughly one day", pointSpan(t, statePointsAsLatency(oneDay.Points)))
+	}
+}
+
 func TestNodeLatencyEndpointPreservesLossOnlyPointsAsNullLatency(t *testing.T) {
 	handler := NewHandler()
 	recorder := httptest.NewRecorder()
@@ -416,6 +436,30 @@ func requestLatency(t *testing.T, path string) LatencyResponse {
 		t.Fatalf("decode latency response: %v", err)
 	}
 	return response
+}
+
+func requestState(t *testing.T, path string) StateResponse {
+	t.Helper()
+	handler := NewHandler()
+	recorder := httptest.NewRecorder()
+	handler.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, path, nil))
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d; body=%s", recorder.Code, http.StatusOK, recorder.Body.String())
+	}
+
+	var response StateResponse
+	if err := json.NewDecoder(recorder.Body).Decode(&response); err != nil {
+		t.Fatalf("decode state response: %v", err)
+	}
+	return response
+}
+
+func statePointsAsLatency(points []StatePoint) []LatencyPoint {
+	converted := make([]LatencyPoint, 0, len(points))
+	for _, point := range points {
+		converted = append(converted, LatencyPoint{TS: point.TS})
+	}
+	return converted
 }
 
 func uniquePointTimes(points []LatencyPoint) map[string]bool {

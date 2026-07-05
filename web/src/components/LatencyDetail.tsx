@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react'
 import type { HomeCardNode, LatencyPoint, StatePoint } from '../types'
-import { formatLatency, formatPercent } from '../lib/format'
+import { formatLatency } from '../lib/format'
 import { summarizeLatencyTargets } from '../lib/latencyTargets'
 import { LatencyChart } from './LatencyChart'
 import { ServerFlag } from './ServerFlag'
@@ -70,17 +70,17 @@ export function LatencyDetail({
             <span>{node.displayName}</span>
           </button>
           <div className="detail-hero__badges" aria-label="server live status">
-            {uptimeValue && <span className="detail-hero-badge" aria-label={`运行 ${uptimeValue}`}><span>运行</span> <strong>{uptimeValue}</strong></span>}
-            {loadValue && <span className="detail-hero-badge" aria-label={`负载 ${loadValue}`}><span>负载</span> <strong>{loadValue}</strong></span>}
             <span className={`detail-status-pill status-${visualStatus}`}>{formatStatusLabel(node.status)}</span>
           </div>
         </div>
         <section className="detail-fact-strip" aria-label={`${node.displayName} server facts`}>
           <InfoFact label="系统" value={formatSystemSpec(node)} wide />
           <InfoFact label="CPU" value={formatCpuSpec(node)} wide />
-          <InfoFact label="内存" value={`${formatBinaryBytes(node.memoryUsedBytes)} / ${formatBinaryBytes(node.memoryTotalBytes)}`} />
-          <InfoFact label="磁盘" value={`${formatBinaryBytes(node.diskUsedBytes)} / ${formatBinaryBytes(node.diskTotalBytes)}`} />
+          <InfoFact label="内存" value={formatBinaryBytes(node.memoryTotalBytes)} />
+          <InfoFact label="磁盘" value={formatBinaryBytes(node.diskTotalBytes)} />
           <InfoFact label="开机时间" value={formatBootTime(node.bootTime)} />
+          {uptimeValue && <InfoFact label="运行时间" value={uptimeValue} />}
+          {loadValue && <InfoFact label="负载" value={loadValue} />}
           <InfoFact label="累计流量" value={`↑${formatBinaryBytes(node.netOutTotalBytes)} ↓${formatBinaryBytes(node.netInTotalBytes)}`} />
         </section>
       </section>
@@ -91,9 +91,9 @@ export function LatencyDetail({
             <div className="monitor-title-row">
               <h3>{node.displayName}</h3>
               <label className="peak-switch">
-                <input type="checkbox" aria-label="削峰" checked={peakCut} onChange={(event) => setPeakCut(event.target.checked)} />
+                <input type="checkbox" aria-label="平" checked={peakCut} onChange={(event) => setPeakCut(event.target.checked)} />
                 <span />
-                <b>削峰</b>
+                <b>平</b>
               </label>
             </div>
             <p>{targetSummaries.length} 个监控服务</p>
@@ -138,7 +138,7 @@ export function LatencyDetail({
             <LatencyChart
               points={points}
               title={`${node.displayName} 网络延迟`}
-              eyebrow={`${rangeLabel} · ${targetSummaries.length} 个监控服务${peakCut ? ' · 削峰' : ''}`}
+              eyebrow={`${rangeLabel} · ${targetSummaries.length} 个监控服务${peakCut ? ' · 平' : ''}`}
               compactHeader
               hideHeader
               peakCut={peakCut}
@@ -177,11 +177,11 @@ function formatOSLabel(node: HomeCardNode): string {
 }
 
 function formatSystemSpec(node: HomeCardNode): string {
-  return [formatOSLabel(node), node.arch || '--', node.kernel || '--', node.countryCode || '--'].filter(Boolean).join(' · ')
+  return [formatOSLabel(node), node.arch || '--', node.kernel || '--'].filter(Boolean).join(' · ')
 }
 
 function formatCpuSpec(node: HomeCardNode): string {
-  return [formatPercent(node.cpuPercent), node.cpuModel || '--', formatCores(node.cpuCores)].filter(Boolean).join(' · ')
+  return [node.cpuModel || '--', formatCores(node.cpuCores)].filter(Boolean).join(' · ')
 }
 
 function formatCores(value: number | null | undefined): string {

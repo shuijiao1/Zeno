@@ -125,9 +125,8 @@ describe('state history layout', () => {
     expect(styles).toContain('grid-template-columns: minmax(0, 1fr) auto')
   })
 
-  it('keeps uptime and load as compact pill badges in the top server card', () => {
+  it('keeps only the server status as a compact pill in the top server card', () => {
     expect(styles).toContain('.detail-hero__badges')
-    expect(styles).toContain('.detail-hero-badge')
     expect(styles).toContain('border-radius: var(--radius-pill)')
   })
 
@@ -158,16 +157,19 @@ describe('Kulin-inspired color polish', () => {
     expect(styles).toContain('.home-summary__status-line strong')
     expect(styles).toContain('.home-summary__metrics dd')
     expect(styles).toContain('.metric-label { color: var(--muted)')
+    expect(styles).toContain('.node-title-line p { min-width: 0; margin: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--foreground); font-size: 13px; font-weight: 600')
+    expect(styles).toContain('.detail-title-button span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; }')
     expect(styles).toContain('.node-metric strong')
     expect(styles).toContain('.node-metric strong { min-width: 0; margin-left: auto; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--foreground); font-weight: 500')
     expect(styles).toContain('.metric-latency strong { font-weight: 600; }')
     expect(styles).toContain('.latency-target-grid strong { color: var(--foreground); font-size: 20px')
     expect(styles).toContain('font-weight: 600; letter-spacing: -0.03em')
-    expect(styles.match(/font-weight: 600/g) ?? []).toHaveLength(2)
+    expect(styles.match(/font-weight: 600/g) ?? []).toHaveLength(4)
     expect(styles).toContain('.latency-target-grid em { color: var(--muted)')
     expect(styles).toContain('.admin-section-nav button[data-active=\'true\']')
     expect(styles).toContain('background: var(--blue)')
     expect(styles).toContain('.resource-card.tone-green')
+    expect(styles).toContain('.resource-chart-tooltip')
     expect(styles).toContain('.server-flag .fi')
     expect(styles).toContain('.latency-chart-tooltip rect')
     expect(styles).not.toContain('<title>')

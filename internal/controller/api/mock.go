@@ -140,6 +140,21 @@ func resolveKulinLatencyGridWindow(rangeName string) (latencyWindow, bool) {
 	}
 }
 
+func resolveStateWindow(rangeName string) (latencyWindow, bool) {
+	switch rangeName {
+	case "", "1h":
+		return latencyWindow{Name: "1h", Samples: 30, Step: 2 * time.Minute}, true
+	case "1d":
+		return latencyWindow{Name: "1d", Samples: 2880, Step: 30 * time.Second}, true
+	case "7d":
+		return latencyWindow{Name: "7d", Samples: 336, Step: 30 * time.Minute}, true
+	case "30d":
+		return latencyWindow{Name: "30d", Samples: 360, Step: 2 * time.Hour}, true
+	default:
+		return latencyWindow{}, false
+	}
+}
+
 func mockLatencyPoints(nodeID string, rangeNames ...string) []LatencyPoint {
 	window, ok := resolveLatencyWindow("")
 	if len(rangeNames) > 0 {

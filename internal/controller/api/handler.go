@@ -262,13 +262,13 @@ func (h *handler) handlePublicNodeResource(w http.ResponseWriter, r *http.Reques
 	}
 	nodeID := parts[0]
 	rangeName := r.URL.Query().Get("range")
-	window, ok := resolveLatencyWindow(rangeName)
-	if !ok {
-		writeError(w, http.StatusBadRequest, "unsupported range")
-		return
-	}
 	switch parts[1] {
 	case "latency":
+		window, ok := resolveLatencyWindow(rangeName)
+		if !ok {
+			writeError(w, http.StatusBadRequest, "unsupported range")
+			return
+		}
 		if len(parts) == 3 {
 			h.handleNodeLatencyWebSocket(w, r, nodeID, window)
 			return
@@ -280,6 +280,11 @@ func (h *handler) handlePublicNodeResource(w http.ResponseWriter, r *http.Reques
 		}
 		writeJSON(w, http.StatusOK, response)
 	case "state":
+		window, ok := resolveStateWindow(rangeName)
+		if !ok {
+			writeError(w, http.StatusBadRequest, "unsupported range")
+			return
+		}
 		if len(parts) == 3 {
 			h.handleNodeStateWebSocket(w, r, nodeID, window)
 			return

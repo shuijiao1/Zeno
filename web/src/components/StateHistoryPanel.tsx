@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react'
+import { type MouseEvent, type ReactNode, useState } from 'react'
 import type { StatePoint } from '../types'
 import { formatBps, formatPercent } from '../lib/format'
 
@@ -145,6 +145,17 @@ function ResourceMetricCard({ metric, timestamps }: { metric: MetricConfig; time
   const domain = yDomain(metric.lines.flatMap((line) => line.values), metric.domainMax)
   const yTicks = yAxisTicks(domain, metric.unitLabel)
   const timeTicks = stateAxisTicks(timestamps)
+  const [hoverIndex, setHoverIndex] = useState<number | null>(null)
+  const hoverPointCount = timestamps.length
+  const hoverPercent = hoverIndex !== null && hoverPointCount > 1 ? (hoverIndex / (hoverPointCount - 1)) * 100 : 0
+  const hoverTimestamp = hoverIndex !== null ? timestamps[hoverIndex] : null
+
+  const updateHover = (event: MouseEvent<HTMLDivElement>) => {
+    if (hoverPointCount === 0) return
+    const rect = event.currentTarget.getBoundingClientRect()
+    const ratio = rect.width > 0 ? clamp((event.clientX - rect.left) / rect.width, 0, 1) : 0
+    setHoverIndex(Math.round(ratio * Math.max(hoverPointCount - 1, 0)))
+  }
 
   return (
     <article className={`resource-card tone-${metric.tone}`}>
@@ -164,7 +175,7 @@ function ResourceMetricCard({ metric, timestamps }: { metric: MetricConfig; time
         <div className="resource-y-axis" aria-hidden="true">
           {yTicks.map((tick) => <span key={tick}>{tick}</span>)}
         </div>
-        <div className="resource-chart-plot">
+        <div className="resource-chart-plot" onMouseMove={updateHover} onMouseLeave={() => setHoverIndex(null)}>
           <svg className="resource-chart-svg" viewBox={`0 0 ${plotWidth} ${plotHeight}`} preserveAspectRatio="none" role="img" aria-label={`${metric.label} history`}>
             {[0, 0.5, 1].map((ratio) => (
               <line key={ratio} x1={0} x2={plotWidth} y1={ratio * plotHeight} y2={ratio * plotHeight} className="resource-grid-line" vectorEffect="non-scaling-stroke" />
@@ -189,6 +200,21 @@ function ResourceMetricCard({ metric, timestamps }: { metric: MetricConfig; time
               />
             ))}
           </svg>
+          {hoverIndex !== null && hoverTimestamp !== null && (
+            <>
+              <span className="resource-chart-hover-line" style={{ left: `${hoverPercent}%` }} aria-hidden="true" />
+              <div className={`resource-chart-tooltip${hoverPercent < 24 ? ' is-left-edge' : ''}${hoverPercent > 76 ? ' is-right-edge' : ''}`} style={{ left: `${hoverPercent}%` }}>
+                <time>{formatTooltipTime(hoverTimestamp)}</time>
+                {metric.lines.map((line) => (
+                  <span key={line.key}>
+                    <i style={{ backgroundColor: line.color }} />
+                    <b>{line.label}</b>
+                    <strong>{formatTooltipValue(line.values[hoverIndex], metric.unitLabel)}</strong>
+                  </span>
+                ))}
+              </div>
+            </>
+          )}
         </div>
         <div className="resource-x-spacer" aria-hidden="true" />
         <div className="resource-x-axis" aria-hidden="true">
@@ -197,6 +223,10 @@ function ResourceMetricCard({ metric, timestamps }: { metric: MetricConfig; time
       </div>
     </article>
   )
+}
+
+function clamp(value: number, min: number, max: number): number {
+  return Math.min(max, Math.max(min, value))
 }
 
 function MetricValue({ label, value, ariaLabel }: { label: string; value: string; ariaLabel?: string }) {
@@ -338,4 +368,17 @@ function formatAxisValue(value: number, unitLabel: string): string {
   if (unitLabel === '%') return `${Math.round(value)}%`
   if (unitLabel === 'count') return `${Math.round(value)}`
   return value >= 1024 ? formatBps(value).replace('/s', '') : `${Math.round(value)} ${unitLabel}`
+}
+
+function formatTooltipValue(value: number | null | undefined, unitLabel: string): string {
+  if (value === null || value === undefined || !Number.isFinite(value)) return '--'
+  if (unitLabel === '%') return `${value.toFixed(1)}%`
+  if (unitLabel === 'count') return `${Math.round(value)}`
+  return formatBps(value)
+}
+
+function formatTooltipTime(timestamp: number): string {
+  const date = new Date(timestamp)
+  if (Number.isNaN(date.getTime())) return '--'
+  return date.toLocaleString('zh-CN', { hour12: false, month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit' })
 }
