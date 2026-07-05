@@ -784,7 +784,7 @@ function DashboardHeader({ settings = defaultSettings, onHome, onAdmin, adminLab
         <button className="login-link" type="button" onClick={onAdmin}>{adminLabel}</button>
         <button className="nav-icon-button is-solid" type="button" aria-label="language"><MapIcon /></button>
         <button className={`nav-icon-button${currentTheme === 'light' ? ' is-solid' : ''}`} type="button" aria-label={currentTheme === 'dark' ? '切换浅色模式' : '切换深色模式'} onClick={onThemeToggle}><SunIcon /><span className="sr-only">切换深浅色</span></button>
-        <button className={`nav-icon-button${backgroundEnabled ? '' : ' is-muted'}`} type="button" aria-label={backgroundEnabled ? '关闭背景图' : '开启背景图'} onClick={onBackgroundToggle}><ImageMinusIcon /><span className="sr-only">开关背景图</span></button>
+        <button className={`nav-icon-button${backgroundEnabled ? ' is-solid' : ''}`} type="button" aria-label={backgroundEnabled ? '关闭背景图' : '开启背景图'} onClick={onBackgroundToggle}><ImageMinusIcon /><span className="sr-only">开关背景图</span></button>
         {trailingAction}
       </nav>
     </header>
@@ -1110,14 +1110,7 @@ function AdminSettingsSection({ settings, onUpdate }: { settings: AdminSettings;
         </AdminFormSection>
         <AdminFormSection title="主题与背景">
           <div className="admin-form-grid">
-            <label>
-              <span>主题</span>
-              <select name="theme" defaultValue={settings.theme}>
-                <option value="system">跟随系统</option>
-                <option value="dark">深色</option>
-                <option value="light">浅色</option>
-              </select>
-            </label>
+            <AdminSegmentedField name="theme" label="主题" defaultValue={settings.theme} options={themeOptions} />
             <label>
               <span>电脑端背景图 URL</span>
               <input name="desktop-background-url" autoComplete="off" defaultValue={settings.desktopBackgroundUrl || settings.backgroundUrl} placeholder="可留空" />
@@ -1424,15 +1417,7 @@ function AdminNodeCreateModal({ onCreate, onInstallCommand, onClose }: { onCreat
               <span>账单周期</span>
               <input name="new-billing-cycle" autoComplete="off" placeholder="月付 / 年付" disabled={Boolean(createdNode)} />
             </label>
-            <label>
-              <span>流量计费口径</span>
-              <select name="new-billing-mode" defaultValue="both" disabled={Boolean(createdNode)}>
-                <option value="both">入站 + 出站</option>
-                <option value="in">只算入站</option>
-                <option value="out">只算出站</option>
-                <option value="max">入/出取较大值</option>
-              </select>
-            </label>
+            <AdminSegmentedField name="new-billing-mode" label="流量计费口径" defaultValue="both" options={billingModeOptions} disabled={Boolean(createdNode)} />
             <label>
               <span>月流量重置日</span>
               <input name="new-monthly-reset-day" type="number" min="1" max="31" step="1" defaultValue="1" disabled={Boolean(createdNode)} />
@@ -1568,15 +1553,7 @@ function AdminNodeEditModal({ node, targets, onUpdate, onTargetUpdate, onInstall
               <span>账单周期</span>
               <input name="billing-cycle" defaultValue={node.billingCycle ?? ''} autoComplete="off" />
             </label>
-            <label>
-              <span>流量计费口径</span>
-              <select name="billing-mode" defaultValue={node.billingMode || 'both'}>
-                <option value="both">入站 + 出站</option>
-                <option value="in">只算入站</option>
-                <option value="out">只算出站</option>
-                <option value="max">入/出取较大值</option>
-              </select>
-            </label>
+            <AdminSegmentedField name="billing-mode" label="流量计费口径" defaultValue={node.billingMode || 'both'} options={billingModeOptions} />
             <label>
               <span>月流量重置日</span>
               <input name="monthly-reset-day" type="number" min="1" max="31" step="1" defaultValue={node.monthlyResetDay || 1} />
@@ -1716,14 +1693,7 @@ function AdminTargetCreateModal({ onCreate, onClose }: { onCreate: (input: Admin
               <span>目标名称</span>
               <input name="new-target-name" autoComplete="off" placeholder="Example HTTPS" />
             </label>
-            <label>
-              <span>类型</span>
-              <select name="new-target-type" value={targetType} onChange={(event) => setTargetType(normalizeTargetFormType(event.currentTarget.value))}>
-                <option value="tcping">TCP Ping</option>
-                <option value="ping">ICMP Ping</option>
-                <option value="http_get">HTTP GET</option>
-              </select>
-            </label>
+            <AdminSegmentedField name="new-target-type" label="类型" value={targetType} onChange={(value) => setTargetType(normalizeTargetFormType(value))} options={targetTypeOptions} />
             <label>
               <span>地址</span>
               <input name="new-target-address" autoComplete="off" placeholder="example.com" />
@@ -1803,14 +1773,7 @@ function AdminTargetEditModal({ target, nodes, onUpdate, onClose }: { target: Ad
               <span>目标名</span>
               <input name="target-name" defaultValue={target.name} autoComplete="off" />
             </label>
-            <label>
-              <span>类型</span>
-              <select name="target-type" value={targetType} onChange={(event) => setTargetType(normalizeTargetFormType(event.currentTarget.value))}>
-                <option value="tcping">TCP Ping</option>
-                <option value="ping">ICMP Ping</option>
-                <option value="http_get">HTTP GET</option>
-              </select>
-            </label>
+            <AdminSegmentedField name="target-type" label="类型" value={targetType} onChange={(value) => setTargetType(normalizeTargetFormType(value))} options={targetTypeOptions} />
             <label>
               <span>地址</span>
               <input name="target-address" defaultValue={target.address} autoComplete="off" />
@@ -2205,11 +2168,53 @@ function AdminModal({ title, eyebrow, onClose, children }: { title: string; eyeb
 
 function AdminFormSection({ title, description, children }: { title: string; description?: string; children: ReactNode }) {
   return (
-    <fieldset className="admin-form-section">
-      <legend>{title}</legend>
+    <section className="admin-form-section" aria-label={title}>
+      <h4 className="admin-form-section-title">{title}</h4>
       {description && <p className="admin-form-section-note">{description}</p>}
       {children}
-    </fieldset>
+    </section>
+  )
+}
+
+const themeOptions = [
+  { value: 'system', label: '跟随系统' },
+  { value: 'dark', label: '深色' },
+  { value: 'light', label: '浅色' },
+]
+
+const billingModeOptions = [
+  { value: 'both', label: '入站 + 出站' },
+  { value: 'in', label: '只算入站' },
+  { value: 'out', label: '只算出站' },
+  { value: 'max', label: '入/出取较大值' },
+]
+
+const targetTypeOptions = [
+  { value: 'tcping', label: 'TCP Ping' },
+  { value: 'ping', label: 'ICMP Ping' },
+  { value: 'http_get', label: 'HTTP GET' },
+]
+
+function AdminSegmentedField({ name, label, options, value, defaultValue, disabled = false, onChange }: { name: string; label: string; options: Array<{ value: string; label: string }>; value?: string; defaultValue?: string; disabled?: boolean; onChange?: (value: string) => void }) {
+  const [internalValue, setInternalValue] = useState(defaultValue ?? options[0]?.value ?? '')
+  const selectedValue = value ?? internalValue
+  const setSelectedValue = (nextValue: string) => {
+    if (disabled) return
+    if (value === undefined) setInternalValue(nextValue)
+    onChange?.(nextValue)
+  }
+  return (
+    <div className={`admin-form-control admin-segmented-field${disabled ? ' is-disabled' : ''}`}>
+      <span>{label}</span>
+      <input type="hidden" name={name} value={selectedValue} disabled={disabled} />
+      <div className="admin-segmented-options" role="radiogroup" aria-label={label}>
+        {options.map((option) => (
+          <button key={option.value} type="button" role="radio" aria-checked={selectedValue === option.value} data-active={selectedValue === option.value} disabled={disabled} onClick={() => setSelectedValue(option.value)}>
+            {option.label}
+          </button>
+        ))}
+      </div>
+    </div>
   )
 }
 
