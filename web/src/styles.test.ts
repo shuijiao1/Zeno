@@ -25,8 +25,10 @@ describe('mobile server detail layout', () => {
     expect(styles).toContain('.detail-fact-strip { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; }')
     expect(styles).toContain('.detail-fact.is-wide { grid-column: 1 / -1; min-height: 54px; padding: 8px 9px; }')
     expect(styles).toContain('.detail-fact:not(.is-wide) strong { overflow: visible; text-overflow: clip; white-space: normal; overflow-wrap: anywhere; }')
-    expect(styles).toContain('.monitor-heading { padding: 16px 14px 10px; flex-direction: column; align-items: stretch; gap: 10px; }')
-    expect(styles).toContain('.resource-history-header { padding: 16px 14px 10px; flex-direction: column; align-items: stretch; gap: 10px; }')
+    expect(styles).toContain('.monitor-heading { padding: 16px 14px 10px; flex-direction: row; align-items: flex-start; gap: 8px; }')
+    expect(styles).toContain('.monitor-heading-actions { width: auto; flex: none; flex-wrap: nowrap; align-items: flex-start; justify-content: flex-end; margin-left: auto; }')
+    expect(styles).toContain('.resource-history-header { padding: 16px 14px 10px; flex-direction: row; align-items: flex-start; gap: 8px; }')
+    expect(styles).toContain('.resource-range-row { width: auto; flex: none; flex-wrap: nowrap; justify-content: flex-end; margin-left: auto; }')
   })
 })
 
