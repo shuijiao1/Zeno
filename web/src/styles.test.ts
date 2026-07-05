@@ -120,6 +120,8 @@ describe('state history layout', () => {
     expect(styles).toContain('.state-sparkline--large')
     expect(styles).toContain('.state-history-chart-card .state-sparkline--large { flex: 1 1 auto; min-height: 112px; }')
     expect(styles).toContain('.state-sparkline__area { opacity: .18; stroke: none; pointer-events: none; }')
+    expect(styles).toContain('.state-history-card__meta { align-items: flex-start; gap: 8px; }')
+    expect(styles).toContain('.state-history-card__meta strong { align-items: flex-end; text-align: right; font-size: 13px; }')
   })
 
   it('keeps uptime and load as compact pill badges in the top server card', () => {
