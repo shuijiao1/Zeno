@@ -487,6 +487,31 @@ export async function fetchSummary(): Promise<SummaryData> {
 }
 
 export function subscribeSummary(onSummary: (summary: SummaryData) => void, onError?: (error: Error) => void): (() => void) | null {
+  if (typeof WebSocket !== 'undefined') {
+    let closedByClient = false
+    const baseURL = typeof window === 'undefined' ? 'http://localhost/' : window.location.href
+    const url = new URL('/api/public/v1/summary/ws', baseURL)
+    url.protocol = url.protocol === 'https:' ? 'wss:' : 'ws:'
+    const socket = new WebSocket(url.toString())
+    socket.onmessage = (event) => {
+      try {
+        if (typeof event.data !== 'string') throw new Error('summary websocket message must be text')
+        onSummary(normalizeSummary(JSON.parse(event.data) as ApiSummaryResponse))
+      } catch (error) {
+        onError?.(error instanceof Error ? error : new Error('summary websocket parse failed'))
+      }
+    }
+    socket.onerror = () => {
+      if (!closedByClient) onError?.(new Error('summary websocket disconnected'))
+    }
+    socket.onclose = () => {
+      if (!closedByClient) onError?.(new Error('summary websocket closed'))
+    }
+    return () => {
+      closedByClient = true
+      socket.close()
+    }
+  }
   if (typeof EventSource === 'undefined') return null
   const source = new EventSource('/api/public/v1/summary/stream')
   source.addEventListener('summary', (event) => {

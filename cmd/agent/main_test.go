@@ -12,8 +12,11 @@ import (
 )
 
 func TestDefaultReportIntervalIsRealtimeFriendly(t *testing.T) {
-	if defaultReportInterval != 15*time.Second {
-		t.Fatalf("default report interval = %s, want 15s", defaultReportInterval)
+	if defaultReportInterval != 2*time.Second {
+		t.Fatalf("default report interval = %s, want 2s", defaultReportInterval)
+	}
+	if defaultFullReportInterval != 15*time.Second {
+		t.Fatalf("default full report interval = %s, want 15s", defaultFullReportInterval)
 	}
 }
 
@@ -52,6 +55,29 @@ func TestReportOnceAddsDiscoveredNetworkIdentityToHost(t *testing.T) {
 	}
 	if hostPayload.PublicIPv4 != "198.51.100.8" || hostPayload.PublicIPv6 != "2001:db8::8" || hostPayload.CountryCode != "JP" {
 		t.Fatalf("host identity = %+v, want discovered network identity", hostPayload)
+	}
+}
+
+func TestReportStateOnlyPostsStateWithoutHeartbeatOrProbeFetch(t *testing.T) {
+	var statePosts int
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/agent/v1/state":
+			statePosts++
+			w.WriteHeader(http.StatusAccepted)
+		default:
+			t.Fatalf("unexpected path %s", r.URL.Path)
+		}
+	}))
+	defer server.Close()
+
+	client := agent.NewClient(server.URL, "hytron", "token")
+	collector := agent.NewMetricsCollector()
+	if err := reportStateOnly(context.Background(), client, collector); err != nil {
+		t.Fatalf("reportStateOnly: %v", err)
+	}
+	if statePosts != 1 {
+		t.Fatalf("state posts = %d, want 1", statePosts)
 	}
 }
 

@@ -4,7 +4,10 @@ go 1.24.0
 
 toolchain go1.24.4
 
-require modernc.org/sqlite v1.45.0
+require (
+	github.com/gorilla/websocket v1.5.3
+	modernc.org/sqlite v1.45.0
+)
 
 require (
 	github.com/dustin/go-humanize v1.0.1 // indirect

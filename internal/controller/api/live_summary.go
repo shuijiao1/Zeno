@@ -6,8 +6,12 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
+	"strings"
 	"sync"
 	"time"
+
+	"github.com/gorilla/websocket"
 )
 
 type liveSummaryHub struct {
@@ -102,6 +106,78 @@ func (h *handler) handleSummaryStream(w http.ResponseWriter, r *http.Request) {
 		case <-keepAlive.C:
 			_, _ = io.WriteString(w, ": keepalive\n\n")
 			flusher.Flush()
+		}
+	}
+}
+
+var summaryWebSocketUpgrader = websocket.Upgrader{
+	ReadBufferSize:  32 * 1024,
+	WriteBufferSize: 32 * 1024,
+	CheckOrigin: func(r *http.Request) bool {
+		origin := r.Header.Get("Origin")
+		if origin == "" {
+			return true
+		}
+		parsed, err := url.Parse(origin)
+		if err != nil {
+			return false
+		}
+		return strings.EqualFold(parsed.Host, r.Host)
+	},
+}
+
+func (h *handler) handleSummaryWebSocket(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+	initial, err := h.summaryJSON(r.Context())
+	if err != nil {
+		writeStoreError(w, err)
+		return
+	}
+	conn, err := summaryWebSocketUpgrader.Upgrade(w, r, nil)
+	if err != nil {
+		return
+	}
+	defer conn.Close()
+
+	updates, unsubscribe := h.summaryHub.subscribe()
+	defer unsubscribe()
+
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		conn.SetReadLimit(1024)
+		for {
+			if _, _, err := conn.NextReader(); err != nil {
+				return
+			}
+		}
+	}()
+
+	if err := conn.WriteMessage(websocket.TextMessage, initial); err != nil {
+		return
+	}
+	ping := time.NewTicker(25 * time.Second)
+	defer ping.Stop()
+	for {
+		select {
+		case <-r.Context().Done():
+			return
+		case <-done:
+			return
+		case payload, ok := <-updates:
+			if !ok {
+				return
+			}
+			if err := conn.WriteMessage(websocket.TextMessage, payload); err != nil {
+				return
+			}
+		case <-ping.C:
+			if err := conn.WriteControl(websocket.PingMessage, []byte{}, time.Now().Add(5*time.Second)); err != nil {
+				return
+			}
 		}
 	}
 }

@@ -13,6 +13,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/gorilla/websocket"
 )
 
 func TestHealthEndpoint(t *testing.T) {
@@ -135,6 +137,64 @@ func TestSummaryStreamPublishesAgentStateUpdates(t *testing.T) {
 	update := readSSEEvent(t, reader)
 	if !strings.Contains(update, "event: summary") || !strings.Contains(update, `"net_in_speed_bps":1234`) || !strings.Contains(update, `"net_out_speed_bps":5678`) {
 		t.Fatalf("stream update = %q, want latest agent speeds", update)
+	}
+}
+
+func TestSummaryWebSocketPublishesAgentStateUpdates(t *testing.T) {
+	store, err := OpenSQLiteStore(filepath.Join(t.TempDir(), "zeno.db"))
+	if err != nil {
+		t.Fatalf("open sqlite store: %v", err)
+	}
+	defer store.Close()
+	ctx := context.Background()
+	if err := store.SeedPreviewData(ctx, PreviewSeedOptions{NodeID: "hytron", DisplayName: "Hytron", CountryCode: "HK", AgentToken: "test-agent-token"}); err != nil {
+		t.Fatalf("seed preview data: %v", err)
+	}
+
+	server := httptest.NewServer(NewHandler(HandlerOptions{Store: store}))
+	defer server.Close()
+
+	wsURL := "ws" + strings.TrimPrefix(server.URL, "http") + "/api/public/v1/summary/ws"
+	conn, response, err := websocket.DefaultDialer.Dial(wsURL, nil)
+	if err != nil {
+		t.Fatalf("open summary websocket: %v", err)
+	}
+	if response != nil && response.Body != nil {
+		defer response.Body.Close()
+	}
+	defer conn.Close()
+
+	_, initial, err := conn.ReadMessage()
+	if err != nil {
+		t.Fatalf("read initial websocket summary: %v", err)
+	}
+	if !strings.Contains(string(initial), `"nodes"`) {
+		t.Fatalf("initial websocket message = %q, want summary payload", string(initial))
+	}
+
+	payload := []byte(`{"ts":` + strconv.FormatInt(time.Now().UTC().Unix(), 10) + `,"cpu_percent":12.5,"memory_used_bytes":100,"memory_total_bytes":200,"disk_used_bytes":300,"disk_total_bytes":400,"net_in_total_bytes":1000,"net_out_total_bytes":2000,"net_in_speed_bps":4321,"net_out_speed_bps":8765,"uptime_seconds":60}`)
+	request, err := http.NewRequest(http.MethodPost, server.URL+"/api/agent/v1/state", bytes.NewReader(payload))
+	if err != nil {
+		t.Fatalf("new state request: %v", err)
+	}
+	request.Header.Set("X-Node-ID", "hytron")
+	request.Header.Set("Authorization", "Bearer test-agent-token")
+	request.Header.Set("Content-Type", "application/json")
+	stateResponse, err := server.Client().Do(request)
+	if err != nil {
+		t.Fatalf("post agent state: %v", err)
+	}
+	defer stateResponse.Body.Close()
+	if stateResponse.StatusCode != http.StatusAccepted {
+		t.Fatalf("state status = %d, want 202; body=%s", stateResponse.StatusCode, readAllString(t, stateResponse.Body))
+	}
+
+	_, update, err := conn.ReadMessage()
+	if err != nil {
+		t.Fatalf("read updated websocket summary: %v", err)
+	}
+	if !strings.Contains(string(update), `"net_in_speed_bps":4321`) || !strings.Contains(string(update), `"net_out_speed_bps":8765`) {
+		t.Fatalf("websocket update = %q, want latest agent speeds", string(update))
 	}
 }
 

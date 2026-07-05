@@ -90,14 +90,56 @@ describe('normalizeSummary', () => {
 })
 
 describe('subscribeSummary', () => {
+  const originalWebSocket = globalThis.WebSocket
   const originalEventSource = globalThis.EventSource
 
   afterEach(() => {
+    Object.defineProperty(globalThis, 'WebSocket', { configurable: true, writable: true, value: originalWebSocket })
     Object.defineProperty(globalThis, 'EventSource', { configurable: true, writable: true, value: originalEventSource })
     vi.restoreAllMocks()
   })
 
-  it('normalizes summary stream events and closes the stream', () => {
+  it('prefers websocket summary events and closes the socket', () => {
+    const instances: any[] = []
+    class FakeWebSocket {
+      url: string
+      onmessage: ((event: MessageEvent<string>) => void) | null = null
+      onerror: (() => void) | null = null
+      onclose: (() => void) | null = null
+      close = vi.fn(() => this.onclose?.())
+
+      constructor(url: string) {
+        this.url = url
+        instances.push(this)
+      }
+
+      emitSummary(payload: unknown) {
+        this.onmessage?.({ data: JSON.stringify(payload) } as MessageEvent<string>)
+      }
+    }
+    Object.defineProperty(globalThis, 'WebSocket', { configurable: true, writable: true, value: FakeWebSocket })
+
+    const onSummary = vi.fn()
+    const onError = vi.fn()
+    const unsubscribe = subscribeSummary(onSummary, onError)
+
+    expect(new URL(instances[0].url).pathname).toBe('/api/public/v1/summary/ws')
+    expect(new URL(instances[0].url).protocol).toBe('ws:')
+    instances[0].emitSummary({
+      nodes: [{ id: 'hytron', display_name: 'Hytron', status: 'online', os: 'debian', country_code: 'HK', cpu_percent: 1, memory_used_bytes: 2, memory_total_bytes: 4, disk_used_bytes: 8, disk_total_bytes: 16, net_in_speed_bps: 32, net_out_speed_bps: 64, net_in_total_bytes: 128, net_out_total_bytes: 256, monthly_billable_bytes: 384, monthly_quota_bytes: 512 }],
+      services: [],
+      latency_points: [],
+    })
+
+    expect(onSummary).toHaveBeenCalledWith(expect.objectContaining({
+      nodes: [expect.objectContaining({ id: 'hytron', displayName: 'Hytron', netOutSpeedBps: 64 })],
+    }))
+    unsubscribe?.()
+    expect(instances[0].close).toHaveBeenCalled()
+    expect(onError).not.toHaveBeenCalled()
+  })
+
+  it('falls back to eventsource when websocket is unavailable', () => {
     const instances: any[] = []
     class FakeEventSource {
       url: string
@@ -117,6 +159,7 @@ describe('subscribeSummary', () => {
         this.listeners.get('summary')?.({ data: JSON.stringify(payload) } as MessageEvent<string>)
       }
     }
+    Object.defineProperty(globalThis, 'WebSocket', { configurable: true, writable: true, value: undefined })
     Object.defineProperty(globalThis, 'EventSource', { configurable: true, writable: true, value: FakeEventSource })
 
     const onSummary = vi.fn()

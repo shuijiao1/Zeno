@@ -12,7 +12,8 @@ import (
 )
 
 const defaultVersion = "zeno-agent-dev"
-const defaultReportInterval = 15 * time.Second
+const defaultReportInterval = 2 * time.Second
+const defaultFullReportInterval = 15 * time.Second
 
 type config struct {
 	ControllerURL           string
@@ -31,7 +32,7 @@ func main() {
 	flag.StringVar(&cfg.NodeID, "node-id", "hytron", "agent node id")
 	flag.StringVar(&cfg.Token, "token", "", "agent bearer token; prefer -token-file")
 	flag.StringVar(&cfg.TokenFile, "token-file", "", "file containing the agent bearer token")
-	flag.DurationVar(&cfg.Interval, "interval", defaultReportInterval, "host/state refresh interval; probe targets keep their own configured intervals")
+	flag.DurationVar(&cfg.Interval, "interval", defaultReportInterval, "state refresh interval; host heartbeat and probe target refresh run every 15s")
 	flag.BoolVar(&cfg.Once, "once", false, "collect and report once, then exit")
 	flag.StringVar(&cfg.Version, "version", defaultVersion, "agent version string reported to controller")
 	flag.DurationVar(&cfg.IdentityRefreshInterval, "identity-refresh-interval", 6*time.Hour, "public IPv4/IPv6 and GeoIP refresh interval; best-effort and cached")
@@ -63,12 +64,21 @@ func run(ctx context.Context, cfg config) error {
 	}
 	ticker := time.NewTicker(cfg.Interval)
 	defer ticker.Stop()
+	lastFullReport := time.Now().UTC()
 	for {
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
-		case <-ticker.C:
-			if err := reportOnce(ctx, client, collector, cfg.Version, true, scheduler, identityDiscoverer); err != nil {
+		case tick := <-ticker.C:
+			if !tick.UTC().Before(lastFullReport.Add(defaultFullReportInterval)) {
+				if err := reportOnce(ctx, client, collector, cfg.Version, true, scheduler, identityDiscoverer); err != nil {
+					log.Printf("report failed: %v", err)
+				} else {
+					lastFullReport = tick.UTC()
+				}
+				continue
+			}
+			if err := reportStateOnly(ctx, client, collector); err != nil {
 				log.Printf("report failed: %v", err)
 			}
 		}
@@ -118,6 +128,11 @@ func reportOnce(ctx context.Context, client *agent.Client, collector *agent.Metr
 	}
 	log.Printf("reported host/state and %d probe target(s)", len(dueTargets))
 	return nil
+}
+
+func reportStateOnly(ctx context.Context, client *agent.Client, collector *agent.MetricsCollector) error {
+	now := time.Now().UTC()
+	return client.PostState(ctx, collector.CollectState(now))
 }
 
 func readToken(token, tokenFile string) (string, error) {

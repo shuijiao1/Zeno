@@ -17,7 +17,7 @@ Options:
   --controller-addr <addr>      Default: 0.0.0.0:18980
   --controller-url <url>        Default: http://127.0.0.1:18980
   --node-id <id>                Default: hytron
-  --agent-interval <duration>   Default: 15s
+  --agent-interval <duration>   Default: 2s
   --agent-token-file <path>     Default: <data-dir>/agent-token
   --admin-token-file <path>     Default: <data-dir>/admin-token
   --seed-preview                Pass -seed-preview to Controller
@@ -36,7 +36,7 @@ run_user="root"
 controller_addr="0.0.0.0:18980"
 controller_url="http://127.0.0.1:18980"
 node_id="hytron"
-agent_interval="15s"
+agent_interval="2s"
 agent_token_file=""
 admin_token_file=""
 seed_preview=0
