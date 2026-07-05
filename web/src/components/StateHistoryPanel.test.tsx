@@ -67,6 +67,8 @@ describe('StateHistoryPanel', () => {
     expect(html).toContain('state-history-stack')
     expect(html).toContain('state-history-chart-card')
     expect(html).toContain('viewBox="0 0 900 164"')
+    expect(html).toContain('x1="64"')
+    expect(html).toContain('x="8" y="20" class="state-sparkline__axis" text-anchor="start"')
     expect(html).toContain('class="state-sparkline__axis" text-anchor="start"')
     expect(html).not.toContain('class="state-sparkline__axis" text-anchor="end"')
     expect(html).toContain('state-sparkline__time-axis')
