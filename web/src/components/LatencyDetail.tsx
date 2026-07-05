@@ -180,7 +180,7 @@ function formatSystemSpec(node: HomeCardNode): string {
 }
 
 function formatCpuSpec(node: HomeCardNode): string {
-  return [formatPercent(node.cpuPercent), node.cpuModel || '--', formatCores(node.cpuCores), node.virtualization || '--'].filter(Boolean).join(' · ')
+  return [formatPercent(node.cpuPercent), node.cpuModel || '--', formatCores(node.cpuCores)].filter(Boolean).join(' · ')
 }
 
 function formatCores(value: number | null | undefined): string {
