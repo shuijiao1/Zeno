@@ -1409,8 +1409,8 @@ svg { display: block; }
 
 .latency-target-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
-  gap: 7px;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 6px;
   padding: 0 24px 18px;
   border-top: 0;
 }
@@ -1646,20 +1646,20 @@ svg { display: block; }
   .resource-card-title { font-size: 14px; }
   .resource-card-value { font-size: 13px; }
   .resource-chart-frame { grid-template-columns: 46px minmax(0, 1fr); min-height: 138px; }
-  .latency-target-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); padding: 0 12px 12px; }
+  .latency-target-grid { grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 4px; padding: 0 12px 12px; }
   .latency-target-grid button {
     min-width: 0;
     display: flex;
     flex-direction: column;
-    min-height: 62px;
+    min-height: 52px;
     align-items: center;
     gap: 2px;
-    padding: 7px 6px;
+    padding: 6px 3px;
     text-align: center;
   }
-  .latency-target-grid span { max-width: 100%; font-size: 11px; }
-  .latency-target-grid strong { font-size: 16px; }
-  .latency-target-grid em { font-size: 10px; }
+  .latency-target-grid span { max-width: 100%; font-size: 8.5px; }
+  .latency-target-grid strong { font-size: 12px; }
+  .latency-target-grid em { font-size: 8px; }
   .latency-panel { margin: 16px 12px; padding: 14px 12px; }
   .latency-panel__header { align-items: flex-start; flex-direction: column; gap: 8px; }
 }

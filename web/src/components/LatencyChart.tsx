@@ -15,6 +15,7 @@ interface LatencyChartProps {
   eyebrow?: string
   title?: string
   compactHeader?: boolean
+  hideHeader?: boolean
   peakCut?: boolean
   activeTargetNames?: string[]
 }
@@ -29,6 +30,7 @@ export function LatencyChart({
   eyebrow = 'Latency',
   title = '多目标延迟图',
   compactHeader = false,
+  hideHeader = false,
   peakCut = false,
   activeTargetNames = [],
 }: LatencyChartProps) {
@@ -66,20 +68,22 @@ export function LatencyChart({
 
   return (
     <section className={`latency-panel${compactHeader ? ' is-compact' : ''}`}>
-      <div className="latency-panel__header">
-        <div>
-          <p className="eyebrow">{eyebrow}</p>
-          <h2>{title}</h2>
-        </div>
-        {!compactHeader && (
-          <div className="range-tabs" aria-label="range selector">
-            <button className="is-active">1h</button>
-            <button>6h</button>
-            <button>24h</button>
-            <button>7d</button>
+      {!hideHeader && (
+        <div className="latency-panel__header">
+          <div>
+            <p className="eyebrow">{eyebrow}</p>
+            <h2>{title}</h2>
           </div>
-        )}
-      </div>
+          {!compactHeader && (
+            <div className="range-tabs" aria-label="range selector">
+              <button className="is-active">1h</button>
+              <button>6h</button>
+              <button>24h</button>
+              <button>7d</button>
+            </div>
+          )}
+        </div>
+      )}
 
       <svg className="latency-chart" viewBox={`0 0 ${width} ${height}`} role="img" aria-label="latency chart" onMouseLeave={() => setHoverColumn(null)}>
         <defs>

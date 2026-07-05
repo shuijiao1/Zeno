@@ -91,7 +91,8 @@ describe('LatencyDetail', () => {
     expect(html).toContain('系统资源历史')
     expect(html).not.toContain('实时 · 1 个状态采样')
     expect(html).not.toContain('个状态采样')
-    expect(html).toContain('Hytron 网络延迟')
+    expect(html).not.toContain('Hytron 网络延迟')
+    expect(html).not.toContain('1 天 · 0 个监控服务')
     expect(html).toContain('monitor services')
   })
 

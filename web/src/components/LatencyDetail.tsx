@@ -140,6 +140,7 @@ export function LatencyDetail({
               title={`${node.displayName} 网络延迟`}
               eyebrow={`${rangeLabel} · ${targetSummaries.length} 个监控服务${peakCut ? ' · 削峰' : ''}`}
               compactHeader
+              hideHeader
               peakCut={peakCut}
               activeTargetNames={activeTargetNames}
             />

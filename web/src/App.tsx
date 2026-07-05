@@ -1,6 +1,6 @@
-import { type CSSProperties, type DragEvent, type FormEvent, type ReactNode, useEffect, useState } from 'react'
+import { type CSSProperties, type DragEvent, type FormEvent, type ReactNode, useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { createAdminNode, createAdminNotificationChannel, createAdminProbeTarget, deleteAdminNode, deleteAdminNotificationChannel, deleteAdminProbeTarget, fetchAdminAccount, fetchAdminAlertRules, fetchAdminNodes, fetchAdminNotificationChannels, fetchAdminProbeTargets, fetchAdminSettings, fetchPublicSettings, subscribeNodeLatency, subscribeNodeState, subscribeServiceLatency, subscribeSummary, loginAdmin, logoutAdmin, requestAdminNodeInstallCommand, testAdminNotificationChannel, updateAdminAccount, updateAdminAlertRule, updateAdminNode, updateAdminNotificationChannel, updateAdminNotificationType, updateAdminProbeTarget, updateAdminSettings, type AdminAccountData, type AdminAlertRuleUpdateInput, type AdminNodeCreateInput, type AdminNodeUpdateInput, type AdminNotificationChannelCreateInput, type AdminNotificationChannelUpdateInput, type AdminProbeTargetInput, type AdminProbeTargetUpdateInput, type AdminSettingsUpdateInput, type NodeLatencyData, type NodeStateData, type ServiceLatencyData, type SummaryData } from './api/client'
+import { createAdminNode, createAdminNotificationChannel, createAdminProbeTarget, deleteAdminNode, deleteAdminNotificationChannel, deleteAdminProbeTarget, fetchAdminAccount, fetchAdminAlertRules, fetchAdminNodes, fetchAdminNotificationChannels, fetchAdminProbeTargets, fetchAdminSettings, fetchNodeLatency, fetchNodeState, fetchPublicSettings, subscribeNodeLatency, subscribeNodeState, subscribeServiceLatency, subscribeSummary, loginAdmin, logoutAdmin, requestAdminNodeInstallCommand, testAdminNotificationChannel, updateAdminAccount, updateAdminAlertRule, updateAdminNode, updateAdminNotificationChannel, updateAdminNotificationType, updateAdminProbeTarget, updateAdminSettings, type AdminAccountData, type AdminAlertRuleUpdateInput, type AdminNodeCreateInput, type AdminNodeUpdateInput, type AdminNotificationChannelCreateInput, type AdminNotificationChannelUpdateInput, type AdminProbeTargetInput, type AdminProbeTargetUpdateInput, type AdminSettingsUpdateInput, type NodeLatencyData, type NodeStateData, type ServiceLatencyData, type SummaryData } from './api/client'
 import { LatencyDetail } from './components/LatencyDetail'
 import { LatencyChart } from './components/LatencyChart'
 import { ServerCard } from './components/ServerCard'
@@ -131,6 +131,8 @@ export function App() {
   const [latencyState, setLatencyState] = useState<LatencyLoadState>({ kind: 'idle' })
   const [stateHistoryState, setStateHistoryState] = useState<StateHistoryLoadState>({ kind: 'idle' })
   const [serviceLatencyState, setServiceLatencyState] = useState<ServiceLatencyLoadState>({ kind: 'idle' })
+  const nodeLatencyCacheRef = useRef(new Map<string, NodeLatencyData>())
+  const nodeStateCacheRef = useRef(new Map<string, NodeStateData>())
   const [adminToken, setAdminToken] = useState(() => window.sessionStorage.getItem('zeno_admin_token') ?? '')
   const [adminAuthState, setAdminAuthState] = useState<AdminAuthState>({ kind: 'idle' })
   const [adminState, setAdminState] = useState<AdminLoadState>({ kind: 'idle' })
@@ -180,15 +182,30 @@ export function App() {
     }
 
     let cancelled = false
-    setLatencyState({ kind: 'loading' })
+    const cacheKey = `${route.nodeId}:${nodeLatencyRange}`
+    const cached = nodeLatencyCacheRef.current.get(cacheKey)
+    if (cached) {
+      setLatencyState({ kind: 'ready', data: cached })
+    } else {
+      setLatencyState((current) => (current.kind === 'ready' && current.data.nodeId === route.nodeId ? current : { kind: 'loading' }))
+    }
+    fetchNodeLatency(route.nodeId, nodeLatencyRange)
+      .then((data) => {
+        nodeLatencyCacheRef.current.set(cacheKey, data)
+        if (!cancelled) setLatencyState({ kind: 'ready', data })
+      })
+      .catch((error: unknown) => {
+        if (!cancelled) setLatencyState((current) => (current.kind === 'ready' ? current : { kind: 'error', message: error instanceof Error ? error.message : 'unknown error' }))
+      })
     const stopLatencyStream = subscribeNodeLatency(
       route.nodeId,
       nodeLatencyRange,
       (data) => {
+        nodeLatencyCacheRef.current.set(cacheKey, data)
         if (!cancelled) setLatencyState({ kind: 'ready', data })
       },
       (error) => {
-        if (!cancelled) setLatencyState({ kind: 'error', message: error.message })
+        if (!cancelled) setLatencyState((current) => (current.kind === 'ready' ? current : { kind: 'error', message: error.message }))
       },
     )
     if (!stopLatencyStream) setLatencyState({ kind: 'error', message: 'websocket unsupported' })
@@ -205,21 +222,70 @@ export function App() {
     }
 
     let cancelled = false
-    setStateHistoryState({ kind: 'loading' })
+    const cacheKey = `${route.nodeId}:${stateRange}`
+    const cached = nodeStateCacheRef.current.get(cacheKey)
+    if (cached) {
+      setStateHistoryState({ kind: 'ready', data: cached })
+    } else {
+      setStateHistoryState((current) => (current.kind === 'ready' && current.data.nodeId === route.nodeId ? current : { kind: 'loading' }))
+    }
+    fetchNodeState(route.nodeId, stateRange)
+      .then((data) => {
+        nodeStateCacheRef.current.set(cacheKey, data)
+        if (!cancelled) setStateHistoryState({ kind: 'ready', data })
+      })
+      .catch((error: unknown) => {
+        if (!cancelled) setStateHistoryState((current) => (current.kind === 'ready' ? current : { kind: 'error', message: error instanceof Error ? error.message : 'unknown error' }))
+      })
     const stopStateStream = subscribeNodeState(
       route.nodeId,
       stateRange,
       (data) => {
+        nodeStateCacheRef.current.set(cacheKey, data)
         if (!cancelled) setStateHistoryState({ kind: 'ready', data })
       },
       (error) => {
-        if (!cancelled) setStateHistoryState({ kind: 'error', message: error.message })
+        if (!cancelled) setStateHistoryState((current) => (current.kind === 'ready' ? current : { kind: 'error', message: error.message }))
       },
     )
     if (!stopStateStream) setStateHistoryState({ kind: 'error', message: 'websocket unsupported' })
     return () => {
       cancelled = true
       stopStateStream?.()
+    }
+  }, [route, stateRange])
+
+  useEffect(() => {
+    if (route.kind !== 'node') return
+    let cancelled = false
+    for (const range of ['1d', '7d', '30d']) {
+      const cacheKey = `${route.nodeId}:${range}`
+      if (range === nodeLatencyRange || nodeLatencyCacheRef.current.has(cacheKey)) continue
+      fetchNodeLatency(route.nodeId, range)
+        .then((data) => {
+          if (!cancelled) nodeLatencyCacheRef.current.set(cacheKey, data)
+        })
+        .catch(() => {})
+    }
+    return () => {
+      cancelled = true
+    }
+  }, [route, nodeLatencyRange])
+
+  useEffect(() => {
+    if (route.kind !== 'node') return
+    let cancelled = false
+    for (const range of ['1h', '1d', '7d', '30d']) {
+      const cacheKey = `${route.nodeId}:${range}`
+      if (range === stateRange || nodeStateCacheRef.current.has(cacheKey)) continue
+      fetchNodeState(route.nodeId, range)
+        .then((data) => {
+          if (!cancelled) nodeStateCacheRef.current.set(cacheKey, data)
+        })
+        .catch(() => {})
+    }
+    return () => {
+      cancelled = true
     }
   }, [route, stateRange])
 
