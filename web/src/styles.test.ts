@@ -80,8 +80,10 @@ describe('homepage and admin shell layout', () => {
   it('polishes backend mobile navigation, modal actions, and save buttons without overlap', () => {
     expect(styles).toContain('@media (max-width: 767px)')
     expect(styles).toContain('.admin-section-nav {')
-    expect(styles).toContain('overflow-x: auto')
-    expect(styles).toContain('scroll-snap-type: x proximity')
+    expect(styles).toContain('grid-template-columns: repeat(auto-fit, minmax(96px, 1fr))')
+    expect(styles).toContain('overflow: visible')
+    expect(styles).toContain('.admin-section-nav button { min-width: 0; min-height: 40px; padding: 0 8px; border-radius: var(--radius-field); }')
+    expect(styles).not.toContain('scroll-snap-type: x proximity')
     expect(styles).toContain('.admin-modal { width: 100%; height: min(92dvh, 760px); max-height: calc(100dvh - 16px); border-radius: var(--radius-panel); padding: 0; }')
     expect(styles).toContain('.admin-modal-actions {')
     expect(styles).toContain('position: sticky')
