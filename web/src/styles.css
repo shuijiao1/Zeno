@@ -1011,6 +1011,8 @@ svg { display: block; }
   text-align: center;
 }
 .node-os { position: absolute; left: 0; top: 0; width: 24px; height: 24px; object-fit: contain; }
+.server-flag { display: inline-flex; align-items: center; justify-content: center; line-height: 1; }
+.server-flag .fi { width: 1.333em; line-height: 1em; border-radius: 2px; box-shadow: 0 0 0 1px color-mix(in srgb, var(--foreground) 12%, transparent); }
 .node-title-line { min-width: 0; display: flex; align-items: center; justify-content: center; gap: 8px; }
 .node-title-line p { min-width: 0; margin: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--foreground); font-size: 13px; font-weight: 500; letter-spacing: -0.02em; }
 .node-dot { width: 8px; height: 8px; flex: none; border-radius: var(--radius-pill); background: var(--green); }
@@ -1160,7 +1162,7 @@ svg { display: block; }
   min-width: 0;
   display: inline-flex;
   align-items: center;
-  gap: 2px;
+  gap: 6px;
   padding: 0;
   border: 0;
   background: transparent;
@@ -1169,6 +1171,7 @@ svg { display: block; }
   font-weight: 500;
   line-height: 1.2;
 }
+.detail-title-flag { flex: none; font-size: 16px; }
 .detail-title-button span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .detail-title-button svg {
   width: 24px;
@@ -1303,7 +1306,7 @@ svg { display: block; }
 
 .state-history-stack {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
   gap: 12px;
   padding: 0 24px 24px;
 }
@@ -1315,7 +1318,8 @@ svg { display: block; }
   min-width: 0;
   display: flex;
   flex-direction: column;
-  padding: 14px;
+  min-height: 190px;
+  padding: 12px 14px 10px;
   border: 1px solid var(--border);
   border-radius: var(--radius-card);
   background: var(--surface-soft);
@@ -1330,15 +1334,15 @@ svg { display: block; }
   z-index: 1;
   flex: none;
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   justify-content: space-between;
   gap: 10px;
-  margin-bottom: 8px;
+  margin-bottom: 4px;
 }
 .state-history-card__meta p {
   margin: 0;
   color: var(--muted);
-  font-size: 13px;
+  font-size: 14px;
   font-weight: 500;
 }
 .state-chart-legend {
@@ -1366,10 +1370,11 @@ svg { display: block; }
 }
 .state-history-card__meta strong .metric-inline-label { color: var(--muted); font-weight: 500; }
 .state-sparkline { position: relative; z-index: 1; width: 100%; height: auto; overflow: visible; }
-.state-sparkline--large { margin-top: 4px; }
-.state-history-chart-card .state-sparkline--large { flex: 1 1 auto; min-height: 76px; }
+.state-sparkline--large { margin-top: 2px; }
+.state-history-chart-card .state-sparkline--large { flex: 1 1 auto; min-height: 112px; }
 .state-sparkline__baseline { stroke: color-mix(in srgb, var(--tone-color) 16%, transparent); stroke-width: 1; }
-.state-sparkline__axis { fill: color-mix(in srgb, var(--foreground) 68%, transparent); font-size: 30px; font-weight: 500; }
+.state-sparkline__axis { fill: color-mix(in srgb, var(--foreground) 52%, transparent); font-size: 24px; font-weight: 500; }
+.state-sparkline__time-axis { fill: color-mix(in srgb, var(--foreground) 42%, transparent); font-size: 22px; font-weight: 500; }
 .state-sparkline__line { fill: none; stroke-width: 1.35; stroke-linecap: round; stroke-linejoin: round; }
 
 .latency-target-grid {
@@ -1460,7 +1465,14 @@ svg { display: block; }
   transition: opacity 120ms ease;
 }
 .latency-hover-column:hover .latency-hover-guide,
-.latency-hover-column:hover .latency-hover-point { opacity: 1; }
+.latency-hover-column:hover .latency-hover-point,
+.latency-hover-column.is-active .latency-hover-guide,
+.latency-hover-column.is-active .latency-hover-point { opacity: 1; }
+.latency-chart-tooltip { pointer-events: none; filter: drop-shadow(0 12px 24px rgba(15, 23, 42, .16)); }
+.latency-chart-tooltip rect { fill: color-mix(in srgb, var(--surface-strong) 96%, transparent); stroke: var(--border); stroke-width: 1; }
+.latency-tooltip-time { fill: var(--foreground); font-size: 13px; font-weight: 500; }
+.latency-tooltip-label { fill: var(--muted); font-size: 12px; font-weight: 500; }
+.latency-tooltip-value { fill: var(--foreground); font-size: 12px; font-weight: 500; font-variant-numeric: tabular-nums; }
 .latency-legend {
   display: flex;
   flex-wrap: wrap;

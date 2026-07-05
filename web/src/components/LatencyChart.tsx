@@ -1,4 +1,4 @@
-import { useMemo } from 'react'
+import { useMemo, useState } from 'react'
 import type { LatencyPoint } from '../types'
 import {
   applyKulinPeakCut,
@@ -53,6 +53,8 @@ export function LatencyChart({
   const legendSeries = useMemo(() => (activeTargetNames.length > 0
     ? series.filter((item) => activeTargetNames.includes(item.targetName))
     : series), [series, activeTargetKey])
+  const [hoverColumn, setHoverColumn] = useState<HoverColumn | null>(null)
+  const hoverColumnCreatedAt = hoverColumn?.createdAt ?? null
 
   const x = (createdAt: number) => xByTimestamp.get(createdAt) ?? pad.left
   const yDelay = (value: number) => pad.top + (1 - (value - domain.min) / (domain.max - domain.min)) * plotHeight
@@ -77,7 +79,7 @@ export function LatencyChart({
         )}
       </div>
 
-      <svg className="latency-chart" viewBox={`0 0 ${width} ${height}`} role="img" aria-label="latency chart">
+      <svg className="latency-chart" viewBox={`0 0 ${width} ${height}`} role="img" aria-label="latency chart" onMouseLeave={() => setHoverColumn(null)}>
         {[0, 0.25, 0.5, 0.75, 1].map((ratio) => {
           const yy = pad.top + ratio * plotHeight
           const value = domain.max - ratio * (domain.max - domain.min)
@@ -126,17 +128,19 @@ export function LatencyChart({
 
         {hoverColumns.map((column) => {
           const xx = x(column.createdAt)
+          const isActive = hoverColumnCreatedAt === column.createdAt
           return (
-            <g key={column.createdAt} className="latency-hover-column">
+            <g key={column.createdAt} className={`latency-hover-column${isActive ? ' is-active' : ''}`}>
               <rect
                 className="latency-hover-hit"
                 x={Math.max(pad.left, xx - hitWidth / 2)}
                 y={pad.top}
                 width={Math.min(hitWidth, width - pad.right - Math.max(pad.left, xx - hitWidth / 2))}
                 height={plotHeight}
-              >
-                <title>{column.title}</title>
-              </rect>
+                aria-label={column.title}
+                onMouseEnter={() => setHoverColumn(column)}
+                onMouseMove={() => setHoverColumn(column)}
+              />
               <line
                 className="latency-hover-guide"
                 x1={xx}
@@ -153,13 +157,19 @@ export function LatencyChart({
                   cy={yDelay(point.delay)}
                   r={5}
                   fill={palette[paletteIndexForKey(series, point.key, activeTargetNames) % palette.length]}
-                >
-                  <title>{column.title}</title>
-                </circle>
+                />
               ))}
             </g>
           )
         })}
+        {hoverColumn && (
+          <LatencyTooltip
+            column={hoverColumn}
+            series={series}
+            activeTargetNames={activeTargetNames}
+            x={x(hoverColumn.createdAt)}
+          />
+        )}
       </svg>
 
       <div className="latency-legend">
@@ -171,6 +181,28 @@ export function LatencyChart({
         )}
       </div>
     </section>
+  )
+}
+
+function LatencyTooltip({ column, series, activeTargetNames, x: tooltipAnchorX }: { column: HoverColumn; series: KulinTargetSeries[]; activeTargetNames: string[]; x: number }) {
+  const tooltipWidth = 232
+  const rowHeight = 18
+  const tooltipHeight = 34 + column.points.length * rowHeight + 10
+  const tooltipX = Math.max(pad.left, Math.min(width - pad.right - tooltipWidth, tooltipAnchorX + 12))
+  const tooltipY = Math.max(pad.top + 4, Math.min(height - pad.bottom - tooltipHeight, pad.top + 8))
+
+  return (
+    <g className="latency-chart-tooltip" transform={`translate(${tooltipX} ${tooltipY})`}>
+      <rect width={tooltipWidth} height={tooltipHeight} rx={12} ry={12} />
+      <text x={12} y={20} className="latency-tooltip-time">{formatTooltipTime(column.createdAt)}</text>
+      {column.points.map((point, index) => (
+        <g key={`${point.key}-${column.createdAt}`} transform={`translate(12 ${34 + index * rowHeight})`}>
+          <circle cx={4} cy={-4} r={3.5} fill={palette[paletteIndexForKey(series, point.key, activeTargetNames) % palette.length]} />
+          <text x={14} y={0} className="latency-tooltip-label">{point.label}</text>
+          <text x={tooltipWidth - 24} y={0} textAnchor="end" className="latency-tooltip-value">{formatLatencyValue(point.delay)}</text>
+        </g>
+      ))}
+    </g>
   )
 }
 

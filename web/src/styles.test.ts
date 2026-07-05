@@ -14,7 +14,8 @@ describe('mobile latency target layout', () => {
     expect(styles).toContain('.latency-target-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); padding: 0 12px 12px; }')
     expect(styles).toContain('.latency-target-grid button')
     expect(styles).toContain('border-radius: var(--radius-field)')
-    expect(styles).toContain('.state-sparkline__axis { fill: color-mix(in srgb, var(--foreground) 68%, transparent); font-size: 30px; font-weight: 500; }')
+    expect(styles).toContain('.state-sparkline__axis { fill: color-mix(in srgb, var(--foreground) 52%, transparent); font-size: 24px; font-weight: 500; }')
+    expect(styles).toContain('.state-sparkline__time-axis { fill: color-mix(in srgb, var(--foreground) 42%, transparent); font-size: 22px; font-weight: 500; }')
   })
 })
 
@@ -112,11 +113,11 @@ describe('state history layout', () => {
 
   it('renders resource history as a compact chart grid like Kulin on desktop', () => {
     expect(styles).toContain('.state-history-stack')
-    expect(styles).toContain('grid-template-columns: repeat(3, minmax(0, 1fr))')
+    expect(styles).toContain('grid-template-columns: repeat(auto-fit, minmax(280px, 1fr))')
     expect(styles).toContain('grid-template-columns: 1fr')
     expect(styles).toContain('.state-history-chart-card')
     expect(styles).toContain('.state-sparkline--large')
-    expect(styles).toContain('.state-history-chart-card .state-sparkline--large { flex: 1 1 auto; min-height: 76px; }')
+    expect(styles).toContain('.state-history-chart-card .state-sparkline--large { flex: 1 1 auto; min-height: 112px; }')
   })
 
   it('keeps uptime and load as compact pill badges in the top server card', () => {
@@ -162,6 +163,9 @@ describe('Kulin-inspired color polish', () => {
     expect(styles).toContain('.admin-section-nav button[data-active=\'true\']')
     expect(styles).toContain('background: var(--blue)')
     expect(styles).toContain('.state-history-chart-card.tone-green')
+    expect(styles).toContain('.server-flag .fi')
+    expect(styles).toContain('.latency-chart-tooltip rect')
+    expect(styles).not.toContain('<title>')
     expect(styles).not.toContain('.state-history-chart-card::before')
     expect(styles).not.toContain('--zeno-accent-gradient')
   })

@@ -3,6 +3,7 @@ import type { HomeCardNode, LatencyPoint, StatePoint } from '../types'
 import { formatLatency, formatPercent } from '../lib/format'
 import { summarizeLatencyTargets } from '../lib/latencyTargets'
 import { LatencyChart } from './LatencyChart'
+import { ServerFlag } from './ServerFlag'
 import { StateHistoryPanel } from './StateHistoryPanel'
 
 interface LatencyDetailProps {
@@ -65,6 +66,7 @@ export function LatencyDetail({
         <div className="detail-hero__main">
           <button className="detail-title-button" type="button" onClick={onBack}>
             <BackIcon />
+            <ServerFlag countryCode={node.countryCode} className="detail-title-flag" />
             <span>{node.displayName}</span>
           </button>
           <div className="detail-hero__badges" aria-label="server live status">

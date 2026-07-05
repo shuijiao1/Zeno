@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react'
 import type { HomeCardNode } from '../types'
 import { formatLatency } from '../lib/format'
+import { ServerFlag } from './ServerFlag'
 
 interface ServerCardProps {
   node: HomeCardNode
@@ -15,16 +16,6 @@ const osAsset: Record<HomeCardNode['os'], string> = {
   alpine: '/assets/logo/linux.svg',
   linux: '/assets/logo/linux.svg',
   unknown: '/assets/logo/linux.svg',
-}
-
-function flag(countryCode?: string): string {
-  if (!countryCode || countryCode.length !== 2) return '🏳️'
-  const base = 127397
-  return countryCode
-    .toUpperCase()
-    .split('')
-    .map((char) => String.fromCodePoint(char.charCodeAt(0) + base))
-    .join('')
 }
 
 function ratio(used: number | null | undefined, total: number | null | undefined): number | null {
@@ -125,7 +116,7 @@ export function ServerCard({ node, onOpen }: ServerCardProps) {
         <img alt={node.os} className="node-os" loading="lazy" src={osAsset[node.os]} />
         <div className="node-title-line">
           <span className={`node-dot status-${visualStatus}`} />
-          <span className="node-flag">{flag(node.countryCode)}</span>
+          <ServerFlag countryCode={node.countryCode} className="node-flag" />
           <p>{node.displayName}</p>
         </div>
         <div className="node-expiry">{node.expiryLabel ?? '永 久'}</div>

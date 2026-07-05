@@ -28,8 +28,8 @@ interface MetricConfig {
 }
 
 const chartWidth = 900
-const chartHeight = 180
-const chartPad = { left: 112, right: 18, top: 18, bottom: 34 }
+const chartHeight = 164
+const chartPad = { left: 16, right: 18, top: 16, bottom: 30 }
 const stateRangeOptions = [
   { value: '1h', label: '实时' },
   { value: '1d', label: '1 天' },
@@ -48,6 +48,7 @@ export function StateHistoryPanel({ points, range, loading = false, error, onRan
   const latestProcessCount = latest(points, (point) => point.processCount)
   const latestTcpConnectionCount = latest(points, (point) => point.tcpConnectionCount)
   const latestUdpConnectionCount = latest(points, (point) => point.udpConnectionCount)
+  const timestamps = points.map((point) => Date.parse(point.ts))
 
   const metrics: MetricConfig[] = [
     {
@@ -133,15 +134,16 @@ export function StateHistoryPanel({ points, range, loading = false, error, onRan
 
       {!loading && !error && sampleCount > 0 && (
         <div className="state-history-stack">
-          {metrics.map((metric) => <MetricChartCard key={metric.key} metric={metric} />)}
+          {metrics.map((metric) => <MetricChartCard key={metric.key} metric={metric} timestamps={timestamps} />)}
         </div>
       )}
     </section>
   )
 }
 
-function MetricChartCard({ metric }: { metric: MetricConfig }) {
+function MetricChartCard({ metric, timestamps }: { metric: MetricConfig; timestamps: number[] }) {
   const domain = yDomain(metric.lines.flatMap((line) => line.values), metric.domainMax)
+  const timeTicks = stateAxisTicks(timestamps)
 
   return (
     <article className={`state-history-chart-card tone-${metric.tone}`}>
@@ -163,10 +165,21 @@ function MetricChartCard({ metric }: { metric: MetricConfig }) {
           return (
             <g key={ratio}>
               <line x1={chartPad.left} x2={chartWidth - chartPad.right} y1={y} y2={y} className="state-sparkline__baseline" />
-              <text x={8} y={y + 4} className="state-sparkline__axis" textAnchor="start">{formatAxisValue(value, metric.unitLabel)}</text>
+              <text x={chartPad.left + 8} y={y + 4} className="state-sparkline__axis" textAnchor="start">{formatAxisValue(value, metric.unitLabel)}</text>
             </g>
           )
         })}
+        {timeTicks.map((tick) => (
+          <text
+            key={tick.index}
+            x={xForIndex(tick.index, timestamps.length)}
+            y={chartHeight - 8}
+            className="state-sparkline__time-axis"
+            textAnchor={tick.anchor}
+          >
+            {formatStateAxisTime(tick.timestamp, timestamps)}
+          </text>
+        ))}
         {metric.lines.map((line) => (
           <path
             key={line.key}
@@ -238,9 +251,7 @@ function yDomain(values: Array<number | null>, forcedMax?: number): { min: numbe
 }
 
 function sparklinePath(values: Array<number | null>, domain: { min: number; max: number }): string {
-  const plotWidth = chartWidth - chartPad.left - chartPad.right
   const plotHeight = chartHeight - chartPad.top - chartPad.bottom
-  const xStep = values.length > 1 ? plotWidth / (values.length - 1) : 0
   const span = domain.max - domain.min || 1
   let open = false
 
@@ -250,7 +261,7 @@ function sparklinePath(values: Array<number | null>, domain: { min: number; max:
         open = false
         return ''
       }
-      const x = chartPad.left + index * xStep
+      const x = xForIndex(index, values.length)
       const y = chartPad.top + (1 - (value - domain.min) / span) * plotHeight
       const command = open ? 'L' : 'M'
       open = true
@@ -258,6 +269,45 @@ function sparklinePath(values: Array<number | null>, domain: { min: number; max:
     })
     .filter(Boolean)
     .join(' ')
+}
+
+function xForIndex(index: number, count: number): number {
+  const plotWidth = chartWidth - chartPad.left - chartPad.right
+  const xStep = count > 1 ? plotWidth / (count - 1) : 0
+  return chartPad.left + index * xStep
+}
+
+interface StateAxisTick {
+  timestamp: number
+  index: number
+  anchor: 'start' | 'middle' | 'end'
+}
+
+function stateAxisTicks(timestamps: number[]): StateAxisTick[] {
+  const valid = timestamps
+    .map((timestamp, index) => ({ timestamp, index }))
+    .filter((item) => Number.isFinite(item.timestamp))
+  if (valid.length === 0) return []
+  if (valid.length === 1) return [{ ...valid[0], anchor: 'middle' }]
+
+  const middle = valid[Math.floor((valid.length - 1) / 2)]
+  const candidates: StateAxisTick[] = [
+    { ...valid[0], anchor: 'start' },
+    { ...middle, anchor: 'middle' },
+    { ...valid.at(-1)!, anchor: 'end' },
+  ]
+  return candidates.filter((tick, index, all) => all.findIndex((item) => item.index === tick.index) === index)
+}
+
+function formatStateAxisTime(timestamp: number, timestamps: number[]): string {
+  const date = new Date(timestamp)
+  if (Number.isNaN(date.getTime())) return '--:--'
+  const start = timestamps.find(Number.isFinite) ?? timestamp
+  const end = [...timestamps].reverse().find(Number.isFinite) ?? timestamp
+  const spanHours = (end - start) / 3_600_000
+  const time = `${date.getHours()}:${date.getMinutes().toString().padStart(2, '0')}`
+  if (spanHours > 36) return `${date.getMonth() + 1}/${date.getDate()} ${time}`
+  return time
 }
 
 function formatAxisValue(value: number, unitLabel: string): string {
