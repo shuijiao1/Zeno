@@ -148,12 +148,16 @@ describe('Kulin-inspired color polish', () => {
     expect(styles).not.toContain('linear-gradient(135deg, var(--zeno-bg-a)')
   })
 
-  it('uses grey labels with black, heavier values while keeping active controls blue', () => {
+  it('uses grey labels with black regular values and only emphasizes latency numbers', () => {
     expect(styles).toContain('.home-summary__status-line strong')
     expect(styles).toContain('.home-summary__metrics dd')
     expect(styles).toContain('.metric-label { color: var(--muted)')
     expect(styles).toContain('.node-metric strong')
+    expect(styles).toContain('.node-metric strong { min-width: 0; margin-left: auto; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--foreground); font-weight: 500')
+    expect(styles).toContain('.metric-latency strong { font-weight: 600; }')
     expect(styles).toContain('.latency-target-grid strong { color: var(--foreground); font-size: 20px')
+    expect(styles).toContain('font-weight: 600; letter-spacing: -0.03em')
+    expect(styles.match(/font-weight: 600/g) ?? []).toHaveLength(2)
     expect(styles).toContain('.latency-target-grid em { color: var(--muted)')
     expect(styles).toContain('.admin-section-nav button[data-active=\'true\']')
     expect(styles).toContain('background: var(--blue)')
