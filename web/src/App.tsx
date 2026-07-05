@@ -227,7 +227,7 @@ export function App() {
     if (cached) {
       setStateHistoryState({ kind: 'ready', data: cached })
     } else {
-      setStateHistoryState((current) => (current.kind === 'ready' && current.data.nodeId === route.nodeId ? current : { kind: 'loading' }))
+      setStateHistoryState({ kind: 'loading' })
     }
     fetchNodeState(route.nodeId, stateRange)
       .then((data) => {
@@ -235,8 +235,14 @@ export function App() {
         if (!cancelled) setStateHistoryState({ kind: 'ready', data })
       })
       .catch((error: unknown) => {
-        if (!cancelled) setStateHistoryState((current) => (current.kind === 'ready' ? current : { kind: 'error', message: error instanceof Error ? error.message : 'unknown error' }))
+        if (!cancelled) setStateHistoryState({ kind: 'error', message: error instanceof Error ? error.message : 'unknown error' })
       })
+
+    if (stateRange !== '1h') {
+      return () => {
+        cancelled = true
+      }
+    }
     const stopStateStream = subscribeNodeState(
       route.nodeId,
       stateRange,
@@ -245,7 +251,7 @@ export function App() {
         if (!cancelled) setStateHistoryState({ kind: 'ready', data })
       },
       (error) => {
-        if (!cancelled) setStateHistoryState((current) => (current.kind === 'ready' ? current : { kind: 'error', message: error.message }))
+        if (!cancelled) setStateHistoryState({ kind: 'error', message: error.message })
       },
     )
     if (!stopStateStream) setStateHistoryState({ kind: 'error', message: 'websocket unsupported' })
@@ -651,7 +657,7 @@ export function App() {
           points={latencyState.kind === 'ready' ? latencyState.data.points : []}
           statePoints={stateHistoryState.kind === 'ready' ? stateHistoryState.data.points : []}
           range={nodeLatencyRange}
-          stateRange={stateHistoryState.kind === 'ready' ? stateHistoryState.data.range : stateRange}
+          stateRange={stateRange}
           loading={latencyState.kind === 'loading'}
           error={latencyState.kind === 'error' ? latencyState.message : undefined}
           stateLoading={stateHistoryState.kind === 'loading'}

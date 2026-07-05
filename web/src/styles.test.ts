@@ -57,6 +57,10 @@ describe('homepage and admin shell layout', () => {
 
   it('keeps authenticated node management in compact lists without old card shells', () => {
     expect(styles).toContain('.admin-login-card')
+    expect(styles).toContain('width: min(100%, 420px)')
+    expect(styles).toContain('grid-template-columns: 1fr')
+    expect(styles).toContain('.admin-login-title { text-align: center; }')
+    expect(styles).not.toContain('grid-template-columns: minmax(0, 1fr) minmax(140px, 220px)')
     expect(styles).toContain('.admin-node-section')
     expect(styles).toContain(".admin-section-nav button[data-active='true']")
     expect(styles).toContain('.admin-node-status')

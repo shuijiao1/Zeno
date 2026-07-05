@@ -301,12 +301,13 @@ svg { display: block; }
 .admin-container,
 .admin-container .home-top-card.admin-panel { width: 100%; }
 .admin-login-card {
-  margin-top: 16px;
+  width: min(100%, 420px);
+  margin: 24px auto 0;
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(140px, 220px) minmax(140px, 220px) auto;
-  align-items: end;
-  gap: 12px;
-  padding: 16px;
+  grid-template-columns: 1fr;
+  align-items: stretch;
+  gap: 13px;
+  padding: 18px;
   border: 1px solid var(--border);
   border-radius: var(--radius-card);
   background: var(--surface-strong);
@@ -314,7 +315,7 @@ svg { display: block; }
 }
 .admin-login-card p { margin: 0 0 4px; color: var(--muted); font-size: 13px; font-weight: 500; }
 .admin-login-card strong { font-size: 15px; font-weight: 500; }
-.admin-login-title { align-self: center; }
+.admin-login-title { text-align: center; }
 .admin-login-error { grid-column: 1 / -1; margin: 0; color: var(--red); font-size: 13px; font-weight: 500; }
 .admin-login-card label { display: flex; flex-direction: column; gap: 5px; color: var(--muted); font-size: 12px; font-weight: 500; }
 .admin-login-card input {

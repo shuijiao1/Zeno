@@ -71,22 +71,8 @@ function normalizeLoss(value: number | null | undefined): string {
   return `${value.toFixed(2)}%`
 }
 
-function formatTrafficLabel(node: HomeCardNode): string {
-  const range = formatBillingPeriodRange(node.monthlyPeriodStart, node.monthlyPeriodEnd)
-  if (range) return `流量 · ${range}`
-  if (node.monthlyResetDay) return `流量 · 每月 ${node.monthlyResetDay} 日重置`
+function formatTrafficLabel(): string {
   return '流量'
-}
-
-function formatBillingPeriodRange(start?: string, end?: string): string {
-  if (!start || !end) return ''
-  return `${formatMonthDay(start)}–${formatMonthDay(end)}`
-}
-
-function formatMonthDay(value: string): string {
-  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value)
-  if (!match) return value
-  return `${Number(match[2])}/${Number(match[3])}`
 }
 
 export function ServerCard({ node, onOpen }: ServerCardProps) {
@@ -133,7 +119,7 @@ export function ServerCard({ node, onOpen }: ServerCardProps) {
         <div className="node-usage-rest">
           <UsageBar label="内存" valueText={`${formatUsage(memoryPercent)}%`} percent={memoryPercent} />
           <UsageBar label="存储" valueText={`${formatUsage(diskPercent)}%`} percent={diskPercent} />
-          <UsageBar label={formatTrafficLabel(node)} valueText={`${formatKulinBytes(node.monthlyBillableBytes, { compact: true })} / ${formatKulinBytes(node.monthlyQuotaBytes, { compact: true })}`} percent={trafficPercent} />
+          <UsageBar label={formatTrafficLabel()} valueText={`${formatKulinBytes(node.monthlyBillableBytes, { compact: true })} / ${formatKulinBytes(node.monthlyQuotaBytes, { compact: true })}`} percent={trafficPercent} />
           <section className="node-footer-grid" aria-label={`${node.displayName} network and latency`}>
             <Metric tone="up" icon={<UploadIcon />} label="上传" value={formatRate(node.netOutSpeedBps)} />
             <Metric tone="down" icon={<DownloadIcon />} label="下载" value={formatRate(node.netInSpeedBps)} />
