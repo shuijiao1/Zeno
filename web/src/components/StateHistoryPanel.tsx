@@ -28,9 +28,8 @@ interface MetricConfig {
   lines: MetricLine[]
 }
 
-const chartWidth = 900
-const chartHeight = 164
-const chartPad = { left: 64, right: 18, top: 16, bottom: 30 }
+const plotWidth = 640
+const plotHeight = 112
 const stateRangeOptions = [
   { value: '1h', label: '实时' },
   { value: '1d', label: '1 天' },
@@ -119,17 +118,13 @@ export function StateHistoryPanel({ points, range, loading = false, error, onRan
   ]
 
   return (
-    <section className="monitor-panel state-history-panel" aria-label="agent state history">
-      <header className="monitor-heading">
-        <div>
-          <h3>系统资源历史</h3>
-        </div>
-        <div className="monitor-heading-actions">
-          <div className="detail-range-row state-range-row" aria-label="resource history range selector">
-            {stateRangeOptions.map((option) => (
-              <button key={option.value} type="button" className={range === option.value ? 'is-active' : ''} onClick={() => onRangeChange(option.value)}>{option.label}</button>
-            ))}
-          </div>
+    <section className="monitor-panel resource-history-panel" aria-label="agent state history">
+      <header className="resource-history-header">
+        <h3>系统资源历史</h3>
+        <div className="detail-range-row resource-range-row" aria-label="resource history range selector">
+          {stateRangeOptions.map((option) => (
+            <button key={option.value} type="button" className={range === option.value ? 'is-active' : ''} onClick={() => onRangeChange(option.value)}>{option.label}</button>
+          ))}
         </div>
       </header>
 
@@ -138,73 +133,68 @@ export function StateHistoryPanel({ points, range, loading = false, error, onRan
       {!loading && !error && sampleCount === 0 && <div className="detail-state">暂无系统资源历史</div>}
 
       {!loading && !error && sampleCount > 0 && (
-        <div className="state-history-stack">
-          {metrics.map((metric) => <MetricChartCard key={metric.key} metric={metric} timestamps={timestamps} />)}
+        <div className="resource-history-grid">
+          {metrics.map((metric) => <ResourceMetricCard key={metric.key} metric={metric} timestamps={timestamps} />)}
         </div>
       )}
     </section>
   )
 }
 
-function MetricChartCard({ metric, timestamps }: { metric: MetricConfig; timestamps: number[] }) {
+function ResourceMetricCard({ metric, timestamps }: { metric: MetricConfig; timestamps: number[] }) {
   const domain = yDomain(metric.lines.flatMap((line) => line.values), metric.domainMax)
+  const yTicks = yAxisTicks(domain, metric.unitLabel)
   const timeTicks = stateAxisTicks(timestamps)
 
   return (
-    <article className={`state-history-chart-card tone-${metric.tone}`}>
-      <div className="state-history-card__meta">
-        <div>
-          <p>{metric.label}</p>
+    <article className={`resource-card tone-${metric.tone}`}>
+      <header className="resource-card-header">
+        <div className="resource-card-title-block">
+          <p className="resource-card-title">{metric.label}</p>
           {metric.lines.length > 1 && (
-            <span className="state-chart-legend">
+            <span className="resource-chart-legend">
               {metric.lines.map((line) => <em key={line.key} style={{ color: line.color }}>{line.label}</em>)}
             </span>
           )}
         </div>
-        <strong>{metric.value}</strong>
+        <strong className="resource-card-value">{metric.value}</strong>
+      </header>
+
+      <div className="resource-chart-frame">
+        <div className="resource-y-axis" aria-hidden="true">
+          {yTicks.map((tick) => <span key={tick}>{tick}</span>)}
+        </div>
+        <div className="resource-chart-plot">
+          <svg className="resource-chart-svg" viewBox={`0 0 ${plotWidth} ${plotHeight}`} preserveAspectRatio="none" role="img" aria-label={`${metric.label} history`}>
+            {[0, 0.5, 1].map((ratio) => (
+              <line key={ratio} x1={0} x2={plotWidth} y1={ratio * plotHeight} y2={ratio * plotHeight} className="resource-grid-line" vectorEffect="non-scaling-stroke" />
+            ))}
+            {metric.fillArea && metric.lines.map((line) => (
+              <path
+                key={`${line.key}-area`}
+                d={chartAreaPath(line.values, domain)}
+                className="resource-chart-area"
+                data-series={`${line.key}-area`}
+                style={{ fill: line.color }}
+              />
+            ))}
+            {metric.lines.map((line) => (
+              <path
+                key={line.key}
+                d={chartLinePath(line.values, domain)}
+                className="resource-chart-line"
+                data-series={line.key}
+                style={{ stroke: line.color }}
+                vectorEffect="non-scaling-stroke"
+              />
+            ))}
+          </svg>
+        </div>
+        <div className="resource-x-spacer" aria-hidden="true" />
+        <div className="resource-x-axis" aria-hidden="true">
+          {timeTicks.map((tick) => <span key={tick.index}>{formatStateAxisTime(tick.timestamp, timestamps)}</span>)}
+        </div>
       </div>
-      <svg className="state-sparkline state-sparkline--large" viewBox={`0 0 ${chartWidth} ${chartHeight}`} role="img" aria-label={`${metric.label} history`}>
-        {[0, 0.5, 1].map((ratio) => {
-          const y = chartPad.top + ratio * (chartHeight - chartPad.top - chartPad.bottom)
-          const value = domain.max - ratio * (domain.max - domain.min)
-          return (
-            <g key={ratio}>
-              <line x1={chartPad.left} x2={chartWidth - chartPad.right} y1={y} y2={y} className="state-sparkline__baseline" />
-              <text x={8} y={y + 4} className="state-sparkline__axis" textAnchor="start">{formatAxisValue(value, metric.unitLabel)}</text>
-            </g>
-          )
-        })}
-        {timeTicks.map((tick) => (
-          <text
-            key={tick.index}
-            x={xForIndex(tick.index, timestamps.length)}
-            y={chartHeight - 8}
-            className="state-sparkline__time-axis"
-            textAnchor={tick.anchor}
-          >
-            {formatStateAxisTime(tick.timestamp, timestamps)}
-          </text>
-        ))}
-        {metric.fillArea && metric.lines.map((line) => (
-          <path
-            key={`${line.key}-area`}
-            d={sparklineAreaPath(line.values, domain)}
-            className="state-sparkline__area"
-            data-series={`${line.key}-area`}
-            style={{ fill: line.color }}
-          />
-        ))}
-        {metric.lines.map((line) => (
-          <path
-            key={line.key}
-            d={sparklinePath(line.values, domain)}
-            className="state-sparkline__line"
-            data-series={line.key}
-            style={{ stroke: line.color }}
-            vectorEffect="non-scaling-stroke"
-          />
-        ))}
-      </svg>
     </article>
   )
 }
@@ -244,19 +234,6 @@ function finiteOrNull(value: number | null | undefined): number | null {
   return typeof value === 'number' && Number.isFinite(value) ? value : null
 }
 
-function formatBinaryBytes(value: number | null): string {
-  if (value === null) return '--'
-  if (value <= 0) return '0 B'
-  const units = ['B', 'KB', 'MB', 'GB', 'TB', 'PB']
-  let size = value
-  let unit = 0
-  while (size >= 1024 && unit < units.length - 1) {
-    size /= 1024
-    unit += 1
-  }
-  return `${size.toFixed(unit === 0 ? 0 : 2)} ${units[unit]}`
-}
-
 function yDomain(values: Array<number | null>, forcedMax?: number): { min: number; max: number } {
   const finiteValues = values.filter((value): value is number => value !== null)
   if (finiteValues.length === 0) return { min: 0, max: forcedMax ?? 1 }
@@ -264,8 +241,7 @@ function yDomain(values: Array<number | null>, forcedMax?: number): { min: numbe
   return { min: 0, max: Math.max(1, forcedMax ?? Math.ceil(max * 1.15)) }
 }
 
-function sparklinePath(values: Array<number | null>, domain: { min: number; max: number }): string {
-  const plotHeight = chartHeight - chartPad.top - chartPad.bottom
+function chartLinePath(values: Array<number | null>, domain: { min: number; max: number }): string {
   const span = domain.max - domain.min || 1
   let open = false
 
@@ -275,8 +251,8 @@ function sparklinePath(values: Array<number | null>, domain: { min: number; max:
         open = false
         return ''
       }
-      const x = xForIndex(index, values.length)
-      const y = chartPad.top + (1 - (value - domain.min) / span) * plotHeight
+      const x = chartX(index, values.length)
+      const y = plotHeight - ((value - domain.min) / span) * plotHeight
       const command = open ? 'L' : 'M'
       open = true
       return `${command} ${x.toFixed(1)} ${y.toFixed(1)}`
@@ -285,10 +261,8 @@ function sparklinePath(values: Array<number | null>, domain: { min: number; max:
     .join(' ')
 }
 
-function sparklineAreaPath(values: Array<number | null>, domain: { min: number; max: number }): string {
-  const plotHeight = chartHeight - chartPad.top - chartPad.bottom
+function chartAreaPath(values: Array<number | null>, domain: { min: number; max: number }): string {
   const span = domain.max - domain.min || 1
-  const baseline = chartPad.top + plotHeight
   let segment: Array<{ x: number; y: number }> = []
   const segments: Array<Array<{ x: number; y: number }>> = []
 
@@ -298,37 +272,39 @@ function sparklineAreaPath(values: Array<number | null>, domain: { min: number; 
       segment = []
       return
     }
-    const x = xForIndex(index, values.length)
-    const y = chartPad.top + (1 - (value - domain.min) / span) * plotHeight
-    segment.push({ x, y })
+    segment.push({
+      x: chartX(index, values.length),
+      y: plotHeight - ((value - domain.min) / span) * plotHeight,
+    })
   })
   if (segment.length > 0) segments.push(segment)
 
   return segments
-    .filter((coords) => coords.length > 0)
     .map((coords) => {
       const first = coords[0]
       const last = coords.at(-1)!
       return [
-        `M ${first.x.toFixed(1)} ${baseline.toFixed(1)}`,
+        `M ${first.x.toFixed(1)} ${plotHeight}`,
         ...coords.map((coord) => `L ${coord.x.toFixed(1)} ${coord.y.toFixed(1)}`),
-        `L ${last.x.toFixed(1)} ${baseline.toFixed(1)}`,
+        `L ${last.x.toFixed(1)} ${plotHeight}`,
         'Z',
       ].join(' ')
     })
     .join(' ')
 }
 
-function xForIndex(index: number, count: number): number {
-  const plotWidth = chartWidth - chartPad.left - chartPad.right
-  const xStep = count > 1 ? plotWidth / (count - 1) : 0
-  return chartPad.left + index * xStep
+function chartX(index: number, count: number): number {
+  if (count <= 1) return 0
+  return (index / (count - 1)) * plotWidth
+}
+
+function yAxisTicks(domain: { min: number; max: number }, unitLabel: string): string[] {
+  return [domain.max, domain.min + (domain.max - domain.min) / 2, domain.min].map((value) => formatAxisValue(value, unitLabel))
 }
 
 interface StateAxisTick {
   timestamp: number
   index: number
-  anchor: 'start' | 'middle' | 'end'
 }
 
 function stateAxisTicks(timestamps: number[]): StateAxisTick[] {
@@ -336,13 +312,8 @@ function stateAxisTicks(timestamps: number[]): StateAxisTick[] {
     .map((timestamp, index) => ({ timestamp, index }))
     .filter((item) => Number.isFinite(item.timestamp))
   if (valid.length === 0) return []
-  if (valid.length === 1) return [{ ...valid[0], anchor: 'middle' }]
-
-  const candidates: StateAxisTick[] = [
-    { ...valid[0], anchor: 'start' },
-    { ...valid.at(-1)!, anchor: 'end' },
-  ]
-  return candidates.filter((tick, index, all) => all.findIndex((item) => item.index === tick.index) === index)
+  if (valid.length === 1) return [valid[0]]
+  return [valid[0], valid.at(-1)!]
 }
 
 function formatStateAxisTime(timestamp: number, timestamps: number[]): string {
@@ -366,7 +337,5 @@ function formatRelativeDuration(diffMs: number): string {
 function formatAxisValue(value: number, unitLabel: string): string {
   if (unitLabel === '%') return `${Math.round(value)}%`
   if (unitLabel === 'count') return `${Math.round(value)}`
-  if (unitLabel === 'load') return value.toFixed(value >= 10 ? 0 : 1)
-  if (unitLabel === 'B') return formatBinaryBytes(value)
   return value >= 1024 ? formatBps(value).replace('/s', '') : `${Math.round(value)} ${unitLabel}`
 }
