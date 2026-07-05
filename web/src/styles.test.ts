@@ -107,6 +107,24 @@ describe('state history layout', () => {
   })
 })
 
+describe('Kulin-inspired color polish', () => {
+  it('uses an aurora glass palette instead of a flat grey shell', () => {
+    expect(styles).toContain('--zeno-glow-primary')
+    expect(styles).toContain('--zeno-glow-secondary')
+    expect(styles).toContain('var(--zeno-desktop-background-image, none),')
+    expect(styles).toContain('linear-gradient(135deg, var(--zeno-bg-a), var(--zeno-bg-b)')
+    expect(styles).toContain('blur(18px) saturate(1.35)')
+  })
+
+  it('gives important controls and chart cards visible accent colors', () => {
+    expect(styles).toContain('--zeno-accent-gradient')
+    expect(styles).toContain('.home-summary__status-line strong')
+    expect(styles).toContain('.admin-section-nav button[data-active=\'true\']')
+    expect(styles).toContain('.state-history-chart-card.tone-green')
+    expect(styles).toContain('.state-history-chart-card::before')
+  })
+})
+
 describe('visual weight polish', () => {
   it('avoids heavy UI font weights in the Nezha-like shell', () => {
     expect(styles).not.toContain('font-weight: 700')

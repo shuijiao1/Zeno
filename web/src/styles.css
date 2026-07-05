@@ -1,37 +1,54 @@
 :root {
   color-scheme: light dark;
   font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-  background: #fafafa;
-  color: #0c0a09;
-  --background: #fafafa;
-  --card: rgba(255, 255, 255, 0.7);
-  --foreground: #0c0a09;
-  --muted: #78716c;
-  --border: #e7e5e4;
-  --secondary: #f5f5f4;
-  --metric-bg: rgba(250, 250, 250, 0.75);
-  --shadow-stone: rgba(231, 229, 228, 0.5);
-  --metric-shadow: rgba(229, 229, 229, 0.4);
-  --green: #22c55e;
+  background: #f5f8ff;
+  color: #0f172a;
+  --background: #f5f8ff;
+  --card: rgba(255, 255, 255, 0.64);
+  --foreground: #0f172a;
+  --muted: #64748b;
+  --border: rgba(255, 255, 255, 0.56);
+  --secondary: rgba(224, 242, 254, 0.68);
+  --metric-bg: rgba(255, 255, 255, 0.44);
+  --shadow-stone: rgba(59, 130, 246, 0.16);
+  --metric-shadow: rgba(14, 165, 233, 0.14);
+  --green: #10b981;
   --blue: #2563eb;
-  --red: #ef4444;
-  --purple: #9333ea;
+  --red: #f43f5e;
+  --purple: #8b5cf6;
   --orange: #f97316;
+  --zeno-bg-a: #eff6ff;
+  --zeno-bg-b: #f5f3ff;
+  --zeno-bg-c: #ecfeff;
+  --zeno-glow-primary: rgba(56, 189, 248, 0.3);
+  --zeno-glow-secondary: rgba(168, 85, 247, 0.22);
+  --zeno-glow-warm: rgba(249, 115, 22, 0.12);
+  --zeno-card-highlight: rgba(255, 255, 255, 0.72);
+  --zeno-card-shadow: 0 18px 52px -32px rgba(37, 99, 235, 0.36), 0 10px 28px -24px rgba(14, 165, 233, 0.28), inset 0 1px 0 rgba(255, 255, 255, 0.72);
+  --zeno-accent-gradient: linear-gradient(135deg, #2563eb, #7c3aed 54%, #06b6d4);
 }
 
 @media (prefers-color-scheme: dark) {
   :root {
-    background: #181512;
-    color: #fafaf9;
-    --background: #181512;
-    --card: rgba(28, 25, 23, 0.7);
-    --foreground: #fafaf9;
-    --muted: #a8a29e;
-    --border: #292524;
-    --secondary: #292524;
-    --metric-bg: rgba(24, 21, 18, 0.75);
-    --shadow-stone: rgba(0, 0, 0, 0);
-    --metric-shadow: rgba(0, 0, 0, 0);
+    background: #07111f;
+    color: #f8fafc;
+    --background: #07111f;
+    --card: rgba(15, 23, 42, 0.62);
+    --foreground: #f8fafc;
+    --muted: #94a3b8;
+    --border: rgba(148, 163, 184, 0.18);
+    --secondary: rgba(30, 41, 59, 0.72);
+    --metric-bg: rgba(15, 23, 42, 0.46);
+    --shadow-stone: rgba(0, 0, 0, 0.34);
+    --metric-shadow: rgba(14, 165, 233, 0.1);
+    --zeno-bg-a: #08111f;
+    --zeno-bg-b: #111632;
+    --zeno-bg-c: #062333;
+    --zeno-glow-primary: rgba(56, 189, 248, 0.18);
+    --zeno-glow-secondary: rgba(168, 85, 247, 0.2);
+    --zeno-glow-warm: rgba(249, 115, 22, 0.1);
+    --zeno-card-highlight: rgba(255, 255, 255, 0.1);
+    --zeno-card-shadow: 0 20px 60px -36px rgba(0, 0, 0, 0.72), 0 12px 34px -30px rgba(56, 189, 248, 0.32), inset 0 1px 0 rgba(255, 255, 255, 0.08);
   }
 }
 
@@ -54,38 +71,78 @@ svg { display: block; }
 }
 
 .kulin-shell {
+  position: relative;
+  overflow: hidden;
   min-height: 100vh;
   padding: 32px 40px 40px;
   display: flex;
   flex-direction: column;
   gap: 16px;
   background-color: var(--background);
-  background-image: var(--zeno-desktop-background-image, none);
+  background-image:
+    var(--zeno-desktop-background-image, none),
+    radial-gradient(circle at 14% 8%, var(--zeno-glow-primary) 0, transparent 34rem),
+    radial-gradient(circle at 88% 6%, var(--zeno-glow-secondary) 0, transparent 32rem),
+    radial-gradient(circle at 74% 86%, var(--zeno-glow-warm) 0, transparent 28rem),
+    linear-gradient(135deg, var(--zeno-bg-a), var(--zeno-bg-b) 48%, var(--zeno-bg-c));
   background-position: center;
+  background-size: cover, auto, auto, auto, auto;
+  background-repeat: no-repeat;
+  background-attachment: fixed;
 }
+.kulin-shell::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  opacity: .34;
+  background-image:
+    linear-gradient(color-mix(in srgb, var(--foreground) 4%, transparent) 1px, transparent 1px),
+    linear-gradient(90deg, color-mix(in srgb, var(--foreground) 3%, transparent) 1px, transparent 1px);
+  background-size: 44px 44px;
+  mask-image: linear-gradient(to bottom, black, transparent 78%);
+}
+.kulin-shell > * { position: relative; z-index: 1; }
 
 .kulin-shell[data-theme="light"] {
-  --background: #fafafa;
-  --card: rgba(255, 255, 255, 0.7);
-  --foreground: #0c0a09;
-  --muted: #78716c;
-  --border: #e7e5e4;
-  --secondary: #f5f5f4;
-  --metric-bg: rgba(250, 250, 250, 0.75);
-  --shadow-stone: rgba(231, 229, 228, 0.5);
-  --metric-shadow: rgba(229, 229, 229, 0.4);
+  --background: #f5f8ff;
+  --card: rgba(255, 255, 255, 0.64);
+  --foreground: #0f172a;
+  --muted: #64748b;
+  --border: rgba(255, 255, 255, 0.56);
+  --secondary: rgba(224, 242, 254, 0.68);
+  --metric-bg: rgba(255, 255, 255, 0.44);
+  --shadow-stone: rgba(59, 130, 246, 0.16);
+  --metric-shadow: rgba(14, 165, 233, 0.14);
+  --zeno-bg-a: #eff6ff;
+  --zeno-bg-b: #f5f3ff;
+  --zeno-bg-c: #ecfeff;
+  --zeno-glow-primary: rgba(56, 189, 248, 0.3);
+  --zeno-glow-secondary: rgba(168, 85, 247, 0.22);
+  --zeno-glow-warm: rgba(249, 115, 22, 0.12);
+  --zeno-card-highlight: rgba(255, 255, 255, 0.72);
+  --zeno-card-shadow: 0 18px 52px -32px rgba(37, 99, 235, 0.36), 0 10px 28px -24px rgba(14, 165, 233, 0.28), inset 0 1px 0 rgba(255, 255, 255, 0.72);
 }
 
 .kulin-shell[data-theme="dark"] {
-  --background: #181512;
-  --card: rgba(28, 25, 23, 0.7);
-  --foreground: #fafaf9;
-  --muted: #a8a29e;
-  --border: #292524;
-  --secondary: #292524;
-  --metric-bg: rgba(24, 21, 18, 0.75);
-  --shadow-stone: rgba(0, 0, 0, 0);
-  --metric-shadow: rgba(0, 0, 0, 0);
+  --background: #07111f;
+  --card: rgba(15, 23, 42, 0.62);
+  --foreground: #f8fafc;
+  --muted: #94a3b8;
+  --border: rgba(148, 163, 184, 0.18);
+  --secondary: rgba(30, 41, 59, 0.72);
+  --metric-bg: rgba(15, 23, 42, 0.46);
+  --shadow-stone: rgba(0, 0, 0, 0.34);
+  --metric-shadow: rgba(14, 165, 233, 0.1);
+  --zeno-bg-a: #08111f;
+  --zeno-bg-b: #111632;
+  --zeno-bg-c: #062333;
+  --zeno-glow-primary: rgba(56, 189, 248, 0.18);
+  --zeno-glow-secondary: rgba(168, 85, 247, 0.2);
+  --zeno-glow-warm: rgba(249, 115, 22, 0.1);
+  --zeno-card-highlight: rgba(255, 255, 255, 0.1);
+  --zeno-card-shadow: 0 20px 60px -36px rgba(0, 0, 0, 0.72), 0 12px 34px -30px rgba(56, 189, 248, 0.32), inset 0 1px 0 rgba(255, 255, 255, 0.08);
 }
 
 .kulin-nav {
@@ -144,12 +201,15 @@ svg { display: block; }
   border-radius: 999px;
   padding: 9px;
   color: var(--foreground);
-  background: var(--card);
-  transition: background-color 150ms ease, color 150ms ease;
+  background: color-mix(in srgb, var(--card) 82%, var(--zeno-card-highlight) 18%);
+  box-shadow: inset 0 1px 0 color-mix(in srgb, #fff 45%, transparent), 0 8px 22px -18px var(--blue);
+  -webkit-backdrop-filter: blur(14px) saturate(1.35);
+  backdrop-filter: blur(14px) saturate(1.35);
+  transition: background-color 150ms ease, color 150ms ease, box-shadow 150ms ease, transform 150ms ease;
 }
-.nav-icon-button.is-solid { background: #fff; color: #000; }
+.nav-icon-button.is-solid { background: var(--zeno-accent-gradient); color: #fff; border-color: color-mix(in srgb, #fff 36%, transparent); }
 .nav-icon-button.is-muted { opacity: .45; }
-.nav-icon-button:hover { background: var(--secondary); }
+.nav-icon-button:hover { background: color-mix(in srgb, var(--secondary) 76%, var(--zeno-card-highlight) 24%); transform: translateY(-1px); box-shadow: 0 12px 26px -18px var(--blue); }
 .nav-icon-button svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.75; stroke-linecap: round; stroke-linejoin: round; }
 
 .kulin-container {
@@ -159,24 +219,36 @@ svg { display: block; }
 }
 
 .home-top-card {
+  position: relative;
+  overflow: hidden;
   width: 100%;
   padding: 14px;
   border: 1px solid var(--border);
   border-radius: 20px;
-  background: linear-gradient(135deg, color-mix(in srgb, var(--card) 96%, #fff 4%), color-mix(in srgb, var(--card) 86%, var(--metric-bg) 14%));
+  background: linear-gradient(135deg, color-mix(in srgb, var(--card) 86%, var(--zeno-card-highlight) 14%), color-mix(in srgb, var(--card) 72%, var(--secondary) 28%));
   color: var(--foreground);
-  box-shadow: 0 12px 30px -22px var(--shadow-stone), 0 4px 6px -1px var(--shadow-stone), 0 2px 4px -2px var(--shadow-stone);
-  -webkit-backdrop-filter: blur(8px);
-  backdrop-filter: blur(8px);
+  box-shadow: var(--zeno-card-shadow);
+  -webkit-backdrop-filter: blur(18px) saturate(1.35);
+  backdrop-filter: blur(18px) saturate(1.35);
 }
+.home-top-card::before {
+  content: '';
+  position: absolute;
+  inset: -30% -12% auto auto;
+  width: 340px;
+  height: 220px;
+  pointer-events: none;
+  background: radial-gradient(circle, color-mix(in srgb, var(--blue) 18%, transparent), transparent 64%);
+}
+.home-top-card > * { position: relative; z-index: 1; }
 .home-top-card .kulin-nav {
   max-width: none;
   height: auto;
   margin: 0;
   padding: 0 2px 12px;
 }
-.home-top-card .nav-icon-button { background: color-mix(in srgb, var(--metric-bg) 88%, transparent); }
-.home-top-card .nav-icon-button.is-solid { background: #fff; color: #000; }
+.home-top-card .nav-icon-button { background: color-mix(in srgb, var(--metric-bg) 70%, var(--zeno-card-highlight) 30%); }
+.home-top-card .nav-icon-button.is-solid { background: var(--zeno-accent-gradient); color: #fff; }
 .home-top-card .home-summary {
   display: flex;
   flex-wrap: wrap;
@@ -194,7 +266,10 @@ svg { display: block; }
   font-variant-numeric: tabular-nums;
 }
 .home-summary__status-line strong {
-  color: var(--foreground);
+  color: transparent;
+  background: var(--zeno-accent-gradient);
+  -webkit-background-clip: text;
+  background-clip: text;
   font-size: 24px;
   line-height: 1;
   font-weight: 600;
@@ -258,7 +333,10 @@ svg { display: block; }
   padding: 16px;
   border: 1px solid var(--border);
   border-radius: 16px;
-  background: color-mix(in srgb, var(--metric-bg) 88%, transparent);
+  background: linear-gradient(135deg, color-mix(in srgb, var(--metric-bg) 80%, var(--zeno-card-highlight) 20%), color-mix(in srgb, var(--secondary) 44%, transparent));
+  box-shadow: var(--zeno-card-shadow);
+  -webkit-backdrop-filter: blur(16px) saturate(1.35);
+  backdrop-filter: blur(16px) saturate(1.35);
 }
 .admin-login-card p { margin: 0 0 4px; color: var(--muted); font-size: 13px; font-weight: 500; }
 .admin-login-card strong { font-size: 15px; font-weight: 600; }
@@ -285,10 +363,17 @@ svg { display: block; }
   padding: 0 14px;
   border: 1px solid var(--border);
   border-radius: 999px;
-  background: var(--secondary);
+  background: color-mix(in srgb, var(--secondary) 78%, var(--zeno-card-highlight) 22%);
   color: var(--foreground);
   font-size: 13px;
   font-weight: 600;
+}
+.admin-login-card button,
+.admin-primary-action {
+  background: var(--zeno-accent-gradient);
+  color: #fff;
+  border-color: color-mix(in srgb, #fff 34%, transparent);
+  box-shadow: 0 12px 24px -18px var(--blue);
 }
 .admin-toolbar {
   margin-top: 16px;
@@ -304,7 +389,8 @@ svg { display: block; }
   padding: 6px;
   border: 1px solid var(--border);
   border-radius: 18px;
-  background: color-mix(in srgb, var(--metric-bg) 88%, transparent);
+  background: color-mix(in srgb, var(--metric-bg) 74%, var(--secondary) 26%);
+  box-shadow: inset 0 1px 0 color-mix(in srgb, #fff 36%, transparent);
 }
 .admin-section-nav button {
   min-width: 76px;
@@ -320,9 +406,9 @@ svg { display: block; }
   transition: background-color 150ms ease, color 150ms ease, box-shadow 150ms ease;
 }
 .admin-section-nav button[data-active='true'] {
-  background: color-mix(in srgb, var(--foreground) 12%, var(--secondary));
-  color: var(--foreground);
-  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--foreground) 15%, transparent), 0 8px 20px -16px var(--foreground);
+  background: var(--zeno-accent-gradient);
+  color: #fff;
+  box-shadow: inset 0 1px 0 color-mix(in srgb, #fff 26%, transparent), 0 10px 24px -18px var(--blue);
 }
 .admin-section-nav span { font-size: 14px; font-weight: 600; }
 .admin-help-note {
@@ -341,7 +427,10 @@ svg { display: block; }
   padding: 16px;
   border: 1px solid var(--border);
   border-radius: 16px;
-  background: color-mix(in srgb, var(--metric-bg) 88%, transparent);
+  background: linear-gradient(135deg, color-mix(in srgb, var(--metric-bg) 82%, var(--zeno-card-highlight) 18%), color-mix(in srgb, var(--secondary) 34%, transparent));
+  box-shadow: var(--zeno-card-shadow);
+  -webkit-backdrop-filter: blur(16px) saturate(1.35);
+  backdrop-filter: blur(16px) saturate(1.35);
 }
 .admin-section-heading {
   display: flex;
@@ -734,18 +823,27 @@ svg { display: block; }
   padding: 16px;
   border: 1px solid var(--border);
   border-radius: 16px;
-  background: var(--card);
+  background: linear-gradient(145deg, color-mix(in srgb, var(--card) 86%, var(--zeno-card-highlight) 14%), color-mix(in srgb, var(--card) 72%, var(--secondary) 28%));
   color: var(--foreground);
-  box-shadow: 0 1px 3px 0 var(--shadow-stone), 0 1px 2px -1px var(--shadow-stone);
+  box-shadow: var(--zeno-card-shadow);
   cursor: pointer;
   transition: transform 160ms ease, box-shadow 160ms ease, outline-color 160ms ease;
   outline: 1px solid transparent;
-  -webkit-backdrop-filter: blur(8px);
-  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(16px) saturate(1.35);
+  backdrop-filter: blur(16px) saturate(1.35);
 }
-.kulin-node-card:hover { transform: translateY(-4px); box-shadow: 0 10px 15px -3px var(--shadow-stone), 0 4px 6px -4px var(--shadow-stone); }
+.kulin-node-card:not(.is-offline)::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  background: linear-gradient(180deg, color-mix(in srgb, #fff 24%, transparent), transparent 42%), radial-gradient(circle at 18% 0, color-mix(in srgb, var(--blue) 12%, transparent), transparent 34%);
+}
+.kulin-node-card:not(.is-offline) > * { position: relative; z-index: 1; }
+.kulin-node-card:hover { transform: translateY(-4px); box-shadow: 0 20px 46px -30px rgba(37, 99, 235, .42), 0 12px 30px -28px rgba(14, 165, 233, .34), inset 0 1px 0 color-mix(in srgb, #fff 52%, transparent); }
 .kulin-node-card.is-offline {
-  background: color-mix(in srgb, var(--card) 90%, #7dd3fc 10%);
+  background: linear-gradient(145deg, color-mix(in srgb, var(--card) 84%, #e0f2fe 16%), color-mix(in srgb, var(--card) 86%, #f5d0fe 14%));
 }
 .kulin-node-card.is-offline::before {
   content: '';
@@ -769,8 +867,8 @@ svg { display: block; }
   align-items: center;
   justify-content: center;
   transform: rotate(-24deg);
-  color: color-mix(in srgb, var(--foreground) 26%, transparent);
-  font-size: 58px;
+  color: color-mix(in srgb, var(--red) 24%, transparent);
+  font-size: 52px;
   font-weight: 600;
   letter-spacing: .18em;
   text-indent: .18em;
@@ -841,13 +939,13 @@ svg { display: block; }
   padding: 0 10px;
   border: 1px solid var(--border);
   border-radius: 12px;
-  background: var(--metric-bg);
-  box-shadow: 0 1px 3px 0 var(--metric-shadow), 0 1px 2px -1px var(--metric-shadow);
+  background: linear-gradient(135deg, color-mix(in srgb, var(--metric-bg) 82%, var(--zeno-card-highlight) 18%), color-mix(in srgb, var(--secondary) 32%, transparent));
+  box-shadow: 0 10px 24px -22px var(--metric-shadow), inset 0 1px 0 color-mix(in srgb, #fff 38%, transparent);
   font-size: 11px;
 }
 .metric-icon { width: 20px; height: 20px; flex: none; display: inline-flex; align-items: center; justify-content: center; line-height: 1; }
 .metric-icon svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.75; stroke-linecap: round; stroke-linejoin: round; }
-.metric-label { color: color-mix(in srgb, var(--foreground) 85%, transparent); font-weight: 500; white-space: nowrap; }
+.metric-label { color: color-mix(in srgb, var(--foreground) 92%, transparent); font-weight: 500; white-space: nowrap; }
 .node-metric strong { min-width: 0; margin-left: auto; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 500; font-variant-numeric: tabular-nums; }
 .metric-up .metric-icon, .metric-up strong { color: #2563eb; }
 .metric-down .metric-icon, .metric-down strong { color: #9333ea; }
@@ -880,10 +978,10 @@ svg { display: block; }
   padding: 16px;
   border: 1px solid var(--border);
   border-radius: 18px;
-  background: var(--card);
-  box-shadow: 0 1px 3px 0 var(--shadow-stone), 0 1px 2px -1px var(--shadow-stone);
-  -webkit-backdrop-filter: blur(8px);
-  backdrop-filter: blur(8px);
+  background: linear-gradient(135deg, color-mix(in srgb, var(--card) 86%, var(--zeno-card-highlight) 14%), color-mix(in srgb, var(--card) 70%, var(--secondary) 30%));
+  box-shadow: var(--zeno-card-shadow);
+  -webkit-backdrop-filter: blur(18px) saturate(1.35);
+  backdrop-filter: blur(18px) saturate(1.35);
 }
 .detail-hero__main {
   display: flex;
@@ -908,7 +1006,7 @@ svg { display: block; }
   padding: 0 9px;
   border: 1px solid var(--border);
   border-radius: 999px;
-  background: color-mix(in srgb, var(--metric-bg) 82%, transparent);
+  background: color-mix(in srgb, var(--metric-bg) 72%, var(--secondary) 28%);
   color: color-mix(in srgb, var(--foreground) 72%, transparent);
   font-size: 12px;
   font-weight: 500;
@@ -969,13 +1067,13 @@ svg { display: block; }
   flex-direction: column;
   justify-content: center;
   gap: 2px;
-  padding: 5px 6px;
-  border: 0;
+  padding: 7px 8px;
+  border: 1px solid color-mix(in srgb, var(--border) 62%, transparent);
   border-radius: 10px;
-  background: transparent;
+  background: color-mix(in srgb, var(--metric-bg) 48%, transparent);
 }
 .detail-fact.is-wide { grid-column: span 2; }
-.detail-fact p { margin: 0; color: color-mix(in srgb, var(--foreground) 42%, transparent); font-size: 10.5px; font-weight: 500; }
+.detail-fact p { margin: 0; color: color-mix(in srgb, var(--foreground) 54%, transparent); font-size: 10.5px; font-weight: 500; }
 .detail-fact strong { min-width: 0; overflow-wrap: anywhere; font-size: 12px; line-height: 1.22; font-weight: 500; }
 
 .detail-range-row {
@@ -990,14 +1088,16 @@ svg { display: block; }
   padding: 0 8px;
   border: 1px solid var(--border);
   border-radius: 999px;
-  background: transparent;
+  background: color-mix(in srgb, var(--metric-bg) 50%, transparent);
   color: color-mix(in srgb, var(--foreground) 70%, transparent);
   font-size: 11px;
   font-weight: 600;
 }
 .detail-range-row > button.is-active {
-  background: var(--secondary);
-  color: var(--foreground);
+  background: var(--zeno-accent-gradient);
+  color: #fff;
+  border-color: color-mix(in srgb, #fff 32%, transparent);
+  box-shadow: 0 10px 22px -18px var(--blue);
 }
 .peak-switch {
   margin-left: auto;
@@ -1035,10 +1135,10 @@ svg { display: block; }
   overflow: hidden;
   border: 1px solid var(--border);
   border-radius: 18px;
-  background: var(--card);
-  box-shadow: 0 1px 3px 0 var(--shadow-stone), 0 1px 2px -1px var(--shadow-stone);
-  -webkit-backdrop-filter: blur(8px);
-  backdrop-filter: blur(8px);
+  background: linear-gradient(135deg, color-mix(in srgb, var(--card) 84%, var(--zeno-card-highlight) 16%), color-mix(in srgb, var(--card) 72%, var(--secondary) 28%));
+  box-shadow: var(--zeno-card-shadow);
+  -webkit-backdrop-filter: blur(18px) saturate(1.35);
+  backdrop-filter: blur(18px) saturate(1.35);
 }
 .monitor-heading {
   display: flex;
@@ -1084,13 +1184,32 @@ svg { display: block; }
   padding: 0 24px 24px;
 }
 .state-history-chart-card {
+  --tone-color: var(--blue);
+  --tone-bg: color-mix(in srgb, var(--blue) 8%, transparent);
+  position: relative;
+  overflow: hidden;
   min-width: 0;
   padding: 14px;
   border: 1px solid var(--border);
   border-radius: 15px;
-  background: color-mix(in srgb, var(--metric-bg) 86%, transparent);
+  background: linear-gradient(145deg, color-mix(in srgb, var(--metric-bg) 78%, var(--zeno-card-highlight) 22%), var(--tone-bg));
+  box-shadow: 0 12px 30px -26px var(--metric-shadow), inset 0 1px 0 color-mix(in srgb, #fff 34%, transparent);
 }
+.state-history-chart-card::before {
+  content: '';
+  position: absolute;
+  inset: 0 0 auto;
+  height: 3px;
+  background: var(--tone-color);
+  opacity: .72;
+}
+.state-history-chart-card.tone-green { --tone-color: var(--green); --tone-bg: color-mix(in srgb, var(--green) 9%, transparent); }
+.state-history-chart-card.tone-blue { --tone-color: var(--blue); --tone-bg: color-mix(in srgb, var(--blue) 9%, transparent); }
+.state-history-chart-card.tone-purple { --tone-color: var(--purple); --tone-bg: color-mix(in srgb, var(--purple) 9%, transparent); }
+.state-history-chart-card.tone-orange { --tone-color: var(--orange); --tone-bg: color-mix(in srgb, var(--orange) 9%, transparent); }
 .state-history-card__meta {
+  position: relative;
+  z-index: 1;
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
@@ -1099,9 +1218,9 @@ svg { display: block; }
 }
 .state-history-card__meta p {
   margin: 0;
-  color: color-mix(in srgb, var(--foreground) 62%, transparent);
+  color: var(--tone-color);
   font-size: 13px;
-  font-weight: 500;
+  font-weight: 600;
 }
 .state-chart-legend {
   display: inline-flex;
@@ -1126,9 +1245,9 @@ svg { display: block; }
   white-space: nowrap;
   font-variant-numeric: tabular-nums;
 }
-.state-sparkline { width: 100%; height: auto; overflow: visible; }
+.state-sparkline { position: relative; z-index: 1; width: 100%; height: auto; overflow: visible; }
 .state-sparkline--large { margin-top: 4px; }
-.state-sparkline__baseline { stroke: color-mix(in srgb, var(--foreground) 10%, transparent); stroke-width: 1; }
+.state-sparkline__baseline { stroke: color-mix(in srgb, var(--tone-color) 16%, transparent); stroke-width: 1; }
 .state-sparkline__axis { fill: color-mix(in srgb, var(--foreground) 42%, transparent); font-size: 10px; font-weight: 500; }
 .state-sparkline__line { fill: none; stroke-width: 1.35; stroke-linecap: round; stroke-linejoin: round; }
 
@@ -1182,12 +1301,12 @@ svg { display: block; }
   padding: 0 12px;
   border: 1px solid var(--border);
   border-radius: 999px;
-  background: transparent;
+  background: color-mix(in srgb, var(--metric-bg) 50%, transparent);
   color: var(--muted);
   font-size: 12px;
   font-weight: 600;
 }
-.range-tabs button.is-active { background: var(--secondary); color: var(--foreground); }
+.range-tabs button.is-active { background: var(--zeno-accent-gradient); color: #fff; border-color: color-mix(in srgb, #fff 32%, transparent); box-shadow: 0 10px 22px -18px var(--blue); }
 .latency-chart {
   width: 100%;
   height: auto;
@@ -1233,7 +1352,12 @@ svg { display: block; }
   .kulin-shell {
     padding: 14px 10px 24px;
     gap: 12px;
-    background-image: var(--zeno-mobile-background-image, var(--zeno-desktop-background-image, none));
+    background-image:
+      var(--zeno-mobile-background-image, var(--zeno-desktop-background-image, none)),
+      radial-gradient(circle at 18% 8%, var(--zeno-glow-primary) 0, transparent 26rem),
+      radial-gradient(circle at 88% 18%, var(--zeno-glow-secondary) 0, transparent 24rem),
+      linear-gradient(135deg, var(--zeno-bg-a), var(--zeno-bg-b) 50%, var(--zeno-bg-c));
+    background-size: cover, auto, auto, auto;
   }
   .kulin-nav { align-items: center; height: auto; gap: 8px; }
   .brand { font-size: 15px; }
