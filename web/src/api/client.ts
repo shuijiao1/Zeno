@@ -486,6 +486,23 @@ export async function fetchSummary(): Promise<SummaryData> {
   return normalizeSummary(await response.json() as ApiSummaryResponse)
 }
 
+export function subscribeSummary(onSummary: (summary: SummaryData) => void, onError?: (error: Error) => void): (() => void) | null {
+  if (typeof EventSource === 'undefined') return null
+  const source = new EventSource('/api/public/v1/summary/stream')
+  source.addEventListener('summary', (event) => {
+    try {
+      const message = event as MessageEvent<string>
+      onSummary(normalizeSummary(JSON.parse(message.data) as ApiSummaryResponse))
+    } catch (error) {
+      onError?.(error instanceof Error ? error : new Error('summary stream parse failed'))
+    }
+  })
+  source.onerror = () => {
+    onError?.(new Error('summary stream disconnected'))
+  }
+  return () => source.close()
+}
+
 export async function fetchNodeLatency(nodeId: string, range = '1h'): Promise<NodeLatencyData> {
   const response = await fetch(`/api/public/v1/nodes/${encodeURIComponent(nodeId)}/latency?range=${encodeURIComponent(range)}`, { headers: { Accept: 'application/json' } })
   if (!response.ok) {

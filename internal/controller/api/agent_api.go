@@ -139,6 +139,7 @@ func (h *handler) handleAgentProbeResults(w http.ResponseWriter, r *http.Request
 		}
 		h.dispatchAgentStatusNotification(store, transition, probeTS)
 	}
+	h.publishSummary(r.Context())
 	writeJSON(w, http.StatusAccepted, map[string]any{"ok": true, "accepted": len(prepared)})
 }
 
@@ -220,6 +221,7 @@ func (h *handler) handleAgentHeartbeat(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	h.dispatchAgentStatusNotification(store, transition, heartbeatTS)
+	h.publishSummary(r.Context())
 	writeJSON(w, http.StatusAccepted, map[string]any{"ok": true})
 }
 
@@ -249,6 +251,7 @@ func (h *handler) handleAgentHost(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "internal error")
 		return
 	}
+	h.publishSummary(r.Context())
 	writeJSON(w, http.StatusAccepted, map[string]any{"ok": true})
 }
 
@@ -287,6 +290,7 @@ func (h *handler) handleAgentState(w http.ResponseWriter, r *http.Request) {
 		}
 		h.dispatchAgentStatusNotification(store, transition, stateTS)
 	}
+	h.publishSummary(r.Context())
 	writeJSON(w, http.StatusAccepted, map[string]any{"ok": true})
 }
 

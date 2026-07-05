@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { createAdminNode, createAdminNotificationChannel, createAdminProbeTarget, deleteAdminNode, deleteAdminNotificationChannel, deleteAdminProbeTarget, fetchAdminAccount, fetchAdminAlertRules, fetchAdminAlertRuleStates, fetchAdminNodes, fetchAdminNotificationChannels, fetchAdminNotificationTypes, fetchAdminProbeTargets, fetchAdminSettings, fetchPublicSettings, fetchServiceLatency, loginAdmin, logoutAdmin, normalizeAdminAlertRules, normalizeAdminAlertRuleStates, normalizeAdminNodes, normalizeAdminNotificationChannels, normalizeAdminNotificationTypes, normalizeAdminProbeTargets, normalizeSettings, normalizeNodeLatency, normalizeNodeState, normalizeServiceLatency, normalizeSummary, requestAdminNodeInstallCommand, testAdminNotificationChannel, updateAdminAccount, updateAdminAlertRule, updateAdminNode, updateAdminNotificationChannel, updateAdminNotificationType, updateAdminPassword, updateAdminProbeTarget, updateAdminSettings } from './client'
+import { createAdminNode, createAdminNotificationChannel, createAdminProbeTarget, deleteAdminNode, deleteAdminNotificationChannel, deleteAdminProbeTarget, fetchAdminAccount, fetchAdminAlertRules, fetchAdminAlertRuleStates, fetchAdminNodes, fetchAdminNotificationChannels, fetchAdminNotificationTypes, fetchAdminProbeTargets, fetchAdminSettings, fetchPublicSettings, fetchServiceLatency, loginAdmin, logoutAdmin, normalizeAdminAlertRules, normalizeAdminAlertRuleStates, normalizeAdminNodes, normalizeAdminNotificationChannels, normalizeAdminNotificationTypes, normalizeAdminProbeTargets, normalizeSettings, normalizeNodeLatency, normalizeNodeState, normalizeServiceLatency, normalizeSummary, requestAdminNodeInstallCommand, subscribeSummary, testAdminNotificationChannel, updateAdminAccount, updateAdminAlertRule, updateAdminNode, updateAdminNotificationChannel, updateAdminNotificationType, updateAdminPassword, updateAdminProbeTarget, updateAdminSettings } from './client'
 
 describe('normalizeSummary', () => {
   it('maps controller snake_case JSON into frontend camelCase models', () => {
@@ -86,6 +86,54 @@ describe('normalizeSummary', () => {
     expect(summary.nodes).toEqual([])
     expect(summary.services).toEqual([])
     expect(summary.latencyPoints).toEqual([])
+  })
+})
+
+describe('subscribeSummary', () => {
+  const originalEventSource = globalThis.EventSource
+
+  afterEach(() => {
+    Object.defineProperty(globalThis, 'EventSource', { configurable: true, writable: true, value: originalEventSource })
+    vi.restoreAllMocks()
+  })
+
+  it('normalizes summary stream events and closes the stream', () => {
+    const instances: any[] = []
+    class FakeEventSource {
+      url: string
+      listeners = new Map<string, (event: MessageEvent<string>) => void>()
+      close = vi.fn()
+
+      constructor(url: string) {
+        this.url = url
+        instances.push(this)
+      }
+
+      addEventListener(type: string, listener: EventListenerOrEventListenerObject) {
+        this.listeners.set(type, listener as (event: MessageEvent<string>) => void)
+      }
+
+      emitSummary(payload: unknown) {
+        this.listeners.get('summary')?.({ data: JSON.stringify(payload) } as MessageEvent<string>)
+      }
+    }
+    Object.defineProperty(globalThis, 'EventSource', { configurable: true, writable: true, value: FakeEventSource })
+
+    const onSummary = vi.fn()
+    const unsubscribe = subscribeSummary(onSummary)
+
+    expect(instances[0].url).toBe('/api/public/v1/summary/stream')
+    instances[0].emitSummary({
+      nodes: [{ id: 'hytron', display_name: 'Hytron', status: 'online', os: 'debian', country_code: 'HK', cpu_percent: 1, memory_used_bytes: 2, memory_total_bytes: 4, disk_used_bytes: 8, disk_total_bytes: 16, net_in_speed_bps: 32, net_out_speed_bps: 64, net_in_total_bytes: 128, net_out_total_bytes: 256, monthly_billable_bytes: 384, monthly_quota_bytes: 512 }],
+      services: [],
+      latency_points: [],
+    })
+
+    expect(onSummary).toHaveBeenCalledWith(expect.objectContaining({
+      nodes: [expect.objectContaining({ id: 'hytron', displayName: 'Hytron', netOutSpeedBps: 64 })],
+    }))
+    unsubscribe?.()
+    expect(instances[0].close).toHaveBeenCalled()
   })
 })
 

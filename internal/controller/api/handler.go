@@ -28,6 +28,7 @@ type handler struct {
 	agentVersion       string
 	notificationSender notificationSender
 	loginLimiter       *adminLoginLimiter
+	summaryHub         *liveSummaryHub
 }
 
 type adminLoginLimiter struct {
@@ -102,6 +103,7 @@ func NewHandler(options ...HandlerOptions) http.Handler {
 		agentVersion:       opts.AgentVersion,
 		notificationSender: newHTTPNotificationSender(opts.NotificationClient, opts.TelegramAPIBaseURL),
 		loginLimiter:       newAdminLoginLimiter(),
+		summaryHub:         newLiveSummaryHub(),
 	}
 
 	mux := http.NewServeMux()
@@ -109,6 +111,7 @@ func NewHandler(options ...HandlerOptions) http.Handler {
 	mux.HandleFunc("/api/public/v1/agent/linux-amd64", h.handleAgentBinary)
 	mux.HandleFunc("/api/public/v1/settings", h.handlePublicSettings)
 	mux.HandleFunc("/api/public/v1/summary", h.handleSummary)
+	mux.HandleFunc("/api/public/v1/summary/stream", h.handleSummaryStream)
 	mux.HandleFunc("/api/public/v1/services/", h.handlePublicServiceResource)
 	mux.HandleFunc("/api/public/v1/nodes/", h.handlePublicNodeResource)
 	mux.HandleFunc("/api/admin/v1/login", h.handleAdminLogin)

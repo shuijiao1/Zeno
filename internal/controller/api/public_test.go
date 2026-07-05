@@ -1,11 +1,15 @@
 package api
 
 import (
+	"bufio"
+	"bytes"
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -77,6 +81,94 @@ func TestSummaryEndpointReturnsMockHomeCardsWithoutSecrets(t *testing.T) {
 
 	if strings.Contains(strings.ToLower(raw), "token") || strings.Contains(strings.ToLower(raw), "secret") {
 		t.Fatalf("public summary leaked token/secret wording: %s", raw)
+	}
+}
+
+func TestSummaryStreamPublishesAgentStateUpdates(t *testing.T) {
+	store, err := OpenSQLiteStore(filepath.Join(t.TempDir(), "zeno.db"))
+	if err != nil {
+		t.Fatalf("open sqlite store: %v", err)
+	}
+	defer store.Close()
+	ctx := context.Background()
+	if err := store.SeedPreviewData(ctx, PreviewSeedOptions{NodeID: "hytron", DisplayName: "Hytron", CountryCode: "HK", AgentToken: "test-agent-token"}); err != nil {
+		t.Fatalf("seed preview data: %v", err)
+	}
+
+	server := httptest.NewServer(NewHandler(HandlerOptions{Store: store}))
+	defer server.Close()
+
+	streamResponse, err := server.Client().Get(server.URL + "/api/public/v1/summary/stream")
+	if err != nil {
+		t.Fatalf("open summary stream: %v", err)
+	}
+	defer streamResponse.Body.Close()
+	if streamResponse.StatusCode != http.StatusOK {
+		t.Fatalf("stream status = %d, want 200", streamResponse.StatusCode)
+	}
+	if contentType := streamResponse.Header.Get("Content-Type"); !strings.Contains(contentType, "text/event-stream") {
+		t.Fatalf("stream content-type = %q, want text/event-stream", contentType)
+	}
+	reader := bufio.NewReader(streamResponse.Body)
+	initial := readSSEEvent(t, reader)
+	if !strings.Contains(initial, "event: summary") || !strings.Contains(initial, `"nodes"`) {
+		t.Fatalf("initial stream event = %q, want summary payload", initial)
+	}
+
+	payload := []byte(`{"ts":` + strconv.FormatInt(time.Now().UTC().Unix(), 10) + `,"cpu_percent":12.5,"memory_used_bytes":100,"memory_total_bytes":200,"disk_used_bytes":300,"disk_total_bytes":400,"net_in_total_bytes":1000,"net_out_total_bytes":2000,"net_in_speed_bps":1234,"net_out_speed_bps":5678,"uptime_seconds":60}`)
+	request, err := http.NewRequest(http.MethodPost, server.URL+"/api/agent/v1/state", bytes.NewReader(payload))
+	if err != nil {
+		t.Fatalf("new state request: %v", err)
+	}
+	request.Header.Set("X-Node-ID", "hytron")
+	request.Header.Set("Authorization", "Bearer test-agent-token")
+	request.Header.Set("Content-Type", "application/json")
+	stateResponse, err := server.Client().Do(request)
+	if err != nil {
+		t.Fatalf("post agent state: %v", err)
+	}
+	defer stateResponse.Body.Close()
+	if stateResponse.StatusCode != http.StatusAccepted {
+		t.Fatalf("state status = %d, want 202; body=%s", stateResponse.StatusCode, readAllString(t, stateResponse.Body))
+	}
+
+	update := readSSEEvent(t, reader)
+	if !strings.Contains(update, "event: summary") || !strings.Contains(update, `"net_in_speed_bps":1234`) || !strings.Contains(update, `"net_out_speed_bps":5678`) {
+		t.Fatalf("stream update = %q, want latest agent speeds", update)
+	}
+}
+
+func readSSEEvent(t *testing.T, reader *bufio.Reader) string {
+	t.Helper()
+	type readResult struct {
+		event string
+		err   error
+	}
+	resultCh := make(chan readResult, 1)
+	go func() {
+		var builder strings.Builder
+		for {
+			line, err := reader.ReadString('\n')
+			if err != nil {
+				resultCh <- readResult{err: err}
+				return
+			}
+			if strings.TrimRight(line, "\r\n") == "" {
+				resultCh <- readResult{event: builder.String()}
+				return
+			}
+			builder.WriteString(line)
+		}
+	}()
+	select {
+	case result := <-resultCh:
+		if result.err != nil {
+			t.Fatalf("read SSE event: %v", result.err)
+		}
+		return result.event
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for SSE event")
+		return ""
 	}
 }
 

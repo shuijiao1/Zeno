@@ -1,6 +1,6 @@
 import { type CSSProperties, type DragEvent, type FormEvent, type ReactNode, useEffect, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { createAdminNode, createAdminNotificationChannel, createAdminProbeTarget, deleteAdminNode, deleteAdminNotificationChannel, deleteAdminProbeTarget, fetchAdminAccount, fetchAdminAlertRules, fetchAdminNodes, fetchAdminNotificationChannels, fetchAdminProbeTargets, fetchAdminSettings, fetchNodeLatency, fetchNodeState, fetchPublicSettings, fetchServiceLatency, fetchSummary, loginAdmin, logoutAdmin, requestAdminNodeInstallCommand, testAdminNotificationChannel, updateAdminAccount, updateAdminAlertRule, updateAdminNode, updateAdminNotificationChannel, updateAdminNotificationType, updateAdminProbeTarget, updateAdminSettings, type AdminAccountData, type AdminAlertRuleUpdateInput, type AdminNodeCreateInput, type AdminNodeUpdateInput, type AdminNotificationChannelCreateInput, type AdminNotificationChannelUpdateInput, type AdminProbeTargetInput, type AdminProbeTargetUpdateInput, type AdminSettingsUpdateInput, type NodeLatencyData, type NodeStateData, type ServiceLatencyData, type SummaryData } from './api/client'
+import { createAdminNode, createAdminNotificationChannel, createAdminProbeTarget, deleteAdminNode, deleteAdminNotificationChannel, deleteAdminProbeTarget, fetchAdminAccount, fetchAdminAlertRules, fetchAdminNodes, fetchAdminNotificationChannels, fetchAdminProbeTargets, fetchAdminSettings, fetchNodeLatency, fetchNodeState, fetchPublicSettings, fetchServiceLatency, fetchSummary, subscribeSummary, loginAdmin, logoutAdmin, requestAdminNodeInstallCommand, testAdminNotificationChannel, updateAdminAccount, updateAdminAlertRule, updateAdminNode, updateAdminNotificationChannel, updateAdminNotificationType, updateAdminProbeTarget, updateAdminSettings, type AdminAccountData, type AdminAlertRuleUpdateInput, type AdminNodeCreateInput, type AdminNodeUpdateInput, type AdminNotificationChannelCreateInput, type AdminNotificationChannelUpdateInput, type AdminProbeTargetInput, type AdminProbeTargetUpdateInput, type AdminSettingsUpdateInput, type NodeLatencyData, type NodeStateData, type ServiceLatencyData, type SummaryData } from './api/client'
 import { LatencyDetail } from './components/LatencyDetail'
 import { LatencyChart } from './components/LatencyChart'
 import { ServerCard } from './components/ServerCard'
@@ -151,6 +151,7 @@ export function App() {
 
   useEffect(() => {
     let cancelled = false
+    let stopFallbackRefresh: (() => void) | null = null
     const loadSummary = () => {
       fetchSummary()
         .then((data) => {
@@ -162,10 +163,26 @@ export function App() {
     }
 
     loadSummary()
-    const stopRefresh = startLiveRefresh(loadSummary)
+    const startFallbackRefresh = () => {
+      if (stopFallbackRefresh === null) {
+        stopFallbackRefresh = startLiveRefresh(loadSummary)
+      }
+    }
+    let stopSummaryStream = subscribeSummary(
+      (data) => {
+        if (!cancelled) setState({ kind: 'ready', data })
+      },
+      () => {
+        stopSummaryStream?.()
+        stopSummaryStream = null
+        startFallbackRefresh()
+      },
+    )
+    if (!stopSummaryStream) startFallbackRefresh()
     return () => {
       cancelled = true
-      stopRefresh()
+      stopSummaryStream?.()
+      stopFallbackRefresh?.()
     }
   }, [])
 
