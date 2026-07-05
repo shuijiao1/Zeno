@@ -40,6 +40,7 @@ interface ApiNode {
   memory_total_bytes: number | null
   disk_used_bytes: number | null
   disk_total_bytes: number | null
+  boot_time?: string | null
   net_in_speed_bps: number | null
   net_out_speed_bps: number | null
   net_in_total_bytes: number | null
@@ -1095,6 +1096,7 @@ function normalizeNode(node: ApiNode): HomeCardNode {
     memoryTotalBytes: node.memory_total_bytes,
     diskUsedBytes: node.disk_used_bytes,
     diskTotalBytes: node.disk_total_bytes,
+    bootTime: node.boot_time ?? undefined,
     netInSpeedBps: node.net_in_speed_bps,
     netOutSpeedBps: node.net_out_speed_bps,
     netInTotalBytes: node.net_in_total_bytes,

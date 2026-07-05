@@ -14,6 +14,7 @@ const node = {
   virtualization: 'kvm',
   cpuModel: 'AMD EPYC 7B13',
   countryCode: 'HK',
+  bootTime: '2026-07-02T01:00:00Z',
   cpuCores: 2,
   cpuPercent: 12,
   memoryUsedBytes: 1024,
@@ -82,7 +83,9 @@ describe('LatencyDetail', () => {
     expect(html).not.toContain('规格')
     expect(html).toContain('内存')
     expect(html).toContain('磁盘')
-    expect(html).toContain('网络')
+    expect(html).toContain('开机时间')
+    expect(html).toContain('2026/7/2 09:00:00')
+    expect(html).not.toContain('↑256 B/s ↓128 B/s')
     expect(html).not.toContain('detail-info-card')
     expect(html).toContain('系统资源历史')
     expect(html).toContain('实时 · 1 个状态采样')

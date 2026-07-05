@@ -869,7 +869,7 @@ func (s *SQLiteStore) UpdateAdminNode(ctx context.Context, nodeID string, update
 func (s *SQLiteStore) nodes(ctx context.Context) ([]Node, error) {
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT n.id, n.display_name, n.status, n.country_code, n.expiry_date, n.billing_mode, n.monthly_reset_day, n.last_seen_at,
-		       h.os_name, h.os_version, h.kernel, h.arch, h.virtualization, h.cpu_model, h.cpu_cores, h.memory_total_bytes, h.disk_total_bytes,
+		       h.os_name, h.os_version, h.kernel, h.arch, h.virtualization, h.cpu_model, h.cpu_cores, h.memory_total_bytes, h.disk_total_bytes, h.boot_time,
 		       ss.cpu_percent, ss.memory_used_bytes, ss.disk_used_bytes,
 		       ss.net_in_speed_bps, ss.net_out_speed_bps, ss.net_in_total_bytes, ss.net_out_total_bytes,
 		       (
@@ -900,10 +900,10 @@ func (s *SQLiteStore) nodes(ctx context.Context) ([]Node, error) {
 	for rows.Next() {
 		var id, displayName, status string
 		var countryCode, expiryDate, billingMode, osName, osVersion, kernel, arch, virtualization, cpuModel sql.NullString
-		var monthlyResetDay, cpuCores, memoryTotal, diskTotal, lastSeenAt sql.NullInt64
+		var monthlyResetDay, cpuCores, memoryTotal, diskTotal, bootTime, lastSeenAt sql.NullInt64
 		var cpuPercent, netInSpeed, netOutSpeed sql.NullFloat64
 		var memoryUsed, diskUsed, netInTotal, netOutTotal, billable, quota sql.NullInt64
-		if err := rows.Scan(&id, &displayName, &status, &countryCode, &expiryDate, &billingMode, &monthlyResetDay, &lastSeenAt, &osName, &osVersion, &kernel, &arch, &virtualization, &cpuModel, &cpuCores, &memoryTotal, &diskTotal, &cpuPercent, &memoryUsed, &diskUsed, &netInSpeed, &netOutSpeed, &netInTotal, &netOutTotal, &billable, &quota); err != nil {
+		if err := rows.Scan(&id, &displayName, &status, &countryCode, &expiryDate, &billingMode, &monthlyResetDay, &lastSeenAt, &osName, &osVersion, &kernel, &arch, &virtualization, &cpuModel, &cpuCores, &memoryTotal, &diskTotal, &bootTime, &cpuPercent, &memoryUsed, &diskUsed, &netInSpeed, &netOutSpeed, &netInTotal, &netOutTotal, &billable, &quota); err != nil {
 			return nil, err
 		}
 		resetDay := 1
@@ -929,6 +929,7 @@ func (s *SQLiteStore) nodes(ctx context.Context) ([]Node, error) {
 			MemoryTotalBytes:     intPtr(memoryTotal),
 			DiskUsedBytes:        intPtr(diskUsed),
 			DiskTotalBytes:       intPtr(diskTotal),
+			BootTime:             unixStringPtr(bootTime),
 			NetInSpeedBps:        floatPtr(netInSpeed),
 			NetOutSpeedBps:       floatPtr(netOutSpeed),
 			NetInTotalBytes:      intPtr(netInTotal),

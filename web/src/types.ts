@@ -42,6 +42,7 @@ export interface HomeCardNode {
   memoryTotalBytes: number | null
   diskUsedBytes: number | null
   diskTotalBytes: number | null
+  bootTime?: string
   netInSpeedBps: number | null
   netOutSpeedBps: number | null
   netInTotalBytes: number | null

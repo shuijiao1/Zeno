@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react'
 import type { HomeCardNode, LatencyPoint, StatePoint } from '../types'
-import { formatBps, formatLatency, formatPercent } from '../lib/format'
+import { formatLatency, formatPercent } from '../lib/format'
 import { summarizeLatencyTargets } from '../lib/latencyTargets'
 import { LatencyChart } from './LatencyChart'
 import { StateHistoryPanel } from './StateHistoryPanel'
@@ -77,7 +77,7 @@ export function LatencyDetail({
           <InfoFact label="CPU" value={formatCpuSpec(node)} wide />
           <InfoFact label="内存" value={`${formatBinaryBytes(node.memoryUsedBytes)} / ${formatBinaryBytes(node.memoryTotalBytes)}`} />
           <InfoFact label="磁盘" value={`${formatBinaryBytes(node.diskUsedBytes)} / ${formatBinaryBytes(node.diskTotalBytes)}`} />
-          <InfoFact label="网络" value={`↑${formatBps(node.netOutSpeedBps)} ↓${formatBps(node.netInSpeedBps)}`} />
+          <InfoFact label="开机时间" value={formatBootTime(node.bootTime)} />
           <InfoFact label="累计流量" value={`↑${formatBinaryBytes(node.netOutTotalBytes)} ↓${formatBinaryBytes(node.netInTotalBytes)}`} />
         </section>
       </section>
@@ -186,6 +186,13 @@ function formatCpuSpec(node: HomeCardNode): string {
 function formatCores(value: number | null | undefined): string {
   if (value === null || value === undefined) return '-- Cores'
   return `${Number.isInteger(value) ? value.toFixed(0) : value.toFixed(1)} Cores`
+}
+
+function formatBootTime(value: string | undefined): string {
+  if (!value) return '--'
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return value
+  return date.toLocaleString('zh-CN', { hour12: false })
 }
 
 function formatBinaryBytes(value: number | null | undefined): string {

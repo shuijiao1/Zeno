@@ -24,6 +24,7 @@ describe('normalizeSummary', () => {
           memory_total_bytes: 200,
           disk_used_bytes: 300,
           disk_total_bytes: 400,
+          boot_time: '2026-07-02T01:00:00Z',
           net_in_speed_bps: 1024,
           net_out_speed_bps: 2048,
           net_in_total_bytes: 4096,
@@ -67,6 +68,7 @@ describe('normalizeSummary', () => {
     expect(summary.nodes[0].kernel).toBe('6.12.0')
     expect(summary.nodes[0].virtualization).toBe('kvm')
     expect(summary.nodes[0].cpuModel).toBe('AMD EPYC')
+    expect(summary.nodes[0].bootTime).toBe('2026-07-02T01:00:00Z')
     expect(summary.latencyPoints[0].targetId).toBe('google')
     expect(summary.latencyPoints[0].medianMs).toBeNull()
     expect(summary.latencyPoints[0].lossPercent).toBe(100)

@@ -298,7 +298,7 @@ func TestAlertRuleScopeLimitsStateEvaluationAndCurrentStates(t *testing.T) {
 		t.Fatalf("scope cpu rule: %v", err)
 	}
 
-	ts := time.Date(2026, 7, 4, 16, 0, 0, 0, time.UTC)
+	ts := time.Now().UTC()
 	hytronTransition, err := store.RecordAgentStateAlertRuleTransition(ctx, "hytron", ts, AgentStateRequest{
 		TS:               ts.Unix(),
 		CPUPercent:       95,

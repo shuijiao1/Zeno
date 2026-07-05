@@ -43,6 +43,7 @@ type Node struct {
 	MemoryTotalBytes     *float64        `json:"memory_total_bytes"`
 	DiskUsedBytes        *float64        `json:"disk_used_bytes"`
 	DiskTotalBytes       *float64        `json:"disk_total_bytes"`
+	BootTime             *string         `json:"boot_time,omitempty"`
 	NetInSpeedBps        *float64        `json:"net_in_speed_bps"`
 	NetOutSpeedBps       *float64        `json:"net_out_speed_bps"`
 	NetInTotalBytes      *float64        `json:"net_in_total_bytes"`
