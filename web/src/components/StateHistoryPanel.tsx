@@ -163,7 +163,7 @@ function MetricChartCard({ metric }: { metric: MetricConfig }) {
           return (
             <g key={ratio}>
               <line x1={chartPad.left} x2={chartWidth - chartPad.right} y1={y} y2={y} className="state-sparkline__baseline" />
-              <text x={chartPad.left - 10} y={y + 4} className="state-sparkline__axis" textAnchor="end">{formatAxisValue(value, metric.unitLabel)}</text>
+              <text x={8} y={y + 4} className="state-sparkline__axis" textAnchor="start">{formatAxisValue(value, metric.unitLabel)}</text>
             </g>
           )
         })}

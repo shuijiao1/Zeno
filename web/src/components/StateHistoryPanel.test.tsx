@@ -67,6 +67,8 @@ describe('StateHistoryPanel', () => {
     expect(html).toContain('state-history-stack')
     expect(html).toContain('state-history-chart-card')
     expect(html).toContain('viewBox="0 0 900 180"')
+    expect(html).toContain('class="state-sparkline__axis" text-anchor="start"')
+    expect(html).not.toContain('class="state-sparkline__axis" text-anchor="end"')
     expect(html).toContain('CPU')
     expect(html).toContain('18.8%')
     expect(html).toContain('内存 / Swap')
