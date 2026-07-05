@@ -1025,12 +1025,12 @@ export function AdminDashboard({
 }
 
 function AdminSectionNav({ activeSection, onSectionChange }: { activeSection: AdminSection; onSectionChange: (section: AdminSection) => void }) {
-  const sections: Array<{ id: AdminSection; label: string }> = [
-    { id: 'nodes', label: '服务器' },
-    { id: 'targets', label: '延迟监控' },
-    { id: 'notifications', label: '通知' },
-    { id: 'account', label: '账户' },
-    { id: 'settings', label: '设置' },
+  const sections: Array<{ id: AdminSection; label: string; icon: string }> = [
+    { id: 'nodes', label: '服务器', icon: '▦' },
+    { id: 'targets', label: '延迟监控', icon: '⌁' },
+    { id: 'notifications', label: '通知', icon: '✦' },
+    { id: 'account', label: '账户', icon: '◎' },
+    { id: 'settings', label: '设置', icon: '⚙' },
   ]
 
   return (
@@ -1042,6 +1042,7 @@ function AdminSectionNav({ activeSection, onSectionChange }: { activeSection: Ad
           data-active={activeSection === section.id}
           onClick={() => onSectionChange(section.id)}
         >
+          <span className="admin-section-icon" aria-hidden="true">{section.icon}</span>
           <span>{section.label}</span>
         </button>
       ))}
@@ -2443,20 +2444,20 @@ export function HomeOverviewPanel({ totalCount, onlineCount, offlineCount: _offl
       </div>
 
       <dl className="home-summary__metrics" aria-label="traffic totals and speeds">
-        <div>
-          <dt>上传</dt>
+        <div className="home-summary__metric home-summary__metric--send">
+          <dt>发送</dt>
           <dd>{compactBytes(totalUp)}</dd>
         </div>
-        <div>
-          <dt>下载</dt>
+        <div className="home-summary__metric home-summary__metric--receive">
+          <dt>接收</dt>
           <dd>{compactBytes(totalDown)}</dd>
         </div>
-        <div>
-          <dt>实时</dt>
+        <div className="home-summary__metric home-summary__metric--upload-rate home-summary__metric--rate">
+          <dt>上传</dt>
           <dd><CircleArrowIcon direction="up" />{compactRate(upSpeed)}</dd>
         </div>
-        <div>
-          <dt>实时</dt>
+        <div className="home-summary__metric home-summary__metric--download-rate home-summary__metric--rate">
+          <dt>下载</dt>
           <dd><CircleArrowIcon direction="down" />{compactRate(downSpeed)}</dd>
         </div>
       </dl>
