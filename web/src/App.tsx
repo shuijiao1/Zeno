@@ -651,7 +651,7 @@ export function App() {
           points={latencyState.kind === 'ready' ? latencyState.data.points : []}
           statePoints={stateHistoryState.kind === 'ready' ? stateHistoryState.data.points : []}
           range={nodeLatencyRange}
-          stateRange={stateRange}
+          stateRange={stateHistoryState.kind === 'ready' ? stateHistoryState.data.range : stateRange}
           loading={latencyState.kind === 'loading'}
           error={latencyState.kind === 'error' ? latencyState.message : undefined}
           stateLoading={stateHistoryState.kind === 'loading'}
@@ -783,9 +783,9 @@ function ServiceDetail({ target, points, range, loading, error, onBack, onRangeC
               ))}
             </div>
             <label className="peak-switch">
-              <input type="checkbox" aria-label="平" checked={peakCut} onChange={(event) => setPeakCut(event.target.checked)} />
+              <input type="checkbox" aria-label="平滑" checked={peakCut} onChange={(event) => setPeakCut(event.target.checked)} />
               <span />
-              <b>平</b>
+              <b>平滑</b>
             </label>
           </div>
         </header>

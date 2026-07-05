@@ -91,9 +91,9 @@ export function LatencyDetail({
             <div className="monitor-title-row">
               <h3>{node.displayName}</h3>
               <label className="peak-switch">
-                <input type="checkbox" aria-label="平" checked={peakCut} onChange={(event) => setPeakCut(event.target.checked)} />
+                <input type="checkbox" aria-label="平滑" checked={peakCut} onChange={(event) => setPeakCut(event.target.checked)} />
                 <span />
-                <b>平</b>
+                <b>平滑</b>
               </label>
             </div>
             <p>{targetSummaries.length} 个监控服务</p>
@@ -138,7 +138,7 @@ export function LatencyDetail({
             <LatencyChart
               points={points}
               title={`${node.displayName} 网络延迟`}
-              eyebrow={`${rangeLabel} · ${targetSummaries.length} 个监控服务${peakCut ? ' · 平' : ''}`}
+              eyebrow={`${rangeLabel} · ${targetSummaries.length} 个监控服务${peakCut ? ' · 平滑' : ''}`}
               compactHeader
               hideHeader
               peakCut={peakCut}
