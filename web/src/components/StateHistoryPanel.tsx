@@ -29,7 +29,7 @@ interface MetricConfig {
 
 const chartWidth = 900
 const chartHeight = 180
-const chartPad = { left: 48, right: 18, top: 18, bottom: 34 }
+const chartPad = { left: 112, right: 18, top: 18, bottom: 34 }
 const stateRangeOptions = [
   { value: '1h', label: '实时' },
   { value: '1d', label: '1 天' },
@@ -163,7 +163,7 @@ function MetricChartCard({ metric }: { metric: MetricConfig }) {
           return (
             <g key={ratio}>
               <line x1={chartPad.left} x2={chartWidth - chartPad.right} y1={y} y2={y} className="state-sparkline__baseline" />
-              <text x={8} y={y + 4} className="state-sparkline__axis">{formatAxisValue(value, metric.unitLabel)}</text>
+              <text x={chartPad.left - 10} y={y + 4} className="state-sparkline__axis" textAnchor="end">{formatAxisValue(value, metric.unitLabel)}</text>
             </g>
           )
         })}
