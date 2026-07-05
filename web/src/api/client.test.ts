@@ -259,6 +259,27 @@ describe('normalizeServiceLatency', () => {
     expect(data.points[0].targetId).toBe('hytron')
     expect(data.points[0].targetName).toBe('Hytron')
   })
+
+  it('expands compact Kulin-style node series into chart-compatible points', () => {
+    const data = normalizeServiceLatency({
+      target: { id: 'google', name: 'Google', type: 'http_get', address: 'https://www.google.com/generate_204', port: null, assigned_node_count: 10, reporting_node_count: 9, median_ms: 1.2, loss_percent: 0, updated_at: '2026-07-02T12:00:00Z' },
+      range: '1d',
+      series: [
+        {
+          node_id: 'hytron',
+          node_name: 'Hytron',
+          created_at: [Date.parse('2026-07-02T12:00:00Z')],
+          median_ms: [1.3],
+          avg_ms: [1.5],
+          loss_percent: [0],
+        },
+      ],
+    })
+
+    expect(data.points).toEqual([
+      expect.objectContaining({ ts: '2026-07-02T12:00:00.000Z', targetId: 'hytron', targetName: 'Hytron', medianMs: 1.3, avgMs: 1.5, lossPercent: 0 }),
+    ])
+  })
 })
 
 describe('fetchServiceLatency', () => {
@@ -303,6 +324,28 @@ describe('normalizeNodeLatency', () => {
     expect(data.points[0].targetName).toBe('Telegram DC1')
     expect(data.points[0].medianMs).toBeNull()
     expect(data.points[0].lossPercent).toBe(100)
+  })
+
+  it('expands compact Kulin-style target series into chart points', () => {
+    const data = normalizeNodeLatency({
+      node_id: 'hytron',
+      range: '1d',
+      series: [
+        {
+          target_id: 'google',
+          target_name: 'Google',
+          created_at: [Date.parse('2026-07-02T12:00:00Z'), Date.parse('2026-07-02T12:01:00Z')],
+          median_ms: [1.2, null],
+          avg_ms: [1.4, null],
+          loss_percent: [0, 100],
+        },
+      ],
+    })
+
+    expect(data.points).toEqual([
+      expect.objectContaining({ ts: '2026-07-02T12:00:00.000Z', targetId: 'google', targetName: 'Google', medianMs: 1.2, avgMs: 1.4, lossPercent: 0 }),
+      expect.objectContaining({ ts: '2026-07-02T12:01:00.000Z', targetId: 'google', targetName: 'Google', medianMs: null, avgMs: null, lossPercent: 100 }),
+    ])
   })
 })
 

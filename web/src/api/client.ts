@@ -68,6 +68,15 @@ interface ApiLatencyPoint {
   loss_percent: number
 }
 
+interface ApiLatencySeries {
+  target_id: string
+  target_name: string
+  created_at: number[]
+  median_ms?: Array<number | null> | null
+  avg_ms?: Array<number | null> | null
+  loss_percent?: number[] | null
+}
+
 interface ApiServiceTarget {
   id: string
   name: string
@@ -89,6 +98,15 @@ interface ApiServiceLatencyPoint {
   median_ms: number | null
   avg_ms?: number | null
   loss_percent: number
+}
+
+interface ApiServiceLatencySeries {
+  node_id: string
+  node_name: string
+  created_at: number[]
+  median_ms?: Array<number | null> | null
+  avg_ms?: Array<number | null> | null
+  loss_percent?: number[] | null
 }
 
 interface ApiStatePoint {
@@ -269,13 +287,15 @@ export interface ApiSummaryResponse {
 export interface ApiLatencyResponse {
   node_id: string
   range: string
-  points: ApiLatencyPoint[] | null
+  points?: ApiLatencyPoint[] | null
+  series?: ApiLatencySeries[] | null
 }
 
 export interface ApiServiceLatencyResponse {
   target: ApiServiceTarget
   range: string
-  points: ApiServiceLatencyPoint[] | null
+  points?: ApiServiceLatencyPoint[] | null
+  series?: ApiServiceLatencySeries[] | null
 }
 
 export interface ApiStateResponse {
@@ -1007,7 +1027,7 @@ export function normalizeNodeLatency(input: ApiLatencyResponse): NodeLatencyData
   return {
     nodeId: input.node_id,
     range: input.range,
-    points: (input.points ?? []).map(normalizeLatencyPoint),
+    points: normalizeNodeLatencyPoints(input),
   }
 }
 
@@ -1015,7 +1035,7 @@ export function normalizeServiceLatency(input: ApiServiceLatencyResponse): Servi
   return {
     target: normalizeServiceTarget(input.target),
     range: input.range,
-    points: (input.points ?? []).map(normalizeServiceLatencyPoint),
+    points: normalizeServiceLatencyPoints(input),
   }
 }
 
@@ -1237,6 +1257,52 @@ function normalizeLatencyPoint(point: ApiLatencyPoint): LatencyPoint {
     avgMs: point.avg_ms ?? point.median_ms,
     lossPercent: point.loss_percent,
   }
+}
+
+function normalizeNodeLatencyPoints(input: ApiLatencyResponse): LatencyPoint[] {
+  if (input.points) return input.points.map(normalizeLatencyPoint)
+  return (input.series ?? []).flatMap((series) => {
+    const medianValues = series.median_ms ?? []
+    const avgValues = series.avg_ms ?? []
+    const lossValues = series.loss_percent ?? []
+    return (series.created_at ?? []).map((createdAt, index) => {
+      const medianMs = medianValues[index] ?? null
+      return {
+        ts: normalizeSeriesTimestamp(createdAt),
+        targetId: series.target_id,
+        targetName: series.target_name,
+        medianMs,
+        avgMs: avgValues[index] ?? medianMs,
+        lossPercent: lossValues[index] ?? 0,
+      }
+    })
+  })
+}
+
+function normalizeServiceLatencyPoints(input: ApiServiceLatencyResponse): LatencyPoint[] {
+  if (input.points) return input.points.map(normalizeServiceLatencyPoint)
+  return (input.series ?? []).flatMap((series) => {
+    const medianValues = series.median_ms ?? []
+    const avgValues = series.avg_ms ?? []
+    const lossValues = series.loss_percent ?? []
+    return (series.created_at ?? []).map((createdAt, index) => {
+      const medianMs = medianValues[index] ?? null
+      return {
+        ts: normalizeSeriesTimestamp(createdAt),
+        targetId: series.node_id,
+        targetName: series.node_name,
+        medianMs,
+        avgMs: avgValues[index] ?? medianMs,
+        lossPercent: lossValues[index] ?? 0,
+      }
+    })
+  })
+}
+
+function normalizeSeriesTimestamp(value: number): string {
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return new Date(0).toISOString()
+  return date.toISOString()
 }
 
 function normalizeServiceTarget(target: ApiServiceTarget): ServiceTarget {

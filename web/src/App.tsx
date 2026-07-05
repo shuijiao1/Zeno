@@ -208,14 +208,6 @@ export function App() {
     } else {
       setLatencyState((current) => (current.kind === 'ready' && current.data.nodeId === route.nodeId ? current : { kind: 'loading' }))
     }
-    fetchNodeLatency(route.nodeId, nodeLatencyRange)
-      .then((data) => {
-        nodeLatencyCacheRef.current.set(cacheKey, data)
-        if (!cancelled) setLatencyState({ kind: 'ready', data })
-      })
-      .catch((error: unknown) => {
-        if (!cancelled) setLatencyState((current) => (current.kind === 'ready' ? current : { kind: 'error', message: error instanceof Error ? error.message : 'unknown error' }))
-      })
     const stopLatencyStream = subscribeNodeLatency(
       route.nodeId,
       nodeLatencyRange,
@@ -227,7 +219,16 @@ export function App() {
         if (!cancelled) setLatencyState((current) => (current.kind === 'ready' ? current : { kind: 'error', message: error.message }))
       },
     )
-    if (!stopLatencyStream) setLatencyState({ kind: 'error', message: 'websocket unsupported' })
+    if (!stopLatencyStream) {
+      fetchNodeLatency(route.nodeId, nodeLatencyRange)
+        .then((data) => {
+          nodeLatencyCacheRef.current.set(cacheKey, data)
+          if (!cancelled) setLatencyState({ kind: 'ready', data })
+        })
+        .catch((error: unknown) => {
+          if (!cancelled) setLatencyState((current) => (current.kind === 'ready' ? current : { kind: 'error', message: error instanceof Error ? error.message : 'unknown error' }))
+        })
+    }
     return () => {
       cancelled = true
       stopLatencyStream?.()
@@ -248,16 +249,15 @@ export function App() {
     } else {
       setStateHistoryState({ kind: 'loading' })
     }
-    fetchNodeState(route.nodeId, stateRange)
-      .then((data) => {
-        nodeStateCacheRef.current.set(cacheKey, data)
-        if (!cancelled) setStateHistoryState({ kind: 'ready', data })
-      })
-      .catch((error: unknown) => {
-        if (!cancelled) setStateHistoryState({ kind: 'error', message: error instanceof Error ? error.message : 'unknown error' })
-      })
-
     if (stateRange !== '1h') {
+      fetchNodeState(route.nodeId, stateRange)
+        .then((data) => {
+          nodeStateCacheRef.current.set(cacheKey, data)
+          if (!cancelled) setStateHistoryState({ kind: 'ready', data })
+        })
+        .catch((error: unknown) => {
+          if (!cancelled) setStateHistoryState({ kind: 'error', message: error instanceof Error ? error.message : 'unknown error' })
+        })
       return () => {
         cancelled = true
       }
@@ -273,44 +273,19 @@ export function App() {
         if (!cancelled) setStateHistoryState({ kind: 'error', message: error.message })
       },
     )
-    if (!stopStateStream) setStateHistoryState({ kind: 'error', message: 'websocket unsupported' })
+    if (!stopStateStream) {
+      fetchNodeState(route.nodeId, stateRange)
+        .then((data) => {
+          nodeStateCacheRef.current.set(cacheKey, data)
+          if (!cancelled) setStateHistoryState({ kind: 'ready', data })
+        })
+        .catch((error: unknown) => {
+          if (!cancelled) setStateHistoryState({ kind: 'error', message: error instanceof Error ? error.message : 'unknown error' })
+        })
+    }
     return () => {
       cancelled = true
       stopStateStream?.()
-    }
-  }, [route, stateRange])
-
-  useEffect(() => {
-    if (route.kind !== 'node') return
-    let cancelled = false
-    for (const range of ['1d', '7d', '30d']) {
-      const cacheKey = `${route.nodeId}:${range}`
-      if (range === nodeLatencyRange || nodeLatencyCacheRef.current.has(cacheKey)) continue
-      fetchNodeLatency(route.nodeId, range)
-        .then((data) => {
-          if (!cancelled) nodeLatencyCacheRef.current.set(cacheKey, data)
-        })
-        .catch(() => {})
-    }
-    return () => {
-      cancelled = true
-    }
-  }, [route, nodeLatencyRange])
-
-  useEffect(() => {
-    if (route.kind !== 'node') return
-    let cancelled = false
-    for (const range of ['1h', '1d', '7d', '30d']) {
-      const cacheKey = `${route.nodeId}:${range}`
-      if (range === stateRange || nodeStateCacheRef.current.has(cacheKey)) continue
-      fetchNodeState(route.nodeId, range)
-        .then((data) => {
-          if (!cancelled) nodeStateCacheRef.current.set(cacheKey, data)
-        })
-        .catch(() => {})
-    }
-    return () => {
-      cancelled = true
     }
   }, [route, stateRange])
 

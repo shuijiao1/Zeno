@@ -269,14 +269,14 @@ func TestLatencyWebSocketsPublishAgentProbeResults(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read node latency update: %v", err)
 	}
-	if !strings.Contains(string(nodeUpdate), `"target_id":"google-dns"`) || !strings.Contains(string(nodeUpdate), `"median_ms":20`) {
+	if !strings.Contains(string(nodeUpdate), `"target_id":"google-dns"`) || !strings.Contains(string(nodeUpdate), `"median_ms":[20]`) {
 		t.Fatalf("node latency websocket update = %q, want posted probe median", string(nodeUpdate))
 	}
 	_, serviceUpdate, err := serviceConn.ReadMessage()
 	if err != nil {
 		t.Fatalf("read service latency update: %v", err)
 	}
-	if !strings.Contains(string(serviceUpdate), `"node_id":"hytron"`) || !strings.Contains(string(serviceUpdate), `"median_ms":20`) {
+	if !strings.Contains(string(serviceUpdate), `"node_id":"hytron"`) || !strings.Contains(string(serviceUpdate), `"median_ms":[20]`) {
 		t.Fatalf("service latency websocket update = %q, want posted probe median", string(serviceUpdate))
 	}
 }
