@@ -518,22 +518,7 @@ function subscribeLiveWebSocket<T>(path: string, normalize: (payload: unknown) =
 }
 
 export function subscribeSummary(onSummary: (summary: SummaryData) => void, onError?: (error: Error) => void): (() => void) | null {
-  const stopWebSocket = subscribeLiveWebSocket('/api/public/v1/summary/ws', (payload) => normalizeSummary(payload as ApiSummaryResponse), onSummary, onError)
-  if (stopWebSocket) return stopWebSocket
-  if (typeof EventSource === 'undefined') return null
-  const source = new EventSource('/api/public/v1/summary/stream')
-  source.addEventListener('summary', (event) => {
-    try {
-      const message = event as MessageEvent<string>
-      onSummary(normalizeSummary(JSON.parse(message.data) as ApiSummaryResponse))
-    } catch (error) {
-      onError?.(error instanceof Error ? error : new Error('summary stream parse failed'))
-    }
-  })
-  source.onerror = () => {
-    onError?.(new Error('summary stream disconnected'))
-  }
-  return () => source.close()
+  return subscribeLiveWebSocket('/api/public/v1/summary/ws', (payload) => normalizeSummary(payload as ApiSummaryResponse), onSummary, onError)
 }
 
 export function subscribeNodeLatency(nodeId: string, range: string, onLatency: (latency: NodeLatencyData) => void, onError?: (error: Error) => void): (() => void) | null {

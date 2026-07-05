@@ -3,8 +3,6 @@ package api
 import (
 	"context"
 	"encoding/json"
-	"fmt"
-	"io"
 	"net/http"
 	"net/url"
 	"strings"
@@ -90,53 +88,6 @@ func serviceLatencyLiveTopic(targetID, rangeName string) string {
 
 func liveWindowNames() []string {
 	return []string{"1h", "1d", "7d", "30d"}
-}
-
-func (h *handler) handleSummaryStream(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet {
-		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
-		return
-	}
-	flusher, ok := w.(http.Flusher)
-	if !ok {
-		writeError(w, http.StatusInternalServerError, "streaming unsupported")
-		return
-	}
-	updates, unsubscribe := h.liveHub.subscribe(summaryLiveTopic)
-	defer unsubscribe()
-
-	initial, err := h.summaryJSON(r.Context())
-	if err != nil {
-		writeStoreError(w, err)
-		return
-	}
-
-	header := w.Header()
-	header.Set("Content-Type", "text/event-stream; charset=utf-8")
-	header.Set("Cache-Control", "no-cache")
-	header.Set("Connection", "keep-alive")
-	header.Set("X-Accel-Buffering", "no")
-	w.WriteHeader(http.StatusOK)
-	writeSummaryEvent(w, initial)
-	flusher.Flush()
-
-	keepAlive := time.NewTicker(25 * time.Second)
-	defer keepAlive.Stop()
-	for {
-		select {
-		case <-r.Context().Done():
-			return
-		case payload, ok := <-updates:
-			if !ok {
-				return
-			}
-			writeSummaryEvent(w, payload)
-			flusher.Flush()
-		case <-keepAlive.C:
-			_, _ = io.WriteString(w, ": keepalive\n\n")
-			flusher.Flush()
-		}
-	}
 }
 
 var summaryWebSocketUpgrader = websocket.Upgrader{
@@ -345,8 +296,4 @@ func (h *handler) publishServiceLatency(ctx context.Context, targetID string) {
 			h.liveHub.publish(topic, payload)
 		}
 	}
-}
-
-func writeSummaryEvent(w io.Writer, payload []byte) {
-	_, _ = fmt.Fprintf(w, "event: summary\ndata: %s\n\n", payload)
 }

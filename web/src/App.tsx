@@ -1,6 +1,6 @@
 import { type CSSProperties, type DragEvent, type FormEvent, type ReactNode, useEffect, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { createAdminNode, createAdminNotificationChannel, createAdminProbeTarget, deleteAdminNode, deleteAdminNotificationChannel, deleteAdminProbeTarget, fetchAdminAccount, fetchAdminAlertRules, fetchAdminNodes, fetchAdminNotificationChannels, fetchAdminProbeTargets, fetchAdminSettings, fetchNodeLatency, fetchNodeState, fetchPublicSettings, fetchServiceLatency, fetchSummary, subscribeNodeLatency, subscribeNodeState, subscribeServiceLatency, subscribeSummary, loginAdmin, logoutAdmin, requestAdminNodeInstallCommand, testAdminNotificationChannel, updateAdminAccount, updateAdminAlertRule, updateAdminNode, updateAdminNotificationChannel, updateAdminNotificationType, updateAdminProbeTarget, updateAdminSettings, type AdminAccountData, type AdminAlertRuleUpdateInput, type AdminNodeCreateInput, type AdminNodeUpdateInput, type AdminNotificationChannelCreateInput, type AdminNotificationChannelUpdateInput, type AdminProbeTargetInput, type AdminProbeTargetUpdateInput, type AdminSettingsUpdateInput, type NodeLatencyData, type NodeStateData, type ServiceLatencyData, type SummaryData } from './api/client'
+import { createAdminNode, createAdminNotificationChannel, createAdminProbeTarget, deleteAdminNode, deleteAdminNotificationChannel, deleteAdminProbeTarget, fetchAdminAccount, fetchAdminAlertRules, fetchAdminNodes, fetchAdminNotificationChannels, fetchAdminProbeTargets, fetchAdminSettings, fetchPublicSettings, subscribeNodeLatency, subscribeNodeState, subscribeServiceLatency, subscribeSummary, loginAdmin, logoutAdmin, requestAdminNodeInstallCommand, testAdminNotificationChannel, updateAdminAccount, updateAdminAlertRule, updateAdminNode, updateAdminNotificationChannel, updateAdminNotificationType, updateAdminProbeTarget, updateAdminSettings, type AdminAccountData, type AdminAlertRuleUpdateInput, type AdminNodeCreateInput, type AdminNodeUpdateInput, type AdminNotificationChannelCreateInput, type AdminNotificationChannelUpdateInput, type AdminProbeTargetInput, type AdminProbeTargetUpdateInput, type AdminSettingsUpdateInput, type NodeLatencyData, type NodeStateData, type ServiceLatencyData, type SummaryData } from './api/client'
 import { LatencyDetail } from './components/LatencyDetail'
 import { LatencyChart } from './components/LatencyChart'
 import { ServerCard } from './components/ServerCard'
@@ -151,38 +151,18 @@ export function App() {
 
   useEffect(() => {
     let cancelled = false
-    let stopFallbackRefresh: (() => void) | null = null
-    const loadSummary = () => {
-      fetchSummary()
-        .then((data) => {
-          if (!cancelled) setState({ kind: 'ready', data })
-        })
-        .catch((error: unknown) => {
-          if (!cancelled) setState({ kind: 'error', message: error instanceof Error ? error.message : 'unknown error' })
-        })
-    }
-
-    loadSummary()
-    const startFallbackRefresh = () => {
-      if (stopFallbackRefresh === null) {
-        stopFallbackRefresh = startLiveRefresh(loadSummary)
-      }
-    }
-    let stopSummaryStream = subscribeSummary(
+    const stopSummaryStream = subscribeSummary(
       (data) => {
         if (!cancelled) setState({ kind: 'ready', data })
       },
-      () => {
-        stopSummaryStream?.()
-        stopSummaryStream = null
-        startFallbackRefresh()
+      (error) => {
+        if (!cancelled) setState({ kind: 'error', message: error.message })
       },
     )
-    if (!stopSummaryStream) startFallbackRefresh()
+    if (!stopSummaryStream) setState({ kind: 'error', message: 'websocket unsupported' })
     return () => {
       cancelled = true
       stopSummaryStream?.()
-      stopFallbackRefresh?.()
     }
   }, [])
 
@@ -199,45 +179,21 @@ export function App() {
     }
 
     let cancelled = false
-    let loadedOnce = false
-    let stopFallbackRefresh: (() => void) | null = null
-    const loadLatency = () => {
-      if (!loadedOnce) setLatencyState({ kind: 'loading' })
-      fetchNodeLatency(route.nodeId, latencyRange)
-        .then((data) => {
-          loadedOnce = true
-          if (!cancelled) setLatencyState({ kind: 'ready', data })
-        })
-        .catch((error: unknown) => {
-          loadedOnce = true
-          if (!cancelled) setLatencyState({ kind: 'error', message: error instanceof Error ? error.message : 'unknown error' })
-        })
-    }
-
-    loadLatency()
-    const startFallbackRefresh = () => {
-      if (stopFallbackRefresh === null) {
-        stopFallbackRefresh = startLiveRefresh(loadLatency)
-      }
-    }
-    let stopLatencyStream = subscribeNodeLatency(
+    setLatencyState({ kind: 'loading' })
+    const stopLatencyStream = subscribeNodeLatency(
       route.nodeId,
       latencyRange,
       (data) => {
-        loadedOnce = true
         if (!cancelled) setLatencyState({ kind: 'ready', data })
       },
-      () => {
-        stopLatencyStream?.()
-        stopLatencyStream = null
-        startFallbackRefresh()
+      (error) => {
+        if (!cancelled) setLatencyState({ kind: 'error', message: error.message })
       },
     )
-    if (!stopLatencyStream) startFallbackRefresh()
+    if (!stopLatencyStream) setLatencyState({ kind: 'error', message: 'websocket unsupported' })
     return () => {
       cancelled = true
       stopLatencyStream?.()
-      stopFallbackRefresh?.()
     }
   }, [route, latencyRange])
 
@@ -248,45 +204,21 @@ export function App() {
     }
 
     let cancelled = false
-    let loadedOnce = false
-    let stopFallbackRefresh: (() => void) | null = null
-    const loadStateHistory = () => {
-      if (!loadedOnce) setStateHistoryState({ kind: 'loading' })
-      fetchNodeState(route.nodeId, stateRange)
-        .then((data) => {
-          loadedOnce = true
-          if (!cancelled) setStateHistoryState({ kind: 'ready', data })
-        })
-        .catch((error: unknown) => {
-          loadedOnce = true
-          if (!cancelled) setStateHistoryState({ kind: 'error', message: error instanceof Error ? error.message : 'unknown error' })
-        })
-    }
-
-    loadStateHistory()
-    const startFallbackRefresh = () => {
-      if (stopFallbackRefresh === null) {
-        stopFallbackRefresh = startLiveRefresh(loadStateHistory)
-      }
-    }
-    let stopStateStream = subscribeNodeState(
+    setStateHistoryState({ kind: 'loading' })
+    const stopStateStream = subscribeNodeState(
       route.nodeId,
       stateRange,
       (data) => {
-        loadedOnce = true
         if (!cancelled) setStateHistoryState({ kind: 'ready', data })
       },
-      () => {
-        stopStateStream?.()
-        stopStateStream = null
-        startFallbackRefresh()
+      (error) => {
+        if (!cancelled) setStateHistoryState({ kind: 'error', message: error.message })
       },
     )
-    if (!stopStateStream) startFallbackRefresh()
+    if (!stopStateStream) setStateHistoryState({ kind: 'error', message: 'websocket unsupported' })
     return () => {
       cancelled = true
       stopStateStream?.()
-      stopFallbackRefresh?.()
     }
   }, [route, stateRange])
 
@@ -297,45 +229,21 @@ export function App() {
     }
 
     let cancelled = false
-    let loadedOnce = false
-    let stopFallbackRefresh: (() => void) | null = null
-    const loadServiceLatency = () => {
-      if (!loadedOnce) setServiceLatencyState({ kind: 'loading' })
-      fetchServiceLatency(route.targetId, latencyRange)
-        .then((data) => {
-          loadedOnce = true
-          if (!cancelled) setServiceLatencyState({ kind: 'ready', data })
-        })
-        .catch((error: unknown) => {
-          loadedOnce = true
-          if (!cancelled) setServiceLatencyState({ kind: 'error', message: error instanceof Error ? error.message : 'unknown error' })
-        })
-    }
-
-    loadServiceLatency()
-    const startFallbackRefresh = () => {
-      if (stopFallbackRefresh === null) {
-        stopFallbackRefresh = startLiveRefresh(loadServiceLatency)
-      }
-    }
-    let stopServiceLatencyStream = subscribeServiceLatency(
+    setServiceLatencyState({ kind: 'loading' })
+    const stopServiceLatencyStream = subscribeServiceLatency(
       route.targetId,
       latencyRange,
       (data) => {
-        loadedOnce = true
         if (!cancelled) setServiceLatencyState({ kind: 'ready', data })
       },
-      () => {
-        stopServiceLatencyStream?.()
-        stopServiceLatencyStream = null
-        startFallbackRefresh()
+      (error) => {
+        if (!cancelled) setServiceLatencyState({ kind: 'error', message: error.message })
       },
     )
-    if (!stopServiceLatencyStream) startFallbackRefresh()
+    if (!stopServiceLatencyStream) setServiceLatencyState({ kind: 'error', message: 'websocket unsupported' })
     return () => {
       cancelled = true
       stopServiceLatencyStream?.()
-      stopFallbackRefresh?.()
     }
   }, [route, latencyRange])
 
