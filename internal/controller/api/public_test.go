@@ -198,6 +198,144 @@ func TestSummaryWebSocketPublishesAgentStateUpdates(t *testing.T) {
 	}
 }
 
+func TestNodeStateWebSocketPublishesAgentStateUpdates(t *testing.T) {
+	store, err := OpenSQLiteStore(filepath.Join(t.TempDir(), "zeno.db"))
+	if err != nil {
+		t.Fatalf("open sqlite store: %v", err)
+	}
+	defer store.Close()
+	ctx := context.Background()
+	if err := store.SeedPreviewData(ctx, PreviewSeedOptions{NodeID: "hytron", DisplayName: "Hytron", CountryCode: "HK", AgentToken: "test-agent-token"}); err != nil {
+		t.Fatalf("seed preview data: %v", err)
+	}
+
+	server := httptest.NewServer(NewHandler(HandlerOptions{Store: store}))
+	defer server.Close()
+
+	wsURL := "ws" + strings.TrimPrefix(server.URL, "http") + "/api/public/v1/nodes/hytron/state/ws?range=1h"
+	conn, response, err := websocket.DefaultDialer.Dial(wsURL, nil)
+	if err != nil {
+		t.Fatalf("open node state websocket: %v", err)
+	}
+	if response != nil && response.Body != nil {
+		defer response.Body.Close()
+	}
+	defer conn.Close()
+
+	if _, _, err := conn.ReadMessage(); err != nil {
+		t.Fatalf("read initial node state websocket message: %v", err)
+	}
+
+	payload := []byte(`{"ts":` + strconv.FormatInt(time.Now().UTC().Unix(), 10) + `,"cpu_percent":22.5,"memory_used_bytes":100,"memory_total_bytes":200,"disk_used_bytes":300,"disk_total_bytes":400,"net_in_total_bytes":1000,"net_out_total_bytes":2000,"net_in_speed_bps":2468,"net_out_speed_bps":8642,"uptime_seconds":60}`)
+	request, err := http.NewRequest(http.MethodPost, server.URL+"/api/agent/v1/state", bytes.NewReader(payload))
+	if err != nil {
+		t.Fatalf("new state request: %v", err)
+	}
+	request.Header.Set("X-Node-ID", "hytron")
+	request.Header.Set("Authorization", "Bearer test-agent-token")
+	request.Header.Set("Content-Type", "application/json")
+	stateResponse, err := server.Client().Do(request)
+	if err != nil {
+		t.Fatalf("post agent state: %v", err)
+	}
+	defer stateResponse.Body.Close()
+	if stateResponse.StatusCode != http.StatusAccepted {
+		t.Fatalf("state status = %d, want 202; body=%s", stateResponse.StatusCode, readAllString(t, stateResponse.Body))
+	}
+
+	_, update, err := conn.ReadMessage()
+	if err != nil {
+		t.Fatalf("read updated node state websocket message: %v", err)
+	}
+	if !strings.Contains(string(update), `"node_id":"hytron"`) || !strings.Contains(string(update), `"net_out_speed_bps":8642`) {
+		t.Fatalf("node state websocket update = %q, want latest state point", string(update))
+	}
+}
+
+func TestLatencyWebSocketsPublishAgentProbeResults(t *testing.T) {
+	store, err := OpenSQLiteStore(filepath.Join(t.TempDir(), "zeno.db"))
+	if err != nil {
+		t.Fatalf("open sqlite store: %v", err)
+	}
+	defer store.Close()
+	ctx := context.Background()
+	if err := store.SeedPreviewData(ctx, PreviewSeedOptions{NodeID: "hytron", DisplayName: "Hytron", CountryCode: "HK", AgentToken: "test-agent-token"}); err != nil {
+		t.Fatalf("seed preview data: %v", err)
+	}
+
+	server := httptest.NewServer(NewHandler(HandlerOptions{Store: store}))
+	defer server.Close()
+
+	nodeConn, nodeResponse, err := websocket.DefaultDialer.Dial("ws"+strings.TrimPrefix(server.URL, "http")+"/api/public/v1/nodes/hytron/latency/ws?range=1h", nil)
+	if err != nil {
+		t.Fatalf("open node latency websocket: %v", err)
+	}
+	if nodeResponse != nil && nodeResponse.Body != nil {
+		defer nodeResponse.Body.Close()
+	}
+	defer nodeConn.Close()
+	serviceConn, serviceResponse, err := websocket.DefaultDialer.Dial("ws"+strings.TrimPrefix(server.URL, "http")+"/api/public/v1/services/google-dns/latency/ws?range=1h", nil)
+	if err != nil {
+		t.Fatalf("open service latency websocket: %v", err)
+	}
+	if serviceResponse != nil && serviceResponse.Body != nil {
+		defer serviceResponse.Body.Close()
+	}
+	defer serviceConn.Close()
+	if _, _, err := nodeConn.ReadMessage(); err != nil {
+		t.Fatalf("read initial node latency websocket message: %v", err)
+	}
+	if _, _, err := serviceConn.ReadMessage(); err != nil {
+		t.Fatalf("read initial service latency websocket message: %v", err)
+	}
+
+	body := map[string]any{
+		"rounds": []map[string]any{{
+			"target_id": "google-dns",
+			"ts":        time.Now().UTC().Unix(),
+			"type":      "tcping",
+			"samples": []map[string]any{
+				{"seq": 1, "success": true, "latency_ms": 10.0},
+				{"seq": 2, "success": true, "latency_ms": 30.0},
+			},
+		}},
+	}
+	payload, err := json.Marshal(body)
+	if err != nil {
+		t.Fatalf("marshal probe results: %v", err)
+	}
+	request, err := http.NewRequest(http.MethodPost, server.URL+"/api/agent/v1/probe-results", bytes.NewReader(payload))
+	if err != nil {
+		t.Fatalf("new probe request: %v", err)
+	}
+	request.Header.Set("X-Node-ID", "hytron")
+	request.Header.Set("Authorization", "Bearer test-agent-token")
+	request.Header.Set("Content-Type", "application/json")
+	probeResponse, err := server.Client().Do(request)
+	if err != nil {
+		t.Fatalf("post probe results: %v", err)
+	}
+	defer probeResponse.Body.Close()
+	if probeResponse.StatusCode != http.StatusAccepted {
+		t.Fatalf("probe status = %d, want 202; body=%s", probeResponse.StatusCode, readAllString(t, probeResponse.Body))
+	}
+
+	_, nodeUpdate, err := nodeConn.ReadMessage()
+	if err != nil {
+		t.Fatalf("read node latency update: %v", err)
+	}
+	if !strings.Contains(string(nodeUpdate), `"target_id":"google-dns"`) || !strings.Contains(string(nodeUpdate), `"median_ms":20`) {
+		t.Fatalf("node latency websocket update = %q, want posted probe median", string(nodeUpdate))
+	}
+	_, serviceUpdate, err := serviceConn.ReadMessage()
+	if err != nil {
+		t.Fatalf("read service latency update: %v", err)
+	}
+	if !strings.Contains(string(serviceUpdate), `"node_id":"hytron"`) || !strings.Contains(string(serviceUpdate), `"median_ms":20`) {
+		t.Fatalf("service latency websocket update = %q, want posted probe median", string(serviceUpdate))
+	}
+}
+
 func readSSEEvent(t *testing.T, reader *bufio.Reader) string {
 	t.Helper()
 	type readResult struct {

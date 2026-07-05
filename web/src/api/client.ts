@@ -486,32 +486,40 @@ export async function fetchSummary(): Promise<SummaryData> {
   return normalizeSummary(await response.json() as ApiSummaryResponse)
 }
 
-export function subscribeSummary(onSummary: (summary: SummaryData) => void, onError?: (error: Error) => void): (() => void) | null {
-  if (typeof WebSocket !== 'undefined') {
-    let closedByClient = false
-    const baseURL = typeof window === 'undefined' ? 'http://localhost/' : window.location.href
-    const url = new URL('/api/public/v1/summary/ws', baseURL)
-    url.protocol = url.protocol === 'https:' ? 'wss:' : 'ws:'
-    const socket = new WebSocket(url.toString())
-    socket.onmessage = (event) => {
-      try {
-        if (typeof event.data !== 'string') throw new Error('summary websocket message must be text')
-        onSummary(normalizeSummary(JSON.parse(event.data) as ApiSummaryResponse))
-      } catch (error) {
-        onError?.(error instanceof Error ? error : new Error('summary websocket parse failed'))
-      }
-    }
-    socket.onerror = () => {
-      if (!closedByClient) onError?.(new Error('summary websocket disconnected'))
-    }
-    socket.onclose = () => {
-      if (!closedByClient) onError?.(new Error('summary websocket closed'))
-    }
-    return () => {
-      closedByClient = true
-      socket.close()
+function liveWebSocketURL(path: string): string {
+  const baseURL = typeof window === 'undefined' ? 'http://localhost/' : window.location.href
+  const url = new URL(path, baseURL)
+  url.protocol = url.protocol === 'https:' ? 'wss:' : 'ws:'
+  return url.toString()
+}
+
+function subscribeLiveWebSocket<T>(path: string, normalize: (payload: unknown) => T, onData: (data: T) => void, onError?: (error: Error) => void): (() => void) | null {
+  if (typeof WebSocket === 'undefined') return null
+  let closedByClient = false
+  const socket = new WebSocket(liveWebSocketURL(path))
+  socket.onmessage = (event) => {
+    try {
+      if (typeof event.data !== 'string') throw new Error('live websocket message must be text')
+      onData(normalize(JSON.parse(event.data) as unknown))
+    } catch (error) {
+      onError?.(error instanceof Error ? error : new Error('live websocket parse failed'))
     }
   }
+  socket.onerror = () => {
+    if (!closedByClient) onError?.(new Error('live websocket disconnected'))
+  }
+  socket.onclose = () => {
+    if (!closedByClient) onError?.(new Error('live websocket closed'))
+  }
+  return () => {
+    closedByClient = true
+    socket.close()
+  }
+}
+
+export function subscribeSummary(onSummary: (summary: SummaryData) => void, onError?: (error: Error) => void): (() => void) | null {
+  const stopWebSocket = subscribeLiveWebSocket('/api/public/v1/summary/ws', (payload) => normalizeSummary(payload as ApiSummaryResponse), onSummary, onError)
+  if (stopWebSocket) return stopWebSocket
   if (typeof EventSource === 'undefined') return null
   const source = new EventSource('/api/public/v1/summary/stream')
   source.addEventListener('summary', (event) => {
@@ -526,6 +534,18 @@ export function subscribeSummary(onSummary: (summary: SummaryData) => void, onEr
     onError?.(new Error('summary stream disconnected'))
   }
   return () => source.close()
+}
+
+export function subscribeNodeLatency(nodeId: string, range: string, onLatency: (latency: NodeLatencyData) => void, onError?: (error: Error) => void): (() => void) | null {
+  return subscribeLiveWebSocket(`/api/public/v1/nodes/${encodeURIComponent(nodeId)}/latency/ws?range=${encodeURIComponent(range)}`, (payload) => normalizeNodeLatency(payload as ApiLatencyResponse), onLatency, onError)
+}
+
+export function subscribeNodeState(nodeId: string, range: string, onState: (state: NodeStateData) => void, onError?: (error: Error) => void): (() => void) | null {
+  return subscribeLiveWebSocket(`/api/public/v1/nodes/${encodeURIComponent(nodeId)}/state/ws?range=${encodeURIComponent(range)}`, (payload) => normalizeNodeState(payload as ApiStateResponse), onState, onError)
+}
+
+export function subscribeServiceLatency(targetId: string, range: string, onLatency: (latency: ServiceLatencyData) => void, onError?: (error: Error) => void): (() => void) | null {
+  return subscribeLiveWebSocket(`/api/public/v1/services/${encodeURIComponent(targetId)}/latency/ws?range=${encodeURIComponent(range)}`, (payload) => normalizeServiceLatency(payload as ApiServiceLatencyResponse), onLatency, onError)
 }
 
 export async function fetchNodeLatency(nodeId: string, range = '1h'): Promise<NodeLatencyData> {

@@ -28,7 +28,7 @@ type handler struct {
 	agentVersion       string
 	notificationSender notificationSender
 	loginLimiter       *adminLoginLimiter
-	summaryHub         *liveSummaryHub
+	liveHub            *liveUpdateHub
 }
 
 type adminLoginLimiter struct {
@@ -103,7 +103,7 @@ func NewHandler(options ...HandlerOptions) http.Handler {
 		agentVersion:       opts.AgentVersion,
 		notificationSender: newHTTPNotificationSender(opts.NotificationClient, opts.TelegramAPIBaseURL),
 		loginLimiter:       newAdminLoginLimiter(),
-		summaryHub:         newLiveSummaryHub(),
+		liveHub:            newLiveUpdateHub(),
 	}
 
 	mux := http.NewServeMux()
@@ -150,13 +150,21 @@ func (h *handler) handlePublicServiceResource(w http.ResponseWriter, r *http.Req
 	}
 	path := strings.TrimPrefix(r.URL.Path, "/api/public/v1/services/")
 	parts := strings.Split(strings.Trim(path, "/"), "/")
-	if len(parts) != 2 || parts[1] != "latency" {
+	if len(parts) != 2 && len(parts) != 3 {
+		writeError(w, http.StatusNotFound, "not found")
+		return
+	}
+	if parts[1] != "latency" || (len(parts) == 3 && parts[2] != "ws") {
 		writeError(w, http.StatusNotFound, "not found")
 		return
 	}
 	window, ok := resolveLatencyWindow(r.URL.Query().Get("range"))
 	if !ok {
 		writeError(w, http.StatusBadRequest, "unsupported range")
+		return
+	}
+	if len(parts) == 3 {
+		h.handleServiceLatencyWebSocket(w, r, parts[0], window)
 		return
 	}
 	response, err := h.store.ServiceTargetLatency(r.Context(), parts[0], window)
@@ -245,7 +253,11 @@ func (h *handler) handlePublicNodeResource(w http.ResponseWriter, r *http.Reques
 	}
 	path := strings.TrimPrefix(r.URL.Path, "/api/public/v1/nodes/")
 	parts := strings.Split(strings.Trim(path, "/"), "/")
-	if len(parts) != 2 {
+	if len(parts) != 2 && len(parts) != 3 {
+		writeError(w, http.StatusNotFound, "not found")
+		return
+	}
+	if len(parts) == 3 && parts[2] != "ws" {
 		writeError(w, http.StatusNotFound, "not found")
 		return
 	}
@@ -258,6 +270,10 @@ func (h *handler) handlePublicNodeResource(w http.ResponseWriter, r *http.Reques
 	}
 	switch parts[1] {
 	case "latency":
+		if len(parts) == 3 {
+			h.handleNodeLatencyWebSocket(w, r, nodeID, window)
+			return
+		}
 		response, err := h.store.NodeLatency(r.Context(), nodeID, window)
 		if err != nil {
 			writeStoreError(w, err)
@@ -265,6 +281,10 @@ func (h *handler) handlePublicNodeResource(w http.ResponseWriter, r *http.Reques
 		}
 		writeJSON(w, http.StatusOK, response)
 	case "state":
+		if len(parts) == 3 {
+			h.handleNodeStateWebSocket(w, r, nodeID, window)
+			return
+		}
 		response, err := h.store.NodeState(r.Context(), nodeID, window)
 		if err != nil {
 			writeStoreError(w, err)

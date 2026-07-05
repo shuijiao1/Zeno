@@ -1,6 +1,6 @@
 import { type CSSProperties, type DragEvent, type FormEvent, type ReactNode, useEffect, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { createAdminNode, createAdminNotificationChannel, createAdminProbeTarget, deleteAdminNode, deleteAdminNotificationChannel, deleteAdminProbeTarget, fetchAdminAccount, fetchAdminAlertRules, fetchAdminNodes, fetchAdminNotificationChannels, fetchAdminProbeTargets, fetchAdminSettings, fetchNodeLatency, fetchNodeState, fetchPublicSettings, fetchServiceLatency, fetchSummary, subscribeSummary, loginAdmin, logoutAdmin, requestAdminNodeInstallCommand, testAdminNotificationChannel, updateAdminAccount, updateAdminAlertRule, updateAdminNode, updateAdminNotificationChannel, updateAdminNotificationType, updateAdminProbeTarget, updateAdminSettings, type AdminAccountData, type AdminAlertRuleUpdateInput, type AdminNodeCreateInput, type AdminNodeUpdateInput, type AdminNotificationChannelCreateInput, type AdminNotificationChannelUpdateInput, type AdminProbeTargetInput, type AdminProbeTargetUpdateInput, type AdminSettingsUpdateInput, type NodeLatencyData, type NodeStateData, type ServiceLatencyData, type SummaryData } from './api/client'
+import { createAdminNode, createAdminNotificationChannel, createAdminProbeTarget, deleteAdminNode, deleteAdminNotificationChannel, deleteAdminProbeTarget, fetchAdminAccount, fetchAdminAlertRules, fetchAdminNodes, fetchAdminNotificationChannels, fetchAdminProbeTargets, fetchAdminSettings, fetchNodeLatency, fetchNodeState, fetchPublicSettings, fetchServiceLatency, fetchSummary, subscribeNodeLatency, subscribeNodeState, subscribeServiceLatency, subscribeSummary, loginAdmin, logoutAdmin, requestAdminNodeInstallCommand, testAdminNotificationChannel, updateAdminAccount, updateAdminAlertRule, updateAdminNode, updateAdminNotificationChannel, updateAdminNotificationType, updateAdminProbeTarget, updateAdminSettings, type AdminAccountData, type AdminAlertRuleUpdateInput, type AdminNodeCreateInput, type AdminNodeUpdateInput, type AdminNotificationChannelCreateInput, type AdminNotificationChannelUpdateInput, type AdminProbeTargetInput, type AdminProbeTargetUpdateInput, type AdminSettingsUpdateInput, type NodeLatencyData, type NodeStateData, type ServiceLatencyData, type SummaryData } from './api/client'
 import { LatencyDetail } from './components/LatencyDetail'
 import { LatencyChart } from './components/LatencyChart'
 import { ServerCard } from './components/ServerCard'
@@ -200,6 +200,7 @@ export function App() {
 
     let cancelled = false
     let loadedOnce = false
+    let stopFallbackRefresh: (() => void) | null = null
     const loadLatency = () => {
       if (!loadedOnce) setLatencyState({ kind: 'loading' })
       fetchNodeLatency(route.nodeId, latencyRange)
@@ -214,10 +215,29 @@ export function App() {
     }
 
     loadLatency()
-    const stopRefresh = startLiveRefresh(loadLatency)
+    const startFallbackRefresh = () => {
+      if (stopFallbackRefresh === null) {
+        stopFallbackRefresh = startLiveRefresh(loadLatency)
+      }
+    }
+    let stopLatencyStream = subscribeNodeLatency(
+      route.nodeId,
+      latencyRange,
+      (data) => {
+        loadedOnce = true
+        if (!cancelled) setLatencyState({ kind: 'ready', data })
+      },
+      () => {
+        stopLatencyStream?.()
+        stopLatencyStream = null
+        startFallbackRefresh()
+      },
+    )
+    if (!stopLatencyStream) startFallbackRefresh()
     return () => {
       cancelled = true
-      stopRefresh()
+      stopLatencyStream?.()
+      stopFallbackRefresh?.()
     }
   }, [route, latencyRange])
 
@@ -229,6 +249,7 @@ export function App() {
 
     let cancelled = false
     let loadedOnce = false
+    let stopFallbackRefresh: (() => void) | null = null
     const loadStateHistory = () => {
       if (!loadedOnce) setStateHistoryState({ kind: 'loading' })
       fetchNodeState(route.nodeId, stateRange)
@@ -243,10 +264,29 @@ export function App() {
     }
 
     loadStateHistory()
-    const stopRefresh = startLiveRefresh(loadStateHistory)
+    const startFallbackRefresh = () => {
+      if (stopFallbackRefresh === null) {
+        stopFallbackRefresh = startLiveRefresh(loadStateHistory)
+      }
+    }
+    let stopStateStream = subscribeNodeState(
+      route.nodeId,
+      stateRange,
+      (data) => {
+        loadedOnce = true
+        if (!cancelled) setStateHistoryState({ kind: 'ready', data })
+      },
+      () => {
+        stopStateStream?.()
+        stopStateStream = null
+        startFallbackRefresh()
+      },
+    )
+    if (!stopStateStream) startFallbackRefresh()
     return () => {
       cancelled = true
-      stopRefresh()
+      stopStateStream?.()
+      stopFallbackRefresh?.()
     }
   }, [route, stateRange])
 
@@ -258,6 +298,7 @@ export function App() {
 
     let cancelled = false
     let loadedOnce = false
+    let stopFallbackRefresh: (() => void) | null = null
     const loadServiceLatency = () => {
       if (!loadedOnce) setServiceLatencyState({ kind: 'loading' })
       fetchServiceLatency(route.targetId, latencyRange)
@@ -272,10 +313,29 @@ export function App() {
     }
 
     loadServiceLatency()
-    const stopRefresh = startLiveRefresh(loadServiceLatency)
+    const startFallbackRefresh = () => {
+      if (stopFallbackRefresh === null) {
+        stopFallbackRefresh = startLiveRefresh(loadServiceLatency)
+      }
+    }
+    let stopServiceLatencyStream = subscribeServiceLatency(
+      route.targetId,
+      latencyRange,
+      (data) => {
+        loadedOnce = true
+        if (!cancelled) setServiceLatencyState({ kind: 'ready', data })
+      },
+      () => {
+        stopServiceLatencyStream?.()
+        stopServiceLatencyStream = null
+        startFallbackRefresh()
+      },
+    )
+    if (!stopServiceLatencyStream) startFallbackRefresh()
     return () => {
       cancelled = true
-      stopRefresh()
+      stopServiceLatencyStream?.()
+      stopFallbackRefresh?.()
     }
   }, [route, latencyRange])
 

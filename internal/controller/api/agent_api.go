@@ -140,6 +140,15 @@ func (h *handler) handleAgentProbeResults(w http.ResponseWriter, r *http.Request
 		h.dispatchAgentStatusNotification(store, transition, probeTS)
 	}
 	h.publishSummary(r.Context())
+	h.publishNodeLatency(r.Context(), nodeID)
+	seenTargetIDs := map[string]struct{}{}
+	for _, round := range prepared {
+		if _, ok := seenTargetIDs[round.target.ID]; ok {
+			continue
+		}
+		seenTargetIDs[round.target.ID] = struct{}{}
+		h.publishServiceLatency(r.Context(), round.target.ID)
+	}
 	writeJSON(w, http.StatusAccepted, map[string]any{"ok": true, "accepted": len(prepared)})
 }
 
@@ -291,6 +300,7 @@ func (h *handler) handleAgentState(w http.ResponseWriter, r *http.Request) {
 		h.dispatchAgentStatusNotification(store, transition, stateTS)
 	}
 	h.publishSummary(r.Context())
+	h.publishNodeState(r.Context(), nodeID)
 	writeJSON(w, http.StatusAccepted, map[string]any{"ok": true})
 }
 

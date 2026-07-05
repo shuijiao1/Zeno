@@ -14,40 +14,51 @@ import (
 	"github.com/gorilla/websocket"
 )
 
-type liveSummaryHub struct {
+type liveUpdateHub struct {
 	mu      sync.Mutex
-	clients map[chan []byte]struct{}
+	clients map[string]map[chan []byte]struct{}
 }
 
-func newLiveSummaryHub() *liveSummaryHub {
-	return &liveSummaryHub{clients: map[chan []byte]struct{}{}}
+func newLiveUpdateHub() *liveUpdateHub {
+	return &liveUpdateHub{clients: map[string]map[chan []byte]struct{}{}}
 }
 
-func (hub *liveSummaryHub) subscribe() (<-chan []byte, func()) {
+func (hub *liveUpdateHub) subscribe(topic string) (<-chan []byte, func()) {
 	updates := make(chan []byte, 1)
 	hub.mu.Lock()
-	hub.clients[updates] = struct{}{}
+	if hub.clients[topic] == nil {
+		hub.clients[topic] = map[chan []byte]struct{}{}
+	}
+	hub.clients[topic][updates] = struct{}{}
 	hub.mu.Unlock()
 	return updates, func() {
 		hub.mu.Lock()
-		if _, ok := hub.clients[updates]; ok {
-			delete(hub.clients, updates)
+		if clients, ok := hub.clients[topic]; ok {
+			if _, ok := clients[updates]; ok {
+				delete(clients, updates)
+				close(updates)
+			}
+			if len(clients) == 0 {
+				delete(hub.clients, topic)
+			}
+		} else {
 			close(updates)
 		}
 		hub.mu.Unlock()
 	}
 }
 
-func (hub *liveSummaryHub) hasClients() bool {
+func (hub *liveUpdateHub) hasClients(topic string) bool {
 	hub.mu.Lock()
 	defer hub.mu.Unlock()
-	return len(hub.clients) > 0
+	return len(hub.clients[topic]) > 0
 }
 
-func (hub *liveSummaryHub) publish(payload []byte) {
+func (hub *liveUpdateHub) publish(topic string, payload []byte) {
 	hub.mu.Lock()
 	defer hub.mu.Unlock()
-	for updates := range hub.clients {
+	clients := hub.clients[topic]
+	for updates := range clients {
 		select {
 		case updates <- payload:
 		default:
@@ -63,6 +74,24 @@ func (hub *liveSummaryHub) publish(payload []byte) {
 	}
 }
 
+const summaryLiveTopic = "summary"
+
+func nodeStateLiveTopic(nodeID, rangeName string) string {
+	return "node-state:" + nodeID + ":" + rangeName
+}
+
+func nodeLatencyLiveTopic(nodeID, rangeName string) string {
+	return "node-latency:" + nodeID + ":" + rangeName
+}
+
+func serviceLatencyLiveTopic(targetID, rangeName string) string {
+	return "service-latency:" + targetID + ":" + rangeName
+}
+
+func liveWindowNames() []string {
+	return []string{"1h", "1d", "7d", "30d"}
+}
+
 func (h *handler) handleSummaryStream(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
@@ -73,7 +102,7 @@ func (h *handler) handleSummaryStream(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "streaming unsupported")
 		return
 	}
-	updates, unsubscribe := h.summaryHub.subscribe()
+	updates, unsubscribe := h.liveHub.subscribe(summaryLiveTopic)
 	defer unsubscribe()
 
 	initial, err := h.summaryJSON(r.Context())
@@ -136,14 +165,47 @@ func (h *handler) handleSummaryWebSocket(w http.ResponseWriter, r *http.Request)
 		writeStoreError(w, err)
 		return
 	}
+	updates, unsubscribe := h.liveHub.subscribe(summaryLiveTopic)
+	h.handleLiveJSONWebSocket(w, r, initial, updates, unsubscribe)
+}
+
+func (h *handler) handleNodeStateWebSocket(w http.ResponseWriter, r *http.Request, nodeID string, window latencyWindow) {
+	payload, err := h.nodeStateJSON(r.Context(), nodeID, window)
+	if err != nil {
+		writeStoreError(w, err)
+		return
+	}
+	updates, unsubscribe := h.liveHub.subscribe(nodeStateLiveTopic(nodeID, window.Name))
+	h.handleLiveJSONWebSocket(w, r, payload, updates, unsubscribe)
+}
+
+func (h *handler) handleNodeLatencyWebSocket(w http.ResponseWriter, r *http.Request, nodeID string, window latencyWindow) {
+	payload, err := h.nodeLatencyJSON(r.Context(), nodeID, window)
+	if err != nil {
+		writeStoreError(w, err)
+		return
+	}
+	updates, unsubscribe := h.liveHub.subscribe(nodeLatencyLiveTopic(nodeID, window.Name))
+	h.handleLiveJSONWebSocket(w, r, payload, updates, unsubscribe)
+}
+
+func (h *handler) handleServiceLatencyWebSocket(w http.ResponseWriter, r *http.Request, targetID string, window latencyWindow) {
+	payload, err := h.serviceLatencyJSON(r.Context(), targetID, window)
+	if err != nil {
+		writeStoreError(w, err)
+		return
+	}
+	updates, unsubscribe := h.liveHub.subscribe(serviceLatencyLiveTopic(targetID, window.Name))
+	h.handleLiveJSONWebSocket(w, r, payload, updates, unsubscribe)
+}
+
+func (h *handler) handleLiveJSONWebSocket(w http.ResponseWriter, r *http.Request, initial []byte, updates <-chan []byte, unsubscribe func()) {
+	defer unsubscribe()
 	conn, err := summaryWebSocketUpgrader.Upgrade(w, r, nil)
 	if err != nil {
 		return
 	}
 	defer conn.Close()
-
-	updates, unsubscribe := h.summaryHub.subscribe()
-	defer unsubscribe()
 
 	done := make(chan struct{})
 	go func() {
@@ -190,15 +252,99 @@ func (h *handler) summaryJSON(ctx context.Context) ([]byte, error) {
 	return json.Marshal(summary)
 }
 
+func (h *handler) nodeStateJSON(ctx context.Context, nodeID string, window latencyWindow) ([]byte, error) {
+	state, err := h.store.NodeState(ctx, nodeID, window)
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(state)
+}
+
+func (h *handler) nodeLatencyJSON(ctx context.Context, nodeID string, window latencyWindow) ([]byte, error) {
+	latency, err := h.store.NodeLatency(ctx, nodeID, window)
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(latency)
+}
+
+func (h *handler) serviceLatencyJSON(ctx context.Context, targetID string, window latencyWindow) ([]byte, error) {
+	latency, err := h.store.ServiceTargetLatency(ctx, targetID, window)
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(latency)
+}
+
 func (h *handler) publishSummary(ctx context.Context) {
-	if h.summaryHub == nil || !h.summaryHub.hasClients() {
+	if h.liveHub == nil || !h.liveHub.hasClients(summaryLiveTopic) {
 		return
 	}
 	payload, err := h.summaryJSON(ctx)
 	if err != nil {
 		return
 	}
-	h.summaryHub.publish(payload)
+	h.liveHub.publish(summaryLiveTopic, payload)
+}
+
+func (h *handler) publishNodeState(ctx context.Context, nodeID string) {
+	if h.liveHub == nil {
+		return
+	}
+	for _, rangeName := range liveWindowNames() {
+		window, ok := resolveLatencyWindow(rangeName)
+		if !ok {
+			continue
+		}
+		topic := nodeStateLiveTopic(nodeID, window.Name)
+		if !h.liveHub.hasClients(topic) {
+			continue
+		}
+		payload, err := h.nodeStateJSON(ctx, nodeID, window)
+		if err == nil {
+			h.liveHub.publish(topic, payload)
+		}
+	}
+}
+
+func (h *handler) publishNodeLatency(ctx context.Context, nodeID string) {
+	if h.liveHub == nil {
+		return
+	}
+	for _, rangeName := range liveWindowNames() {
+		window, ok := resolveLatencyWindow(rangeName)
+		if !ok {
+			continue
+		}
+		topic := nodeLatencyLiveTopic(nodeID, window.Name)
+		if !h.liveHub.hasClients(topic) {
+			continue
+		}
+		payload, err := h.nodeLatencyJSON(ctx, nodeID, window)
+		if err == nil {
+			h.liveHub.publish(topic, payload)
+		}
+	}
+}
+
+func (h *handler) publishServiceLatency(ctx context.Context, targetID string) {
+	if h.liveHub == nil {
+		return
+	}
+	for _, rangeName := range liveWindowNames() {
+		window, ok := resolveLatencyWindow(rangeName)
+		if !ok {
+			continue
+		}
+		topic := serviceLatencyLiveTopic(targetID, window.Name)
+		if !h.liveHub.hasClients(topic) {
+			continue
+		}
+		payload, err := h.serviceLatencyJSON(ctx, targetID, window)
+		if err == nil {
+			h.liveHub.publish(topic, payload)
+		}
+	}
 }
 
 func writeSummaryEvent(w io.Writer, payload []byte) {
