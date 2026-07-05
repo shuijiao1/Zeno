@@ -10,7 +10,7 @@ const styles = readFileSync(stylesPath, 'utf8')
 describe('mobile latency target layout', () => {
   it('keeps latency target buttons compact as card tiles on phones', () => {
     expect(styles).toContain('@media (max-width: 767px)')
-    expect(styles).toContain('grid-template-columns: repeat(auto-fit, minmax(132px, 1fr))')
+    expect(styles).toContain('grid-template-columns: repeat(auto-fit, minmax(150px, 1fr))')
     expect(styles).toContain('.latency-target-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); padding: 0 12px 12px; }')
     expect(styles).toContain('.latency-target-grid button')
     expect(styles).toContain('border-radius: var(--radius-field)')
@@ -96,6 +96,8 @@ describe('homepage and admin shell layout', () => {
     expect(styles).toContain('.admin-form-section-title::before')
     expect(styles).toContain('border-radius: var(--radius-card)')
     expect(styles).toContain('.admin-segmented-options')
+    expect(styles).toContain('.admin-modal-body')
+    expect(styles).toContain('clip-path: inset(0 round var(--radius-panel))')
     expect(styles).toContain('.admin-notification-list .admin-node-status')
   })
 })
@@ -114,6 +116,7 @@ describe('state history layout', () => {
     expect(styles).toContain('grid-template-columns: 1fr')
     expect(styles).toContain('.state-history-chart-card')
     expect(styles).toContain('.state-sparkline--large')
+    expect(styles).toContain('.state-history-chart-card .state-sparkline--large { flex: 1 1 auto; min-height: 76px; }')
   })
 
   it('keeps uptime and load as compact pill badges in the top server card', () => {

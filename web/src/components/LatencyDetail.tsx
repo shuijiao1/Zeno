@@ -122,6 +122,7 @@ export function LatencyDetail({
                 <button
                   key={target.targetId}
                   type="button"
+                  title={`${target.targetName} · ${formatLatency(target.avgMs)} · 丢包 ${formatLossPercent(target.lossPercent)}`}
                   data-active={activeTargetIds.includes(target.targetId)}
                   onClick={() => toggleTarget(target.targetId)}
                 >

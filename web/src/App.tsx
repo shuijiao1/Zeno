@@ -1320,28 +1320,30 @@ function AdminNodeSortModal({ nodes, onSave, onClose }: { nodes: AdminNode[]; on
           </div>
           <button className="admin-modal-close" type="button" aria-label="关闭" onClick={onClose}>×</button>
         </header>
-        <p className="admin-help-note">按住服务器拖动调整顺序；保存后这里的顺序就是前台显示顺序。</p>
-        <div className="admin-server-sort-list" role="list" aria-label="拖动排序服务器">
-          {orderedNodes.map((node, index) => (
-            <article
-              className={`admin-server-sort-item${draggedNodeId === node.id ? ' is-dragging' : ''}`}
-              role="listitem"
-              draggable
-              key={node.id}
-              onDragStart={(event) => handleDragStart(event, node.id)}
-              onDragOver={(event) => handleDragOver(event, node.id)}
-              onDrop={(event) => event.preventDefault()}
-              onDragEnd={() => setDraggedNodeId(null)}
-            >
-              <span className="admin-drag-handle" aria-hidden="true">⋮⋮</span>
-              <span className="admin-server-sort-index">{index + 1}</span>
-              <strong>{node.displayName}</strong>
-            </article>
-          ))}
-        </div>
-        <div className="admin-modal-actions">
-          <button type="button" onClick={onClose}>取消</button>
-          <button className="admin-primary-action" type="button" onClick={() => onSave(orderedNodes)}>保存排序</button>
+        <div className="admin-modal-body">
+          <p className="admin-help-note">按住服务器拖动调整顺序；保存后这里的顺序就是前台显示顺序。</p>
+          <div className="admin-server-sort-list" role="list" aria-label="拖动排序服务器">
+            {orderedNodes.map((node, index) => (
+              <article
+                className={`admin-server-sort-item${draggedNodeId === node.id ? ' is-dragging' : ''}`}
+                role="listitem"
+                draggable
+                key={node.id}
+                onDragStart={(event) => handleDragStart(event, node.id)}
+                onDragOver={(event) => handleDragOver(event, node.id)}
+                onDrop={(event) => event.preventDefault()}
+                onDragEnd={() => setDraggedNodeId(null)}
+              >
+                <span className="admin-drag-handle" aria-hidden="true">⋮⋮</span>
+                <span className="admin-server-sort-index">{index + 1}</span>
+                <strong>{node.displayName}</strong>
+              </article>
+            ))}
+          </div>
+          <div className="admin-modal-actions">
+            <button type="button" onClick={onClose}>取消</button>
+            <button className="admin-primary-action" type="button" onClick={() => onSave(orderedNodes)}>保存排序</button>
+          </div>
         </div>
       </div>
     </div></AdminModalLayer>
@@ -2159,7 +2161,7 @@ function AdminModal({ title, eyebrow, onClose, children }: { title: string; eyeb
           </div>
           <button className="admin-modal-close" type="button" onClick={onClose} aria-label="关闭弹窗">×</button>
         </header>
-        {children}
+        <div className="admin-modal-body">{children}</div>
       </section>
     </div>
     </AdminModalLayer>
@@ -2183,10 +2185,10 @@ const themeOptions = [
 ]
 
 const billingModeOptions = [
-  { value: 'both', label: '入站 + 出站' },
-  { value: 'in', label: '只算入站' },
-  { value: 'out', label: '只算出站' },
-  { value: 'max', label: '入/出取较大值' },
+  { value: 'both', label: '双向' },
+  { value: 'in', label: '入站' },
+  { value: 'out', label: '出站' },
+  { value: 'max', label: '出入取大' },
 ]
 
 const targetTypeOptions = [
