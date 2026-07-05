@@ -67,31 +67,17 @@ describe('LatencyChart', () => {
     expect(yAxisLabels.some((label) => label.startsWith('186') || label.startsWith('187') || label.startsWith('188'))).toBe(true)
   })
 
-  it('keeps all-line charts readable by not letting a few spikes dominate the y axis', () => {
-    const readablePoints = Array.from({ length: 100 }, (_, index) => ([
-      {
-        ts: new Date(Date.UTC(2026, 6, 5, 0, index)).toISOString(),
-        targetId: 'low',
-        targetName: 'Low',
-        avgMs: index === 50 ? 604 : 12,
-        medianMs: index === 50 ? 500 : 10,
-        lossPercent: 0,
-      },
-      {
-        ts: new Date(Date.UTC(2026, 6, 5, 0, index)).toISOString(),
-        targetId: 'high',
-        targetName: 'High',
-        avgMs: 180,
-        medianMs: 175,
-        lossPercent: 0,
-      },
-    ])).flat()
+  it('connects null grid gaps like Kulin Recharts connectNulls', () => {
+    const gapPoints = [
+      { ts: '2026-07-02T00:00:00Z', targetId: 'alpha', targetName: 'Alpha', avgMs: 12, medianMs: 10, lossPercent: 0 },
+      { ts: '2026-07-02T00:01:00Z', targetId: 'alpha', targetName: 'Alpha', avgMs: null, medianMs: null, lossPercent: 0 },
+      { ts: '2026-07-02T00:02:00Z', targetId: 'alpha', targetName: 'Alpha', avgMs: 18, medianMs: 16, lossPercent: 0 },
+    ]
 
-    const html = renderToStaticMarkup(<LatencyChart points={readablePoints} />)
-    const labels = [...html.matchAll(/class="axis-label"[^>]*>([^<]+)<\/text>/g)].map((match) => match[1])
-    const yAxisLabels = labels.filter((label) => label.endsWith('ms')).map((label) => Number.parseInt(label, 10))
+    const html = renderToStaticMarkup(<LatencyChart points={gapPoints} activeTargetNames={['Alpha']} />)
+    const lineMatch = html.match(/<path[^>]+d="([^"]+)"[^>]+stroke="#22c55e"/)
 
-    expect(Math.max(...yAxisLabels)).toBeLessThan(260)
-    expect(html).toContain('clip-path="url(#latency-plot-')
+    expect(lineMatch?.[1].match(/M/g)).toHaveLength(1)
+    expect(lineMatch?.[1].match(/L/g)).toHaveLength(1)
   })
 })

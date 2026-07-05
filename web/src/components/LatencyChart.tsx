@@ -19,8 +19,8 @@ interface LatencyChartProps {
   activeTargetNames?: string[]
 }
 
-const desktopLayout = { width: 960, height: 320, lineStrokeWidth: 1.15, pad: { left: 52, right: 24, top: 24, bottom: 44 } }
-const mobileLayout = { width: 400, height: 300, lineStrokeWidth: 1.25, pad: { left: 46, right: 16, top: 22, bottom: 44 } }
+const desktopLayout = { width: 960, height: 320, lineStrokeWidth: 1, pad: { left: 52, right: 24, top: 24, bottom: 44 } }
+const mobileLayout = { width: 400, height: 300, lineStrokeWidth: 1, pad: { left: 46, right: 16, top: 22, bottom: 44 } }
 const palette = ['#22c55e', '#38bdf8', '#f59e0b', '#a78bfa', '#fb7185', '#14b8a6', '#84cc16', '#f97316', '#06b6d4', '#e879f9']
 const packetLossColor = '#94a3b8'
 
@@ -239,7 +239,6 @@ function linePath(rows: KulinChartRow[], key: string, x: (createdAt: number) => 
     .map((row) => {
       const value = rowNumber(row, key)
       if (value === null) {
-        hasOpenSegment = false
         return ''
       }
       const command = hasOpenSegment ? 'L' : 'M'
@@ -271,9 +270,8 @@ function packetLossAreaPath(rows: KulinChartRow[], x: (createdAt: number) => num
 function yDomainForRows(rows: KulinChartRow[], keys: string[]): { min: number; max: number } {
   const values = rows.flatMap((row) => keys.map((key) => rowNumber(row, key)).filter((value): value is number => value !== null))
   if (values.length === 0) return { min: 0, max: 1 }
-  const sorted = [...values].sort((a, b) => a - b)
-  const min = sorted[0]
-  const max = readableMax(sorted, keys.length)
+  const min = Math.min(...values)
+  const max = Math.max(...values)
   const span = max - min
   if (span <= 0) {
     const padding = Math.max(0.5, Math.abs(max) * 0.05)
@@ -281,23 +279,6 @@ function yDomainForRows(rows: KulinChartRow[], keys: string[]): { min: number; m
   }
   const padding = Math.max(span * 0.15, max * 0.002, 0.05)
   return { min: Math.max(0, min - padding), max: max + padding }
-}
-
-function readableMax(sortedValues: number[], visibleKeyCount: number): number {
-  const rawMax = sortedValues.at(-1) ?? 1
-  if (visibleKeyCount <= 1 || sortedValues.length < 80) return rawMax
-
-  const percentileMax = quantile(sortedValues, 0.99)
-  if (!Number.isFinite(percentileMax) || percentileMax <= 0) return rawMax
-
-  if (rawMax <= percentileMax * 1.35) return rawMax
-  return percentileMax
-}
-
-function quantile(sortedValues: number[], ratio: number): number {
-  if (sortedValues.length === 0) return 0
-  const index = Math.min(sortedValues.length - 1, Math.max(0, Math.floor((sortedValues.length - 1) * ratio)))
-  return sortedValues[index]
 }
 
 function rowNumber(row: KulinChartRow, key: string): number | null {
