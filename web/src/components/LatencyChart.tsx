@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useId, useMemo, useState } from 'react'
 import type { LatencyPoint } from '../types'
 import {
   applyKulinPeakCut,
@@ -19,8 +19,8 @@ interface LatencyChartProps {
   activeTargetNames?: string[]
 }
 
-const desktopLayout = { width: 960, height: 320, pad: { left: 52, right: 24, top: 24, bottom: 44 } }
-const mobileLayout = { width: 400, height: 300, pad: { left: 46, right: 16, top: 22, bottom: 44 } }
+const desktopLayout = { width: 960, height: 320, lineStrokeWidth: 1.15, pad: { left: 52, right: 24, top: 24, bottom: 44 } }
+const mobileLayout = { width: 400, height: 300, lineStrokeWidth: 1.25, pad: { left: 46, right: 16, top: 22, bottom: 44 } }
 const palette = ['#22c55e', '#38bdf8', '#f59e0b', '#a78bfa', '#fb7185', '#14b8a6', '#84cc16', '#f97316', '#06b6d4', '#e879f9']
 const packetLossColor = '#94a3b8'
 
@@ -32,7 +32,9 @@ export function LatencyChart({
   peakCut = false,
   activeTargetNames = [],
 }: LatencyChartProps) {
-  const { width, height, pad } = useLatencyChartLayout()
+  const { width, height, lineStrokeWidth, pad } = useLatencyChartLayout()
+  const reactClipId = useId()
+  const clipId = `latency-plot-${reactClipId.replace(/:/g, '')}`
   const activeTargetKey = activeTargetNames.join('\u0000')
   const series = useMemo(() => buildKulinTargetSeries(points), [points])
   const allRows = useMemo(() => buildKulinChartRows(series), [series])
@@ -80,6 +82,11 @@ export function LatencyChart({
       </div>
 
       <svg className="latency-chart" viewBox={`0 0 ${width} ${height}`} role="img" aria-label="latency chart" onMouseLeave={() => setHoverColumn(null)}>
+        <defs>
+          <clipPath id={clipId}>
+            <rect x={pad.left} y={pad.top} width={width - pad.left - pad.right} height={plotHeight} />
+          </clipPath>
+        </defs>
         {[0, 0.25, 0.5, 0.75, 1].map((ratio) => {
           const yy = pad.top + ratio * plotHeight
           const value = domain.max - ratio * (domain.max - domain.min)
@@ -112,6 +119,7 @@ export function LatencyChart({
             fill={packetLossColor}
             fillOpacity={0.18}
             stroke="none"
+            clipPath={`url(#${clipId})`}
           />
         )}
 
@@ -121,8 +129,9 @@ export function LatencyChart({
             d={linePath(rows, key, x, yDelay)}
             fill="none"
             stroke={palette[paletteIndexForKey(series, key, activeTargetNames) % palette.length]}
-            strokeWidth={1}
+            strokeWidth={lineStrokeWidth}
             vectorEffect="non-scaling-stroke"
+            clipPath={`url(#${clipId})`}
           />
         ))}
 
@@ -157,6 +166,7 @@ export function LatencyChart({
                   cy={yDelay(point.delay)}
                   r={5}
                   fill={palette[paletteIndexForKey(series, point.key, activeTargetNames) % palette.length]}
+                  clipPath={`url(#${clipId})`}
                 />
               ))}
             </g>
@@ -168,7 +178,7 @@ export function LatencyChart({
             series={series}
             activeTargetNames={activeTargetNames}
             x={x(hoverColumn.createdAt)}
-            layout={{ width, height, pad }}
+            layout={{ width, height, lineStrokeWidth, pad }}
           />
         )}
       </svg>
@@ -234,7 +244,7 @@ function linePath(rows: KulinChartRow[], key: string, x: (createdAt: number) => 
       }
       const command = hasOpenSegment ? 'L' : 'M'
       hasOpenSegment = true
-      return `${command} ${x(row.created_at).toFixed(1)} ${y(value).toFixed(1)}`
+      return `${command} ${x(row.created_at).toFixed(2)} ${y(value).toFixed(2)}`
     })
     .filter(Boolean)
     .join(' ')
@@ -251,9 +261,9 @@ function packetLossAreaPath(rows: KulinChartRow[], x: (createdAt: number) => num
   if (coords.length === 0) return ''
   const baseline = yLoss(0)
   return [
-    `M ${coords[0].x.toFixed(1)} ${baseline.toFixed(1)}`,
-    ...coords.map((coord) => `L ${coord.x.toFixed(1)} ${coord.y.toFixed(1)}`),
-    `L ${coords.at(-1)!.x.toFixed(1)} ${baseline.toFixed(1)}`,
+    `M ${coords[0].x.toFixed(2)} ${baseline.toFixed(2)}`,
+    ...coords.map((coord) => `L ${coord.x.toFixed(2)} ${coord.y.toFixed(2)}`),
+    `L ${coords.at(-1)!.x.toFixed(2)} ${baseline.toFixed(2)}`,
     'Z',
   ].join(' ')
 }
@@ -261,8 +271,9 @@ function packetLossAreaPath(rows: KulinChartRow[], x: (createdAt: number) => num
 function yDomainForRows(rows: KulinChartRow[], keys: string[]): { min: number; max: number } {
   const values = rows.flatMap((row) => keys.map((key) => rowNumber(row, key)).filter((value): value is number => value !== null))
   if (values.length === 0) return { min: 0, max: 1 }
-  const min = Math.min(...values)
-  const max = Math.max(...values)
+  const sorted = [...values].sort((a, b) => a - b)
+  const min = sorted[0]
+  const max = readableMax(sorted, keys.length)
   const span = max - min
   if (span <= 0) {
     const padding = Math.max(0.5, Math.abs(max) * 0.05)
@@ -270,6 +281,23 @@ function yDomainForRows(rows: KulinChartRow[], keys: string[]): { min: number; m
   }
   const padding = Math.max(span * 0.15, max * 0.002, 0.05)
   return { min: Math.max(0, min - padding), max: max + padding }
+}
+
+function readableMax(sortedValues: number[], visibleKeyCount: number): number {
+  const rawMax = sortedValues.at(-1) ?? 1
+  if (visibleKeyCount <= 1 || sortedValues.length < 80) return rawMax
+
+  const percentileMax = quantile(sortedValues, 0.99)
+  if (!Number.isFinite(percentileMax) || percentileMax <= 0) return rawMax
+
+  if (rawMax <= percentileMax * 1.35) return rawMax
+  return percentileMax
+}
+
+function quantile(sortedValues: number[], ratio: number): number {
+  if (sortedValues.length === 0) return 0
+  const index = Math.min(sortedValues.length - 1, Math.max(0, Math.floor((sortedValues.length - 1) * ratio)))
+  return sortedValues[index]
 }
 
 function rowNumber(row: KulinChartRow, key: string): number | null {

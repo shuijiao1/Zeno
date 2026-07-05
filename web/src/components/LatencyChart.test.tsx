@@ -66,4 +66,32 @@ describe('LatencyChart', () => {
     expect(yAxisLabels).not.toContain('0ms')
     expect(yAxisLabels.some((label) => label.startsWith('186') || label.startsWith('187') || label.startsWith('188'))).toBe(true)
   })
+
+  it('keeps all-line charts readable by not letting a few spikes dominate the y axis', () => {
+    const readablePoints = Array.from({ length: 100 }, (_, index) => ([
+      {
+        ts: new Date(Date.UTC(2026, 6, 5, 0, index)).toISOString(),
+        targetId: 'low',
+        targetName: 'Low',
+        avgMs: index === 50 ? 604 : 12,
+        medianMs: index === 50 ? 500 : 10,
+        lossPercent: 0,
+      },
+      {
+        ts: new Date(Date.UTC(2026, 6, 5, 0, index)).toISOString(),
+        targetId: 'high',
+        targetName: 'High',
+        avgMs: 180,
+        medianMs: 175,
+        lossPercent: 0,
+      },
+    ])).flat()
+
+    const html = renderToStaticMarkup(<LatencyChart points={readablePoints} />)
+    const labels = [...html.matchAll(/class="axis-label"[^>]*>([^<]+)<\/text>/g)].map((match) => match[1])
+    const yAxisLabels = labels.filter((label) => label.endsWith('ms')).map((label) => Number.parseInt(label, 10))
+
+    expect(Math.max(...yAxisLabels)).toBeLessThan(260)
+    expect(html).toContain('clip-path="url(#latency-plot-')
+  })
 })
