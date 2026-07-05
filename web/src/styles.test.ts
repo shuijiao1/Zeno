@@ -23,6 +23,11 @@ describe('homepage and admin shell layout', () => {
     expect(styles).toContain('.home-top-card .home-summary')
   })
 
+  it('keeps mobile homepage server cards aligned to the top card width', () => {
+    expect(styles).toContain('@media (max-width: 767px)')
+    expect(styles).toContain('.kulin-node-card { max-width: none; min-height: 394px; }')
+  })
+
   it('uses a compact homepage summary without duplicate title/online-rate tiles', () => {
     expect(styles).toContain('.home-summary__status-line')
     expect(styles).toContain('.home-summary__metrics')

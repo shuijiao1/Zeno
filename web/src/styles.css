@@ -1489,7 +1489,7 @@ svg { display: block; }
   .admin-section-heading > div { min-width: 0; }
   .admin-section-heading .eyebrow { display: none; }
   .admin-section-heading h3 { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 21px; }
-  .kulin-node-card { min-height: 394px; }
+  .kulin-node-card { max-width: none; min-height: 394px; }
   .detail-container { gap: 18px; }
   .detail-hero { padding: 12px; border-radius: var(--radius-panel); gap: 9px; }
   .detail-hero__main { align-items: stretch; flex-direction: column; gap: 8px; }
