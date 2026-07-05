@@ -123,6 +123,12 @@ describe('state history layout', () => {
     expect(styles).toContain('.node-offline-watermark')
     expect(styles).not.toContain('filter: grayscale')
   })
+
+  it('keeps server-card usage tracks visible on white cards', () => {
+    expect(styles).toContain('--usage-track-bg')
+    expect(styles).toContain('--usage-track-border')
+    expect(styles).toContain('background: var(--usage-track-bg)')
+  })
 })
 
 describe('Kulin-inspired color polish', () => {

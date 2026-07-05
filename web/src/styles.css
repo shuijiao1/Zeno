@@ -15,6 +15,8 @@
   --surface-soft: rgba(255, 255, 255, 0.56);
   --field-bg: rgba(255, 255, 255, 0.74);
   --control-bg: rgba(255, 255, 255, 0.76);
+  --usage-track-bg: rgba(37, 99, 235, 0.12);
+  --usage-track-border: rgba(37, 99, 235, 0.18);
   --shadow-stone: rgba(15, 23, 42, 0.08);
   --metric-shadow: rgba(37, 99, 235, 0.12);
   --green: #10b981;
@@ -46,6 +48,8 @@
     --surface-soft: rgba(15, 23, 42, 0.34);
     --field-bg: rgba(15, 23, 42, 0.42);
     --control-bg: rgba(15, 23, 42, 0.48);
+    --usage-track-bg: rgba(148, 163, 184, 0.18);
+    --usage-track-border: rgba(148, 163, 184, 0.2);
     --shadow-stone: rgba(0, 0, 0, 0.34);
     --metric-shadow: rgba(14, 165, 233, 0.1);
     --zeno-card-highlight: rgba(255, 255, 255, 0.1);
@@ -98,6 +102,8 @@ svg { display: block; }
   --surface-soft: rgba(255, 255, 255, 0.56);
   --field-bg: rgba(255, 255, 255, 0.74);
   --control-bg: rgba(255, 255, 255, 0.76);
+  --usage-track-bg: rgba(37, 99, 235, 0.12);
+  --usage-track-border: rgba(37, 99, 235, 0.18);
   --shadow-stone: rgba(15, 23, 42, 0.08);
   --metric-shadow: rgba(37, 99, 235, 0.12);
   --zeno-card-highlight: #ffffff;
@@ -117,6 +123,8 @@ svg { display: block; }
   --surface-soft: rgba(15, 23, 42, 0.34);
   --field-bg: rgba(15, 23, 42, 0.42);
   --control-bg: rgba(15, 23, 42, 0.48);
+  --usage-track-bg: rgba(148, 163, 184, 0.18);
+  --usage-track-border: rgba(148, 163, 184, 0.2);
   --shadow-stone: rgba(0, 0, 0, 0.34);
   --metric-shadow: rgba(14, 165, 233, 0.1);
   --zeno-card-highlight: rgba(255, 255, 255, 0.1);
@@ -972,7 +980,7 @@ svg { display: block; }
 .usage-row { display: flex; flex-direction: column; gap: 6px; }
 .usage-row__meta { display: flex; align-items: center; justify-content: space-between; gap: 12px; font-size: 12px; line-height: 1; }
 .usage-row__meta span, .usage-row__meta strong { font-weight: 500; color: color-mix(in srgb, var(--foreground) 90%, transparent); font-variant-numeric: tabular-nums; }
-.usage-track { position: relative; width: 100%; height: 10px; overflow: hidden; border-radius: var(--radius-pill); background: var(--surface-soft); }
+.usage-track { position: relative; width: 100%; height: 10px; overflow: hidden; border: 1px solid var(--usage-track-border); border-radius: var(--radius-pill); background: var(--usage-track-bg); }
 .usage-fill { height: 100%; width: 100%; transform-origin: left center; transition: transform 180ms ease; }
 .usage-fill.is-good { background: #22c55e; }
 .usage-fill.is-warning { background: #f59e0b; }

@@ -21,13 +21,13 @@ describe('startLiveRefresh', () => {
     expect(refresh).toHaveBeenCalledTimes(3)
   })
 
-  it('uses a 60 second default interval for live monitoring pages', () => {
+  it('uses a 15 second default interval for live monitoring pages', () => {
     vi.useFakeTimers()
     const refresh = vi.fn()
 
     const stop = startLiveRefresh(refresh)
 
-    vi.advanceTimersByTime(59_000)
+    vi.advanceTimersByTime(14_000)
     expect(refresh).not.toHaveBeenCalled()
     vi.advanceTimersByTime(1_000)
     expect(refresh).toHaveBeenCalledTimes(1)
