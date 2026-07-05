@@ -10,7 +10,8 @@ const styles = readFileSync(stylesPath, 'utf8')
 describe('mobile latency target layout', () => {
   it('keeps latency target buttons compact as card tiles on phones', () => {
     expect(styles).toContain('@media (max-width: 767px)')
-    expect(styles).toContain('.latency-target-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); padding: 0 12px 12px; }')
+    expect(styles).toContain('grid-template-columns: repeat(3, minmax(0, 1fr))')
+    expect(styles).toContain('.latency-target-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); padding: 0 12px 12px; }')
     expect(styles).toContain('.latency-target-grid button')
     expect(styles).toContain('border-radius: var(--radius-card)')
   })

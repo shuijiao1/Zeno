@@ -1304,7 +1304,7 @@ svg { display: block; }
 
 .latency-target-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(132px, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 8px;
   padding: 0 24px 18px;
   border-top: 0;
@@ -1523,7 +1523,7 @@ svg { display: block; }
   .state-history-chart-card { padding: 12px; }
   .state-history-card__meta { flex-direction: column; gap: 4px; }
   .state-history-card__meta strong { align-items: flex-start; font-size: 13px; }
-  .latency-target-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); padding: 0 12px 12px; }
+  .latency-target-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); padding: 0 12px 12px; }
   .latency-target-grid button {
     min-width: 0;
     min-height: 72px;
