@@ -65,17 +65,33 @@ function compactRate(value: number): string {
   return `${compactBytes(value)}/s`
 }
 
-function summaryLatencyPoints(node: HomeCardNode | undefined): LatencyPoint[] {
-  return (node?.latencySummaries ?? [])
-    .filter((summary) => summary.updatedAt)
-    .map((summary) => ({
-      ts: summary.updatedAt,
-      targetId: summary.targetId,
-      targetName: summary.targetName,
-      medianMs: summary.medianMs,
-      avgMs: summary.avgMs ?? summary.medianMs,
-      lossPercent: summary.lossPercent ?? 0,
-    }))
+const latencyPreviewSamples = 8
+
+function latencyPreviewRangeMs(range: string): number {
+  if (range === '7d') return 7 * 24 * 60 * 60 * 1000
+  if (range === '30d') return 30 * 24 * 60 * 60 * 1000
+  return 24 * 60 * 60 * 1000
+}
+
+export function summaryLatencyPoints(node: HomeCardNode | undefined, range = '1d'): LatencyPoint[] {
+  const summaries = (node?.latencySummaries ?? []).filter((summary) => summary.updatedAt)
+  if (summaries.length === 0) return []
+
+  const latestTimestamp = Math.max(...summaries.map((summary) => Date.parse(summary.updatedAt)).filter(Number.isFinite))
+  const endAt = Number.isFinite(latestTimestamp) ? latestTimestamp : Date.now()
+  const startAt = endAt - latencyPreviewRangeMs(range)
+  const timestamps = Array.from({ length: latencyPreviewSamples }, (_, index) => (
+    startAt + ((endAt - startAt) * index) / (latencyPreviewSamples - 1)
+  ))
+
+  return summaries.flatMap((summary) => timestamps.map((timestamp) => ({
+    ts: new Date(timestamp).toISOString(),
+    targetId: summary.targetId,
+    targetName: summary.targetName,
+    medianMs: summary.medianMs,
+    avgMs: summary.avgMs ?? summary.medianMs,
+    lossPercent: summary.lossPercent ?? 0,
+  })))
 }
 
 const defaultSettings: AdminSettings = {
@@ -145,6 +161,7 @@ export function App() {
   const [stateHistoryState, setStateHistoryState] = useState<StateHistoryLoadState>({ kind: 'idle' })
   const [serviceLatencyState, setServiceLatencyState] = useState<ServiceLatencyLoadState>({ kind: 'idle' })
   const nodeLatencyCacheRef = useRef(new Map<string, NodeLatencyData>())
+  const nodeLatencyPrefetchRef = useRef(new Set<string>())
   const nodeStateCacheRef = useRef(new Map<string, NodeStateData>())
   const [adminToken, setAdminToken] = useState(() => window.sessionStorage.getItem('zeno_admin_token') ?? '')
   const [adminAuthState, setAdminAuthState] = useState<AdminAuthState>({ kind: 'idle' })
@@ -624,8 +641,22 @@ export function App() {
   const nodes = state.kind === 'ready' ? state.data.nodes : []
   const services = state.kind === 'ready' ? state.data.services : []
   const selectedNode = route.kind === 'node' ? nodes.find((node) => node.id === route.nodeId) : undefined
-  const selectedNodeLatencyPoints = latencyState.kind === 'ready' ? latencyState.data.points : summaryLatencyPoints(selectedNode)
+  const selectedNodeLatencyPoints = latencyState.kind === 'ready' ? latencyState.data.points : summaryLatencyPoints(selectedNode, nodeLatencyRange)
   const selectedService = route.kind === 'service' ? services.find((service) => service.id === route.targetId) : undefined
+
+  const prefetchNodeLatency = (nodeId: string) => {
+    const cacheKey = `${nodeId}:1d`
+    if (nodeLatencyCacheRef.current.has(cacheKey) || nodeLatencyPrefetchRef.current.has(cacheKey)) return
+    nodeLatencyPrefetchRef.current.add(cacheKey)
+    fetchNodeLatency(nodeId, '1d')
+      .then((data) => {
+        nodeLatencyCacheRef.current.set(cacheKey, data)
+      })
+      .catch(() => {})
+      .finally(() => {
+        nodeLatencyPrefetchRef.current.delete(cacheKey)
+      })
+  }
   const totalCount = nodes.length
   const onlineCount = nodes.filter((node) => node.status === 'online').length
   const offlineCount = nodes.filter((node) => node.status === 'offline').length
@@ -727,7 +758,7 @@ export function App() {
           />
 
           <section className="server-card-list" aria-label="server cards">
-            {nodes.map((node) => <ServerCard key={node.id} node={node} onOpen={navigateNode} />)}
+            {nodes.map((node) => <ServerCard key={node.id} node={node} onOpen={navigateNode} onPrefetch={prefetchNodeLatency} />)}
           </section>
         </div>
       )}
