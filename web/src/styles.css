@@ -1313,12 +1313,12 @@ svg { display: block; }
   position: relative;
   z-index: 0;
   min-width: 0;
-  display: flex;
-  flex-direction: column;
-  justify-content: center;
-  gap: 2px;
-  min-height: 50px;
-  padding: 8px 10px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 2px 6px;
+  min-height: 42px;
+  padding: 7px 9px;
   border: 1px solid var(--border);
   border-radius: var(--radius-field);
   background: var(--surface-soft);
@@ -1326,9 +1326,9 @@ svg { display: block; }
   text-align: left;
 }
 .latency-target-grid button[data-active='true'] { border-color: color-mix(in srgb, var(--blue) 48%, var(--border)); background: var(--surface-strong); color: var(--blue); box-shadow: 0 8px 22px -18px var(--blue); }
-.latency-target-grid span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; font-weight: 500; }
-.latency-target-grid strong { color: var(--foreground); font-size: 15px; line-height: 1; font-weight: 400; font-variant-numeric: tabular-nums; }
-.latency-target-grid em { color: var(--muted); font-size: 10px; font-style: normal; font-weight: 400; font-variant-numeric: tabular-nums; }
+.latency-target-grid span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 11px; line-height: 1.1; font-weight: 500; }
+.latency-target-grid strong { color: var(--foreground); font-size: 13px; line-height: 1; font-weight: 400; font-variant-numeric: tabular-nums; }
+.latency-target-grid em { grid-column: 1 / -1; color: var(--muted); font-size: 9px; line-height: 1.1; font-style: normal; font-weight: 400; font-variant-numeric: tabular-nums; }
 
 .latency-panel {
   margin: 24px;
@@ -1527,15 +1527,17 @@ svg { display: block; }
   .latency-target-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); padding: 0 12px 12px; }
   .latency-target-grid button {
     min-width: 0;
-    min-height: 56px;
+    display: flex;
+    flex-direction: column;
+    min-height: 52px;
     align-items: center;
-    gap: 2px;
-    padding: 8px 6px;
+    gap: 1px;
+    padding: 6px 5px;
     text-align: center;
   }
-  .latency-target-grid span { max-width: 100%; font-size: 10.5px; }
-  .latency-target-grid strong { font-size: 13px; }
-  .latency-target-grid em { font-size: 9.5px; }
+  .latency-target-grid span { max-width: 100%; font-size: 10px; }
+  .latency-target-grid strong { font-size: 12px; }
+  .latency-target-grid em { font-size: 9px; }
   .latency-panel { margin: 16px 12px; padding: 14px 12px; }
   .latency-panel__header { align-items: flex-start; flex-direction: column; gap: 8px; }
 }
