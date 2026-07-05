@@ -124,8 +124,9 @@ describe('LatencyDetail', () => {
 
     expect(html).toContain('monitor-heading-actions')
     expect(html).toContain('monitor-title-row')
-    expect(html).toContain('实时')
-    expect(html).toContain('1 天')
+    const latencyRangeMarkup = html.match(/aria-label="latency range selector"[\s\S]*?<\/div>/)?.[0] ?? ''
+    expect(latencyRangeMarkup).not.toContain('实时')
+    expect(latencyRangeMarkup).toContain('1 天')
     expect(html).toContain('7 天')
     expect(html).toContain('30 天')
     expect(html).toContain('削峰')

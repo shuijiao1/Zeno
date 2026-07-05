@@ -125,7 +125,7 @@ function alertRuleAppliesToNode(rule: AdminAlertRule, nodeId: string): boolean {
 export function App() {
   const [state, setState] = useState<LoadState>({ kind: 'loading' })
   const [route, setRoute] = useState<DashboardRoute>(() => parseDashboardRoute(window.location.pathname))
-  const [latencyRange, setLatencyRange] = useState('1h')
+  const [latencyRange, setLatencyRange] = useState('1d')
   const [stateRange, setStateRange] = useState('1h')
   const [latencyState, setLatencyState] = useState<LatencyLoadState>({ kind: 'idle' })
   const [stateHistoryState, setStateHistoryState] = useState<StateHistoryLoadState>({ kind: 'idle' })
@@ -743,7 +743,6 @@ function ServiceInfoFact({ label, value, wide = false }: { label: string; value:
 }
 
 const detailRangeOptions = [
-  { value: '1h', label: '实时' },
   { value: '1d', label: '1 天' },
   { value: '7d', label: '7 天' },
   { value: '30d', label: '30 天' },

@@ -21,7 +21,6 @@ interface LatencyDetailProps {
 }
 
 const rangeOptions = [
-  { value: '1h', label: '实时' },
   { value: '1d', label: '1 天' },
   { value: '7d', label: '7 天' },
   { value: '30d', label: '30 天' },
