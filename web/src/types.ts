@@ -105,6 +105,7 @@ export interface AdminNode {
   status: string
   countryCode?: string
   region?: string
+  homeProbeTargetId?: string
   disabled: boolean
   billingMode: string
   monthlyResetDay: number

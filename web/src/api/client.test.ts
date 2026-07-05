@@ -646,6 +646,7 @@ describe('updateAdminNode', () => {
         status: 'disabled',
         country_code: 'HK',
         region: 'Hong Kong',
+        home_probe_target_id: 'cloudflare',
         disabled: true,
         billing_mode: 'max',
         monthly_reset_day: 20,
@@ -665,6 +666,7 @@ describe('updateAdminNode', () => {
       displayName: 'Hytron Edited',
       countryCode: 'HK',
       region: 'Hong Kong',
+      homeProbeTargetId: 'cloudflare',
       expiryDate: '2026-08-01',
       billingCycle: '月付',
       billingMode: 'max',
@@ -679,6 +681,7 @@ describe('updateAdminNode', () => {
     expect(node.displayName).toBe('Hytron Edited')
     expect(node.disabled).toBe(true)
     expect(node.monthlyQuotaBytes).toBe(123456789)
+    expect(node.homeProbeTargetId).toBe('cloudflare')
     expect(node.expiryDate).toBe('2026-08-01')
     expect(node.billingCycle).toBe('月付')
     expect(node.billingMode).toBe('max')
@@ -697,6 +700,7 @@ describe('updateAdminNode', () => {
         display_name: 'Hytron Edited',
         country_code: 'HK',
         region: 'Hong Kong',
+        home_probe_target_id: 'cloudflare',
         expiry_date: '2026-08-01',
         billing_cycle: '月付',
         billing_mode: 'max',

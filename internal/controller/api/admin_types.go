@@ -794,6 +794,7 @@ type AdminNodeUpdateRequest struct {
 	DisplayName       *string            `json:"display_name,omitempty"`
 	CountryCode       *string            `json:"country_code,omitempty"`
 	Region            *string            `json:"region,omitempty"`
+	HomeProbeTargetID *string            `json:"home_probe_target_id,omitempty"`
 	ExpiryDate        *string            `json:"expiry_date,omitempty"`
 	BillingCycle      *string            `json:"billing_cycle,omitempty"`
 	BillingMode       *string            `json:"billing_mode,omitempty"`
@@ -827,6 +828,11 @@ func (request *AdminNodeUpdateRequest) normalize() error {
 		changed = true
 		trimmed := strings.TrimSpace(*request.Region)
 		request.Region = &trimmed
+	}
+	if request.HomeProbeTargetID != nil {
+		changed = true
+		trimmed := strings.TrimSpace(*request.HomeProbeTargetID)
+		request.HomeProbeTargetID = &trimmed
 	}
 	if request.ExpiryDate != nil {
 		changed = true
@@ -928,6 +934,7 @@ type AdminNode struct {
 	Status            string  `json:"status"`
 	CountryCode       string  `json:"country_code,omitempty"`
 	Region            string  `json:"region,omitempty"`
+	HomeProbeTargetID string  `json:"home_probe_target_id,omitempty"`
 	Disabled          bool    `json:"disabled"`
 	BillingMode       string  `json:"billing_mode"`
 	MonthlyResetDay   int     `json:"monthly_reset_day"`

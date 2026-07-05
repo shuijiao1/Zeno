@@ -83,6 +83,7 @@ describe('homepage and admin shell layout', () => {
     expect(styles).toContain('font-size: 23px')
     expect(styles).toContain('font-size: 15px')
     expect(styles).toContain('border-top: 1px solid var(--border)')
+    expect(styles).toContain('legend::before')
     expect(styles).toContain('border-radius: 0')
   })
 })
@@ -140,6 +141,7 @@ describe('Kulin-inspired color polish', () => {
 
 describe('visual weight polish', () => {
   it('avoids heavy UI font weights in the Nezha-like shell', () => {
+    expect(styles).not.toContain('font-weight: 650')
     expect(styles).not.toContain('font-weight: 700')
     expect(styles).not.toContain('font-weight: 750')
     expect(styles).not.toContain('font-weight: 760')

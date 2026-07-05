@@ -111,6 +111,7 @@ interface ApiAdminNode {
   status: string
   country_code?: string
   region?: string
+  home_probe_target_id?: string
   disabled: boolean
   billing_mode: string
   monthly_reset_day: number
@@ -393,6 +394,7 @@ export interface AdminNodeUpdateInput {
   displayName?: string
   countryCode?: string
   region?: string
+  homeProbeTargetId?: string
   expiryDate?: string
   billingCycle?: string
   billingMode?: string
@@ -996,6 +998,7 @@ function serializeAdminNodeUpdate(input: AdminNodeUpdateInput) {
     ...(input.displayName !== undefined ? { display_name: input.displayName } : {}),
     ...(input.countryCode !== undefined ? { country_code: input.countryCode } : {}),
     ...(input.region !== undefined ? { region: input.region } : {}),
+    ...(input.homeProbeTargetId !== undefined ? { home_probe_target_id: input.homeProbeTargetId } : {}),
     ...(input.expiryDate !== undefined ? { expiry_date: input.expiryDate } : {}),
     ...(input.billingCycle !== undefined ? { billing_cycle: input.billingCycle } : {}),
     ...(input.billingMode !== undefined ? { billing_mode: input.billingMode } : {}),
@@ -1198,6 +1201,7 @@ function normalizeAdminNode(node: ApiAdminNode): AdminNode {
     status: node.status,
     countryCode: node.country_code,
     region: node.region,
+    homeProbeTargetId: node.home_probe_target_id,
     disabled: node.disabled,
     billingMode: node.billing_mode,
     monthlyResetDay: node.monthly_reset_day ?? 1,

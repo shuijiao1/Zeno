@@ -186,6 +186,68 @@ func TestSQLiteBackedSummaryUsesPersistedNodeAndLatestLatency(t *testing.T) {
 	}
 }
 
+func TestSQLiteBackedSummaryUsesConfiguredHomeLatencyTarget(t *testing.T) {
+	store, err := OpenSQLiteStore(filepath.Join(t.TempDir(), "zeno.db"))
+	if err != nil {
+		t.Fatalf("open sqlite store: %v", err)
+	}
+	defer store.Close()
+
+	ctx := context.Background()
+	now := time.Now().UTC().Truncate(time.Second)
+	if _, err := store.db.ExecContext(ctx, `
+		INSERT INTO nodes (id, display_name, token_hash, status, country_code, home_probe_target_id, created_at, updated_at, last_seen_at)
+		VALUES ('hytron', 'Hytron', 'hash-for-test', 'online', 'HK', 'cloudflare', ?, ?, ?);
+	`, now.Unix(), now.Unix(), now.Unix()); err != nil {
+		t.Fatalf("insert node: %v", err)
+	}
+	for _, target := range []struct {
+		id   string
+		name string
+		addr string
+	}{
+		{id: "google", name: "Google", addr: "8.8.8.8"},
+		{id: "cloudflare", name: "Cloudflare", addr: "1.1.1.1"},
+	} {
+		if _, err := store.db.ExecContext(ctx, `
+			INSERT INTO probe_targets (id, name, type, address, count, timeout_ms, interval_sec, enabled, created_at, updated_at)
+			VALUES (?, ?, 'ping', ?, 3, 1000, 60, 1, ?, ?);
+		`, target.id, target.name, target.addr, now.Unix(), now.Unix()); err != nil {
+			t.Fatalf("insert target %s: %v", target.id, err)
+		}
+		if _, err := store.db.ExecContext(ctx, `
+			INSERT INTO node_probe_targets (node_id, target_id, enabled)
+			VALUES ('hytron', ?, 1);
+		`, target.id); err != nil {
+			t.Fatalf("insert node target %s: %v", target.id, err)
+		}
+	}
+	if _, err := store.db.ExecContext(ctx, `
+		INSERT INTO probe_rounds (node_id, target_id, ts, type, sent, received, loss_percent, min_ms, avg_ms, median_ms, max_ms, stddev_ms)
+		VALUES ('hytron', 'cloudflare', ?, 'ping', 3, 3, 0, 1.0, 1.1, 1.2, 1.3, 0.1);
+	`, now.Add(-time.Minute).Unix()); err != nil {
+		t.Fatalf("insert cloudflare round: %v", err)
+	}
+	if _, err := store.db.ExecContext(ctx, `
+		INSERT INTO probe_rounds (node_id, target_id, ts, type, sent, received, loss_percent, min_ms, avg_ms, median_ms, max_ms, stddev_ms)
+		VALUES ('hytron', 'google', ?, 'ping', 3, 3, 0, 8.0, 8.5, 8.8, 9.0, 0.2);
+	`, now.Unix()); err != nil {
+		t.Fatalf("insert google round: %v", err)
+	}
+
+	summary, err := store.Summary(ctx)
+	if err != nil {
+		t.Fatalf("summary: %v", err)
+	}
+	if len(summary.Nodes) != 1 || summary.Nodes[0].LatencySummary == nil {
+		t.Fatalf("summary nodes = %+v, want latency summary", summary.Nodes)
+	}
+	latency := summary.Nodes[0].LatencySummary
+	if latency.TargetID != "cloudflare" || latency.TargetName != "Cloudflare" || latency.MedianMS == nil || *latency.MedianMS != 1.2 {
+		t.Fatalf("latency summary = %+v, want configured home target cloudflare", latency)
+	}
+}
+
 func TestSQLiteBackedHandlerReturnsPersistedStateHistory(t *testing.T) {
 	store, err := OpenSQLiteStore(filepath.Join(t.TempDir(), "zeno.db"))
 	if err != nil {

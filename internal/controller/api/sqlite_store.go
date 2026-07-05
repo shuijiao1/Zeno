@@ -45,6 +45,7 @@ func (s *SQLiteStore) ensureSchema(ctx context.Context) error {
 			status TEXT NOT NULL DEFAULT 'no_data',
 			country_code TEXT,
 			region TEXT,
+			home_probe_target_id TEXT,
 			expiry_date TEXT,
 			billing_cycle TEXT,
 			display_order INTEGER NOT NULL DEFAULT 0,
@@ -252,11 +253,12 @@ func (s *SQLiteStore) ensureSchema(ctx context.Context) error {
 		}
 	}
 	nodeColumns := map[string]string{
-		"expiry_date":   "TEXT",
-		"billing_cycle": "TEXT",
-		"display_order": "INTEGER NOT NULL DEFAULT 0",
-		"public_ipv4":   "TEXT",
-		"public_ipv6":   "TEXT",
+		"home_probe_target_id": "TEXT",
+		"expiry_date":          "TEXT",
+		"billing_cycle":        "TEXT",
+		"display_order":        "INTEGER NOT NULL DEFAULT 0",
+		"public_ipv4":          "TEXT",
+		"public_ipv6":          "TEXT",
 	}
 	for column, columnType := range nodeColumns {
 		if err := s.ensureColumn(ctx, "nodes", column, columnType); err != nil {
@@ -415,7 +417,7 @@ func (s *SQLiteStore) NodeState(ctx context.Context, nodeID string, window laten
 func (s *SQLiteStore) AdminNodes(ctx context.Context) ([]AdminNode, error) {
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT n.id, n.display_name, n.status, n.country_code, n.region, n.disabled,
-		       n.billing_mode, n.monthly_reset_day, n.expiry_date, n.billing_cycle, n.display_order, n.public_ipv4, n.public_ipv6,
+		       n.home_probe_target_id, n.billing_mode, n.monthly_reset_day, n.expiry_date, n.billing_cycle, n.display_order, n.public_ipv4, n.public_ipv6,
 		       n.monthly_quota_bytes, n.last_seen_at, n.created_at, n.updated_at,
 		       h.hostname, h.os_name, h.os_version, h.kernel, h.arch, h.virtualization,
 		       h.cpu_model, h.cpu_cores, h.memory_total_bytes, h.disk_total_bytes,
@@ -434,7 +436,7 @@ func (s *SQLiteStore) AdminNodes(ctx context.Context) ([]AdminNode, error) {
 	for rows.Next() {
 		var node AdminNode
 		var status string
-		var countryCode, region, billingMode, expiryDate, billingCycle, publicIPv4, publicIPv6 sql.NullString
+		var countryCode, region, homeProbeTargetID, billingMode, expiryDate, billingCycle, publicIPv4, publicIPv6 sql.NullString
 		var disabled int
 		var monthlyResetDay int
 		var displayOrder int
@@ -443,7 +445,7 @@ func (s *SQLiteStore) AdminNodes(ctx context.Context) ([]AdminNode, error) {
 		var cpuCores, memoryTotal, diskTotal, bootTime sql.NullInt64
 		if err := rows.Scan(
 			&node.ID, &node.DisplayName, &status, &countryCode, &region, &disabled,
-			&billingMode, &monthlyResetDay, &expiryDate, &billingCycle, &displayOrder, &publicIPv4, &publicIPv6,
+			&homeProbeTargetID, &billingMode, &monthlyResetDay, &expiryDate, &billingCycle, &displayOrder, &publicIPv4, &publicIPv6,
 			&quota, &lastSeenAt, &createdAt, &updatedAt,
 			&hostname, &osName, &osVersion, &kernel, &arch, &virtualization,
 			&cpuModel, &cpuCores, &memoryTotal, &diskTotal,
@@ -458,6 +460,7 @@ func (s *SQLiteStore) AdminNodes(ctx context.Context) ([]AdminNode, error) {
 		}
 		node.CountryCode = nullStringOr(countryCode, "")
 		node.Region = nullStringOr(region, "")
+		node.HomeProbeTargetID = nullStringOr(homeProbeTargetID, "")
 		node.BillingMode = nullStringOr(billingMode, "both")
 		if monthlyResetDay <= 0 {
 			monthlyResetDay = 1
@@ -695,6 +698,16 @@ func (s *SQLiteStore) UpdateAdminProbeTarget(ctx context.Context, targetID strin
 			`, assignment.NodeID, targetID, enabled); err != nil {
 				return AdminProbeTarget{}, err
 			}
+			if !assignment.Enabled {
+				if _, err := tx.ExecContext(ctx, `UPDATE nodes SET home_probe_target_id = NULL WHERE id = ? AND home_probe_target_id = ?`, assignment.NodeID, targetID); err != nil {
+					return AdminProbeTarget{}, err
+				}
+			}
+		}
+	}
+	if update.Enabled != nil && !*update.Enabled {
+		if _, err := tx.ExecContext(ctx, `UPDATE nodes SET home_probe_target_id = NULL WHERE home_probe_target_id = ?`, targetID); err != nil {
+			return AdminProbeTarget{}, err
 		}
 	}
 	if err := tx.Commit(); err != nil {
@@ -721,6 +734,9 @@ func (s *SQLiteStore) DeleteAdminProbeTarget(ctx context.Context, targetID strin
 		return err
 	}
 	if _, err := tx.ExecContext(ctx, `DELETE FROM node_probe_targets WHERE target_id = ?`, targetID); err != nil {
+		return err
+	}
+	if _, err := tx.ExecContext(ctx, `UPDATE nodes SET home_probe_target_id = NULL WHERE home_probe_target_id = ?`, targetID); err != nil {
 		return err
 	}
 	result, err := tx.ExecContext(ctx, `DELETE FROM probe_targets WHERE id = ?`, targetID)
@@ -789,9 +805,18 @@ func (s *SQLiteStore) UpdateAdminNode(ctx context.Context, nodeID string, update
 		}
 		return AdminNode{}, err
 	}
+	if update.HomeProbeTargetID != nil && *update.HomeProbeTargetID != "" {
+		var targetExists int
+		if err := s.db.QueryRowContext(ctx, `SELECT 1 FROM probe_targets WHERE id = ?`, *update.HomeProbeTargetID).Scan(&targetExists); err != nil {
+			if err == sql.ErrNoRows {
+				return AdminNode{}, errInvalidAdminNodeUpdate
+			}
+			return AdminNode{}, err
+		}
+	}
 
-	sets := make([]string, 0, 11)
-	args := make([]any, 0, 12)
+	sets := make([]string, 0, 12)
+	args := make([]any, 0, 13)
 	if update.DisplayName != nil {
 		sets = append(sets, "display_name = ?")
 		args = append(args, *update.DisplayName)
@@ -803,6 +828,10 @@ func (s *SQLiteStore) UpdateAdminNode(ctx context.Context, nodeID string, update
 	if update.Region != nil {
 		sets = append(sets, "region = ?")
 		args = append(args, nullIfEmpty(*update.Region))
+	}
+	if update.HomeProbeTargetID != nil {
+		sets = append(sets, "home_probe_target_id = ?")
+		args = append(args, nullIfEmpty(*update.HomeProbeTargetID))
 	}
 	if update.ExpiryDate != nil {
 		sets = append(sets, "expiry_date = ?")
@@ -963,18 +992,38 @@ func (s *SQLiteStore) nodeExists(ctx context.Context, nodeID string) (bool, erro
 }
 
 func (s *SQLiteStore) latestLatencySummary(ctx context.Context, nodeID string) (*LatencySummary, error) {
-	var targetID, targetName string
+	var preferredTarget sql.NullString
+	if err := s.db.QueryRowContext(ctx, `SELECT home_probe_target_id FROM nodes WHERE id = ?`, nodeID).Scan(&preferredTarget); err != nil && err != sql.ErrNoRows {
+		return nil, err
+	}
+	if preferredTarget.Valid && strings.TrimSpace(preferredTarget.String) != "" {
+		return s.latestLatencySummaryForTarget(ctx, nodeID, strings.TrimSpace(preferredTarget.String))
+	}
+	return s.latestLatencySummaryForTarget(ctx, nodeID, "")
+}
+
+func (s *SQLiteStore) latestLatencySummaryForTarget(ctx context.Context, nodeID, preferredTargetID string) (*LatencySummary, error) {
+	var summaryTargetID, targetName string
 	var median, avg sql.NullFloat64
 	var loss float64
 	var ts int64
-	err := s.db.QueryRowContext(ctx, `
+	query := `
 		SELECT pr.target_id, pt.name, pr.median_ms, pr.avg_ms, pr.loss_percent, pr.ts
 		FROM probe_rounds pr
 		JOIN probe_targets pt ON pt.id = pr.target_id
-		WHERE pr.node_id = ?
+		LEFT JOIN node_probe_targets npt ON npt.node_id = pr.node_id AND npt.target_id = pr.target_id
+		WHERE pr.node_id = ? AND pt.enabled = 1 AND COALESCE(npt.enabled, 1) = 1
+	`
+	args := []any{nodeID}
+	if strings.TrimSpace(preferredTargetID) != "" {
+		query += ` AND pr.target_id = ?`
+		args = append(args, strings.TrimSpace(preferredTargetID))
+	}
+	query += `
 		ORDER BY pr.ts DESC, pr.id DESC
 		LIMIT 1
-	`, nodeID).Scan(&targetID, &targetName, &median, &avg, &loss, &ts)
+	`
+	err := s.db.QueryRowContext(ctx, query, args...).Scan(&summaryTargetID, &targetName, &median, &avg, &loss, &ts)
 	if err != nil {
 		if err == sql.ErrNoRows {
 			return nil, nil
@@ -983,7 +1032,7 @@ func (s *SQLiteStore) latestLatencySummary(ctx context.Context, nodeID string) (
 	}
 	lossPtr := loss
 	return &LatencySummary{
-		TargetID:    targetID,
+		TargetID:    summaryTargetID,
 		TargetName:  targetName,
 		MedianMS:    floatPtr(median),
 		AvgMS:       floatPtr(avg),

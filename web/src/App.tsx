@@ -1482,14 +1482,25 @@ function AdminNodeEditModal({ node, targets, onUpdate, onTargetUpdate, onInstall
   const [installCommandState, setInstallCommandState] = useState<{ kind: 'idle' } | { kind: 'loading' } | { kind: 'ready'; command: string } | { kind: 'error'; message: string }>({ kind: 'idle' })
   const [installCopyState, setInstallCopyState] = useState<{ kind: 'idle' } | { kind: 'ready'; message: string } | { kind: 'error'; message: string }>({ kind: 'idle' })
   const sortedTargets = sortAdminProbeTargets(targets)
+  const initialSelectedTargetIds = sortedTargets.filter((target) => target.assignments.some((assignment) => assignment.nodeId === node.id && assignment.enabled)).map((target) => target.id)
+  const [selectedTargetIds, setSelectedTargetIds] = useState<string[]>(initialSelectedTargetIds)
+  const [homeTargetId, setHomeTargetId] = useState<string>(node.homeProbeTargetId && initialSelectedTargetIds.includes(node.homeProbeTargetId) ? node.homeProbeTargetId : '')
+
+  const updateSelectedTargetIds = (nextTargetIds: string[]) => {
+    setSelectedTargetIds(nextTargetIds)
+    if (homeTargetId !== '' && !nextTargetIds.includes(homeTargetId)) {
+      setHomeTargetId('')
+    }
+  }
 
   const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
     const formData = new FormData(event.currentTarget)
     const displayName = String(formData.get('display-name') ?? '').trim()
-    const selectedTargets = new Set(formData.getAll('node-target-assignment').map((value) => String(value)))
+    const selectedTargets = new Set(selectedTargetIds)
     onUpdate(node.id, {
       displayName: displayName || node.displayName,
+      homeProbeTargetId: selectedTargets.has(homeTargetId) ? homeTargetId : '',
       expiryDate: String(formData.get('expiry-date') ?? '').trim(),
       billingCycle: String(formData.get('billing-cycle') ?? '').trim(),
       billingMode: String(formData.get('billing-mode') ?? node.billingMode),
@@ -1540,17 +1551,25 @@ function AdminNodeEditModal({ node, targets, onUpdate, onTargetUpdate, onInstall
           {sortedTargets.length === 0 ? (
             <div className="admin-state-card is-compact">暂无延迟监控。</div>
           ) : (
-            <div className="admin-target-assignment-list admin-node-target-assignment-list">
-              {sortedTargets.map((target) => {
-                const checked = target.assignments.some((assignment) => assignment.nodeId === node.id && assignment.enabled)
-                return (
-                  <label className="admin-node-toggle admin-target-assignment-toggle" key={target.id}>
-                    <input name="node-target-assignment" type="checkbox" value={target.id} defaultChecked={checked} />
-                    <span>{target.name}</span>
-                  </label>
-                )
-              })}
-            </div>
+            <AdminExpandedCheckList
+              title="已选延迟监控"
+              emptyText="暂无延迟监控"
+              options={sortedTargets.map((target) => ({ value: target.id, label: target.name }))}
+              value={selectedTargetIds}
+              onChange={updateSelectedTargetIds}
+              renderRight={(option, checked) => (
+                <label className={`admin-home-monitor-radio${checked ? '' : ' is-disabled'}`}>
+                  <input
+                    type="radio"
+                    name={`home-monitor-${node.id}`}
+                    checked={checked && homeTargetId === option.value}
+                    disabled={!checked}
+                    onChange={() => setHomeTargetId(option.value)}
+                  />
+                  <span>首页展示</span>
+                </label>
+              )}
+            />
           )}
         </AdminFormSection>
         <AdminFormSection title="账单与流量" description="账单信息可以留空，后续再补。">
@@ -2223,6 +2242,46 @@ function AdminFormSection({ title, description, children }: { title: string; des
   )
 }
 
+type AdminExpandedCheckListOption = { value: string; label: string }
+
+function AdminExpandedCheckList({ options, value, onChange, title = '已选', emptyText = '暂无可选项', renderRight }: { options: AdminExpandedCheckListOption[]; value: string[]; onChange: (value: string[]) => void; title?: string; emptyText?: string; renderRight?: (option: AdminExpandedCheckListOption, checked: boolean) => ReactNode }) {
+  const [expanded, setExpanded] = useState(false)
+  const optionValues = new Set(options.map((option) => option.value))
+  const normalizedValue = Array.from(new Set((Array.isArray(value) ? value : []).filter((item) => optionValues.has(item))))
+  const selected = new Set(normalizedValue)
+  const toggleValue = (optionValue: string, checked: boolean) => {
+    if (checked) {
+      onChange(Array.from(new Set([...normalizedValue, optionValue])))
+      return
+    }
+    onChange(normalizedValue.filter((item) => item !== optionValue))
+  }
+
+  return (
+    <div className="admin-expanded-checklist">
+      <button className="admin-expanded-checklist__trigger" type="button" aria-expanded={expanded} onClick={() => setExpanded((current) => !current)}>
+        <span>{title} {normalizedValue.length}/{options.length}</span>
+        <ChevronDownIcon expanded={expanded} />
+      </button>
+      {expanded && (
+        <div className="admin-expanded-checklist__list" role="list">
+          {options.length === 0 && <div className="admin-expanded-checklist__empty">{emptyText}</div>}
+          {options.map((option) => {
+            const checked = selected.has(option.value)
+            return (
+              <div className="admin-expanded-checklist__item" role="listitem" key={option.value}>
+                <input type="checkbox" checked={checked} onChange={(event) => toggleValue(option.value, event.currentTarget.checked)} />
+                <button type="button" title={option.label} onClick={() => toggleValue(option.value, !checked)}>{option.label}</button>
+                {renderRight?.(option, checked)}
+              </div>
+            )
+          })}
+        </div>
+      )}
+    </div>
+  )
+}
+
 function sortAdminProbeTargets(targets: AdminProbeTarget[]): AdminProbeTarget[] {
   return [...targets].sort((left, right) => left.displayOrder - right.displayOrder || left.id.localeCompare(right.id, 'zh-CN'))
 }
@@ -2368,6 +2427,14 @@ export function HomeOverviewPanel({ totalCount, onlineCount, offlineCount: _offl
         </div>
       </dl>
     </section>
+  )
+}
+
+function ChevronDownIcon({ expanded }: { expanded: boolean }) {
+  return (
+    <svg className={expanded ? 'is-expanded' : ''} viewBox="0 0 24 24" aria-hidden="true">
+      <path d="m6 9 6 6 6-6" />
+    </svg>
   )
 }
 
