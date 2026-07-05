@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import type { LatencyPoint } from '../types'
 import {
   applyKulinPeakCut,
@@ -19,9 +19,8 @@ interface LatencyChartProps {
   activeTargetNames?: string[]
 }
 
-const width = 960
-const height = 320
-const pad = { left: 52, right: 24, top: 24, bottom: 44 }
+const desktopLayout = { width: 960, height: 320, pad: { left: 52, right: 24, top: 24, bottom: 44 } }
+const mobileLayout = { width: 400, height: 300, pad: { left: 46, right: 16, top: 22, bottom: 44 } }
 const palette = ['#22c55e', '#38bdf8', '#f59e0b', '#a78bfa', '#fb7185', '#14b8a6', '#84cc16', '#f97316', '#06b6d4', '#e879f9']
 const packetLossColor = '#94a3b8'
 
@@ -33,6 +32,7 @@ export function LatencyChart({
   peakCut = false,
   activeTargetNames = [],
 }: LatencyChartProps) {
+  const { width, height, pad } = useLatencyChartLayout()
   const activeTargetKey = activeTargetNames.join('\u0000')
   const series = useMemo(() => buildKulinTargetSeries(points), [points])
   const allRows = useMemo(() => buildKulinChartRows(series), [series])
@@ -98,7 +98,7 @@ export function LatencyChart({
               x={Math.min(width - pad.right, Math.max(pad.left, xx))}
               y={height - 12}
               className="axis-label"
-              textAnchor={axisTickAnchor(xx)}
+              textAnchor={axisTickAnchor(xx, width, pad)}
             >
               {formatAxisTime(tick, timestamps)}
             </text>
@@ -168,6 +168,7 @@ export function LatencyChart({
             series={series}
             activeTargetNames={activeTargetNames}
             x={x(hoverColumn.createdAt)}
+            layout={{ width, height, pad }}
           />
         )}
       </svg>
@@ -184,7 +185,23 @@ export function LatencyChart({
   )
 }
 
-function LatencyTooltip({ column, series, activeTargetNames, x: tooltipAnchorX }: { column: HoverColumn; series: KulinTargetSeries[]; activeTargetNames: string[]; x: number }) {
+function useLatencyChartLayout() {
+  const [isMobile, setIsMobile] = useState(() => typeof window !== 'undefined' && window.matchMedia('(max-width: 767px)').matches)
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return undefined
+    const query = window.matchMedia('(max-width: 767px)')
+    const update = () => setIsMobile(query.matches)
+    update()
+    query.addEventListener('change', update)
+    return () => query.removeEventListener('change', update)
+  }, [])
+
+  return isMobile ? mobileLayout : desktopLayout
+}
+
+function LatencyTooltip({ column, series, activeTargetNames, x: tooltipAnchorX, layout }: { column: HoverColumn; series: KulinTargetSeries[]; activeTargetNames: string[]; x: number; layout: typeof desktopLayout }) {
+  const { width, height, pad } = layout
   const tooltipWidth = 232
   const rowHeight = 18
   const tooltipHeight = 34 + column.points.length * rowHeight + 10
@@ -232,7 +249,7 @@ function packetLossAreaPath(rows: KulinChartRow[], x: (createdAt: number) => num
     .filter((coord): coord is { x: number; y: number } => coord !== null)
 
   if (coords.length === 0) return ''
-  const baseline = pad.top + (height - pad.top - pad.bottom)
+  const baseline = yLoss(0)
   return [
     `M ${coords[0].x.toFixed(1)} ${baseline.toFixed(1)}`,
     ...coords.map((coord) => `L ${coord.x.toFixed(1)} ${coord.y.toFixed(1)}`),
@@ -361,7 +378,7 @@ function thinTicks(ticks: number[], maxTicks: number): number[] {
   return ticks.filter((_, index) => index % step === 0)
 }
 
-function axisTickAnchor(x: number): 'start' | 'middle' | 'end' {
+function axisTickAnchor(x: number, width: number, pad: { left: number; right: number }): 'start' | 'middle' | 'end' {
   if (x <= pad.left + 8) return 'start'
   if (x >= width - pad.right - 8) return 'end'
   return 'middle'
