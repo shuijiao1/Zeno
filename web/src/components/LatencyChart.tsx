@@ -40,6 +40,8 @@ export function LatencyChart({
   const rows = useMemo(() => (peakCut ? applyKulinPeakCut(baseView.rows, baseView.lineKeys) : baseView.rows), [baseView, peakCut])
   const timestamps = useMemo(() => rows.map((row) => row.created_at), [rows])
   const xStep = timestamps.length > 1 ? (width - pad.left - pad.right) / (timestamps.length - 1) : 0
+  const xByTimestamp = useMemo(() => new Map(timestamps.map((timestamp, index) => [timestamp, pad.left + index * xStep])), [timestamps, xStep])
+  const axisTicks = useMemo(() => axisTicksForTimestamps(timestamps), [timestamps])
   const plotHeight = height - pad.top - pad.bottom
   const domain = useMemo(() => yDomainForRows(rows, baseView.lineKeys), [rows, baseView.lineKeys])
   const packetLossSeries = baseView.showPacketLossArea
@@ -52,12 +54,10 @@ export function LatencyChart({
     ? series.filter((item) => activeTargetNames.includes(item.targetName))
     : series), [series, activeTargetKey])
 
-  const x = (createdAt: number) => pad.left + Math.max(0, timestamps.indexOf(createdAt)) * xStep
+  const x = (createdAt: number) => xByTimestamp.get(createdAt) ?? pad.left
   const yDelay = (value: number) => pad.top + (1 - (value - domain.min) / (domain.max - domain.min)) * plotHeight
   const yLoss = (value: number) => pad.top + (1 - Math.max(0, Math.min(100, value)) / 100) * plotHeight
 
-  const lastLabel = timestamps.at(-1) ? formatAxisTime(timestamps.at(-1)!) : '--:--'
-  const firstLabel = timestamps[0] ? formatAxisTime(timestamps[0]) : '--:--'
   const hitWidth = timestamps.length > 1 ? Math.max(18, xStep) : width - pad.left - pad.right
 
   return (
@@ -88,8 +88,20 @@ export function LatencyChart({
             </g>
           )
         })}
-        <text x={pad.left} y={height - 12} className="axis-label">{firstLabel}</text>
-        <text x={width - pad.right - 40} y={height - 12} className="axis-label">{lastLabel}</text>
+        {axisTicks.map((tick) => {
+          const xx = x(tick)
+          return (
+            <text
+              key={tick}
+              x={Math.min(width - pad.right, Math.max(pad.left, xx))}
+              y={height - 12}
+              className="axis-label"
+              textAnchor={axisTickAnchor(xx)}
+            >
+              {formatAxisTime(tick, timestamps)}
+            </text>
+          )
+        })}
 
         {lossRows.length > 0 && (
           <path
@@ -264,8 +276,62 @@ function avgPacketLoss(rows: KulinChartRow[]): number {
   return values.reduce((sum, value) => sum + value, 0) / values.length
 }
 
-function formatAxisTime(createdAt: number): string {
+function axisTicksForTimestamps(timestamps: number[]): number[] {
+  if (timestamps.length <= 1) return timestamps
+  if (timestamps.length < 6) return [timestamps[0], timestamps.at(-1)!]
+
+  const start = timestamps[0]
+  const end = timestamps.at(-1)!
+  const spanHours = (end - start) / 3_600_000
+  const lastIndex = timestamps.length - 1
+  if (spanHours <= 12) {
+    const ticks = timestamps.filter((timestamp, index) => {
+      const date = new Date(timestamp)
+      return index === 0 || index === lastIndex || date.getMinutes() === 0
+    })
+    return thinTicks(ticks, 10)
+  }
+
+  if (spanHours <= 36) {
+    const ticks = timestamps.filter((timestamp, index) => {
+      if (index === 0 || index === lastIndex) return false
+      const date = new Date(timestamp)
+      return date.getMinutes() === 0 && date.getHours() % 2 === 0
+    })
+    return ticks.length >= 2 ? ticks : [start, end]
+  }
+
+  if (spanHours <= 24 * 10) {
+    const ticks = timestamps.filter((timestamp, index) => {
+      if (index === 0 || index === lastIndex) return false
+      const date = new Date(timestamp)
+      return date.getHours() % 12 === 0 && date.getMinutes() === 0
+    })
+    return thinTicks(ticks.length >= 2 ? ticks : [start, end], 12)
+  }
+
+  return thinTicks(timestamps, 8)
+}
+
+function thinTicks(ticks: number[], maxTicks: number): number[] {
+  if (ticks.length <= maxTicks) return ticks
+  const step = Math.ceil(ticks.length / maxTicks)
+  return ticks.filter((_, index) => index % step === 0)
+}
+
+function axisTickAnchor(x: number): 'start' | 'middle' | 'end' {
+  if (x <= pad.left + 8) return 'start'
+  if (x >= width - pad.right - 8) return 'end'
+  return 'middle'
+}
+
+function formatAxisTime(createdAt: number, timestamps: number[]): string {
   const date = new Date(createdAt)
   if (Number.isNaN(date.getTime())) return '--:--'
-  return `${date.getHours()}:${date.getMinutes().toString().padStart(2, '0')}`
+  const start = timestamps[0] ?? createdAt
+  const end = timestamps.at(-1) ?? createdAt
+  const spanHours = (end - start) / 3_600_000
+  const time = `${date.getHours()}:${date.getMinutes().toString().padStart(2, '0')}`
+  if (spanHours > 36) return `${date.getMonth() + 1}/${date.getDate()} ${time}`
+  return time
 }

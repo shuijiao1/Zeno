@@ -29,4 +29,22 @@ describe('LatencyChart', () => {
     expect(singleHtml).toContain('packet-loss-area')
     expect(singleHtml).toContain('Alpha 丢包')
   })
+
+  it('uses Kulin-style multi-tick x axis for day ranges instead of identical endpoint labels', () => {
+    const dayPoints = Array.from({ length: 49 }, (_, index) => ({
+      ts: new Date(Date.UTC(2026, 6, 5, 0, 30) + index * 30 * 60 * 1000).toISOString(),
+      targetId: 'alpha',
+      targetName: 'Alpha',
+      medianMs: 20 + index,
+      lossPercent: 0,
+    }))
+
+    const html = renderToStaticMarkup(<LatencyChart points={dayPoints} activeTargetNames={['Alpha']} />)
+    const labels = [...html.matchAll(/class="axis-label"[^>]*>([^<]+)<\/text>/g)].map((match) => match[1])
+    const xAxisLabels = labels.filter((label) => label.includes(':'))
+
+    expect(xAxisLabels.length).toBeGreaterThan(2)
+    expect(xAxisLabels.every((label) => !label.endsWith(':30'))).toBe(true)
+    expect(new Set(xAxisLabels).size).toBeGreaterThan(2)
+  })
 })
