@@ -49,9 +49,9 @@ export function LatencyDetail({
   const rangeLabel = rangeOptions.find((option) => option.value === range)?.label ?? range
   const latestState = latestStatePoint(statePoints)
   const visualStatus = node.status === 'online' ? 'online' : 'offline'
-  const uptimeLabel = latestState?.uptimeSeconds !== null && latestState?.uptimeSeconds !== undefined ? `运行 ${formatUptime(latestState.uptimeSeconds)}` : null
-  const loadLabel = latestState && latestState.load1 !== null && latestState.load5 !== null && latestState.load15 !== null
-    ? `负载 ${formatFixed(latestState.load1, 2)} / ${formatFixed(latestState.load5, 2)} / ${formatFixed(latestState.load15, 2)}`
+  const uptimeValue = latestState?.uptimeSeconds !== null && latestState?.uptimeSeconds !== undefined ? formatUptime(latestState.uptimeSeconds) : null
+  const loadValue = latestState && latestState.load1 !== null && latestState.load5 !== null && latestState.load15 !== null
+    ? `${formatFixed(latestState.load1, 2)} / ${formatFixed(latestState.load5, 2)} / ${formatFixed(latestState.load15, 2)}`
     : null
   const toggleTarget = (targetId: string) => {
     setActiveTargetIds((current) => (
@@ -68,8 +68,8 @@ export function LatencyDetail({
             <span>{node.displayName}</span>
           </button>
           <div className="detail-hero__badges" aria-label="server live status">
-            {uptimeLabel && <span className="detail-hero-badge">{uptimeLabel}</span>}
-            {loadLabel && <span className="detail-hero-badge">{loadLabel}</span>}
+            {uptimeValue && <span className="detail-hero-badge" aria-label={`运行 ${uptimeValue}`}><span>运行</span> <strong>{uptimeValue}</strong></span>}
+            {loadValue && <span className="detail-hero-badge" aria-label={`负载 ${loadValue}`}><span>负载</span> <strong>{loadValue}</strong></span>}
             <span className={`detail-status-pill status-${visualStatus}`}>{formatStatusLabel(node.status)}</span>
           </div>
         </div>

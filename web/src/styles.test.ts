@@ -148,10 +148,13 @@ describe('Kulin-inspired color polish', () => {
     expect(styles).not.toContain('linear-gradient(135deg, var(--zeno-bg-a)')
   })
 
-  it('adds focus with solid color text, icons, and active controls', () => {
+  it('uses grey labels with black, heavier values while keeping active controls blue', () => {
     expect(styles).toContain('.home-summary__status-line strong')
-    expect(styles).toContain('color: var(--blue)')
-    expect(styles).toContain('.home-summary__metrics > div:nth-child(1) dd')
+    expect(styles).toContain('.home-summary__metrics dd')
+    expect(styles).toContain('.metric-label { color: var(--muted)')
+    expect(styles).toContain('.node-metric strong')
+    expect(styles).toContain('.latency-target-grid strong { color: var(--foreground); font-size: 20px')
+    expect(styles).toContain('.latency-target-grid em { color: var(--muted)')
     expect(styles).toContain('.admin-section-nav button[data-active=\'true\']')
     expect(styles).toContain('background: var(--blue)')
     expect(styles).toContain('.state-history-chart-card.tone-green')

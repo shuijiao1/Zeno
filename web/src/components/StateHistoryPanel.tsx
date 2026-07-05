@@ -62,7 +62,7 @@ export function StateHistoryPanel({ points, range, loading = false, error, onRan
     {
       key: 'memory',
       label: '内存 / Swap',
-      value: <><span>内存 {formatPercent(latestMemory)}</span><span>Swap {formatPercent(latestSwap)}</span></>,
+      value: <><MetricValue label="内存" value={formatPercent(latestMemory)} /><MetricValue label="Swap" value={formatPercent(latestSwap)} /></>,
       tone: 'blue',
       unitLabel: '%',
       domainMax: 100,
@@ -83,7 +83,7 @@ export function StateHistoryPanel({ points, range, loading = false, error, onRan
     {
       key: 'network',
       label: '网络速率',
-      value: <><span>↑{formatBps(latestOutSpeed)}</span><span>↓{formatBps(latestInSpeed)}</span></>,
+      value: <><MetricValue label="上传" value={formatBps(latestOutSpeed)} ariaLabel={`↑${formatBps(latestOutSpeed)}`} /><MetricValue label="下载" value={formatBps(latestInSpeed)} ariaLabel={`↓${formatBps(latestInSpeed)}`} /></>,
       tone: 'orange',
       unitLabel: 'B/s',
       lines: [
@@ -102,7 +102,7 @@ export function StateHistoryPanel({ points, range, loading = false, error, onRan
     {
       key: 'connections',
       label: 'TCP / UDP',
-      value: <><span>TCP {latestTcpConnectionCount !== null ? Math.round(latestTcpConnectionCount) : '--'}</span><span>UDP {latestUdpConnectionCount !== null ? Math.round(latestUdpConnectionCount) : '--'}</span></>,
+      value: <><MetricValue label="TCP" value={latestTcpConnectionCount !== null ? String(Math.round(latestTcpConnectionCount)) : '--'} /><MetricValue label="UDP" value={latestUdpConnectionCount !== null ? String(Math.round(latestUdpConnectionCount)) : '--'} /></>,
       tone: 'orange',
       unitLabel: 'count',
       lines: [
@@ -180,6 +180,10 @@ function MetricChartCard({ metric }: { metric: MetricConfig }) {
       </svg>
     </article>
   )
+}
+
+function MetricValue({ label, value, ariaLabel }: { label: string; value: string; ariaLabel?: string }) {
+  return <span aria-label={ariaLabel ?? `${label} ${value}`}><span className="metric-inline-label">{label}</span> {value}</span>
 }
 
 function latest(points: StatePoint[], read: (point: StatePoint) => number | null | undefined): number | null {
