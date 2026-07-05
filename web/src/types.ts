@@ -43,6 +43,10 @@ export interface HomeCardNode {
   diskUsedBytes: number | null
   diskTotalBytes: number | null
   bootTime?: string
+  load1?: number | null
+  load5?: number | null
+  load15?: number | null
+  uptimeSeconds?: number | null
   netInSpeedBps: number | null
   netOutSpeedBps: number | null
   netInTotalBytes: number | null
@@ -54,6 +58,7 @@ export interface HomeCardNode {
   monthlyBillableBytes: number | null
   monthlyQuotaBytes: number | null
   latencySummary?: LatencySummary
+  latencySummaries?: LatencySummary[]
 }
 
 export interface LatencyPoint {

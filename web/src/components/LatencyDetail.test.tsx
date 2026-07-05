@@ -21,6 +21,10 @@ const node = {
   memoryTotalBytes: 4096,
   diskUsedBytes: 2048,
   diskTotalBytes: 8192,
+  load1: 0.11,
+  load5: 0.12,
+  load15: 0.13,
+  uptimeSeconds: 120,
   netInSpeedBps: 128,
   netOutSpeedBps: 256,
   netInTotalBytes: 1024,
@@ -122,7 +126,8 @@ describe('LatencyDetail', () => {
 
     expect(html).toContain('运行时间')
     expect(html).toContain('负载')
-    expect(html).toContain('-- / -- / --')
+    expect(html).toContain('2 分钟')
+    expect(html).toContain('0.11 / 0.12 / 0.13')
     expect(html).toContain('累计流量')
     expect(html).toContain('latency-target-grid is-loading')
     expect(html).toContain('latency-panel-skeleton')

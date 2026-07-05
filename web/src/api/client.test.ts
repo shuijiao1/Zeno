@@ -25,6 +25,10 @@ describe('normalizeSummary', () => {
           disk_used_bytes: 300,
           disk_total_bytes: 400,
           boot_time: '2026-07-02T01:00:00Z',
+          load1: 0.42,
+          load5: 0.35,
+          load15: 0.28,
+          uptime_seconds: 3600,
           net_in_speed_bps: 1024,
           net_out_speed_bps: 2048,
           net_in_total_bytes: 4096,
@@ -43,6 +47,16 @@ describe('normalizeSummary', () => {
             loss_percent: 0,
             updated_at: '2026-07-02T12:00:00Z',
           },
+          latency_summaries: [
+            {
+              target_id: 'google',
+              target_name: 'Google',
+              median_ms: 1.2,
+              avg_ms: 1.4,
+              loss_percent: 0,
+              updated_at: '2026-07-02T12:00:00Z',
+            },
+          ],
         },
       ],
       services: [
@@ -64,6 +78,11 @@ describe('normalizeSummary', () => {
     expect(summary.nodes[0].monthlyPeriodEnd).toBe('2026-07-14')
     expect(summary.nodes[0].monthlyBillableBytes).toBe(1000)
     expect(summary.nodes[0].latencySummary?.targetName).toBe('Google')
+    expect(summary.nodes[0].latencySummaries?.[0].targetId).toBe('google')
+    expect(summary.nodes[0].load1).toBe(0.42)
+    expect(summary.nodes[0].load5).toBe(0.35)
+    expect(summary.nodes[0].load15).toBe(0.28)
+    expect(summary.nodes[0].uptimeSeconds).toBe(3600)
     expect(summary.nodes[0].osVersion).toBe('13')
     expect(summary.nodes[0].kernel).toBe('6.12.0')
     expect(summary.nodes[0].virtualization).toBe('kvm')

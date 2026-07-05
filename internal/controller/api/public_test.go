@@ -117,7 +117,7 @@ func TestSummaryWebSocketPublishesAgentStateUpdates(t *testing.T) {
 		t.Fatalf("initial websocket message = %q, want summary payload", string(initial))
 	}
 
-	payload := []byte(`{"ts":` + strconv.FormatInt(time.Now().UTC().Unix(), 10) + `,"cpu_percent":12.5,"memory_used_bytes":100,"memory_total_bytes":200,"disk_used_bytes":300,"disk_total_bytes":400,"net_in_total_bytes":1000,"net_out_total_bytes":2000,"net_in_speed_bps":4321,"net_out_speed_bps":8765,"uptime_seconds":60}`)
+	payload := []byte(`{"ts":` + strconv.FormatInt(time.Now().UTC().Unix(), 10) + `,"cpu_percent":12.5,"load1":0.42,"load5":0.35,"load15":0.28,"memory_used_bytes":100,"memory_total_bytes":200,"disk_used_bytes":300,"disk_total_bytes":400,"net_in_total_bytes":1000,"net_out_total_bytes":2000,"net_in_speed_bps":4321,"net_out_speed_bps":8765,"uptime_seconds":60}`)
 	request, err := http.NewRequest(http.MethodPost, server.URL+"/api/agent/v1/state", bytes.NewReader(payload))
 	if err != nil {
 		t.Fatalf("new state request: %v", err)
@@ -138,8 +138,8 @@ func TestSummaryWebSocketPublishesAgentStateUpdates(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read updated websocket summary: %v", err)
 	}
-	if !strings.Contains(string(update), `"net_in_speed_bps":4321`) || !strings.Contains(string(update), `"net_out_speed_bps":8765`) {
-		t.Fatalf("websocket update = %q, want latest agent speeds", string(update))
+	if !strings.Contains(string(update), `"net_in_speed_bps":4321`) || !strings.Contains(string(update), `"net_out_speed_bps":8765`) || !strings.Contains(string(update), `"load1":0.42`) || !strings.Contains(string(update), `"uptime_seconds":60`) {
+		t.Fatalf("websocket update = %q, want latest agent speeds and live facts", string(update))
 	}
 }
 

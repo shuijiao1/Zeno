@@ -359,6 +359,11 @@ func (s *SQLiteStore) Summary(ctx context.Context) (SummaryResponse, error) {
 			return SummaryResponse{}, err
 		}
 		nodes[index].LatencySummary = summary
+		latencySummaries, err := s.latestLatencySummaries(ctx, nodes[index].ID)
+		if err != nil {
+			return SummaryResponse{}, err
+		}
+		nodes[index].LatencySummaries = latencySummaries
 	}
 	services, err := s.serviceTargets(ctx)
 	if err != nil {
@@ -897,7 +902,7 @@ func (s *SQLiteStore) nodes(ctx context.Context) ([]Node, error) {
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT n.id, n.display_name, n.status, n.country_code, n.expiry_date, n.billing_mode, n.monthly_reset_day, n.last_seen_at,
 		       h.os_name, h.os_version, h.kernel, h.arch, h.virtualization, h.cpu_model, h.cpu_cores, h.memory_total_bytes, h.disk_total_bytes, h.boot_time,
-		       ss.cpu_percent, ss.memory_used_bytes, ss.disk_used_bytes,
+		       ss.cpu_percent, ss.load1, ss.load5, ss.load15, ss.uptime_seconds, ss.memory_used_bytes, ss.disk_used_bytes,
 		       ss.net_in_speed_bps, ss.net_out_speed_bps, ss.net_in_total_bytes, ss.net_out_total_bytes,
 		       (
 		         SELECT tm.billable_bytes
@@ -927,10 +932,10 @@ func (s *SQLiteStore) nodes(ctx context.Context) ([]Node, error) {
 	for rows.Next() {
 		var id, displayName, status string
 		var countryCode, expiryDate, billingMode, osName, osVersion, kernel, arch, virtualization, cpuModel sql.NullString
-		var monthlyResetDay, cpuCores, memoryTotal, diskTotal, bootTime, lastSeenAt sql.NullInt64
-		var cpuPercent, netInSpeed, netOutSpeed sql.NullFloat64
+		var monthlyResetDay, cpuCores, memoryTotal, diskTotal, bootTime, lastSeenAt, uptimeSeconds sql.NullInt64
+		var cpuPercent, load1, load5, load15, netInSpeed, netOutSpeed sql.NullFloat64
 		var memoryUsed, diskUsed, netInTotal, netOutTotal, billable, quota sql.NullInt64
-		if err := rows.Scan(&id, &displayName, &status, &countryCode, &expiryDate, &billingMode, &monthlyResetDay, &lastSeenAt, &osName, &osVersion, &kernel, &arch, &virtualization, &cpuModel, &cpuCores, &memoryTotal, &diskTotal, &bootTime, &cpuPercent, &memoryUsed, &diskUsed, &netInSpeed, &netOutSpeed, &netInTotal, &netOutTotal, &billable, &quota); err != nil {
+		if err := rows.Scan(&id, &displayName, &status, &countryCode, &expiryDate, &billingMode, &monthlyResetDay, &lastSeenAt, &osName, &osVersion, &kernel, &arch, &virtualization, &cpuModel, &cpuCores, &memoryTotal, &diskTotal, &bootTime, &cpuPercent, &load1, &load5, &load15, &uptimeSeconds, &memoryUsed, &diskUsed, &netInSpeed, &netOutSpeed, &netInTotal, &netOutTotal, &billable, &quota); err != nil {
 			return nil, err
 		}
 		resetDay := 1
@@ -957,6 +962,10 @@ func (s *SQLiteStore) nodes(ctx context.Context) ([]Node, error) {
 			DiskUsedBytes:        intPtr(diskUsed),
 			DiskTotalBytes:       intPtr(diskTotal),
 			BootTime:             unixStringPtr(bootTime),
+			Load1:                floatPtr(load1),
+			Load5:                floatPtr(load5),
+			Load15:               floatPtr(load15),
+			UptimeSeconds:        intPtr(uptimeSeconds),
 			NetInSpeedBps:        floatPtr(netInSpeed),
 			NetOutSpeedBps:       floatPtr(netOutSpeed),
 			NetInTotalBytes:      intPtr(netInTotal),
@@ -1035,6 +1044,54 @@ func (s *SQLiteStore) latestLatencySummaryForTarget(ctx context.Context, nodeID,
 		LossPercent: &lossPtr,
 		UpdatedAt:   time.Unix(ts, 0).UTC().Format(time.RFC3339),
 	}, nil
+}
+
+func (s *SQLiteStore) latestLatencySummaries(ctx context.Context, nodeID string) ([]LatencySummary, error) {
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT pr.target_id, pt.name, pr.median_ms, pr.avg_ms, pr.loss_percent, pr.ts
+		FROM probe_rounds pr
+		JOIN probe_targets pt ON pt.id = pr.target_id
+		LEFT JOIN node_probe_targets npt ON npt.node_id = pr.node_id AND npt.target_id = pr.target_id
+		WHERE pr.node_id = ?
+		  AND pt.enabled = 1
+		  AND COALESCE(npt.enabled, 1) = 1
+		  AND pr.id = (
+			SELECT pr2.id
+			FROM probe_rounds pr2
+			WHERE pr2.node_id = pr.node_id AND pr2.target_id = pr.target_id
+			ORDER BY pr2.ts DESC, pr2.id DESC
+			LIMIT 1
+		  )
+		ORDER BY pt.display_order ASC, pt.name ASC, pt.id ASC
+	`, nodeID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	summaries := []LatencySummary{}
+	for rows.Next() {
+		var targetID, targetName string
+		var median, avg sql.NullFloat64
+		var loss float64
+		var ts int64
+		if err := rows.Scan(&targetID, &targetName, &median, &avg, &loss, &ts); err != nil {
+			return nil, err
+		}
+		lossPtr := loss
+		summaries = append(summaries, LatencySummary{
+			TargetID:    targetID,
+			TargetName:  targetName,
+			MedianMS:    floatPtr(median),
+			AvgMS:       floatPtr(avg),
+			LossPercent: &lossPtr,
+			UpdatedAt:   time.Unix(ts, 0).UTC().Format(time.RFC3339),
+		})
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return summaries, nil
 }
 
 func (s *SQLiteStore) serviceTargets(ctx context.Context) ([]ServiceTarget, error) {

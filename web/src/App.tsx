@@ -6,7 +6,7 @@ import { LatencyChart } from './components/LatencyChart'
 import { ServerCard } from './components/ServerCard'
 import { startLiveRefresh } from './lib/liveRefresh'
 import { nodePath, parseDashboardRoute, servicePath, type DashboardRoute } from './lib/route'
-import type { AdminAlertRule, AdminNode, AdminNotificationChannel, AdminProbeTarget, AdminSettings, AdminTheme, LatencyPoint, ProbeType, ServiceTarget } from './types'
+import type { AdminAlertRule, AdminNode, AdminNotificationChannel, AdminProbeTarget, AdminSettings, AdminTheme, HomeCardNode, LatencyPoint, ProbeType, ServiceTarget } from './types'
 
 type LoadState =
   | { kind: 'loading' }
@@ -63,6 +63,19 @@ function compactBytes(value: number): string {
 
 function compactRate(value: number): string {
   return `${compactBytes(value)}/s`
+}
+
+function summaryLatencyPoints(node: HomeCardNode | undefined): LatencyPoint[] {
+  return (node?.latencySummaries ?? [])
+    .filter((summary) => summary.updatedAt)
+    .map((summary) => ({
+      ts: summary.updatedAt,
+      targetId: summary.targetId,
+      targetName: summary.targetName,
+      medianMs: summary.medianMs,
+      avgMs: summary.avgMs ?? summary.medianMs,
+      lossPercent: summary.lossPercent ?? 0,
+    }))
 }
 
 const defaultSettings: AdminSettings = {
@@ -605,6 +618,7 @@ export function App() {
   const nodes = state.kind === 'ready' ? state.data.nodes : []
   const services = state.kind === 'ready' ? state.data.services : []
   const selectedNode = route.kind === 'node' ? nodes.find((node) => node.id === route.nodeId) : undefined
+  const selectedNodeLatencyPoints = latencyState.kind === 'ready' ? latencyState.data.points : summaryLatencyPoints(selectedNode)
   const selectedService = route.kind === 'service' ? services.find((service) => service.id === route.targetId) : undefined
   const totalCount = nodes.length
   const onlineCount = nodes.filter((node) => node.status === 'online').length
@@ -654,7 +668,7 @@ export function App() {
       {state.kind === 'ready' && route.kind === 'node' && selectedNode && (
         <LatencyDetail
           node={selectedNode}
-          points={latencyState.kind === 'ready' ? latencyState.data.points : []}
+          points={selectedNodeLatencyPoints}
           statePoints={stateHistoryState.kind === 'ready' ? stateHistoryState.data.points : []}
           range={nodeLatencyRange}
           stateRange={stateRange}

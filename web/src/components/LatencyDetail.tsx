@@ -50,9 +50,16 @@ export function LatencyDetail({
   const rangeLabel = rangeOptions.find((option) => option.value === range)?.label ?? range
   const latestState = latestStatePoint(statePoints)
   const visualStatus = node.status === 'online' ? 'online' : 'offline'
-  const uptimeValue = latestState?.uptimeSeconds !== null && latestState?.uptimeSeconds !== undefined ? formatUptime(latestState.uptimeSeconds) : formatUptimeFromBootTime(node.bootTime)
+  const summaryUptimeSeconds = node.uptimeSeconds ?? null
+  const uptimeValue = latestState?.uptimeSeconds !== null && latestState?.uptimeSeconds !== undefined
+    ? formatUptime(latestState.uptimeSeconds)
+    : summaryUptimeSeconds !== null
+      ? formatUptime(summaryUptimeSeconds)
+      : formatUptimeFromBootTime(node.bootTime)
   const loadValue = latestState && latestState.load1 !== null && latestState.load5 !== null && latestState.load15 !== null
     ? `${formatFixed(latestState.load1, 2)} / ${formatFixed(latestState.load5, 2)} / ${formatFixed(latestState.load15, 2)}`
+    : node.load1 !== null && node.load1 !== undefined && node.load5 !== null && node.load5 !== undefined && node.load15 !== null && node.load15 !== undefined
+      ? `${formatFixed(node.load1, 2)} / ${formatFixed(node.load5, 2)} / ${formatFixed(node.load15, 2)}`
     : '-- / -- / --'
   const hasLatencyData = points.length > 0 || targetSummaries.length > 0
   const showLatencySkeleton = loading && !hasLatencyData && !error

@@ -195,6 +195,12 @@ func TestSQLiteBackedSummaryUsesPersistedNodeAndLatestLatency(t *testing.T) {
 		t.Fatalf("insert host info: %v", err)
 	}
 	if _, err := store.db.ExecContext(ctx, `
+		INSERT INTO state_samples (node_id, ts, cpu_percent, load1, load5, load15, memory_used_bytes, memory_total_bytes, disk_used_bytes, disk_total_bytes, net_in_total_bytes, net_out_total_bytes, net_in_speed_bps, net_out_speed_bps, uptime_seconds)
+		VALUES ('hytron', ?, 18.5, 0.42, 0.35, 0.28, 1024, 4096, 2048, 8192, 1000, 2000, 128, 256, 3660);
+	`, now.Unix()); err != nil {
+		t.Fatalf("insert state sample: %v", err)
+	}
+	if _, err := store.db.ExecContext(ctx, `
 		INSERT INTO probe_targets (id, name, type, address, count, timeout_ms, interval_sec, enabled, created_at, updated_at)
 		VALUES ('google', 'Google', 'ping', '8.8.8.8', 3, 1000, 60, 1, ?, ?);
 	`, now.Unix(), now.Unix()); err != nil {
@@ -248,6 +254,12 @@ func TestSQLiteBackedSummaryUsesPersistedNodeAndLatestLatency(t *testing.T) {
 	}
 	if node.LatencySummary == nil || node.LatencySummary.MedianMS == nil || *node.LatencySummary.MedianMS != 8.8 {
 		t.Fatalf("latency summary = %+v, want latest median 8.8", node.LatencySummary)
+	}
+	if len(node.LatencySummaries) != 1 || node.LatencySummaries[0].TargetID != "google" || node.LatencySummaries[0].MedianMS == nil || *node.LatencySummaries[0].MedianMS != 8.8 {
+		t.Fatalf("latency summaries = %+v, want latest google median 8.8", node.LatencySummaries)
+	}
+	if node.Load1 == nil || *node.Load1 != 0.42 || node.Load5 == nil || *node.Load5 != 0.35 || node.Load15 == nil || *node.Load15 != 0.28 || node.UptimeSeconds == nil || *node.UptimeSeconds != 3660 {
+		t.Fatalf("summary node live facts = load %v/%v/%v uptime %v, want latest state", node.Load1, node.Load5, node.Load15, node.UptimeSeconds)
 	}
 	if len(summary.LatencyPoints) != 0 {
 		t.Fatalf("summary latency points len = %d, want 0 because latency charts use dedicated websocket feeds", len(summary.LatencyPoints))

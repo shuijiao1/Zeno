@@ -41,6 +41,10 @@ interface ApiNode {
   disk_used_bytes: number | null
   disk_total_bytes: number | null
   boot_time?: string | null
+  load1?: number | null
+  load5?: number | null
+  load15?: number | null
+  uptime_seconds?: number | null
   net_in_speed_bps: number | null
   net_out_speed_bps: number | null
   net_in_total_bytes: number | null
@@ -52,6 +56,7 @@ interface ApiNode {
   monthly_billable_bytes: number | null
   monthly_quota_bytes: number | null
   latency_summary?: ApiLatencySummary
+  latency_summaries?: ApiLatencySummary[] | null
 }
 
 interface ApiLatencyPoint {
@@ -1193,6 +1198,10 @@ function normalizeNode(node: ApiNode): HomeCardNode {
     diskUsedBytes: node.disk_used_bytes,
     diskTotalBytes: node.disk_total_bytes,
     bootTime: node.boot_time ?? undefined,
+    load1: node.load1 ?? null,
+    load5: node.load5 ?? null,
+    load15: node.load15 ?? null,
+    uptimeSeconds: node.uptime_seconds ?? null,
     netInSpeedBps: node.net_in_speed_bps,
     netOutSpeedBps: node.net_out_speed_bps,
     netInTotalBytes: node.net_in_total_bytes,
@@ -1203,14 +1212,19 @@ function normalizeNode(node: ApiNode): HomeCardNode {
     monthlyPeriodEnd: node.monthly_period_end,
     monthlyBillableBytes: node.monthly_billable_bytes,
     monthlyQuotaBytes: node.monthly_quota_bytes,
-    latencySummary: node.latency_summary ? {
-      targetId: node.latency_summary.target_id,
-      targetName: node.latency_summary.target_name,
-      medianMs: node.latency_summary.median_ms,
-      avgMs: node.latency_summary.avg_ms,
-      lossPercent: node.latency_summary.loss_percent,
-      updatedAt: node.latency_summary.updated_at,
-    } : undefined,
+    latencySummary: node.latency_summary ? normalizeLatencySummary(node.latency_summary) : undefined,
+    latencySummaries: (node.latency_summaries ?? []).map(normalizeLatencySummary),
+  }
+}
+
+function normalizeLatencySummary(summary: ApiLatencySummary) {
+  return {
+    targetId: summary.target_id,
+    targetName: summary.target_name,
+    medianMs: summary.median_ms,
+    avgMs: summary.avg_ms ?? summary.median_ms,
+    lossPercent: summary.loss_percent,
+    updatedAt: summary.updated_at,
   }
 }
 
