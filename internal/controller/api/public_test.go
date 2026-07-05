@@ -371,8 +371,8 @@ func TestNodeStateEndpointUsesKulinHistoricalWindows(t *testing.T) {
 	sevenDays := requestState(t, "/api/public/v1/nodes/hytron/state?range=7d")
 	thirtyDays := requestState(t, "/api/public/v1/nodes/hytron/state?range=30d")
 
-	if got := len(oneDay.Points); got != 2880 {
-		t.Fatalf("1d state points = %d, want Kulin 2880 thirty-second samples", got)
+	if got := len(oneDay.Points); got != 144 {
+		t.Fatalf("1d state points = %d, want 144 ten-minute visual samples", got)
 	}
 	if got := len(sevenDays.Points); got != 336 {
 		t.Fatalf("7d state points = %d, want Kulin 336 thirty-minute samples", got)

@@ -145,7 +145,7 @@ func resolveStateWindow(rangeName string) (latencyWindow, bool) {
 	case "", "1h":
 		return latencyWindow{Name: "1h", Samples: 30, Step: 2 * time.Minute}, true
 	case "1d":
-		return latencyWindow{Name: "1d", Samples: 2880, Step: 30 * time.Second}, true
+		return latencyWindow{Name: "1d", Samples: 144, Step: 10 * time.Minute}, true
 	case "7d":
 		return latencyWindow{Name: "7d", Samples: 336, Step: 30 * time.Minute}, true
 	case "30d":
