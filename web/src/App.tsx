@@ -125,7 +125,8 @@ function alertRuleAppliesToNode(rule: AdminAlertRule, nodeId: string): boolean {
 export function App() {
   const [state, setState] = useState<LoadState>({ kind: 'loading' })
   const [route, setRoute] = useState<DashboardRoute>(() => parseDashboardRoute(window.location.pathname))
-  const [latencyRange, setLatencyRange] = useState('1d')
+  const [nodeLatencyRange, setNodeLatencyRange] = useState('1d')
+  const [serviceLatencyRange, setServiceLatencyRange] = useState('1h')
   const [stateRange, setStateRange] = useState('1h')
   const [latencyState, setLatencyState] = useState<LatencyLoadState>({ kind: 'idle' })
   const [stateHistoryState, setStateHistoryState] = useState<StateHistoryLoadState>({ kind: 'idle' })
@@ -182,7 +183,7 @@ export function App() {
     setLatencyState({ kind: 'loading' })
     const stopLatencyStream = subscribeNodeLatency(
       route.nodeId,
-      latencyRange,
+      nodeLatencyRange,
       (data) => {
         if (!cancelled) setLatencyState({ kind: 'ready', data })
       },
@@ -195,7 +196,7 @@ export function App() {
       cancelled = true
       stopLatencyStream?.()
     }
-  }, [route, latencyRange])
+  }, [route, nodeLatencyRange])
 
   useEffect(() => {
     if (route.kind !== 'node') {
@@ -232,7 +233,7 @@ export function App() {
     setServiceLatencyState({ kind: 'loading' })
     const stopServiceLatencyStream = subscribeServiceLatency(
       route.targetId,
-      latencyRange,
+      serviceLatencyRange,
       (data) => {
         if (!cancelled) setServiceLatencyState({ kind: 'ready', data })
       },
@@ -245,7 +246,7 @@ export function App() {
       cancelled = true
       stopServiceLatencyStream?.()
     }
-  }, [route, latencyRange])
+  }, [route, serviceLatencyRange])
 
   useEffect(() => {
     if (route.kind !== 'admin') return
@@ -500,14 +501,14 @@ export function App() {
 
   const navigateNode = (nodeId: string) => {
     window.history.pushState(null, '', nodePath(nodeId))
-    setLatencyRange('1d')
+    setNodeLatencyRange('1d')
     setStateRange('1h')
     setRoute({ kind: 'node', nodeId })
   }
 
   const navigateService = (targetId: string) => {
     window.history.pushState(null, '', servicePath(targetId))
-    setLatencyRange('1d')
+    setServiceLatencyRange('1h')
     setRoute({ kind: 'service', targetId })
   }
 
@@ -583,14 +584,14 @@ export function App() {
           node={selectedNode}
           points={latencyState.kind === 'ready' ? latencyState.data.points : []}
           statePoints={stateHistoryState.kind === 'ready' ? stateHistoryState.data.points : []}
-          range={latencyRange}
+          range={nodeLatencyRange}
           stateRange={stateRange}
           loading={latencyState.kind === 'loading'}
           error={latencyState.kind === 'error' ? latencyState.message : undefined}
           stateLoading={stateHistoryState.kind === 'loading'}
           stateError={stateHistoryState.kind === 'error' ? stateHistoryState.message : undefined}
           onBack={navigateHome}
-          onRangeChange={setLatencyRange}
+          onRangeChange={setNodeLatencyRange}
           onStateRangeChange={setStateRange}
         />
       )}
@@ -603,11 +604,11 @@ export function App() {
         <ServiceDetail
           target={serviceLatencyState.kind === 'ready' ? serviceLatencyState.data.target : selectedService!}
           points={serviceLatencyState.kind === 'ready' ? serviceLatencyState.data.points : []}
-          range={latencyRange}
+          range={serviceLatencyRange}
           loading={serviceLatencyState.kind === 'loading'}
           error={serviceLatencyState.kind === 'error' ? serviceLatencyState.message : undefined}
           onBack={navigateHome}
-          onRangeChange={setLatencyRange}
+          onRangeChange={setServiceLatencyRange}
         />
       )}
 
@@ -683,7 +684,7 @@ export function HomeTopPanel({ settings = defaultSettings, onHome, onAdmin, onTh
 
 function ServiceDetail({ target, points, range, loading, error, onBack, onRangeChange }: { target: ServiceTarget; points: LatencyPoint[]; range: string; loading?: boolean; error?: string; onBack: () => void; onRangeChange: (range: string) => void }) {
   const [peakCut, setPeakCut] = useState(false)
-  const rangeLabel = detailRangeOptions.find((option) => option.value === range)?.label ?? range
+  const rangeLabel = serviceRangeOptions.find((option) => option.value === range)?.label ?? range
   return (
     <div className="kulin-container detail-container">
       <section className="detail-hero" aria-label={`${target.name} service overview`}>
@@ -711,7 +712,7 @@ function ServiceDetail({ target, points, range, loading, error, onBack, onRangeC
           </div>
           <div className="monitor-heading-actions">
             <div className="detail-range-row" aria-label="service latency range selector">
-              {detailRangeOptions.map((option) => (
+              {serviceRangeOptions.map((option) => (
                 <button key={option.value} type="button" className={range === option.value ? 'is-active' : ''} onClick={() => onRangeChange(option.value)}>{option.label}</button>
               ))}
             </div>
@@ -742,7 +743,8 @@ function ServiceInfoFact({ label, value, wide = false }: { label: string; value:
   )
 }
 
-const detailRangeOptions = [
+const serviceRangeOptions = [
+  { value: '1h', label: '实时' },
   { value: '1d', label: '1 天' },
   { value: '7d', label: '7 天' },
   { value: '30d', label: '30 天' },
