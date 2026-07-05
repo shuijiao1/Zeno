@@ -197,8 +197,8 @@ function renderAdmin(section: 'nodes' | 'targets' | 'notifications' | 'account' 
 describe('HomeTopPanel', () => {
   it('turns configured desktop and mobile background images into safe shell variables', () => {
     expect(shellStyleForSettings(settings)).toEqual({
-      '--zeno-desktop-background-image': 'linear-gradient(rgba(24, 21, 18, 0.78), rgba(24, 21, 18, 0.78)), url("https://example.com/desktop-bg.webp")',
-      '--zeno-mobile-background-image': 'linear-gradient(rgba(24, 21, 18, 0.78), rgba(24, 21, 18, 0.78)), url("https://example.com/mobile-bg.webp")',
+      '--zeno-desktop-background-image': 'url("https://example.com/desktop-bg.webp")',
+      '--zeno-mobile-background-image': 'url("https://example.com/mobile-bg.webp")',
       backgroundSize: 'cover',
       backgroundAttachment: 'fixed',
     })

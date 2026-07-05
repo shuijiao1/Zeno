@@ -8,10 +8,11 @@ const stylesPath = join(dirname(fileURLToPath(import.meta.url)), 'styles.css')
 const styles = readFileSync(stylesPath, 'utf8')
 
 describe('mobile latency target layout', () => {
-  it('keeps latency target buttons compact at three per row on phones', () => {
+  it('keeps latency target buttons compact as card tiles on phones', () => {
     expect(styles).toContain('@media (max-width: 767px)')
+    expect(styles).toContain('.latency-target-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); padding: 0 12px 12px; }')
     expect(styles).toContain('.latency-target-grid button')
-    expect(styles).toContain('flex: 0 0 calc(100% / 3)')
+    expect(styles).toContain('border-radius: var(--radius-card)')
   })
 })
 
@@ -31,10 +32,11 @@ describe('homepage and admin shell layout', () => {
     expect(styles).not.toContain('.home-stat-grid')
   })
 
-  it('styles the backend/admin shell with the same card language as the front page', () => {
+  it('styles the backend/admin shell with the same translucent card language as the front page', () => {
     expect(styles).toContain('.admin-panel')
     expect(styles).toContain('.admin-workspace-panel .admin-list')
-    expect(styles).toContain('background: var(--card)')
+    expect(styles).toContain('--surface-strong')
+    expect(styles).toContain('background: var(--surface-strong)')
   })
 
   it('keeps the homepage backend entry visible on phones', () => {
@@ -77,14 +79,15 @@ describe('homepage and admin shell layout', () => {
     expect(styles).not.toContain('.server-overview')
   })
 
-  it('simplifies backend chrome and uses larger admin typography', () => {
+  it('simplifies backend chrome and gives secondary forms card-aligned sections', () => {
     expect(styles).toContain('background: transparent')
     expect(styles).toContain('box-shadow: none')
     expect(styles).toContain('font-size: 23px')
     expect(styles).toContain('font-size: 15px')
-    expect(styles).toContain('border-top: 1px solid var(--border)')
+    expect(styles).toContain('.admin-account-section,')
+    expect(styles).toContain('.admin-form-section')
     expect(styles).toContain('legend::before')
-    expect(styles).toContain('border-radius: 0')
+    expect(styles).toContain('border-radius: var(--radius-card)')
   })
 })
 
@@ -104,10 +107,10 @@ describe('state history layout', () => {
     expect(styles).toContain('.state-sparkline--large')
   })
 
-  it('keeps uptime and load as compact badges in the top server card', () => {
+  it('keeps uptime and load as compact pill badges in the top server card', () => {
     expect(styles).toContain('.detail-hero__badges')
     expect(styles).toContain('.detail-hero-badge')
-    expect(styles).toContain('border-radius: 999px')
+    expect(styles).toContain('border-radius: var(--radius-pill)')
   })
 
   it('keeps offline cards frozen without grayscale filtering', () => {

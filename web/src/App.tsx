@@ -77,7 +77,7 @@ const defaultSettings: AdminSettings = {
 }
 
 function backgroundImageValue(url: string): string {
-  return `linear-gradient(rgba(24, 21, 18, 0.78), rgba(24, 21, 18, 0.78)), url("${url.replaceAll('"', '%22')}")`
+  return `url("${url.replaceAll('"', '%22')}")`
 }
 
 function storedThemeOverride(): AdminTheme | null {
