@@ -1,6 +1,6 @@
 import { type CSSProperties, type DragEvent, type FormEvent, type ReactNode, useEffect, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { createAdminNode, createAdminNotificationChannel, createAdminProbeTarget, deleteAdminNotificationChannel, fetchAdminAccount, fetchAdminAlertRules, fetchAdminNodes, fetchAdminNotificationChannels, fetchAdminProbeTargets, fetchAdminSettings, fetchNodeLatency, fetchNodeState, fetchPublicSettings, fetchServiceLatency, fetchSummary, loginAdmin, logoutAdmin, requestAdminNodeInstallCommand, testAdminNotificationChannel, updateAdminAccount, updateAdminAlertRule, updateAdminNode, updateAdminNotificationChannel, updateAdminNotificationType, updateAdminProbeTarget, updateAdminSettings, type AdminAccountData, type AdminAlertRuleUpdateInput, type AdminNodeCreateInput, type AdminNodeUpdateInput, type AdminNotificationChannelCreateInput, type AdminNotificationChannelUpdateInput, type AdminProbeTargetInput, type AdminProbeTargetUpdateInput, type AdminSettingsUpdateInput, type NodeLatencyData, type NodeStateData, type ServiceLatencyData, type SummaryData } from './api/client'
+import { createAdminNode, createAdminNotificationChannel, createAdminProbeTarget, deleteAdminNode, deleteAdminNotificationChannel, deleteAdminProbeTarget, fetchAdminAccount, fetchAdminAlertRules, fetchAdminNodes, fetchAdminNotificationChannels, fetchAdminProbeTargets, fetchAdminSettings, fetchNodeLatency, fetchNodeState, fetchPublicSettings, fetchServiceLatency, fetchSummary, loginAdmin, logoutAdmin, requestAdminNodeInstallCommand, testAdminNotificationChannel, updateAdminAccount, updateAdminAlertRule, updateAdminNode, updateAdminNotificationChannel, updateAdminNotificationType, updateAdminProbeTarget, updateAdminSettings, type AdminAccountData, type AdminAlertRuleUpdateInput, type AdminNodeCreateInput, type AdminNodeUpdateInput, type AdminNotificationChannelCreateInput, type AdminNotificationChannelUpdateInput, type AdminProbeTargetInput, type AdminProbeTargetUpdateInput, type AdminSettingsUpdateInput, type NodeLatencyData, type NodeStateData, type ServiceLatencyData, type SummaryData } from './api/client'
 import { LatencyDetail } from './components/LatencyDetail'
 import { LatencyChart } from './components/LatencyChart'
 import { ServerCard } from './components/ServerCard'
@@ -370,6 +370,25 @@ export function App() {
       .catch((error: unknown) => setAdminState({ kind: 'error', message: error instanceof Error ? error.message : 'unknown error' }))
   }
 
+  const deleteAdminNodeDetails = (nodeId: string) => {
+    if (adminToken === '') return
+    deleteAdminNode(adminToken, nodeId)
+      .then(() => {
+        setAdminState((current) => {
+          if (current.kind !== 'ready') return current
+          return {
+            ...current,
+            nodes: current.nodes.filter((node) => node.id !== nodeId),
+            targets: current.targets.map((target) => ({
+              ...target,
+              assignments: target.assignments.filter((assignment) => assignment.nodeId !== nodeId),
+            })),
+          }
+        })
+      })
+      .catch((error: unknown) => setAdminState({ kind: 'error', message: error instanceof Error ? error.message : 'unknown error' }))
+  }
+
   const createAdminProbeTargetDetails = (input: AdminProbeTargetInput) => {
     if (adminToken === '') return
     createAdminProbeTarget(adminToken, input)
@@ -393,6 +412,18 @@ export function App() {
             return { ...current, targets: sortAdminProbeTargets(current.targets.map((target) => target.id === updatedTarget.id ? updatedTarget : target)) }
           }
           return { kind: 'ready', account: { username: 'admin' }, nodes: [], targets: [updatedTarget], notificationChannels: [], alertRules: [] }
+        })
+      })
+      .catch((error: unknown) => setAdminState({ kind: 'error', message: error instanceof Error ? error.message : 'unknown error' }))
+  }
+
+  const deleteAdminProbeTargetDetails = (targetId: string) => {
+    if (adminToken === '') return
+    deleteAdminProbeTarget(adminToken, targetId)
+      .then(() => {
+        setAdminState((current) => {
+          if (current.kind !== 'ready') return current
+          return { ...current, targets: current.targets.filter((target) => target.id !== targetId) }
         })
       })
       .catch((error: unknown) => setAdminState({ kind: 'error', message: error instanceof Error ? error.message : 'unknown error' }))
@@ -542,9 +573,11 @@ export function App() {
           onAdminAccountUpdate={updateAdminAccountDetails}
           onAdminNodeCreate={createAdminNodeDetails}
           onAdminNodeUpdate={updateAdminNodeDetails}
+          onAdminNodeDelete={deleteAdminNodeDetails}
           onAdminInstallCommand={requestAdminInstallCommand}
           onAdminProbeTargetCreate={createAdminProbeTargetDetails}
           onAdminProbeTargetUpdate={updateAdminProbeTargetDetails}
+          onAdminProbeTargetDelete={deleteAdminProbeTargetDetails}
           onAdminNotificationChannelCreate={createAdminNotificationChannelDetails}
           onAdminNotificationChannelUpdate={updateAdminNotificationChannelDetails}
           onAdminNotificationChannelDelete={deleteAdminNotificationChannelDetails}
@@ -784,9 +817,11 @@ interface AdminDashboardProps {
   onAdminAccountUpdate?: (username: string, currentPassword: string, newPassword: string) => Promise<void>
   onAdminNodeCreate?: (input: AdminNodeCreateInput) => Promise<AdminNode | void>
   onAdminNodeUpdate?: (nodeId: string, input: AdminNodeUpdateInput) => void
+  onAdminNodeDelete?: (nodeId: string) => void
   onAdminInstallCommand?: (nodeId: string) => Promise<string>
   onAdminProbeTargetCreate?: (input: AdminProbeTargetInput) => void
   onAdminProbeTargetUpdate?: (targetId: string, input: AdminProbeTargetUpdateInput) => void
+  onAdminProbeTargetDelete?: (targetId: string) => void
   onAdminNotificationChannelCreate?: (input: AdminNotificationChannelCreateInput) => void
   onAdminNotificationChannelUpdate?: (channelId: string, input: AdminNotificationChannelUpdateInput) => void
   onAdminNotificationChannelDelete?: (channelId: string) => void
@@ -811,9 +846,11 @@ export function AdminDashboard({
   onAdminAccountUpdate = () => Promise.reject(new Error('account update unavailable')),
   onAdminNodeCreate = () => Promise.resolve(),
   onAdminNodeUpdate = () => {},
+  onAdminNodeDelete = () => {},
   onAdminInstallCommand = () => Promise.reject(new Error('install command unavailable')),
   onAdminProbeTargetCreate = () => {},
   onAdminProbeTargetUpdate = () => {},
+  onAdminProbeTargetDelete = () => {},
   onAdminNotificationChannelCreate = () => {},
   onAdminNotificationChannelUpdate = () => {},
   onAdminNotificationChannelDelete = () => {},
@@ -884,6 +921,7 @@ export function AdminDashboard({
                 nodes={adminState.nodes}
                 onCreate={onAdminNodeCreate}
                 onUpdate={onAdminNodeUpdate}
+                onDelete={onAdminNodeDelete}
                 onInstallCommand={onAdminInstallCommand}
               />
             )}
@@ -894,6 +932,7 @@ export function AdminDashboard({
                 nodes={adminState.nodes}
                 onCreate={onAdminProbeTargetCreate}
                 onUpdate={onAdminProbeTargetUpdate}
+                onDelete={onAdminProbeTargetDelete}
               />
             )}
 
@@ -1147,7 +1186,7 @@ function validAgentControllerURL(value: string): boolean {
   }
 }
 
-function AdminNodeSection({ nodes, onCreate, onUpdate, onInstallCommand }: { nodes: AdminNode[]; onCreate: (input: AdminNodeCreateInput) => Promise<AdminNode | void>; onUpdate: (nodeId: string, input: AdminNodeUpdateInput) => void; onInstallCommand: (nodeId: string) => Promise<string> }) {
+function AdminNodeSection({ nodes, onCreate, onUpdate, onDelete, onInstallCommand }: { nodes: AdminNode[]; onCreate: (input: AdminNodeCreateInput) => Promise<AdminNode | void>; onUpdate: (nodeId: string, input: AdminNodeUpdateInput) => void; onDelete: (nodeId: string) => void; onInstallCommand: (nodeId: string) => Promise<string> }) {
   const [creatingNode, setCreatingNode] = useState(false)
   const [editingNodeId, setEditingNodeId] = useState<string | null>(null)
   const [sortingNodes, setSortingNodes] = useState(false)
@@ -1172,7 +1211,7 @@ function AdminNodeSection({ nodes, onCreate, onUpdate, onInstallCommand }: { nod
       </header>
 
       {nodes.length === 0 && <div className="admin-state-card">还没有节点。</div>}
-      {nodes.length > 0 && <AdminNodeList nodes={orderedNodes} onEdit={setEditingNodeId} />}
+      {nodes.length > 0 && <AdminNodeList nodes={orderedNodes} onEdit={setEditingNodeId} onDelete={onDelete} />}
 
       {creatingNode && (
         <AdminNodeCreateModal
@@ -1211,7 +1250,12 @@ function AdminNodeSection({ nodes, onCreate, onUpdate, onInstallCommand }: { nod
 
 type AdminNodeOrderPatch = { nodeId: string; displayOrder: number }
 
-function AdminNodeList({ nodes, onEdit }: { nodes: AdminNode[]; onEdit: (nodeId: string) => void }) {
+function AdminNodeList({ nodes, onEdit, onDelete }: { nodes: AdminNode[]; onEdit: (nodeId: string) => void; onDelete: (nodeId: string) => void }) {
+  const confirmDelete = (node: AdminNode) => {
+    const ok = typeof window === 'undefined' ? true : window.confirm(`确认删除服务器「${node.displayName}」？这会删除该服务器的历史上报和探测记录。`)
+    if (ok) onDelete(node.id)
+  }
+
   return (
     <div className="admin-list" role="list" aria-label="服务器列表">
       <div className="admin-list-head" aria-hidden="true">
@@ -1233,6 +1277,7 @@ function AdminNodeList({ nodes, onEdit }: { nodes: AdminNode[]; onEdit: (nodeId:
           <span data-label="Agent 版本">{node.agentVersion || '—'}</span>
           <div className="admin-row-actions">
             <button className="admin-row-action" type="button" onClick={() => onEdit(node.id)}>编辑服务器</button>
+            <button className="admin-row-action is-danger" type="button" onClick={() => confirmDelete(node)}>删除服务器</button>
           </div>
         </article>
       ))}
@@ -1527,7 +1572,7 @@ function AdminNodeEditModal({ node, onUpdate, onInstallCommand, onClose }: { nod
   )
 }
 
-function AdminTargetSection({ targets, nodes, onCreate, onUpdate }: { targets: AdminProbeTarget[]; nodes: AdminNode[]; onCreate: (input: AdminProbeTargetInput) => void; onUpdate: (targetId: string, input: AdminProbeTargetUpdateInput) => void }) {
+function AdminTargetSection({ targets, nodes, onCreate, onUpdate, onDelete }: { targets: AdminProbeTarget[]; nodes: AdminNode[]; onCreate: (input: AdminProbeTargetInput) => void; onUpdate: (targetId: string, input: AdminProbeTargetUpdateInput) => void; onDelete: (targetId: string) => void }) {
   const [creatingTarget, setCreatingTarget] = useState(false)
   const [editingTargetId, setEditingTargetId] = useState<string | null>(null)
   const editingTarget = editingTargetId ? targets.find((target) => target.id === editingTargetId) : undefined
@@ -1546,7 +1591,7 @@ function AdminTargetSection({ targets, nodes, onCreate, onUpdate }: { targets: A
       </header>
 
       {targets.length === 0 && <div className="admin-state-card">还没有探针目标。</div>}
-      {targets.length > 0 && <AdminTargetList targets={sortedTargets} onEdit={setEditingTargetId} />}
+      {targets.length > 0 && <AdminTargetList targets={sortedTargets} onEdit={setEditingTargetId} onDelete={onDelete} />}
 
       {creatingTarget && (
         <AdminTargetCreateModal
@@ -1574,7 +1619,12 @@ function AdminTargetSection({ targets, nodes, onCreate, onUpdate }: { targets: A
   )
 }
 
-function AdminTargetList({ targets, onEdit }: { targets: AdminProbeTarget[]; onEdit: (targetId: string) => void }) {
+function AdminTargetList({ targets, onEdit, onDelete }: { targets: AdminProbeTarget[]; onEdit: (targetId: string) => void; onDelete: (targetId: string) => void }) {
+  const confirmDelete = (target: AdminProbeTarget) => {
+    const ok = typeof window === 'undefined' ? true : window.confirm(`确认删除延迟监控「${target.name}」？这会删除该目标的历史探测记录。`)
+    if (ok) onDelete(target.id)
+  }
+
   return (
     <div className="admin-list admin-target-list" role="list" aria-label="延迟监控目标列表">
       <div className="admin-list-head" aria-hidden="true">
@@ -1592,6 +1642,7 @@ function AdminTargetList({ targets, onEdit }: { targets: AdminProbeTarget[]; onE
           <span data-label="节点">{formatTargetAssignmentSummary(target)}</span>
           <div className="admin-row-actions">
             <button className="admin-row-action" type="button" onClick={() => onEdit(target.id)}>编辑目标</button>
+            <button className="admin-row-action is-danger" type="button" onClick={() => confirmDelete(target)}>删除目标</button>
           </div>
         </article>
       ))}

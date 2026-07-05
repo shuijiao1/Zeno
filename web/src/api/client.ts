@@ -880,6 +880,19 @@ export async function updateAdminNode(adminToken: string, nodeId: string, input:
   return normalizeAdminNode(data.node)
 }
 
+export async function deleteAdminNode(adminToken: string, nodeId: string): Promise<void> {
+  const response = await fetch(`/api/admin/v1/nodes/${encodeURIComponent(nodeId)}`, {
+    method: 'DELETE',
+    headers: {
+      Accept: 'application/json',
+      'X-Admin-Token': adminToken,
+    },
+  })
+  if (!response.ok) {
+    throw new Error(`admin node delete failed: ${response.status}`)
+  }
+}
+
 export function normalizeSettings(input: ApiSettings): AdminSettings {
   const logoUrl = input.logo_url
   const desktopBackgroundUrl = input.desktop_background_url ?? input.background_url

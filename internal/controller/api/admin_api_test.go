@@ -414,6 +414,123 @@ func TestAdminNodePatchRejectsUnauthorizedUnknownAndInvalidRequests(t *testing.T
 	}
 }
 
+func TestAdminNodeDeleteRemovesNodeAndDependentData(t *testing.T) {
+	store, err := OpenSQLiteStore(filepath.Join(t.TempDir(), "zeno.db"))
+	if err != nil {
+		t.Fatalf("open sqlite store: %v", err)
+	}
+	defer store.Close()
+	ctx := context.Background()
+	if err := store.SeedPreviewData(ctx, PreviewSeedOptions{NodeID: "hytron", DisplayName: "Hytron", CountryCode: "HK", AgentToken: "test-agent-token"}); err != nil {
+		t.Fatalf("seed preview data: %v", err)
+	}
+	if _, err := store.CreateAdminNode(ctx, AdminNodeCreateRequest{ID: "backup", DisplayName: "Backup", CountryCode: "US"}); err != nil {
+		t.Fatalf("create backup node: %v", err)
+	}
+	now := time.Now().UTC().Unix()
+	if _, err := store.db.ExecContext(ctx, `
+		INSERT INTO host_info (node_id, hostname, updated_at)
+		VALUES ('backup', 'backup-host', ?)
+	`, now); err != nil {
+		t.Fatalf("seed backup host info: %v", err)
+	}
+	if _, err := store.db.ExecContext(ctx, `
+		INSERT INTO state_samples (node_id, ts, cpu_percent)
+		VALUES ('backup', ?, 42.5)
+	`, now); err != nil {
+		t.Fatalf("seed backup state sample: %v", err)
+	}
+	if _, err := store.db.ExecContext(ctx, `
+		INSERT INTO traffic_monthly (node_id, month, in_bytes, out_bytes, billable_bytes, updated_at)
+		VALUES ('backup', '2026-07', 1, 2, 3, ?)
+	`, now); err != nil {
+		t.Fatalf("seed backup traffic: %v", err)
+	}
+	roundResult, err := store.db.ExecContext(ctx, `
+		INSERT INTO probe_rounds (node_id, target_id, ts, type, sent, received, loss_percent)
+		VALUES ('backup', 'hytron-local', ?, 'tcping', 1, 1, 0)
+	`, now)
+	if err != nil {
+		t.Fatalf("seed backup probe round: %v", err)
+	}
+	roundID, err := roundResult.LastInsertId()
+	if err != nil {
+		t.Fatalf("backup probe round id: %v", err)
+	}
+	if _, err := store.db.ExecContext(ctx, `
+		INSERT INTO probe_samples (round_id, seq, success, latency_ms)
+		VALUES (?, 1, 1, 0.42)
+	`, roundID); err != nil {
+		t.Fatalf("seed backup probe sample: %v", err)
+	}
+	if _, err := store.db.ExecContext(ctx, `
+		INSERT INTO alert_rule_states (node_id, rule_id, active, updated_at)
+		VALUES ('backup', 'cpu_high', 1, ?)
+	`, now); err != nil {
+		t.Fatalf("seed backup alert state: %v", err)
+	}
+	if _, err := store.db.ExecContext(ctx, `
+		INSERT INTO alert_rule_node_scopes (rule_id, node_id, created_at)
+		VALUES ('cpu_high', 'backup', ?)
+	`, now); err != nil {
+		t.Fatalf("seed backup alert scope: %v", err)
+	}
+	if _, err := store.db.ExecContext(ctx, `
+		INSERT INTO notification_deliveries (event_type, label, node_id, node_name, previous_status, status, channel_id, channel_name, channel_type, success, created_at)
+		VALUES ('node_offline', '离线', 'backup', 'Backup', 'online', 'offline', 'telegram-default', 'Telegram', 'telegram', 1, ?)
+	`, now); err != nil {
+		t.Fatalf("seed backup notification delivery: %v", err)
+	}
+
+	recorder := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodDelete, "/api/admin/v1/nodes/backup", nil)
+	request.Header.Set("X-Admin-Token", "admin-pass")
+	NewHandler(HandlerOptions{Store: store, AdminTokenHash: HashAdminToken("admin-pass")}).ServeHTTP(recorder, request)
+
+	if recorder.Code != http.StatusNoContent {
+		t.Fatalf("status = %d, want 204; body=%s", recorder.Code, recorder.Body.String())
+	}
+	if strings.TrimSpace(recorder.Body.String()) != "" {
+		t.Fatalf("delete body = %q, want empty", recorder.Body.String())
+	}
+	checks := []struct {
+		name  string
+		query string
+	}{
+		{name: "nodes", query: `SELECT COUNT(*) FROM nodes WHERE id = 'backup'`},
+		{name: "host_info", query: `SELECT COUNT(*) FROM host_info WHERE node_id = 'backup'`},
+		{name: "state_samples", query: `SELECT COUNT(*) FROM state_samples WHERE node_id = 'backup'`},
+		{name: "traffic_monthly", query: `SELECT COUNT(*) FROM traffic_monthly WHERE node_id = 'backup'`},
+		{name: "node_probe_targets", query: `SELECT COUNT(*) FROM node_probe_targets WHERE node_id = 'backup'`},
+		{name: "probe_rounds", query: `SELECT COUNT(*) FROM probe_rounds WHERE node_id = 'backup'`},
+		{name: "probe_samples", query: `SELECT COUNT(*) FROM probe_samples WHERE round_id = ?`},
+		{name: "alert_rule_states", query: `SELECT COUNT(*) FROM alert_rule_states WHERE node_id = 'backup'`},
+		{name: "notification_deliveries", query: `SELECT COUNT(*) FROM notification_deliveries WHERE node_id = 'backup'`},
+	}
+	for _, check := range checks {
+		var count int
+		var err error
+		if check.name == "probe_samples" {
+			err = store.db.QueryRowContext(ctx, check.query, roundID).Scan(&count)
+		} else {
+			err = store.db.QueryRowContext(ctx, check.query).Scan(&count)
+		}
+		if err != nil {
+			t.Fatalf("count %s: %v", check.name, err)
+		}
+		if count != 0 {
+			t.Fatalf("%s rows after node delete = %d, want 0", check.name, count)
+		}
+	}
+	var preservedScopes int
+	if err := store.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM alert_rule_node_scopes WHERE rule_id = 'cpu_high' AND node_id = 'backup'`).Scan(&preservedScopes); err != nil {
+		t.Fatalf("count preserved scopes: %v", err)
+	}
+	if preservedScopes != 1 {
+		t.Fatalf("alert rule scope rows = %d, want preserved scoped row to avoid broadening rule", preservedScopes)
+	}
+}
+
 func TestAdminNodeCreateAddsEditableNodeWithoutReturningSecrets(t *testing.T) {
 	store, err := OpenSQLiteStore(filepath.Join(t.TempDir(), "zeno.db"))
 	if err != nil {

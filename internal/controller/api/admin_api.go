@@ -22,6 +22,7 @@ type adminStore interface {
 	RecordNotificationDelivery(ctx context.Context, event notificationEvent, channel notificationDispatchChannel, success bool, deliveryError string) (AdminNotificationDelivery, error)
 	CreateAdminNode(ctx context.Context, create AdminNodeCreateRequest) (AdminNode, error)
 	UpdateAdminNode(ctx context.Context, nodeID string, update AdminNodeUpdateRequest) (AdminNode, error)
+	DeleteAdminNode(ctx context.Context, nodeID string) error
 	AdminNodeInstallCommand(ctx context.Context, nodeID, controllerURL, agentVersion string) (string, error)
 	CreateAdminProbeTarget(ctx context.Context, create AdminProbeTargetCreateRequest) (AdminProbeTarget, error)
 	UpdateAdminProbeTarget(ctx context.Context, targetID string, update AdminProbeTargetUpdateRequest) (AdminProbeTarget, error)
@@ -316,7 +317,7 @@ func (h *handler) handleAdminNodeResource(w http.ResponseWriter, r *http.Request
 		writeError(w, http.StatusNotFound, "not found")
 		return
 	}
-	if r.Method != http.MethodPatch {
+	if r.Method != http.MethodPatch && r.Method != http.MethodDelete {
 		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
 		return
 	}
@@ -325,6 +326,14 @@ func (h *handler) handleAdminNodeResource(w http.ResponseWriter, r *http.Request
 		return
 	}
 	nodeID := parts[0]
+	if r.Method == http.MethodDelete {
+		if err := store.DeleteAdminNode(r.Context(), nodeID); err != nil {
+			writeAdminError(w, err)
+			return
+		}
+		w.WriteHeader(http.StatusNoContent)
+		return
+	}
 	var update AdminNodeUpdateRequest
 	decoder := json.NewDecoder(r.Body)
 	decoder.DisallowUnknownFields()
