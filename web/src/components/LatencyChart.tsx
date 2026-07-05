@@ -1,3 +1,4 @@
+import { useMemo } from 'react'
 import type { LatencyPoint } from '../types'
 import {
   applyKulinPeakCut,
@@ -32,23 +33,24 @@ export function LatencyChart({
   peakCut = false,
   activeTargetNames = [],
 }: LatencyChartProps) {
-  const series = buildKulinTargetSeries(points)
-  const allRows = buildKulinChartRows(series)
-  const baseView = selectKulinChartView(series, allRows, activeTargetNames)
-  const rows = peakCut ? applyKulinPeakCut(baseView.rows, baseView.lineKeys) : baseView.rows
-  const timestamps = rows.map((row) => row.created_at)
+  const activeTargetKey = activeTargetNames.join('\u0000')
+  const series = useMemo(() => buildKulinTargetSeries(points), [points])
+  const allRows = useMemo(() => buildKulinChartRows(series), [series])
+  const baseView = useMemo(() => selectKulinChartView(series, allRows, activeTargetNames), [series, allRows, activeTargetKey])
+  const rows = useMemo(() => (peakCut ? applyKulinPeakCut(baseView.rows, baseView.lineKeys) : baseView.rows), [baseView, peakCut])
+  const timestamps = useMemo(() => rows.map((row) => row.created_at), [rows])
   const xStep = timestamps.length > 1 ? (width - pad.left - pad.right) / (timestamps.length - 1) : 0
   const plotHeight = height - pad.top - pad.bottom
-  const domain = yDomainForRows(rows, baseView.lineKeys)
+  const domain = useMemo(() => yDomainForRows(rows, baseView.lineKeys), [rows, baseView.lineKeys])
   const packetLossSeries = baseView.showPacketLossArea
     ? series.find((item) => item.targetName === activeTargetNames[0])
     : undefined
   const lossRows = baseView.showPacketLossArea ? rows : []
   const visibleLineKeys = baseView.lineKeys
-  const hoverColumns = hoverColumnsForRows(rows, visibleLineKeys, activeTargetNames)
-  const legendSeries = activeTargetNames.length > 0
+  const hoverColumns = useMemo(() => hoverColumnsForRows(rows, visibleLineKeys, activeTargetNames), [rows, visibleLineKeys, activeTargetKey])
+  const legendSeries = useMemo(() => (activeTargetNames.length > 0
     ? series.filter((item) => activeTargetNames.includes(item.targetName))
-    : series
+    : series), [series, activeTargetKey])
 
   const x = (createdAt: number) => pad.left + Math.max(0, timestamps.indexOf(createdAt)) * xStep
   const yDelay = (value: number) => pad.top + (1 - (value - domain.min) / (domain.max - domain.min)) * plotHeight

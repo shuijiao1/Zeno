@@ -147,6 +147,8 @@ func (s *SQLiteStore) ensureSchema(ctx context.Context) error {
 			error TEXT
 		);`,
 		`CREATE INDEX IF NOT EXISTS idx_probe_rounds_node_target_ts ON probe_rounds(node_id, target_id, ts);`,
+		`CREATE INDEX IF NOT EXISTS idx_probe_rounds_node_ts ON probe_rounds(node_id, ts);`,
+		`CREATE INDEX IF NOT EXISTS idx_probe_rounds_target_ts ON probe_rounds(target_id, ts);`,
 		`CREATE TABLE IF NOT EXISTS probe_samples (
 			round_id INTEGER NOT NULL REFERENCES probe_rounds(id) ON DELETE CASCADE,
 			seq INTEGER NOT NULL,
@@ -1152,8 +1154,12 @@ func (s *SQLiteStore) populateServiceTargetLatencySummary(ctx context.Context, t
 
 func (s *SQLiteStore) serviceLatencyPoints(ctx context.Context, targetID string, window latencyWindow) ([]ServiceLatencyPoint, error) {
 	since := time.Now().UTC().Add(-time.Duration(window.Samples) * window.Step).Unix()
+	stepSeconds := int64(window.Step.Seconds())
+	if stepSeconds <= 0 {
+		stepSeconds = 1
+	}
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT pr.ts, pr.node_id, n.display_name, pr.median_ms, pr.loss_percent
+		SELECT (pr.ts / ?) * ? AS bucket_ts, pr.node_id, n.display_name, AVG(pr.median_ms), AVG(pr.loss_percent)
 		FROM probe_rounds pr
 		JOIN nodes n ON n.id = pr.node_id
 		JOIN probe_targets pt ON pt.id = pr.target_id
@@ -1163,8 +1169,9 @@ func (s *SQLiteStore) serviceLatencyPoints(ctx context.Context, targetID string,
 		  AND pt.enabled = 1
 		  AND n.disabled = 0
 		  AND COALESCE(npt.enabled, 1) = 1
-		ORDER BY pr.ts ASC, n.display_order ASC, n.display_name ASC, pr.id ASC
-	`, targetID, since)
+		GROUP BY bucket_ts, pr.node_id, n.display_name, n.display_order
+		ORDER BY bucket_ts ASC, n.display_order ASC, n.display_name ASC
+	`, stepSeconds, stepSeconds, targetID, since)
 	if err != nil {
 		return nil, err
 	}
@@ -1189,8 +1196,12 @@ func (s *SQLiteStore) serviceLatencyPoints(ctx context.Context, targetID string,
 
 func (s *SQLiteStore) latencyPoints(ctx context.Context, nodeID string, window latencyWindow) ([]LatencyPoint, error) {
 	since := time.Now().UTC().Add(-time.Duration(window.Samples) * window.Step).Unix()
+	stepSeconds := int64(window.Step.Seconds())
+	if stepSeconds <= 0 {
+		stepSeconds = 1
+	}
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT pr.ts, pr.target_id, pt.name, pr.median_ms, pr.loss_percent
+		SELECT (pr.ts / ?) * ? AS bucket_ts, pr.target_id, pt.name, AVG(pr.median_ms), AVG(pr.loss_percent)
 		FROM probe_rounds pr
 		JOIN probe_targets pt ON pt.id = pr.target_id
 		LEFT JOIN node_probe_targets npt ON npt.node_id = pr.node_id AND npt.target_id = pr.target_id
@@ -1198,8 +1209,9 @@ func (s *SQLiteStore) latencyPoints(ctx context.Context, nodeID string, window l
 		  AND pr.ts >= ?
 		  AND pt.enabled = 1
 		  AND COALESCE(npt.enabled, 1) = 1
-		ORDER BY pr.ts ASC, pt.display_order ASC, pt.name ASC, pr.id ASC
-	`, nodeID, since)
+		GROUP BY bucket_ts, pr.target_id, pt.name, pt.display_order
+		ORDER BY bucket_ts ASC, pt.display_order ASC, pt.name ASC
+	`, stepSeconds, stepSeconds, nodeID, since)
 	if err != nil {
 		return nil, err
 	}
@@ -1230,16 +1242,21 @@ func (s *SQLiteStore) latencyPoints(ctx context.Context, nodeID string, window l
 
 func (s *SQLiteStore) statePoints(ctx context.Context, nodeID string, window latencyWindow) ([]StatePoint, error) {
 	since := time.Now().UTC().Add(-time.Duration(window.Samples) * window.Step).Unix()
+	stepSeconds := int64(window.Step.Seconds())
+	if stepSeconds <= 0 {
+		stepSeconds = 1
+	}
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT ts, cpu_percent, load1, load5, load15,
-		       memory_used_bytes, memory_total_bytes, swap_used_bytes, swap_total_bytes,
-		       disk_used_bytes, disk_total_bytes, net_in_total_bytes, net_out_total_bytes,
-		       net_in_speed_bps, net_out_speed_bps, process_count, tcp_connection_count, udp_connection_count, uptime_seconds
+		SELECT (ts / ?) * ? AS bucket_ts, AVG(cpu_percent), AVG(load1), AVG(load5), AVG(load15),
+		       AVG(memory_used_bytes), AVG(memory_total_bytes), AVG(swap_used_bytes), AVG(swap_total_bytes),
+		       AVG(disk_used_bytes), AVG(disk_total_bytes), AVG(net_in_total_bytes), AVG(net_out_total_bytes),
+		       AVG(net_in_speed_bps), AVG(net_out_speed_bps), AVG(process_count), AVG(tcp_connection_count), AVG(udp_connection_count), AVG(uptime_seconds)
 		FROM state_samples
 		WHERE node_id = ?
 		  AND ts >= ?
-		ORDER BY ts ASC, id ASC
-	`, nodeID, since)
+		GROUP BY bucket_ts
+		ORDER BY bucket_ts ASC
+	`, stepSeconds, stepSeconds, nodeID, since)
 	if err != nil {
 		return nil, err
 	}
@@ -1248,8 +1265,7 @@ func (s *SQLiteStore) statePoints(ctx context.Context, nodeID string, window lat
 	var points []StatePoint
 	for rows.Next() {
 		var ts int64
-		var cpuPercent, load1, load5, load15, netInSpeed, netOutSpeed sql.NullFloat64
-		var memoryUsed, memoryTotal, swapUsed, swapTotal, diskUsed, diskTotal, netInTotal, netOutTotal, processCount, tcpConnectionCount, udpConnectionCount, uptimeSeconds sql.NullInt64
+		var cpuPercent, load1, load5, load15, memoryUsed, memoryTotal, swapUsed, swapTotal, diskUsed, diskTotal, netInTotal, netOutTotal, netInSpeed, netOutSpeed, processCount, tcpConnectionCount, udpConnectionCount, uptimeSeconds sql.NullFloat64
 		if err := rows.Scan(&ts, &cpuPercent, &load1, &load5, &load15, &memoryUsed, &memoryTotal, &swapUsed, &swapTotal, &diskUsed, &diskTotal, &netInTotal, &netOutTotal, &netInSpeed, &netOutSpeed, &processCount, &tcpConnectionCount, &udpConnectionCount, &uptimeSeconds); err != nil {
 			return nil, err
 		}
@@ -1259,20 +1275,20 @@ func (s *SQLiteStore) statePoints(ctx context.Context, nodeID string, window lat
 			Load1:              floatPtr(load1),
 			Load5:              floatPtr(load5),
 			Load15:             floatPtr(load15),
-			MemoryUsedBytes:    intPtr(memoryUsed),
-			MemoryTotalBytes:   intPtr(memoryTotal),
-			SwapUsedBytes:      intPtr(swapUsed),
-			SwapTotalBytes:     intPtr(swapTotal),
-			DiskUsedBytes:      intPtr(diskUsed),
-			DiskTotalBytes:     intPtr(diskTotal),
-			NetInTotalBytes:    intPtr(netInTotal),
-			NetOutTotalBytes:   intPtr(netOutTotal),
+			MemoryUsedBytes:    floatPtr(memoryUsed),
+			MemoryTotalBytes:   floatPtr(memoryTotal),
+			SwapUsedBytes:      floatPtr(swapUsed),
+			SwapTotalBytes:     floatPtr(swapTotal),
+			DiskUsedBytes:      floatPtr(diskUsed),
+			DiskTotalBytes:     floatPtr(diskTotal),
+			NetInTotalBytes:    floatPtr(netInTotal),
+			NetOutTotalBytes:   floatPtr(netOutTotal),
 			NetInSpeedBps:      floatPtr(netInSpeed),
 			NetOutSpeedBps:     floatPtr(netOutSpeed),
-			ProcessCount:       intPtr(processCount),
-			TCPConnectionCount: intPtr(tcpConnectionCount),
-			UDPConnectionCount: intPtr(udpConnectionCount),
-			UptimeSeconds:      intPtr(uptimeSeconds),
+			ProcessCount:       floatPtr(processCount),
+			TCPConnectionCount: floatPtr(tcpConnectionCount),
+			UDPConnectionCount: floatPtr(udpConnectionCount),
+			UptimeSeconds:      floatPtr(uptimeSeconds),
 		})
 	}
 	if err := rows.Err(); err != nil {

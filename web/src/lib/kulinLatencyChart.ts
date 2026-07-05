@@ -108,10 +108,14 @@ export function buildKulinTargetSeries(points: LatencyPoint[]): KulinTargetSerie
 
 export function buildKulinChartRows(series: KulinTargetSeries[]): KulinChartRow[] {
   const allTimes = new Set<number>()
+  const pointsByTargetTime = new Map<string, Map<number, KulinSeriesPoint>>()
   for (const target of series) {
+    const pointsByTime = new Map<number, KulinSeriesPoint>()
     for (const point of target.points) {
       allTimes.add(point.created_at)
+      pointsByTime.set(point.created_at, point)
     }
+    pointsByTargetTime.set(target.targetId, pointsByTime)
   }
 
   const rows = Array.from(allTimes)
@@ -119,7 +123,7 @@ export function buildKulinChartRows(series: KulinTargetSeries[]): KulinChartRow[
     .map((createdAt) => {
       const row: KulinChartRow = { created_at: createdAt }
       for (const target of series) {
-        const point = target.points.find((item) => item.created_at === createdAt)
+        const point = pointsByTargetTime.get(target.targetId)?.get(createdAt)
         row[target.targetName] = point ? point.avg_delay : null
         row[`${target.targetName}_packet_loss`] = point ? point.packet_loss : null
       }
