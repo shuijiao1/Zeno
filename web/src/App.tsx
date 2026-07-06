@@ -1,6 +1,6 @@
 import { type CSSProperties, type DragEvent, type FormEvent, type ReactNode, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { createAdminNode, createAdminNotificationChannel, createAdminProbeTarget, deleteAdminNode, deleteAdminNotificationChannel, deleteAdminProbeTarget, fetchAdminAccount, fetchAdminAlertRules, fetchAdminNodes, fetchAdminNotificationChannels, fetchAdminProbeTargets, fetchAdminSettings, fetchNodeLatency, fetchNodeState, fetchPublicSettings, fetchServiceLatency, subscribeNodeLatency, subscribeNodeState, subscribeServiceLatency, subscribeSummary, loginAdmin, logoutAdmin, requestAdminNodeInstallCommand, testAdminNotificationChannel, updateAdminAccount, updateAdminAlertRule, updateAdminNode, updateAdminNotificationChannel, updateAdminNotificationType, updateAdminProbeTarget, updateAdminSettings, type AdminAccountData, type AdminAlertRuleUpdateInput, type AdminNodeCreateInput, type AdminNodeUpdateInput, type AdminNotificationChannelCreateInput, type AdminNotificationChannelUpdateInput, type AdminProbeTargetInput, type AdminProbeTargetUpdateInput, type AdminSettingsUpdateInput, type NodeLatencyData, type NodeStateData, type ServiceLatencyData, type SummaryData } from './api/client'
+import { createAdminNode, createAdminNotificationChannel, createAdminProbeTarget, deleteAdminNode, deleteAdminNotificationChannel, deleteAdminProbeTarget, fetchAdminAccount, fetchAdminAlertRules, fetchAdminNodes, fetchAdminNotificationChannels, fetchAdminProbeTargets, fetchAdminSettings, fetchNodeLatency, fetchNodeState, fetchPublicSettings, fetchServiceLatency, fetchSummary, subscribeNodeLatency, subscribeNodeState, subscribeServiceLatency, subscribeSummary, loginAdmin, logoutAdmin, requestAdminNodeInstallCommand, testAdminNotificationChannel, updateAdminAccount, updateAdminAlertRule, updateAdminNode, updateAdminNotificationChannel, updateAdminNotificationType, updateAdminProbeTarget, updateAdminSettings, type AdminAccountData, type AdminAlertRuleUpdateInput, type AdminNodeCreateInput, type AdminNodeUpdateInput, type AdminNotificationChannelCreateInput, type AdminNotificationChannelUpdateInput, type AdminProbeTargetInput, type AdminProbeTargetUpdateInput, type AdminSettingsUpdateInput, type NodeLatencyData, type NodeStateData, type ServiceLatencyData, type SummaryData } from './api/client'
 import { LatencyDetail } from './components/LatencyDetail'
 import { LatencyChart } from './components/LatencyChart'
 import { ServerCard } from './components/ServerCard'
@@ -13,6 +13,28 @@ type LoadState =
   | { kind: 'loading' }
   | { kind: 'ready'; data: SummaryData }
   | { kind: 'error'; message: string }
+
+const summaryCacheKey = 'zeno_summary_cache_v1'
+
+function loadStoredSummary(): SummaryData | null {
+  if (typeof window === 'undefined') return null
+  try {
+    const raw = window.localStorage.getItem(summaryCacheKey)
+    if (!raw) return null
+    const parsed = JSON.parse(raw) as Partial<SummaryData>
+    if (!Array.isArray(parsed.nodes) || !Array.isArray(parsed.services)) return null
+    return { nodes: parsed.nodes as SummaryData['nodes'], services: parsed.services as SummaryData['services'], latencyPoints: Array.isArray(parsed.latencyPoints) ? parsed.latencyPoints as SummaryData['latencyPoints'] : [] }
+  } catch {
+    return null
+  }
+}
+
+function rememberSummary(summary: SummaryData) {
+  if (typeof window === 'undefined') return
+  try {
+    window.localStorage.setItem(summaryCacheKey, JSON.stringify(summary))
+  } catch {}
+}
 
 type LatencyLoadState =
   | { kind: 'idle' }
@@ -162,7 +184,10 @@ function alertRuleAppliesToNode(rule: AdminAlertRule, nodeId: string): boolean {
 }
 
 export function App() {
-  const [state, setState] = useState<LoadState>({ kind: 'loading' })
+  const [state, setState] = useState<LoadState>(() => {
+    const cachedSummary = loadStoredSummary()
+    return cachedSummary ? { kind: 'ready', data: cachedSummary } : { kind: 'loading' }
+  })
   const [route, setRoute] = useState<DashboardRoute>(() => parseDashboardRoute(window.location.pathname))
   const [nodeLatencyRange, setNodeLatencyRange] = useState('1d')
   const [serviceLatencyRange, setServiceLatencyRange] = useState('1h')
@@ -199,13 +224,23 @@ export function App() {
     let cancelled = false
     const stopSummaryStream = subscribeSummary(
       (data) => {
+        rememberSummary(data)
         if (!cancelled) setState({ kind: 'ready', data })
       },
       (error) => {
-        if (!cancelled) setState({ kind: 'error', message: error.message })
+        if (!cancelled) setState((current) => (current.kind === 'ready' ? current : { kind: 'error', message: error.message }))
       },
     )
-    if (!stopSummaryStream) setState({ kind: 'error', message: 'websocket unsupported' })
+    if (!stopSummaryStream) {
+      fetchSummary()
+        .then((data) => {
+          rememberSummary(data)
+          if (!cancelled) setState({ kind: 'ready', data })
+        })
+        .catch((error: unknown) => {
+          if (!cancelled) setState((current) => (current.kind === 'ready' ? current : { kind: 'error', message: error instanceof Error ? error.message : 'summary request failed' }))
+        })
+    }
     return () => {
       cancelled = true
       stopSummaryStream?.()

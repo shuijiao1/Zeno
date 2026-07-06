@@ -102,8 +102,9 @@ func liveWindowNames() []string {
 }
 
 var summaryWebSocketUpgrader = websocket.Upgrader{
-	ReadBufferSize:  32 * 1024,
-	WriteBufferSize: 32 * 1024,
+	ReadBufferSize:    32 * 1024,
+	WriteBufferSize:   32 * 1024,
+	EnableCompression: true,
 	CheckOrigin: func(r *http.Request) bool {
 		origin := r.Header.Get("Origin")
 		if origin == "" {
@@ -117,17 +118,30 @@ var summaryWebSocketUpgrader = websocket.Upgrader{
 	},
 }
 
+const (
+	summaryCacheHTTPFreshFor    = 30 * time.Second
+	summaryCacheIdleRefreshFor  = 15 * time.Second
+	summaryCacheBackgroundDelay = 350 * time.Millisecond
+)
+
 func (h *handler) handleSummaryWebSocket(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
 		return
 	}
-	initial, err := h.summaryJSON(r.Context())
-	if err != nil {
-		writeStoreError(w, err)
-		return
+	initial, cached := h.cachedSummaryJSON(0)
+	if !cached {
+		var err error
+		initial, err = h.summaryJSON(r.Context())
+		if err != nil {
+			writeStoreError(w, err)
+			return
+		}
 	}
 	updates, unsubscribe := h.liveHub.subscribe(summaryLiveTopic)
+	if cached {
+		h.scheduleSummaryPublishAfter(summaryCacheBackgroundDelay)
+	}
 	h.handleLiveJSONWebSocket(w, r, initial, updates, unsubscribe)
 }
 
@@ -168,6 +182,7 @@ func (h *handler) handleLiveJSONWebSocket(w http.ResponseWriter, r *http.Request
 		return
 	}
 	defer conn.Close()
+	conn.EnableWriteCompression(true)
 
 	done := make(chan struct{})
 	go func() {
@@ -211,7 +226,12 @@ func (h *handler) summaryJSON(ctx context.Context) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	return json.Marshal(summary)
+	payload, err := json.Marshal(summary)
+	if err != nil {
+		return nil, err
+	}
+	h.rememberSummaryJSON(payload)
+	return payload, nil
 }
 
 func (h *handler) nodeStateJSON(ctx context.Context, nodeID string, window latencyWindow) ([]byte, error) {
@@ -239,7 +259,10 @@ func (h *handler) serviceLatencyJSON(ctx context.Context, targetID string, windo
 }
 
 func (h *handler) publishSummary(_ context.Context) {
-	if h.liveHub == nil || !h.liveHub.hasClients(summaryLiveTopic) {
+	if h.liveHub == nil {
+		return
+	}
+	if !h.liveHub.hasClients(summaryLiveTopic) && !h.summaryCacheStale(summaryCacheIdleRefreshFor) {
 		return
 	}
 	h.scheduleSummaryPublish()
@@ -279,14 +302,67 @@ func (h *handler) scheduleSummaryPublish() {
 }
 
 func (h *handler) publishSummaryNow(ctx context.Context) {
-	if h.liveHub == nil || !h.liveHub.hasClients(summaryLiveTopic) {
+	if h.liveHub == nil {
 		return
 	}
 	payload, err := h.summaryJSON(ctx)
 	if err != nil {
 		return
 	}
+	if !h.liveHub.hasClients(summaryLiveTopic) {
+		return
+	}
 	h.liveHub.publish(summaryLiveTopic, payload)
+}
+
+func (h *handler) cachedSummaryJSON(maxAge time.Duration) ([]byte, bool) {
+	h.summaryCacheMu.RLock()
+	defer h.summaryCacheMu.RUnlock()
+	if len(h.summaryCache) == 0 {
+		return nil, false
+	}
+	if maxAge > 0 && time.Since(h.summaryCacheUpdated) > maxAge {
+		return nil, false
+	}
+	return append([]byte(nil), h.summaryCache...), true
+}
+
+func (h *handler) rememberSummaryJSON(payload []byte) {
+	h.summaryCacheMu.Lock()
+	h.summaryCache = append(h.summaryCache[:0], payload...)
+	h.summaryCacheUpdated = time.Now()
+	h.summaryCacheMu.Unlock()
+}
+
+func (h *handler) summaryCacheStale(maxAge time.Duration) bool {
+	h.summaryCacheMu.RLock()
+	defer h.summaryCacheMu.RUnlock()
+	return len(h.summaryCache) == 0 || time.Since(h.summaryCacheUpdated) > maxAge
+}
+
+func (h *handler) scheduleSummaryPublishAfter(delay time.Duration) {
+	h.summaryPublishMu.Lock()
+	if h.summaryPublishTimer != nil {
+		h.summaryPublishMu.Unlock()
+		return
+	}
+	var timer *time.Timer
+	timer = time.AfterFunc(delay, func() {
+		h.summaryPublishMu.Lock()
+		if h.summaryPublishTimer != timer {
+			h.summaryPublishMu.Unlock()
+			return
+		}
+		h.summaryPublishTimer = nil
+		h.summaryLastPublished = time.Now()
+		h.summaryPublishMu.Unlock()
+
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		h.publishSummaryNow(ctx)
+	})
+	h.summaryPublishTimer = timer
+	h.summaryPublishMu.Unlock()
 }
 
 func (h *handler) publishNodeState(ctx context.Context, nodeID string) {

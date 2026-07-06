@@ -33,6 +33,9 @@ type handler struct {
 	summaryPublishMu     sync.Mutex
 	summaryPublishTimer  *time.Timer
 	summaryLastPublished time.Time
+	summaryCacheMu       sync.RWMutex
+	summaryCache         []byte
+	summaryCacheUpdated  time.Time
 }
 
 type adminLoginLimiter struct {
@@ -241,12 +244,29 @@ func (h *handler) handleSummary(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
 		return
 	}
+	if payload, ok := h.cachedSummaryJSON(summaryCacheHTTPFreshFor); ok {
+		w.Header().Set("Content-Type", "application/json; charset=utf-8")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write(payload)
+		if h.summaryCacheStale(summaryCacheIdleRefreshFor) {
+			h.scheduleSummaryPublishAfter(summaryCacheBackgroundDelay)
+		}
+		return
+	}
 	summary, err := h.store.Summary(r.Context())
 	if err != nil {
 		writeStoreError(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, summary)
+	payload, err := json.Marshal(summary)
+	if err != nil {
+		writeStoreError(w, err)
+		return
+	}
+	h.rememberSummaryJSON(payload)
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write(payload)
 }
 
 func (h *handler) handlePublicNodeResource(w http.ResponseWriter, r *http.Request) {
