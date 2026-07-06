@@ -2342,6 +2342,16 @@ svg { display: block; }
   .admin-alert-rule-list .admin-row-actions.admin-icon-actions { grid-column: 1 / -1; grid-row: auto; width: 100%; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); justify-content: stretch; }
   .admin-notification-list .admin-row-action.is-icon,
   .admin-alert-rule-list .admin-row-action.is-icon { width: 100%; flex: 1 1 auto; border-radius: var(--radius-field); }
+  .admin-server-sort-list { gap: 7px; margin: 12px 0; }
+  .admin-server-sort-item {
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    gap: 8px;
+    min-height: 44px;
+    padding: 9px 10px;
+  }
+  .admin-server-sort-index { order: 1; width: 22px; height: 22px; font-size: 11px; }
+  .admin-server-sort-item strong { order: 2; font-size: 14px; }
+  .admin-drag-handle { order: 3; font-size: 17px; letter-spacing: -5px; }
   .admin-modal-backdrop { align-items: flex-end; padding: 8px; }
   .admin-login-card { grid-template-columns: 1fr; align-items: stretch; padding: 12px; gap: 10px; }
   .admin-node-section,
