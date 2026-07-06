@@ -1563,7 +1563,7 @@ type AgentInstallPlatform = 'linux' | 'macos' | 'windows'
 type InstallCommandState =
   | { kind: 'idle' }
   | { kind: 'loading' }
-  | { kind: 'ready'; command: string; commands: Partial<Record<AgentInstallPlatform, string>>; platform: AgentInstallPlatform }
+  | { kind: 'ready'; command: string; commands: Partial<Record<AgentInstallPlatform, string>>; platform: AgentInstallPlatform | null }
   | { kind: 'error'; message: string }
 
 const agentInstallPlatforms: Array<{ value: AgentInstallPlatform; label: string }> = [
@@ -1574,6 +1574,7 @@ const agentInstallPlatforms: Array<{ value: AgentInstallPlatform; label: string 
 
 function installCommandText(state: InstallCommandState): string {
   if (state.kind !== 'ready') return ''
+  if (!state.platform) return ''
   return state.commands[state.platform] || state.command
 }
 
@@ -1582,7 +1583,7 @@ function installCommandReady(result: AdminNodeInstallCommand): InstallCommandSta
     kind: 'ready',
     command: result.command,
     commands: { linux: result.command, ...result.commands },
-    platform: 'linux',
+    platform: null,
   }
 }
 
@@ -1629,6 +1630,10 @@ function AdminNodeCreateModal({ onCreate, onInstallCommand, onClose }: { onCreat
 
   const handleCopyInstallCommand = () => {
     if (installCommandState.kind !== 'ready') return
+    if (!installCommandState.platform) {
+      setInstallCopyState({ kind: 'error', message: '请先选择目标系统。' })
+      return
+    }
     copyTextToClipboard(installCommandText(installCommandState))
       .then(() => setInstallCopyState({ kind: 'ready', message: '安装命令已复制。' }))
       .catch((error: unknown) => setInstallCopyState({ kind: 'error', message: error instanceof Error ? error.message : '复制失败，请手动选中复制。' }))
@@ -1672,9 +1677,10 @@ function AdminNodeCreateModal({ onCreate, onInstallCommand, onClose }: { onCreat
         </AdminFormSection>
         <AdminFormSection title="Agent 接入">
           {createdNode && <p className="admin-help-note">已添加：{createdNode.displayName}</p>}
+          <p className="admin-help-note">Zeno 不需要提前知道目标系统；生成后按你要安装的机器选择 Linux、macOS 或 Windows。</p>
           <div className="admin-inline-actions">
-            <button type="button" onClick={handleInstallCommand} disabled={!createdNode || installCommandState.kind === 'loading'}>{installCommandState.kind === 'loading' ? '生成中…' : '生成安装命令'}</button>
-            <button type="button" onClick={handleCopyInstallCommand} disabled={installCommandState.kind !== 'ready'}>复制安装命令</button>
+            <button type="button" onClick={handleInstallCommand} disabled={!createdNode || installCommandState.kind === 'loading'}>{installCommandState.kind === 'loading' ? '生成中…' : '生成三平台安装命令'}</button>
+            <button type="button" onClick={handleCopyInstallCommand} disabled={installCommandState.kind !== 'ready' || !installCommandState.platform}>复制安装命令</button>
           </div>
           {installCommandState.kind === 'ready' && (
             <>
@@ -1685,7 +1691,7 @@ function AdminNodeCreateModal({ onCreate, onInstallCommand, onClose }: { onCreat
               </div>
               {installCommandState.platform === 'windows' && <p className="admin-help-note">Windows 请使用管理员 PowerShell 运行。</p>}
               {installCommandState.platform === 'macos' && <p className="admin-help-note">macOS 请使用具备 sudo 权限的终端运行。</p>}
-              <textarea className="admin-install-command" aria-label="新服务器 Agent 安装命令" readOnly value={installCommandText(installCommandState)} />
+              {installCommandState.platform ? <textarea className="admin-install-command" aria-label="新服务器 Agent 安装命令" readOnly value={installCommandText(installCommandState)} /> : <p className="admin-help-note">先选择目标系统，再复制对应命令。</p>}
             </>
           )}
           {installCopyState.kind !== 'idle' && <div className={`admin-install-error${installCopyState.kind === 'ready' ? ' is-success' : ''}`}>{installCopyState.message}</div>}
@@ -1753,6 +1759,10 @@ function AdminNodeEditModal({ node, targets, onUpdate, onTargetUpdate, onInstall
 
   const handleCopyInstallCommand = () => {
     if (installCommandState.kind !== 'ready') return
+    if (!installCommandState.platform) {
+      setInstallCopyState({ kind: 'error', message: '请先选择目标系统。' })
+      return
+    }
     copyTextToClipboard(installCommandText(installCommandState))
       .then(() => setInstallCopyState({ kind: 'ready', message: '安装命令已复制。' }))
       .catch((error: unknown) => setInstallCopyState({ kind: 'error', message: error instanceof Error ? error.message : '复制失败，请手动选中复制。' }))
@@ -1822,9 +1832,10 @@ function AdminNodeEditModal({ node, targets, onUpdate, onTargetUpdate, onInstall
         </AdminFormSection>
         <AdminFormSection title="Agent 接入">
           <p className="admin-help-note">当前 Agent 版本：{node.agentVersion || '暂无上报'}</p>
+          <p className="admin-help-note">Zeno 不需要提前知道目标系统；生成后按你要安装的机器选择 Linux、macOS 或 Windows。</p>
           <div className="admin-inline-actions">
-            <button type="button" onClick={handleInstallCommand} disabled={installCommandState.kind === 'loading'}>{installCommandState.kind === 'loading' ? '生成中…' : '重新生成安装命令'}</button>
-            <button type="button" onClick={handleCopyInstallCommand} disabled={installCommandState.kind !== 'ready'}>复制安装命令</button>
+            <button type="button" onClick={handleInstallCommand} disabled={installCommandState.kind === 'loading'}>{installCommandState.kind === 'loading' ? '生成中…' : '重新生成三平台安装命令'}</button>
+            <button type="button" onClick={handleCopyInstallCommand} disabled={installCommandState.kind !== 'ready' || !installCommandState.platform}>复制安装命令</button>
           </div>
           {installCommandState.kind === 'ready' && (
             <>
@@ -1835,7 +1846,7 @@ function AdminNodeEditModal({ node, targets, onUpdate, onTargetUpdate, onInstall
               </div>
               {installCommandState.platform === 'windows' && <p className="admin-help-note">Windows 请使用管理员 PowerShell 运行。</p>}
               {installCommandState.platform === 'macos' && <p className="admin-help-note">macOS 请使用具备 sudo 权限的终端运行。</p>}
-              <textarea className="admin-install-command" aria-label={`${node.displayName} Agent 安装命令`} readOnly value={installCommandText(installCommandState)} />
+              {installCommandState.platform ? <textarea className="admin-install-command" aria-label={`${node.displayName} Agent 安装命令`} readOnly value={installCommandText(installCommandState)} /> : <p className="admin-help-note">先选择目标系统，再复制对应命令。</p>}
             </>
           )}
           {installCopyState.kind !== 'idle' && <div className={`admin-install-error${installCopyState.kind === 'ready' ? ' is-success' : ''}`}>{installCopyState.message}</div>}
