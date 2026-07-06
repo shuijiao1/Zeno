@@ -1595,9 +1595,11 @@ function installCommandReady(result: AdminNodeInstallCommand): InstallCommandSta
 
 function revealInstallPlatformPicker() {
   if (typeof window === 'undefined') return
-  window.requestAnimationFrame(() => {
-    document.querySelector('.admin-modal .admin-install-platforms')?.scrollIntoView({ block: 'nearest', inline: 'nearest' })
-  })
+  window.setTimeout(() => {
+    window.requestAnimationFrame(() => {
+      document.querySelector('.admin-modal .admin-install-platforms')?.scrollIntoView({ block: 'center', inline: 'nearest' })
+    })
+  }, 0)
 }
 
 function AdminNodeCreateModal({ onCreate, onInstallCommand, onClose }: { onCreate: (input: AdminNodeCreateInput) => Promise<AdminNode | void>; onInstallCommand: (nodeId: string) => Promise<AdminNodeInstallCommand>; onClose: () => void }) {

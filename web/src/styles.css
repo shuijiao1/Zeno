@@ -1398,10 +1398,13 @@ svg { display: block; }
   grid-template-columns: repeat(3, minmax(78px, 1fr));
   gap: 6px;
   margin-top: 12px;
+  scroll-margin: 96px 0;
   padding: 4px;
   border: 1px solid var(--border-soft);
   border-radius: 999px;
   background: var(--field-bg);
+  position: relative;
+  z-index: 4;
 }
 .admin-install-platforms button {
   min-height: 32px;
