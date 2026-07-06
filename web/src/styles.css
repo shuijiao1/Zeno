@@ -831,7 +831,7 @@ svg { display: block; }
 }
 .admin-billing-grid {
   display: grid;
-  grid-template-columns: minmax(190px, 1.55fr) minmax(74px, .5fr) minmax(108px, .72fr) minmax(126px, .9fr) minmax(118px, .78fr) minmax(78px, .48fr);
+  grid-template-columns: minmax(150px, 1.25fr) minmax(86px, .68fr) minmax(108px, .82fr) minmax(118px, .86fr);
   align-items: end;
   gap: 10px 12px;
 }
