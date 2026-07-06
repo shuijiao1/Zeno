@@ -1594,22 +1594,18 @@ function AdminNodeCreateModal({ onCreate, onInstallCommand, onClose }: { onCreat
         </AdminFormSection>
         <AdminFormSection title="账单与流量">
           <div className="admin-billing-grid">
-            <div className="admin-billing-row">
-              <AdminDateField className="admin-billing-control admin-billing-control--expiry" name="new-expiry-date" label="到期日" permanentLabel="设为永久" disabled={Boolean(createdNode)} />
-              <label>
-                <span>月流量重置日</span>
-                <input name="new-monthly-reset-day" type="number" min="1" max="31" step="1" defaultValue="1" disabled={Boolean(createdNode)} />
-              </label>
-            </div>
-            <AdminSegmentedField className="admin-billing-control admin-billing-control--cycle" name="new-billing-cycle" label="账单周期" defaultValue="月" options={billingCycleOptions} disabled={Boolean(createdNode)} />
-            <AdminSegmentedField className="admin-billing-control admin-billing-control--mode" name="new-billing-mode" label="流量计费口径" defaultValue="both" options={billingModeOptions} disabled={Boolean(createdNode)} />
-            <div className="admin-quota-row">
-              <label>
-                <span>月配额</span>
-                <input name="new-monthly-quota" type="number" min="0" step="0.01" disabled={Boolean(createdNode)} />
-              </label>
-              <AdminSegmentedField className="admin-quota-unit" name="new-monthly-quota-unit" label="配额单位" defaultValue="GB" options={quotaUnitOptions} disabled={Boolean(createdNode)} />
-            </div>
+            <AdminDateField className="admin-billing-control admin-billing-control--expiry" name="new-expiry-date" label="到期日" permanentLabel="设为永久" disabled={Boolean(createdNode)} />
+            <label className="admin-billing-control admin-billing-control--reset">
+              <span>重置日</span>
+              <input name="new-monthly-reset-day" type="number" min="1" max="31" step="1" defaultValue="1" disabled={Boolean(createdNode)} />
+            </label>
+            <AdminSelectField className="admin-billing-control admin-billing-control--cycle" name="new-billing-cycle" label="账单周期" defaultValue="月" options={billingCycleOptions} disabled={Boolean(createdNode)} />
+            <AdminSelectField className="admin-billing-control admin-billing-control--mode" name="new-billing-mode" label="计费口径" defaultValue="both" options={billingModeOptions} disabled={Boolean(createdNode)} />
+            <label className="admin-billing-control admin-billing-control--quota">
+              <span>月配额</span>
+              <input name="new-monthly-quota" type="number" min="0" step="0.01" disabled={Boolean(createdNode)} />
+            </label>
+            <AdminSelectField className="admin-billing-control admin-billing-control--unit" name="new-monthly-quota-unit" label="单位" defaultValue="GB" options={quotaUnitOptions} disabled={Boolean(createdNode)} />
           </div>
         </AdminFormSection>
         <AdminFormSection title="Agent 接入">
@@ -1730,22 +1726,18 @@ function AdminNodeEditModal({ node, targets, onUpdate, onTargetUpdate, onInstall
         </AdminFormSection>
         <AdminFormSection title="账单与流量">
           <div className="admin-billing-grid">
-            <div className="admin-billing-row">
-              <AdminDateField className="admin-billing-control admin-billing-control--expiry" name="expiry-date" label="到期日" defaultValue={node.expiryDate ?? ''} permanentLabel="设为永久" />
-              <label>
-                <span>月流量重置日</span>
-                <input name="monthly-reset-day" type="number" min="1" max="31" step="1" defaultValue={node.monthlyResetDay || 1} />
-              </label>
-            </div>
-            <AdminSegmentedField className="admin-billing-control admin-billing-control--cycle" name="billing-cycle" label="账单周期" defaultValue={normalizeBillingCycle(node.billingCycle)} options={billingCycleOptions} />
-            <AdminSegmentedField className="admin-billing-control admin-billing-control--mode" name="billing-mode" label="流量计费口径" defaultValue={node.billingMode || 'both'} options={billingModeOptions} />
-            <div className="admin-quota-row">
-              <label>
-                <span>月配额</span>
-                <input name="monthly-quota" type="number" min="0" step="0.01" defaultValue={formatQuotaValue(node.monthlyQuotaBytes)} />
-              </label>
-              <AdminSegmentedField className="admin-quota-unit" name="monthly-quota-unit" label="配额单位" defaultValue={quotaUnitForBytes(node.monthlyQuotaBytes)} options={quotaUnitOptions} />
-            </div>
+            <AdminDateField className="admin-billing-control admin-billing-control--expiry" name="expiry-date" label="到期日" defaultValue={node.expiryDate ?? ''} permanentLabel="设为永久" />
+            <label className="admin-billing-control admin-billing-control--reset">
+              <span>重置日</span>
+              <input name="monthly-reset-day" type="number" min="1" max="31" step="1" defaultValue={node.monthlyResetDay || 1} />
+            </label>
+            <AdminSelectField className="admin-billing-control admin-billing-control--cycle" name="billing-cycle" label="账单周期" defaultValue={normalizeBillingCycle(node.billingCycle)} options={billingCycleOptions} />
+            <AdminSelectField className="admin-billing-control admin-billing-control--mode" name="billing-mode" label="计费口径" defaultValue={node.billingMode || 'both'} options={billingModeOptions} />
+            <label className="admin-billing-control admin-billing-control--quota">
+              <span>月配额</span>
+              <input name="monthly-quota" type="number" min="0" step="0.01" defaultValue={formatQuotaValue(node.monthlyQuotaBytes)} />
+            </label>
+            <AdminSelectField className="admin-billing-control admin-billing-control--unit" name="monthly-quota-unit" label="单位" defaultValue={quotaUnitForBytes(node.monthlyQuotaBytes)} options={quotaUnitOptions} />
           </div>
         </AdminFormSection>
         <AdminFormSection title="Agent 接入">
@@ -2415,6 +2407,13 @@ function AdminDateField({ name, label, defaultValue = '', disabled = false, perm
     setOpenPanel(null)
   }
 
+  useEffect(() => {
+    setValue(defaultValue ?? '')
+    setMonth(adminDateMonthStart(defaultValue))
+    setOpen(false)
+    setOpenPanel(null)
+  }, [defaultValue])
+
   useLayoutEffect(() => {
     if (!open || disabled) return undefined
     const updatePopoverPosition = () => {
@@ -2508,13 +2507,25 @@ function AdminDateField({ name, label, defaultValue = '', disabled = false, perm
           if (current) setOpenPanel(null)
           return !current
         })}>
-          <span className={value ? '' : 'is-placeholder'}>{value || 'YYYY-MM-DD'}</span>
+          <span className={value ? '' : 'is-placeholder'}>{value || (permanentLabel ? '永久' : 'YYYY-MM-DD')}</span>
           <CalendarIcon />
         </button>
-        {permanentLabel && <button className="admin-date-permanent" type="button" disabled={disabled || value === ''} onClick={clearDate}>{permanentLabel}</button>}
+        {permanentLabel && <button className={`admin-date-permanent${value === '' ? ' is-active' : ''}`} type="button" disabled={disabled} onClick={clearDate}>{value === '' ? '已永久' : permanentLabel}</button>}
         {calendar && (typeof document === 'undefined' ? calendar : createPortal(calendar, document.body))}
       </div>
     </div>
+  )
+}
+
+function AdminSelectField({ name, label, options, defaultValue, disabled = false, className = '' }: { name: string; label: string; options: Array<{ value: string; label: string }>; defaultValue?: string; disabled?: boolean; className?: string }) {
+  const initialValue = defaultValue ?? options[0]?.value ?? ''
+  return (
+    <label className={['admin-form-control admin-select-field', className].filter(Boolean).join(' ')}>
+      <span>{label}</span>
+      <select name={name} defaultValue={initialValue} disabled={disabled}>
+        {options.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+      </select>
+    </label>
   )
 }
 
