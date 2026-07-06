@@ -1635,18 +1635,30 @@ function AdminNodeCreateModal({ onCreate, onInstallCommand, onClose }: { onCreat
       .finally(() => setSubmitting(false))
   }
 
-  const handleInstallCommand = () => {
+  const requestInstallCommand = (openPickerAfterGenerate = false) => {
     if (!createdNode) return
     setInstallCommandState({ kind: 'loading' })
     setInstallCopyState({ kind: 'idle' })
     setInstallPlatformPickerOpen(false)
     onInstallCommand(createdNode.id)
-      .then((result) => setInstallCommandState(installCommandReady(result)))
+      .then((result) => {
+        setInstallCommandState(installCommandReady(result))
+        if (openPickerAfterGenerate) {
+          setInstallPlatformPickerOpen(true)
+          revealInstallPlatformPicker()
+        }
+      })
       .catch((error: unknown) => setInstallCommandState({ kind: 'error', message: error instanceof Error ? error.message : 'unknown error' }))
   }
 
+  const handleInstallCommand = () => requestInstallCommand(false)
+
   const handleCopyInstallCommand = () => {
-    if (installCommandState.kind !== 'ready') return
+    if (installCommandState.kind === 'loading') return
+    if (installCommandState.kind !== 'ready') {
+      requestInstallCommand(true)
+      return
+    }
     setInstallPlatformPickerOpen(true)
     setInstallCopyState({ kind: 'idle' })
     revealInstallPlatformPicker()
@@ -1704,7 +1716,7 @@ function AdminNodeCreateModal({ onCreate, onInstallCommand, onClose }: { onCreat
           </div>}
           <div className="admin-inline-actions">
             <button type="button" onClick={handleInstallCommand} disabled={!createdNode || installCommandState.kind === 'loading'}>{installCommandState.kind === 'loading' ? '生成中…' : '生成安装命令'}</button>
-            <button type="button" onClick={handleCopyInstallCommand} disabled={installCommandState.kind !== 'ready'}>复制安装命令</button>
+            <button type="button" onClick={handleCopyInstallCommand} disabled={!createdNode || installCommandState.kind === 'loading'}>复制安装命令</button>
           </div>
           {installCommandState.kind === 'ready' && (
             <>
@@ -1764,7 +1776,7 @@ function AdminNodeEditModal({ node, targets, onUpdate, onTargetUpdate, onInstall
     })
   }
 
-  const handleInstallCommand = () => {
+  const requestInstallCommand = (openPickerAfterGenerate = false) => {
     const shouldConfirmRotation = !node.disabled && node.status !== 'no_data'
     if (shouldConfirmRotation) {
       const ok = typeof window === 'undefined' ? true : window.confirm('重新生成安装命令会更新该服务器的 Agent Token；当前 Agent 需要用新命令重新安装后才会继续上报。确认继续？')
@@ -1774,12 +1786,24 @@ function AdminNodeEditModal({ node, targets, onUpdate, onTargetUpdate, onInstall
     setInstallCopyState({ kind: 'idle' })
     setInstallPlatformPickerOpen(false)
     onInstallCommand(node.id)
-      .then((result) => setInstallCommandState(installCommandReady(result)))
+      .then((result) => {
+        setInstallCommandState(installCommandReady(result))
+        if (openPickerAfterGenerate) {
+          setInstallPlatformPickerOpen(true)
+          revealInstallPlatformPicker()
+        }
+      })
       .catch((error: unknown) => setInstallCommandState({ kind: 'error', message: error instanceof Error ? error.message : 'unknown error' }))
   }
 
+  const handleInstallCommand = () => requestInstallCommand(false)
+
   const handleCopyInstallCommand = () => {
-    if (installCommandState.kind !== 'ready') return
+    if (installCommandState.kind === 'loading') return
+    if (installCommandState.kind !== 'ready') {
+      requestInstallCommand(true)
+      return
+    }
     setInstallPlatformPickerOpen(true)
     setInstallCopyState({ kind: 'idle' })
     revealInstallPlatformPicker()
@@ -1863,7 +1887,7 @@ function AdminNodeEditModal({ node, targets, onUpdate, onTargetUpdate, onInstall
           </div>}
           <div className="admin-inline-actions">
             <button type="button" onClick={handleInstallCommand} disabled={installCommandState.kind === 'loading'}>{installCommandState.kind === 'loading' ? '生成中…' : '重新生成安装命令'}</button>
-            <button type="button" onClick={handleCopyInstallCommand} disabled={installCommandState.kind !== 'ready'}>复制安装命令</button>
+            <button type="button" onClick={handleCopyInstallCommand} disabled={installCommandState.kind === 'loading'}>复制安装命令</button>
           </div>
           {installCommandState.kind === 'ready' && (
             <>
