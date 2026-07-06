@@ -2386,7 +2386,8 @@ function AdminDateField({ name, label, defaultValue = '', disabled = false }: { 
       const rect = trigger.getBoundingClientRect()
       const margin = 12
       const gap = 8
-      const width = Math.min(328, Math.max(296, rect.width))
+      const availableWidth = Math.max(296, window.innerWidth - margin * 2)
+      const width = Math.min(340, availableWidth, Math.max(328, rect.width))
       const height = popoverRef.current?.offsetHeight ?? 354
       const left = Math.min(Math.max(margin, rect.left), Math.max(margin, window.innerWidth - width - margin))
       const belowTop = rect.bottom + gap

@@ -946,18 +946,23 @@ svg { display: block; }
   min-width: 0;
   flex: 1;
   display: grid;
-  grid-template-columns: minmax(96px, 1fr) minmax(82px, .8fr);
+  grid-template-columns: minmax(118px, 1fr) minmax(88px, .72fr);
   gap: 6px;
 }
 .admin-date-current-button {
   min-width: 0;
-  height: 30px;
-  padding: 0 9px;
+  height: 32px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 12px;
   border: 1px solid var(--border);
   border-radius: var(--radius-field);
   background: var(--field-bg);
   color: var(--foreground);
   text-align: center;
+  white-space: nowrap;
+  line-height: 1;
   font: inherit;
   font-size: 13px;
   font-weight: 500;
@@ -1002,7 +1007,7 @@ svg { display: block; }
 }
 .admin-date-option-panel button:hover { border-color: color-mix(in srgb, var(--blue) 30%, var(--border)); background: color-mix(in srgb, var(--blue) 9%, transparent); color: var(--blue); }
 .admin-date-option-panel button.is-selected { border-color: var(--blue); background: var(--blue); color: #fff; box-shadow: 0 8px 18px -15px var(--blue); }
-.admin-date-calendar-header button,
+.admin-date-calendar-header > button,
 .admin-date-actions button,
 .admin-date-grid button {
   height: 30px;
@@ -1015,14 +1020,14 @@ svg { display: block; }
   font-weight: 500;
   cursor: pointer;
 }
-.admin-date-calendar-header button { width: 30px; flex: none; color: var(--blue); background: color-mix(in srgb, var(--blue) 9%, transparent); }
+.admin-date-calendar-header > button { width: 30px; flex: none; color: var(--blue); background: color-mix(in srgb, var(--blue) 9%, transparent); }
 .admin-date-weekdays,
 .admin-date-grid { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 5px; }
 .admin-date-weekdays { margin-bottom: 6px; color: var(--muted); font-size: 11px; font-weight: 500; text-align: center; }
 .admin-date-empty { min-height: 30px; }
 .admin-date-grid button { min-width: 0; padding: 0; color: color-mix(in srgb, var(--foreground) 78%, transparent); font-variant-numeric: tabular-nums; }
 .admin-date-grid button:hover,
-.admin-date-calendar-header button:hover,
+.admin-date-calendar-header > button:hover,
 .admin-date-actions button:hover { background: color-mix(in srgb, var(--blue) 10%, transparent); color: var(--blue); }
 .admin-date-grid button.is-today { color: var(--blue); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--blue) 36%, transparent); }
 .admin-date-grid button.is-selected { background: var(--blue); color: #fff; box-shadow: 0 10px 20px -16px var(--blue); }
@@ -1143,6 +1148,17 @@ svg { display: block; }
   background: transparent;
   box-shadow: none;
 }
+.admin-node-edit-form .admin-expanded-checklist__trigger:hover,
+.admin-node-edit-form .admin-expanded-checklist__trigger:focus,
+.admin-node-edit-form .admin-expanded-checklist__trigger:focus-visible,
+.admin-node-edit-form .admin-expanded-checklist__trigger:active,
+.admin-node-edit-form .admin-expanded-checklist__trigger[aria-expanded="true"] {
+  outline: none;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+  transform: none;
+}
 .admin-expanded-checklist__trigger small { color: var(--muted); font-size: 12px; font-weight: 500; }
 .admin-expanded-checklist__trigger svg {
   width: 17px;
@@ -1204,6 +1220,15 @@ svg { display: block; }
   text-decoration: underline;
   transform: none;
 }
+.admin-node-edit-form .admin-bulk-select-button:focus,
+.admin-node-edit-form .admin-bulk-select-button:focus-visible,
+.admin-node-edit-form .admin-bulk-select-button:active {
+  outline: none;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+  transform: none;
+}
 .admin-expanded-checklist__item > button {
   min-width: 0;
   padding: 0;
@@ -1230,6 +1255,16 @@ svg { display: block; }
   background: transparent;
   box-shadow: none;
   align-self: center;
+}
+.admin-node-edit-form .admin-expanded-checklist__item > button:hover,
+.admin-node-edit-form .admin-expanded-checklist__item > button:focus,
+.admin-node-edit-form .admin-expanded-checklist__item > button:focus-visible,
+.admin-node-edit-form .admin-expanded-checklist__item > button:active {
+  outline: none;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+  transform: none;
 }
 .admin-expanded-checklist__empty { padding: 18px 10px; color: var(--muted); text-align: center; font-size: 13px; }
 .admin-home-monitor-radio {
