@@ -441,7 +441,7 @@ svg { display: block; }
   height: 38px;
   padding: 0 14px;
   border: 1px solid var(--border);
-  border-radius: var(--radius-pill);
+  border-radius: var(--radius-field);
   background: var(--surface-soft);
   color: var(--foreground);
   font-size: 13px;
@@ -605,7 +605,7 @@ svg { display: block; }
   height: 38px;
   padding: 0 12px;
   border: 1px solid var(--border);
-  border-radius: var(--radius-pill);
+  border-radius: var(--radius-field);
   background: var(--surface-soft);
   color: var(--foreground);
   font: inherit;
@@ -754,7 +754,7 @@ svg { display: block; }
   height: 34px;
   justify-self: end;
   padding: 0 12px;
-  border-radius: var(--radius-pill);
+  border-radius: var(--radius-field);
   white-space: nowrap;
   font-size: 13px;
 }
@@ -766,7 +766,7 @@ svg { display: block; }
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  border-radius: var(--radius-pill);
+  border-radius: var(--radius-field);
 }
 .admin-row-action.is-icon svg {
   width: 16px;
@@ -926,10 +926,7 @@ svg { display: block; }
 .admin-date-trigger .is-placeholder { color: color-mix(in srgb, var(--muted) 72%, transparent); }
 .admin-date-trigger svg { width: 18px; height: 18px; flex: none; fill: currentColor; color: var(--blue); }
 .admin-date-popover {
-  position: absolute;
-  z-index: 55;
-  top: calc(100% + 8px);
-  left: 0;
+  z-index: 90;
   width: min(312px, calc(100vw - 40px));
   padding: 12px;
   border: 1px solid color-mix(in srgb, var(--blue) 18%, var(--border));
@@ -945,13 +942,37 @@ svg { display: block; }
   gap: 8px;
 }
 .admin-date-calendar-header { margin-bottom: 10px; }
-.admin-date-calendar-header strong { color: var(--foreground); font-size: 14px; font-weight: 500; }
+.admin-date-current {
+  min-width: 0;
+  flex: 1;
+  display: grid;
+  grid-template-columns: minmax(96px, 1fr) minmax(82px, .8fr);
+  gap: 6px;
+}
+.admin-date-current select {
+  min-width: 0;
+  height: 30px;
+  padding: 0 9px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-field);
+  background: var(--field-bg);
+  color: var(--foreground);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 500;
+  appearance: auto;
+}
+.admin-date-current select:focus-visible {
+  outline: none;
+  border-color: color-mix(in srgb, var(--blue) 52%, var(--border));
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--blue) 14%, transparent);
+}
 .admin-date-calendar-header button,
 .admin-date-actions button,
 .admin-date-grid button {
   height: 30px;
   border: 1px solid transparent;
-  border-radius: var(--radius-pill);
+  border-radius: var(--radius-field);
   background: transparent;
   color: var(--foreground);
   font: inherit;
@@ -959,7 +980,7 @@ svg { display: block; }
   font-weight: 500;
   cursor: pointer;
 }
-.admin-date-calendar-header button { width: 30px; color: var(--blue); background: color-mix(in srgb, var(--blue) 9%, transparent); }
+.admin-date-calendar-header button { width: 30px; flex: none; color: var(--blue); background: color-mix(in srgb, var(--blue) 9%, transparent); }
 .admin-date-weekdays,
 .admin-date-grid { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 5px; }
 .admin-date-weekdays { margin-bottom: 6px; color: var(--muted); font-size: 11px; font-weight: 500; text-align: center; }
@@ -1112,7 +1133,7 @@ svg { display: block; }
   min-height: 28px;
   padding: 0 11px;
   border: 1px solid color-mix(in srgb, var(--blue) 34%, var(--border));
-  border-radius: 999px;
+  border-radius: var(--radius-field);
   background: var(--field-bg);
   color: var(--blue);
   font-size: 12px;
@@ -1647,7 +1668,7 @@ svg { display: block; }
   height: 26px;
   padding: 0 8px;
   border: 1px solid var(--border);
-  border-radius: var(--radius-pill);
+  border-radius: var(--radius-field);
   background: var(--control-bg);
   color: color-mix(in srgb, var(--foreground) 70%, transparent);
   font-size: 11px;
@@ -1934,7 +1955,7 @@ svg { display: block; }
   height: 30px;
   padding: 0 12px;
   border: 1px solid var(--border);
-  border-radius: var(--radius-pill);
+  border-radius: var(--radius-field);
   background: var(--control-bg);
   color: var(--muted);
   font-size: 12px;
@@ -1953,7 +1974,7 @@ svg { display: block; }
 .loss-marker { fill: var(--orange); stroke: var(--background); stroke-width: 1.2; }
 .packet-loss-area { pointer-events: none; }
 .latency-hover-column { pointer-events: all; }
-.latency-hover-hit { fill: transparent; stroke: none; pointer-events: all; }
+.latency-hover-hit { fill: transparent; stroke: none; pointer-events: all; outline: none; }
 .latency-hover-guide {
   opacity: 0;
   stroke: color-mix(in srgb, var(--foreground) 36%, transparent);

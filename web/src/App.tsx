@@ -1,6 +1,6 @@
 import { type CSSProperties, type DragEvent, type FormEvent, type ReactNode, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { createAdminNode, createAdminNotificationChannel, createAdminProbeTarget, deleteAdminNode, deleteAdminNotificationChannel, deleteAdminProbeTarget, fetchAdminAccount, fetchAdminAlertRules, fetchAdminNodes, fetchAdminNotificationChannels, fetchAdminProbeTargets, fetchAdminSettings, fetchNodeLatency, fetchNodeState, fetchPublicSettings, subscribeNodeLatency, subscribeNodeState, subscribeServiceLatency, subscribeSummary, loginAdmin, logoutAdmin, requestAdminNodeInstallCommand, testAdminNotificationChannel, updateAdminAccount, updateAdminAlertRule, updateAdminNode, updateAdminNotificationChannel, updateAdminNotificationType, updateAdminProbeTarget, updateAdminSettings, type AdminAccountData, type AdminAlertRuleUpdateInput, type AdminNodeCreateInput, type AdminNodeUpdateInput, type AdminNotificationChannelCreateInput, type AdminNotificationChannelUpdateInput, type AdminProbeTargetInput, type AdminProbeTargetUpdateInput, type AdminSettingsUpdateInput, type NodeLatencyData, type NodeStateData, type ServiceLatencyData, type SummaryData } from './api/client'
+import { createAdminNode, createAdminNotificationChannel, createAdminProbeTarget, deleteAdminNode, deleteAdminNotificationChannel, deleteAdminProbeTarget, fetchAdminAccount, fetchAdminAlertRules, fetchAdminNodes, fetchAdminNotificationChannels, fetchAdminProbeTargets, fetchAdminSettings, fetchNodeLatency, fetchNodeState, fetchPublicSettings, fetchServiceLatency, subscribeNodeLatency, subscribeNodeState, subscribeServiceLatency, subscribeSummary, loginAdmin, logoutAdmin, requestAdminNodeInstallCommand, testAdminNotificationChannel, updateAdminAccount, updateAdminAlertRule, updateAdminNode, updateAdminNotificationChannel, updateAdminNotificationType, updateAdminProbeTarget, updateAdminSettings, type AdminAccountData, type AdminAlertRuleUpdateInput, type AdminNodeCreateInput, type AdminNodeUpdateInput, type AdminNotificationChannelCreateInput, type AdminNotificationChannelUpdateInput, type AdminProbeTargetInput, type AdminProbeTargetUpdateInput, type AdminSettingsUpdateInput, type NodeLatencyData, type NodeStateData, type ServiceLatencyData, type SummaryData } from './api/client'
 import { LatencyDetail } from './components/LatencyDetail'
 import { LatencyChart } from './components/LatencyChart'
 import { ServerCard } from './components/ServerCard'
@@ -44,6 +44,12 @@ type AdminAuthState =
   | { kind: 'error'; message: string }
 
 type AdminSection = 'nodes' | 'targets' | 'notifications' | 'account' | 'settings'
+
+function blurActiveElement() {
+  if (typeof document === 'undefined') return
+  const activeElement = document.activeElement
+  if (activeElement instanceof HTMLElement || activeElement instanceof SVGElement) activeElement.blur()
+}
 
 function sum(values: Array<number | null | undefined>): number {
   return values.reduce<number>((total, value) => total + (value ?? 0), 0)
@@ -207,7 +213,10 @@ export function App() {
   }, [])
 
   useEffect(() => {
-    const handlePopState = () => setRoute(parseDashboardRoute(window.location.pathname))
+    const handlePopState = () => {
+      blurActiveElement()
+      setRoute(parseDashboardRoute(window.location.pathname))
+    }
     window.addEventListener('popstate', handlePopState)
     return () => window.removeEventListener('popstate', handlePopState)
   }, [])
@@ -225,25 +234,30 @@ export function App() {
     }
 
     let cancelled = false
+    let streamStarted = false
+    let stopLatencyStream: (() => void) | null = null
     const cacheKey = `${route.nodeId}:${nodeLatencyRange}`
     const cached = nodeLatencyCacheRef.current.get(cacheKey)
+    const startLatencyStream = () => {
+      if (cancelled || streamStarted) return
+      streamStarted = true
+      stopLatencyStream = subscribeNodeLatency(
+        route.nodeId,
+        nodeLatencyRange,
+        (data) => {
+          nodeLatencyCacheRef.current.set(cacheKey, data)
+          if (!cancelled) setLatencyState({ kind: 'ready', data })
+        },
+        (error) => {
+          if (!cancelled) setLatencyState((current) => (current.kind === 'ready' ? current : { kind: 'error', message: error.message }))
+        },
+      )
+    }
     if (cached) {
       setLatencyState({ kind: 'ready', data: cached })
+      startLatencyStream()
     } else {
       setLatencyState((current) => (current.kind === 'ready' && current.data.nodeId === route.nodeId ? current : { kind: 'loading' }))
-    }
-    const stopLatencyStream = subscribeNodeLatency(
-      route.nodeId,
-      nodeLatencyRange,
-      (data) => {
-        nodeLatencyCacheRef.current.set(cacheKey, data)
-        if (!cancelled) setLatencyState({ kind: 'ready', data })
-      },
-      (error) => {
-        if (!cancelled) setLatencyState((current) => (current.kind === 'ready' ? current : { kind: 'error', message: error.message }))
-      },
-    )
-    if (!stopLatencyStream) {
       fetchNodeLatency(route.nodeId, nodeLatencyRange)
         .then((data) => {
           nodeLatencyCacheRef.current.set(cacheKey, data)
@@ -252,6 +266,7 @@ export function App() {
         .catch((error: unknown) => {
           if (!cancelled) setLatencyState((current) => (current.kind === 'ready' ? current : { kind: 'error', message: error instanceof Error ? error.message : 'unknown error' }))
         })
+        .finally(startLatencyStream)
     }
     return () => {
       cancelled = true
@@ -320,18 +335,31 @@ export function App() {
     }
 
     let cancelled = false
+    let streamStarted = false
+    let stopServiceLatencyStream: (() => void) | null = null
+    const startServiceLatencyStream = () => {
+      if (cancelled || streamStarted) return
+      streamStarted = true
+      stopServiceLatencyStream = subscribeServiceLatency(
+        route.targetId,
+        serviceLatencyRange,
+        (data) => {
+          if (!cancelled) setServiceLatencyState({ kind: 'ready', data })
+        },
+        (error) => {
+          if (!cancelled) setServiceLatencyState((current) => (current.kind === 'ready' ? current : { kind: 'error', message: error.message }))
+        },
+      )
+    }
     setServiceLatencyState({ kind: 'loading' })
-    const stopServiceLatencyStream = subscribeServiceLatency(
-      route.targetId,
-      serviceLatencyRange,
-      (data) => {
+    fetchServiceLatency(route.targetId, serviceLatencyRange)
+      .then((data) => {
         if (!cancelled) setServiceLatencyState({ kind: 'ready', data })
-      },
-      (error) => {
-        if (!cancelled) setServiceLatencyState({ kind: 'error', message: error.message })
-      },
-    )
-    if (!stopServiceLatencyStream) setServiceLatencyState({ kind: 'error', message: 'websocket unsupported' })
+      })
+      .catch((error: unknown) => {
+        if (!cancelled) setServiceLatencyState({ kind: 'error', message: error instanceof Error ? error.message : 'unknown error' })
+      })
+      .finally(startServiceLatencyStream)
     return () => {
       cancelled = true
       stopServiceLatencyStream?.()
@@ -580,16 +608,19 @@ export function App() {
   }
 
   const navigateHome = () => {
+    blurActiveElement()
     window.history.pushState(null, '', '/')
     setRoute({ kind: 'home' })
   }
 
   const navigateAdmin = () => {
+    blurActiveElement()
     window.history.pushState(null, '', '/dashboard')
     setRoute({ kind: 'admin' })
   }
 
   const navigateNode = (nodeId: string) => {
+    blurActiveElement()
     window.history.pushState(null, '', nodePath(nodeId))
     setNodeLatencyRange('1d')
     setStateRange('1h')
@@ -597,6 +628,7 @@ export function App() {
   }
 
   const navigateService = (targetId: string) => {
+    blurActiveElement()
     window.history.pushState(null, '', servicePath(targetId))
     setServiceLatencyRange('1h')
     setRoute({ kind: 'service', targetId })
@@ -2307,8 +2339,14 @@ function AdminDateField({ name, label, defaultValue = '', disabled = false }: { 
   const [value, setValue] = useState(defaultValue ?? '')
   const [month, setMonth] = useState(() => adminDateMonthStart(defaultValue))
   const [open, setOpen] = useState(false)
+  const triggerRef = useRef<HTMLButtonElement | null>(null)
+  const popoverRef = useRef<HTMLDivElement | null>(null)
+  const [popoverStyle, setPopoverStyle] = useState<CSSProperties>({})
   const selectedDate = parseAdminDateValue(value)
   const today = new Date()
+  const visibleYear = month.getFullYear()
+  const visibleMonth = month.getMonth()
+  const yearOptions = adminDateYearOptions(visibleYear)
   const daysInMonth = new Date(month.getFullYear(), month.getMonth() + 1, 0).getDate()
   const leadingBlankDays = (new Date(month.getFullYear(), month.getMonth(), 1).getDay() + 6) % 7
   const calendarCells = [
@@ -2321,50 +2359,88 @@ function AdminDateField({ name, label, defaultValue = '', disabled = false }: { 
     setOpen(false)
   }
   const shiftMonth = (delta: number) => setMonth((current) => new Date(current.getFullYear(), current.getMonth() + delta, 1))
+  const selectYear = (year: number) => setMonth((current) => new Date(year, current.getMonth(), 1))
+  const selectMonth = (nextMonth: number) => setMonth((current) => new Date(current.getFullYear(), nextMonth, 1))
   const clearDate = () => {
     setValue('')
     setOpen(false)
   }
+
+  useLayoutEffect(() => {
+    if (!open || disabled) return undefined
+    const updatePopoverPosition = () => {
+      const trigger = triggerRef.current
+      if (!trigger) return
+      const rect = trigger.getBoundingClientRect()
+      const margin = 12
+      const gap = 8
+      const width = Math.min(328, Math.max(296, rect.width))
+      const height = popoverRef.current?.offsetHeight ?? 354
+      const left = Math.min(Math.max(margin, rect.left), Math.max(margin, window.innerWidth - width - margin))
+      const belowTop = rect.bottom + gap
+      const aboveTop = rect.top - height - gap
+      const top = belowTop + height <= window.innerHeight - margin || aboveTop < margin
+        ? Math.min(belowTop, Math.max(margin, window.innerHeight - height - margin))
+        : Math.max(margin, aboveTop)
+      setPopoverStyle({ position: 'fixed', top, left, width })
+    }
+    updatePopoverPosition()
+    window.addEventListener('resize', updatePopoverPosition)
+    window.addEventListener('scroll', updatePopoverPosition, true)
+    return () => {
+      window.removeEventListener('resize', updatePopoverPosition)
+      window.removeEventListener('scroll', updatePopoverPosition, true)
+    }
+  }, [open, disabled, visibleYear, visibleMonth])
+
+  const calendar = open && !disabled ? (
+    <div ref={popoverRef} className="admin-date-popover" role="dialog" aria-label={`${label}日历`} style={popoverStyle}>
+      <div className="admin-date-calendar-header">
+        <button type="button" aria-label="上个月" onClick={() => shiftMonth(-1)}>‹</button>
+        <div className="admin-date-current" aria-label="选择年月">
+          <select aria-label="选择年份" value={visibleYear} onChange={(event) => selectYear(Number(event.currentTarget.value))}>
+            {yearOptions.map((year) => <option key={year} value={year}>{year} 年</option>)}
+          </select>
+          <select aria-label="选择月份" value={visibleMonth} onChange={(event) => selectMonth(Number(event.currentTarget.value))}>
+            {adminDateMonthOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+          </select>
+        </div>
+        <button type="button" aria-label="下个月" onClick={() => shiftMonth(1)}>›</button>
+      </div>
+      <div className="admin-date-weekdays" aria-hidden="true">
+        {adminDateWeekdays.map((weekday) => <span key={weekday}>{weekday}</span>)}
+      </div>
+      <div className="admin-date-grid">
+        {calendarCells.map((cell) => {
+          if (cell.day === null) return <span className="admin-date-empty" key={cell.key} />
+          const date = new Date(month.getFullYear(), month.getMonth(), cell.day)
+          const dateValue = formatAdminDateValue(date)
+          const isSelected = selectedDate ? dateValue === formatAdminDateValue(selectedDate) : false
+          const isToday = dateValue === formatAdminDateValue(today)
+          return (
+            <button className={`${isSelected ? 'is-selected' : ''}${isToday ? ' is-today' : ''}`} type="button" key={cell.key} onClick={() => pickDate(date)}>
+              {cell.day}
+            </button>
+          )
+        })}
+      </div>
+      <div className="admin-date-actions">
+        <button type="button" onClick={clearDate}>清空</button>
+        <button type="button" onClick={() => pickDate(today)}>今天</button>
+      </div>
+    </div>
+  ) : null
 
   return (
     <div className="admin-form-control admin-date-field">
       <span>{label}</span>
       <input type="hidden" name={name} value={value} disabled={disabled} />
       <div className="admin-date-picker">
-        <button className="admin-date-trigger" type="button" aria-expanded={open} disabled={disabled} onClick={() => setOpen((current) => !current)}>
+        <button ref={triggerRef} className="admin-date-trigger" type="button" aria-expanded={open} disabled={disabled} onClick={() => setOpen((current) => !current)}>
           <span className={value ? '' : 'is-placeholder'}>{value || 'YYYY-MM-DD'}</span>
           <CalendarIcon />
         </button>
-        {open && !disabled && (
-          <div className="admin-date-popover" role="dialog" aria-label={`${label}日历`}>
-            <div className="admin-date-calendar-header">
-              <button type="button" aria-label="上个月" onClick={() => shiftMonth(-1)}>‹</button>
-              <strong>{month.getFullYear()} 年 {month.getMonth() + 1} 月</strong>
-              <button type="button" aria-label="下个月" onClick={() => shiftMonth(1)}>›</button>
-            </div>
-            <div className="admin-date-weekdays" aria-hidden="true">
-              {adminDateWeekdays.map((weekday) => <span key={weekday}>{weekday}</span>)}
-            </div>
-            <div className="admin-date-grid">
-              {calendarCells.map((cell) => {
-                if (cell.day === null) return <span className="admin-date-empty" key={cell.key} />
-                const date = new Date(month.getFullYear(), month.getMonth(), cell.day)
-                const dateValue = formatAdminDateValue(date)
-                const isSelected = selectedDate ? dateValue === formatAdminDateValue(selectedDate) : false
-                const isToday = dateValue === formatAdminDateValue(today)
-                return (
-                  <button className={`${isSelected ? 'is-selected' : ''}${isToday ? ' is-today' : ''}`} type="button" key={cell.key} onClick={() => pickDate(date)}>
-                    {cell.day}
-                  </button>
-                )
-              })}
-            </div>
-            <div className="admin-date-actions">
-              <button type="button" onClick={clearDate}>清空</button>
-              <button type="button" onClick={() => pickDate(today)}>今天</button>
-            </div>
-          </div>
-        )}
+        {calendar && (typeof document === 'undefined' ? calendar : createPortal(calendar, document.body))}
       </div>
     </div>
   )
@@ -2405,6 +2481,15 @@ const quotaUnitOptions = [
 ]
 
 const adminDateWeekdays = ['一', '二', '三', '四', '五', '六', '日']
+
+const adminDateMonthOptions = Array.from({ length: 12 }, (_, index) => ({ value: index, label: `${index + 1} 月` }))
+
+function adminDateYearOptions(visibleYear: number): number[] {
+  const currentYear = new Date().getFullYear()
+  const start = Math.min(currentYear - 2, visibleYear - 4)
+  const end = Math.max(currentYear + 10, visibleYear + 6)
+  return Array.from({ length: end - start + 1 }, (_, index) => start + index)
+}
 
 function parseAdminDateValue(value?: string | null): Date | null {
   const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec((value ?? '').trim())

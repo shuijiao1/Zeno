@@ -41,7 +41,8 @@ export function LatencyChart({
   const series = useMemo(() => buildKulinTargetSeries(points), [points])
   const allRows = useMemo(() => buildKulinChartRows(series), [series])
   const baseView = useMemo(() => selectKulinChartView(series, allRows, activeTargetNames), [series, allRows, activeTargetKey])
-  const rows = useMemo(() => (peakCut ? applyKulinPeakCut(baseView.rows, baseView.lineKeys) : baseView.rows), [baseView, peakCut])
+  const processedRows = useMemo(() => (peakCut ? applyKulinPeakCut(baseView.rows, baseView.lineKeys) : baseView.rows), [baseView, peakCut])
+  const rows = useMemo(() => thinRowsForChart(processedRows, maxChartRowsForWidth(width)), [processedRows, width])
   const timestamps = useMemo(() => rows.map((row) => row.created_at), [rows])
   const xStep = timestamps.length > 1 ? (width - pad.left - pad.right) / (timestamps.length - 1) : 0
   const xByTimestamp = useMemo(() => new Map(timestamps.map((timestamp, index) => [timestamp, pad.left + index * xStep])), [timestamps, xStep])
@@ -204,8 +205,6 @@ export function LatencyChart({
           aria-label={hoverColumn?.title ?? '延迟图表悬浮区域'}
           onMouseEnter={handleHoverMove}
           onMouseMove={handleHoverMove}
-          onFocus={() => setActiveHoverColumn(hoverColumns.at(-1) ?? null)}
-          tabIndex={0}
         />
         {hoverColumn && (
           <LatencyTooltip
@@ -243,6 +242,20 @@ function useLatencyChartLayout() {
   }, [])
 
   return isMobile ? mobileLayout : desktopLayout
+}
+
+function maxChartRowsForWidth(width: number): number {
+  return width <= 480 ? 220 : 420
+}
+
+function thinRowsForChart(rows: KulinChartRow[], maxRows: number): KulinChartRow[] {
+  if (rows.length <= maxRows) return rows
+  const step = Math.ceil(rows.length / maxRows)
+  const thinned: KulinChartRow[] = []
+  for (let index = 0; index < rows.length; index += step) thinned.push(rows[index])
+  const last = rows.at(-1)
+  if (last && thinned.at(-1)?.created_at !== last.created_at) thinned.push(last)
+  return thinned
 }
 
 function LatencyTooltip({ column, series, activeTargetNames, x: tooltipAnchorX, layout }: { column: HoverColumn; series: KulinTargetSeries[]; activeTargetNames: string[]; x: number; layout: typeof desktopLayout }) {
