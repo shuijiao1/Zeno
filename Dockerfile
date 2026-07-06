@@ -5,6 +5,8 @@ WORKDIR /src/web
 COPY web/package*.json ./
 RUN npm ci
 COPY web/ ./
+ARG VERSION=dev
+ENV VITE_BUILD_ID=${VERSION}
 RUN npm run build
 
 FROM golang:1.24-bookworm AS go-builder
