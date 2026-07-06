@@ -115,7 +115,7 @@ docker compose up -d
 To pin a specific version:
 
 ```bash
-sed -i 's#^ZENO_IMAGE=.*#ZENO_IMAGE=ghcr.io/shuijiao1/zeno:v0.1.2#' /opt/zeno/.env
+sed -i 's#^ZENO_IMAGE=.*#ZENO_IMAGE=ghcr.io/shuijiao1/zeno:v0.1.3#' /opt/zeno/.env
 cd /opt/zeno
 docker compose pull
 docker compose up -d
