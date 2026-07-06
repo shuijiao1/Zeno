@@ -1595,7 +1595,7 @@ function AdminNodeCreateModal({ onCreate, onInstallCommand, onClose }: { onCreat
         <AdminFormSection title="账单与流量">
           <div className="admin-billing-grid">
             <div className="admin-billing-row">
-              <AdminDateField name="new-expiry-date" label="到期日" disabled={Boolean(createdNode)} />
+              <AdminDateField className="admin-billing-control admin-billing-control--expiry" name="new-expiry-date" label="到期日" permanentLabel="设为永久" disabled={Boolean(createdNode)} />
               <label>
                 <span>月流量重置日</span>
                 <input name="new-monthly-reset-day" type="number" min="1" max="31" step="1" defaultValue="1" disabled={Boolean(createdNode)} />
@@ -1696,9 +1696,8 @@ function AdminNodeEditModal({ node, targets, onUpdate, onTargetUpdate, onInstall
       <form className="admin-node-edit-form is-sectioned" aria-label={`${node.displayName} 节点编辑`} onSubmit={handleSubmit}>
         <AdminFormSection title="服务器名称">
           <div className="admin-form-grid">
-            <label>
-              <span>服务器名称</span>
-              <input name="display-name" defaultValue={node.displayName} autoComplete="off" />
+            <label className="admin-label-without-caption">
+              <input name="display-name" defaultValue={node.displayName} autoComplete="off" aria-label="服务器名称" />
             </label>
           </div>
         </AdminFormSection>
@@ -1732,7 +1731,7 @@ function AdminNodeEditModal({ node, targets, onUpdate, onTargetUpdate, onInstall
         <AdminFormSection title="账单与流量">
           <div className="admin-billing-grid">
             <div className="admin-billing-row">
-              <AdminDateField name="expiry-date" label="到期日" defaultValue={node.expiryDate ?? ''} />
+              <AdminDateField className="admin-billing-control admin-billing-control--expiry" name="expiry-date" label="到期日" defaultValue={node.expiryDate ?? ''} permanentLabel="设为永久" />
               <label>
                 <span>月流量重置日</span>
                 <input name="monthly-reset-day" type="number" min="1" max="31" step="1" defaultValue={node.monthlyResetDay || 1} />
@@ -1792,6 +1791,7 @@ function AdminTargetSection({ targets, nodes, onCreate, onUpdate, onDelete }: { 
 
       {creatingTarget && (
         <AdminTargetCreateModal
+          nodes={nodes}
           onClose={() => setCreatingTarget(false)}
           onCreate={(input) => {
             onCreate(input)
@@ -1847,8 +1847,9 @@ function AdminTargetList({ targets, onEdit, onDelete }: { targets: AdminProbeTar
   )
 }
 
-function AdminTargetCreateModal({ onCreate, onClose }: { onCreate: (input: AdminProbeTargetInput) => void; onClose: () => void }) {
+function AdminTargetCreateModal({ nodes, onCreate, onClose }: { nodes: AdminNode[]; onCreate: (input: AdminProbeTargetInput) => void; onClose: () => void }) {
   const [targetType, setTargetType] = useState<ProbeType>('tcping')
+  const [assignmentNodeIds, setAssignmentNodeIds] = useState<string[]>([])
 
   const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
@@ -1865,7 +1866,8 @@ function AdminTargetCreateModal({ onCreate, onClose }: { onCreate: (input: Admin
       port,
       count: parsePositiveInt(String(formData.get('new-target-count') ?? '')) ?? 3,
       timeoutMs: parsePositiveInt(String(formData.get('new-target-timeout-ms') ?? '')) ?? 1200,
-      intervalSec: parsePositiveInt(String(formData.get('new-target-interval-sec') ?? '')) ?? 60,
+      intervalSec: parsePositiveInt(String(formData.get('new-target-interval-sec') ?? '')) ?? 30,
+      assignments: nodes.map((node) => ({ nodeId: node.id, enabled: assignmentNodeIds.includes(node.id) })),
     })
   }
 
@@ -1891,6 +1893,17 @@ function AdminTargetCreateModal({ onCreate, onClose }: { onCreate: (input: Admin
             )}
           </div>
         </AdminFormSection>
+        {nodes.length > 0 && (
+          <AdminFormSection title="启用服务器">
+            <AdminExpandedCheckList
+              title="已启用服务器"
+              emptyText="暂无服务器"
+              options={nodes.map((node) => ({ value: node.id, label: node.displayName || node.id }))}
+              value={assignmentNodeIds}
+              onChange={setAssignmentNodeIds}
+            />
+          </AdminFormSection>
+        )}
         <AdminFormSection title="探测参数">
           <div className="admin-form-grid">
             <label>
@@ -1903,7 +1916,7 @@ function AdminTargetCreateModal({ onCreate, onClose }: { onCreate: (input: Admin
             </label>
             <label>
               <span>间隔 s</span>
-              <input name="new-target-interval-sec" type="number" min="1" defaultValue="60" />
+              <input name="new-target-interval-sec" type="number" min="1" defaultValue="30" />
             </label>
           </div>
         </AdminFormSection>
@@ -2359,7 +2372,7 @@ function AdminFormSection({ title, description, children }: { title: string; des
   )
 }
 
-function AdminDateField({ name, label, defaultValue = '', disabled = false }: { name: string; label: string; defaultValue?: string | null; disabled?: boolean }) {
+function AdminDateField({ name, label, defaultValue = '', disabled = false, permanentLabel, className = '' }: { name: string; label: string; defaultValue?: string | null; disabled?: boolean; permanentLabel?: string; className?: string }) {
   const [value, setValue] = useState(defaultValue ?? '')
   const [month, setMonth] = useState(() => adminDateMonthStart(defaultValue))
   const [open, setOpen] = useState(false)
@@ -2487,7 +2500,7 @@ function AdminDateField({ name, label, defaultValue = '', disabled = false }: { 
   ) : null
 
   return (
-    <div className="admin-form-control admin-date-field">
+    <div className={['admin-form-control admin-date-field', className].filter(Boolean).join(' ')}>
       <span>{label}</span>
       <input type="hidden" name={name} value={value} disabled={disabled} />
       <div className="admin-date-picker">
@@ -2498,6 +2511,7 @@ function AdminDateField({ name, label, defaultValue = '', disabled = false }: { 
           <span className={value ? '' : 'is-placeholder'}>{value || 'YYYY-MM-DD'}</span>
           <CalendarIcon />
         </button>
+        {permanentLabel && <button className="admin-date-permanent" type="button" disabled={disabled || value === ''} onClick={clearDate}>{permanentLabel}</button>}
         {calendar && (typeof document === 'undefined' ? calendar : createPortal(calendar, document.body))}
       </div>
     </div>

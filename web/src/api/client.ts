@@ -426,6 +426,7 @@ export interface AdminProbeTargetInput {
   intervalSec: number
   displayOrder?: number
   enabled?: boolean
+  assignments?: Array<{ nodeId: string; enabled: boolean }>
 }
 
 export interface AdminProbeTargetUpdateInput {
@@ -1054,6 +1055,12 @@ function serializeAdminProbeTargetCreate(input: AdminProbeTargetInput) {
     interval_sec: input.intervalSec,
     ...(input.displayOrder !== undefined ? { display_order: input.displayOrder } : {}),
     ...(input.enabled !== undefined ? { enabled: input.enabled } : {}),
+    ...(input.assignments !== undefined ? {
+      assignments: input.assignments.map((assignment) => ({
+        node_id: assignment.nodeId,
+        enabled: assignment.enabled,
+      })),
+    } : {}),
   }
 }
 

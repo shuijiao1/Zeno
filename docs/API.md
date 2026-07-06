@@ -184,7 +184,7 @@ X-Admin-Token: <session-token>
       "address": "8.8.8.8",
       "count": 20,
       "timeout_ms": 1000,
-      "interval_sec": 60
+      "interval_sec": 30
     },
     {
       "id": "telegram-dc5",
@@ -194,7 +194,7 @@ X-Admin-Token: <session-token>
       "port": 443,
       "count": 10,
       "timeout_ms": 1000,
-      "interval_sec": 60
+      "interval_sec": 30
     },
     {
       "id": "zeno-health",
@@ -203,7 +203,7 @@ X-Admin-Token: <session-token>
       "address": "https://example.com/health",
       "count": 2,
       "timeout_ms": 1500,
-      "interval_sec": 60
+      "interval_sec": 30
     }
   ]
 }
@@ -609,7 +609,7 @@ X-Admin-Token: <admin-token>
       "port": 18980,
       "count": 3,
       "timeout_ms": 1200,
-      "interval_sec": 60,
+      "interval_sec": 30,
       "display_order": 10,
       "enabled": true,
       "assignments": [
@@ -628,7 +628,7 @@ X-Admin-Token: <admin-token>
       "port": null,
       "count": 2,
       "timeout_ms": 1500,
-      "interval_sec": 60,
+      "interval_sec": 30,
       "display_order": 20,
       "enabled": true,
       "assignments": []
@@ -653,7 +653,7 @@ HTTP GET 示例：
   "port": null,
   "count": 2,
   "timeout_ms": 1500,
-  "interval_sec": 60,
+  "interval_sec": 30,
   "display_order": 20
 }
 ```

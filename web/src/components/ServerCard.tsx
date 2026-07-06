@@ -75,11 +75,28 @@ function formatTrafficLabel(): string {
   return '流量'
 }
 
+function expiryBadge(expiryLabel: string | null | undefined): { text: string; tone: 'safe' | 'soon' | 'urgent' | 'expired' } | null {
+  const trimmed = (expiryLabel ?? '').trim()
+  if (trimmed === '') return null
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(trimmed)
+  if (!match) return trimmed === '永 久' || trimmed === '永久' ? null : { text: trimmed, tone: 'safe' }
+  const expiry = Date.UTC(Number(match[1]), Number(match[2]) - 1, Number(match[3]))
+  const now = new Date()
+  const today = Date.UTC(now.getFullYear(), now.getMonth(), now.getDate())
+  const days = Math.ceil((expiry - today) / 86400000)
+  if (days < 0) return { text: '已过期', tone: 'expired' }
+  if (days === 0) return { text: '今天到期', tone: 'urgent' }
+  if (days <= 7) return { text: `余 ${days} 天`, tone: 'urgent' }
+  if (days <= 30) return { text: `余 ${days} 天`, tone: 'soon' }
+  return { text: `余 ${days} 天`, tone: 'safe' }
+}
+
 export function ServerCard({ node, onOpen }: ServerCardProps) {
   const memoryPercent = ratio(node.memoryUsedBytes, node.memoryTotalBytes)
   const diskPercent = ratio(node.diskUsedBytes, node.diskTotalBytes)
   const trafficPercent = ratio(node.monthlyBillableBytes, node.monthlyQuotaBytes)
   const latency = node.latencySummary
+  const expiry = expiryBadge(node.expiryLabel)
   const open = () => onOpen?.(node.id)
   const visualStatus = node.status === 'online' ? 'online' : 'offline'
   const isOfflineCard = visualStatus === 'offline'
@@ -105,7 +122,7 @@ export function ServerCard({ node, onOpen }: ServerCardProps) {
           <ServerFlag countryCode={node.countryCode} className="node-flag" />
           <p>{node.displayName}</p>
         </div>
-        <div className="node-expiry">{node.expiryLabel ?? '永 久'}</div>
+        {expiry && <div className={`node-expiry is-${expiry.tone}`}>{expiry.text}</div>}
       </section>
 
       <section className="node-specs" aria-label={`${node.displayName} specs`}>
@@ -123,8 +140,8 @@ export function ServerCard({ node, onOpen }: ServerCardProps) {
           <section className="node-footer-grid" aria-label={`${node.displayName} network and latency`}>
             <Metric tone="up" icon={<UploadIcon />} label="上传" value={formatRate(node.netOutSpeedBps)} />
             <Metric tone="down" icon={<DownloadIcon />} label="下载" value={formatRate(node.netInSpeedBps)} />
-            {latency && <Metric tone="latency" icon={<ActivityIcon />} label="延迟" value={formatLatency(latency.avgMs ?? latency.medianMs)} />}
-            {latency && <Metric tone="loss" icon={<TriangleAlertIcon />} label="丢包率" value={normalizeLoss(latency.lossPercent)} />}
+            <Metric tone="latency" icon={<ActivityIcon />} label="延迟" value={latency ? formatLatency(latency.avgMs ?? latency.medianMs) : '--ms'} />
+            <Metric tone="loss" icon={<TriangleAlertIcon />} label="丢包率" value={latency ? normalizeLoss(latency.lossPercent) : '--%'} />
           </section>
         </div>
       </section>

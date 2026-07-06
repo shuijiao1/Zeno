@@ -819,7 +819,7 @@ func TestAdminProbeTargetsListsTargetsAndAssignmentsWithoutSecrets(t *testing.T)
 		}{}
 	}
 	hytron := findTarget("hytron-local")
-	if hytron.ID == "" || hytron.Name != "Hytron" || hytron.Type != "tcping" || hytron.Address != "127.0.0.1" || hytron.Port == nil || *hytron.Port != 18980 || hytron.Count != 3 || hytron.TimeoutMS != 1200 || hytron.IntervalSec != 60 || !hytron.Enabled {
+	if hytron.ID == "" || hytron.Name != "Hytron" || hytron.Type != "tcping" || hytron.Address != "127.0.0.1" || hytron.Port == nil || *hytron.Port != 18980 || hytron.Count != 3 || hytron.TimeoutMS != 1200 || hytron.IntervalSec != 30 || !hytron.Enabled {
 		t.Fatalf("hytron target = %+v, want full target config", hytron)
 	}
 	if len(hytron.Assignments) != 1 || hytron.Assignments[0].NodeID != "hytron" || hytron.Assignments[0].NodeDisplayName != "Hytron" || !hytron.Assignments[0].Enabled {
@@ -872,7 +872,7 @@ func TestAdminProbeTargetsReturnsEmptyAssignmentArrayForUnassignedTargets(t *tes
 	t.Fatalf("google-dns target not found in admin response: %+v", response.Targets)
 }
 
-func TestAdminProbeTargetCreateAddsAssignedTargetWithoutSecrets(t *testing.T) {
+func TestAdminProbeTargetCreateDefaultsToNoAssignedServersWithoutSecrets(t *testing.T) {
 	store, err := OpenSQLiteStore(filepath.Join(t.TempDir(), "zeno.db"))
 	if err != nil {
 		t.Fatalf("open sqlite store: %v", err)
@@ -927,8 +927,61 @@ func TestAdminProbeTargetCreateAddsAssignedTargetWithoutSecrets(t *testing.T) {
 	if response.Target.ID == "" || response.Target.Name != "Example HTTPS" || response.Target.Type != "tcping" || response.Target.Address != "example.com" || response.Target.Port != 443 || response.Target.Count != 5 || response.Target.TimeoutMS != 1500 || response.Target.IntervalSec != 90 || !response.Target.Enabled {
 		t.Fatalf("created target = %+v, want trimmed enabled tcping target", response.Target)
 	}
+	if len(response.Target.Assignments) != 0 {
+		t.Fatalf("created target assignments = %+v, want no server enabled by default", response.Target.Assignments)
+	}
+	targets, err := store.EnabledProbeTargets(ctx, "hytron")
+	if err != nil {
+		t.Fatalf("enabled probe targets: %v", err)
+	}
+	for _, target := range targets {
+		if target.ID == response.Target.ID {
+			t.Fatalf("created target %q unexpectedly assigned to hytron enabled target set", response.Target.ID)
+		}
+	}
+}
+
+func TestAdminProbeTargetCreateAcceptsExplicitServerAssignments(t *testing.T) {
+	store, err := OpenSQLiteStore(filepath.Join(t.TempDir(), "zeno.db"))
+	if err != nil {
+		t.Fatalf("open sqlite store: %v", err)
+	}
+	defer store.Close()
+	ctx := context.Background()
+	if err := store.SeedPreviewData(ctx, PreviewSeedOptions{NodeID: "hytron", DisplayName: "Hytron", CountryCode: "HK", AgentToken: "agent-super-secret"}); err != nil {
+		t.Fatalf("seed preview data: %v", err)
+	}
+
+	recorder := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodPost, "/api/admin/v1/probe-targets", bytes.NewBufferString(`{
+		"name": "Assigned HTTPS",
+		"type": "http_get",
+		"address": "https://example.com/health",
+		"count": 2,
+		"timeout_ms": 1500,
+		"interval_sec": 30,
+		"assignments": [{"node_id":"hytron","enabled":true}]
+	}`))
+	request.Header.Set("X-Admin-Token", "admin-pass")
+	NewHandler(HandlerOptions{Store: store, AdminTokenHash: HashAdminToken("admin-pass")}).ServeHTTP(recorder, request)
+
+	if recorder.Code != http.StatusCreated {
+		t.Fatalf("status = %d, want 201; body=%s", recorder.Code, recorder.Body.String())
+	}
+	var response struct {
+		Target struct {
+			ID          string `json:"id"`
+			Assignments []struct {
+				NodeID  string `json:"node_id"`
+				Enabled bool   `json:"enabled"`
+			} `json:"assignments"`
+		} `json:"target"`
+	}
+	if err := json.NewDecoder(bytes.NewBufferString(recorder.Body.String())).Decode(&response); err != nil {
+		t.Fatalf("decode created target: %v", err)
+	}
 	if len(response.Target.Assignments) != 1 || response.Target.Assignments[0].NodeID != "hytron" || !response.Target.Assignments[0].Enabled {
-		t.Fatalf("created target assignments = %+v, want enabled assignment to existing node", response.Target.Assignments)
+		t.Fatalf("created assignments = %+v, want explicit hytron enabled", response.Target.Assignments)
 	}
 	targets, err := store.EnabledProbeTargets(ctx, "hytron")
 	if err != nil {
@@ -995,8 +1048,8 @@ func TestAdminProbeTargetCreateAcceptsPingWithoutPort(t *testing.T) {
 	if response.Target.ID == "" || response.Target.Name != "Example ICMP" || response.Target.Type != "ping" || response.Target.Address != "8.8.8.8" || response.Target.Port != nil || response.Target.Count != 4 || response.Target.TimeoutMS != 900 || response.Target.IntervalSec != 45 || !response.Target.Enabled {
 		t.Fatalf("created ping target = %+v, want normalized enabled ping target without port", response.Target)
 	}
-	if len(response.Target.Assignments) != 1 || response.Target.Assignments[0].NodeID != "hytron" || !response.Target.Assignments[0].Enabled {
-		t.Fatalf("created ping assignments = %+v, want enabled assignment to existing node", response.Target.Assignments)
+	if len(response.Target.Assignments) != 0 {
+		t.Fatalf("created ping assignments = %+v, want no server enabled by default", response.Target.Assignments)
 	}
 	targets, err := store.EnabledProbeTargets(ctx, "hytron")
 	if err != nil {
@@ -1011,8 +1064,8 @@ func TestAdminProbeTargetCreateAcceptsPingWithoutPort(t *testing.T) {
 			}
 		}
 	}
-	if !found {
-		t.Fatalf("created ping target %q not assigned to hytron enabled target set", response.Target.ID)
+	if found {
+		t.Fatalf("created ping target %q unexpectedly assigned to hytron enabled target set", response.Target.ID)
 	}
 }
 
@@ -1034,7 +1087,7 @@ func TestAdminProbeTargetCreateAcceptsHTTPGETWithoutPort(t *testing.T) {
 		"address": "  https://example.com/health  ",
 		"count": 2,
 		"timeout_ms": 1500,
-		"interval_sec": 60
+		"interval_sec": 30
 	}`))
 	request.Header.Set("X-Admin-Token", "admin-pass")
 	NewHandler(HandlerOptions{Store: store, AdminTokenHash: HashAdminToken("admin-pass")}).ServeHTTP(recorder, request)
@@ -1063,11 +1116,11 @@ func TestAdminProbeTargetCreateAcceptsHTTPGETWithoutPort(t *testing.T) {
 	if err := json.NewDecoder(bytes.NewBufferString(recorder.Body.String())).Decode(&response); err != nil {
 		t.Fatalf("decode created http_get target: %v", err)
 	}
-	if response.Target.ID == "" || response.Target.Name != "Zeno Health" || response.Target.Type != "http_get" || response.Target.Address != "https://example.com/health" || response.Target.Port != nil || response.Target.Count != 2 || response.Target.TimeoutMS != 1500 || response.Target.IntervalSec != 60 || !response.Target.Enabled {
+	if response.Target.ID == "" || response.Target.Name != "Zeno Health" || response.Target.Type != "http_get" || response.Target.Address != "https://example.com/health" || response.Target.Port != nil || response.Target.Count != 2 || response.Target.TimeoutMS != 1500 || response.Target.IntervalSec != 30 || !response.Target.Enabled {
 		t.Fatalf("created http_get target = %+v, want normalized enabled HTTP GET target without port", response.Target)
 	}
-	if len(response.Target.Assignments) != 1 || response.Target.Assignments[0].NodeID != "hytron" || !response.Target.Assignments[0].Enabled {
-		t.Fatalf("created http_get assignments = %+v, want enabled assignment to existing node", response.Target.Assignments)
+	if len(response.Target.Assignments) != 0 {
+		t.Fatalf("created http_get assignments = %+v, want no server enabled by default", response.Target.Assignments)
 	}
 	targets, err := store.EnabledProbeTargets(ctx, "hytron")
 	if err != nil {
@@ -1082,8 +1135,8 @@ func TestAdminProbeTargetCreateAcceptsHTTPGETWithoutPort(t *testing.T) {
 			}
 		}
 	}
-	if !found {
-		t.Fatalf("created http_get target %q not assigned to hytron enabled target set", response.Target.ID)
+	if found {
+		t.Fatalf("created http_get target %q unexpectedly assigned to hytron enabled target set", response.Target.ID)
 	}
 }
 
@@ -1496,9 +1549,9 @@ func TestAdminProbeTargetWritesRejectUnauthorizedUnknownAndInvalidRequests(t *te
 		adminToken string
 		wantStatus int
 	}{
-		{name: "create missing token", method: http.MethodPost, path: "/api/admin/v1/probe-targets", body: `{"name":"A","type":"tcping","address":"example.com","port":443,"count":3,"timeout_ms":1000,"interval_sec":60}`, wantStatus: http.StatusUnauthorized},
-		{name: "create blank name", method: http.MethodPost, path: "/api/admin/v1/probe-targets", body: `{"name":"   ","type":"tcping","address":"example.com","port":443,"count":3,"timeout_ms":1000,"interval_sec":60}`, adminToken: "admin-pass", wantStatus: http.StatusBadRequest},
-		{name: "create bad port", method: http.MethodPost, path: "/api/admin/v1/probe-targets", body: `{"name":"A","type":"tcping","address":"example.com","port":70000,"count":3,"timeout_ms":1000,"interval_sec":60}`, adminToken: "admin-pass", wantStatus: http.StatusBadRequest},
+		{name: "create missing token", method: http.MethodPost, path: "/api/admin/v1/probe-targets", body: `{"name":"A","type":"tcping","address":"example.com","port":443,"count":3,"timeout_ms":1000,"interval_sec":30}`, wantStatus: http.StatusUnauthorized},
+		{name: "create blank name", method: http.MethodPost, path: "/api/admin/v1/probe-targets", body: `{"name":"   ","type":"tcping","address":"example.com","port":443,"count":3,"timeout_ms":1000,"interval_sec":30}`, adminToken: "admin-pass", wantStatus: http.StatusBadRequest},
+		{name: "create bad port", method: http.MethodPost, path: "/api/admin/v1/probe-targets", body: `{"name":"A","type":"tcping","address":"example.com","port":70000,"count":3,"timeout_ms":1000,"interval_sec":30}`, adminToken: "admin-pass", wantStatus: http.StatusBadRequest},
 		{name: "patch unknown target", method: http.MethodPatch, path: "/api/admin/v1/probe-targets/missing", body: `{"name":"Changed"}`, adminToken: "admin-pass", wantStatus: http.StatusNotFound},
 		{name: "patch negative count", method: http.MethodPatch, path: "/api/admin/v1/probe-targets/hytron-local", body: `{"count":0}`, adminToken: "admin-pass", wantStatus: http.StatusBadRequest},
 		{name: "patch unknown assignment node", method: http.MethodPatch, path: "/api/admin/v1/probe-targets/hytron-local", body: `{"assignments":[{"node_id":"missing","enabled":false}]}`, adminToken: "admin-pass", wantStatus: http.StatusBadRequest},

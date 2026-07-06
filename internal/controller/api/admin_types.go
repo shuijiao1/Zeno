@@ -364,16 +364,17 @@ type AdminProbeTargetResponse struct {
 }
 
 type AdminProbeTargetCreateRequest struct {
-	ID           string             `json:"id,omitempty"`
-	Name         string             `json:"name"`
-	Type         string             `json:"type"`
-	Address      string             `json:"address"`
-	Port         adminOptionalInt64 `json:"port,omitempty"`
-	Count        int                `json:"count"`
-	TimeoutMS    int                `json:"timeout_ms"`
-	IntervalSec  int                `json:"interval_sec"`
-	DisplayOrder int                `json:"display_order,omitempty"`
-	Enabled      *bool              `json:"enabled,omitempty"`
+	ID           string                             `json:"id,omitempty"`
+	Name         string                             `json:"name"`
+	Type         string                             `json:"type"`
+	Address      string                             `json:"address"`
+	Port         adminOptionalInt64                 `json:"port,omitempty"`
+	Count        int                                `json:"count"`
+	TimeoutMS    int                                `json:"timeout_ms"`
+	IntervalSec  int                                `json:"interval_sec"`
+	DisplayOrder int                                `json:"display_order,omitempty"`
+	Enabled      *bool                              `json:"enabled,omitempty"`
+	Assignments  []AdminProbeTargetAssignmentUpdate `json:"assignments,omitempty"`
 }
 
 func (request *AdminProbeTargetCreateRequest) normalize() error {
@@ -387,6 +388,20 @@ func (request *AdminProbeTargetCreateRequest) normalize() error {
 	}
 	if request.DisplayOrder < 0 {
 		return errInvalidAdminTargetWrite
+	}
+	if request.Assignments != nil {
+		seen := map[string]struct{}{}
+		for index := range request.Assignments {
+			trimmed := strings.TrimSpace(request.Assignments[index].NodeID)
+			if trimmed == "" {
+				return errInvalidAdminTargetWrite
+			}
+			if _, exists := seen[trimmed]; exists {
+				return errInvalidAdminTargetWrite
+			}
+			seen[trimmed] = struct{}{}
+			request.Assignments[index].NodeID = trimmed
+		}
 	}
 	if request.Type == "tcping" {
 		if !request.Port.Set || !request.Port.Valid || !validPort(request.Port.Value) {

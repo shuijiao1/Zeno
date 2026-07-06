@@ -252,8 +252,8 @@ func TestSQLiteBackedSummaryUsesPersistedNodeAndLatestLatency(t *testing.T) {
 	if publicShape.Nodes[0].Arch != "aarch64" {
 		t.Fatalf("node arch = %q, want persisted host architecture", publicShape.Nodes[0].Arch)
 	}
-	if node.LatencySummary == nil || node.LatencySummary.MedianMS == nil || *node.LatencySummary.MedianMS != 8.8 {
-		t.Fatalf("latency summary = %+v, want latest median 8.8", node.LatencySummary)
+	if node.LatencySummary != nil {
+		t.Fatalf("latency summary = %+v, want no homepage latency summary without configured home target", node.LatencySummary)
 	}
 	if len(node.LatencySummaries) != 1 || node.LatencySummaries[0].TargetID != "google" || node.LatencySummaries[0].MedianMS == nil || *node.LatencySummaries[0].MedianMS != 8.8 {
 		t.Fatalf("latency summaries = %+v, want latest google median 8.8", node.LatencySummaries)
