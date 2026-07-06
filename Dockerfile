@@ -17,6 +17,13 @@ ARG VERSION=dev
 RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -ldflags "-s -w" -o /out/zeno-controller ./cmd/controller
 
 FROM debian:13-slim
+ARG VERSION=dev
+ARG REVISION=unknown
+LABEL org.opencontainers.image.title="Zeno" \
+  org.opencontainers.image.description="Lightweight self-hosted server monitor" \
+  org.opencontainers.image.source="https://github.com/shuijiao1/Zeno" \
+  org.opencontainers.image.version="${VERSION}" \
+  org.opencontainers.image.revision="${REVISION}"
 RUN apt-get update \
   && apt-get install -y --no-install-recommends ca-certificates curl tzdata \
   && rm -rf /var/lib/apt/lists/*
