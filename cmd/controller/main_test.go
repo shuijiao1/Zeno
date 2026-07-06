@@ -10,14 +10,14 @@ import (
 )
 
 func TestBuildHandlerUsesSQLiteStoreWhenDBPathProvided(t *testing.T) {
-	handler, cleanup, err := buildHandler(handlerConfig{DBPath: filepath.Join(t.TempDir(), "zeno.db")})
+	runtime, err := buildController(handlerConfig{DBPath: filepath.Join(t.TempDir(), "zeno.db")})
 	if err != nil {
-		t.Fatalf("build handler: %v", err)
+		t.Fatalf("build controller: %v", err)
 	}
-	defer cleanup()
+	defer runtime.Cleanup()
 
 	recorder := httptest.NewRecorder()
-	handler.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/api/public/v1/summary", nil))
+	runtime.Handler.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/api/public/v1/summary", nil))
 	if recorder.Code != http.StatusOK {
 		t.Fatalf("status = %d, want 200; body=%s", recorder.Code, recorder.Body.String())
 	}
@@ -34,7 +34,7 @@ func TestBuildHandlerUsesSQLiteStoreWhenDBPathProvided(t *testing.T) {
 }
 
 func TestBuildHandlerEnablesAdminAPIWithAdminToken(t *testing.T) {
-	handler, cleanup, err := buildHandler(handlerConfig{
+	runtime, err := buildController(handlerConfig{
 		DBPath:      filepath.Join(t.TempDir(), "zeno.db"),
 		SeedPreview: true,
 		NodeID:      "hytron",
@@ -42,14 +42,14 @@ func TestBuildHandlerEnablesAdminAPIWithAdminToken(t *testing.T) {
 		AdminToken:  "admin-pass",
 	})
 	if err != nil {
-		t.Fatalf("build handler: %v", err)
+		t.Fatalf("build controller: %v", err)
 	}
-	defer cleanup()
+	defer runtime.Cleanup()
 
 	recorder := httptest.NewRecorder()
 	request := httptest.NewRequest(http.MethodGet, "/api/admin/v1/nodes", nil)
 	request.Header.Set("X-Admin-Token", "admin-pass")
-	handler.ServeHTTP(recorder, request)
+	runtime.Handler.ServeHTTP(recorder, request)
 	if recorder.Code != http.StatusOK {
 		t.Fatalf("status = %d, want 200; body=%s", recorder.Code, recorder.Body.String())
 	}
@@ -61,14 +61,14 @@ func TestBuildHandlerServesConfiguredAgentBinary(t *testing.T) {
 	if err := os.WriteFile(binaryPath, []byte("agent-binary"), 0o755); err != nil {
 		t.Fatalf("write agent binary: %v", err)
 	}
-	handler, cleanup, err := buildHandler(handlerConfig{DBPath: filepath.Join(tmp, "zeno.db"), AgentBinaryPath: binaryPath, AgentVersion: "abc1234"})
+	runtime, err := buildController(handlerConfig{DBPath: filepath.Join(tmp, "zeno.db"), AgentBinaryPath: binaryPath, AgentVersion: "abc1234"})
 	if err != nil {
-		t.Fatalf("build handler: %v", err)
+		t.Fatalf("build controller: %v", err)
 	}
-	defer cleanup()
+	defer runtime.Cleanup()
 
 	recorder := httptest.NewRecorder()
-	handler.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/api/public/v1/agent/linux-amd64", nil))
+	runtime.Handler.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/api/public/v1/agent/linux-amd64", nil))
 	if recorder.Code != http.StatusOK {
 		t.Fatalf("status = %d, want 200; body=%s", recorder.Code, recorder.Body.String())
 	}

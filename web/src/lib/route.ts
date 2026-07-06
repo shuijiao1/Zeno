@@ -30,7 +30,3 @@ export function parseDashboardRoute(pathname: string): DashboardRoute {
 export function nodePath(nodeId: string): string {
   return `/server/${encodeURIComponent(nodeId)}`
 }
-
-export function servicePath(targetId: string): string {
-  return `/service/${encodeURIComponent(targetId)}`
-}

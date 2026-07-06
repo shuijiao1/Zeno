@@ -190,13 +190,12 @@ CREATE TABLE probe_samples (
 
 ## notification_channels / notification_types
 
-通知当前是 Telegram-only 产品路径。SQLite 内部仍保留 `type` / `channel_type` 兼容列，但 Admin API/UI 不暴露多渠道概念。
+通知当前是 Telegram-only 产品路径；SQLite schema 不保留多渠道 `type` / `channel_type` 兼容列。
 
 ```sql
 CREATE TABLE notification_channels (
   id TEXT PRIMARY KEY,
   name TEXT NOT NULL,
-  type TEXT NOT NULL,
   destination TEXT NOT NULL,
   credential TEXT NOT NULL,
   enabled INTEGER NOT NULL DEFAULT 1,

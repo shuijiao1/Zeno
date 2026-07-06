@@ -16,7 +16,6 @@ func (s *SQLiteStore) AdminNotificationChannels(ctx context.Context) ([]AdminNot
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT id, name, destination, credential, enabled, created_at, updated_at
 		FROM notification_channels
-		WHERE type = 'telegram'
 		ORDER BY id ASC
 	`)
 	if err != nil {
@@ -33,7 +32,6 @@ func (s *SQLiteStore) AdminNotificationChannels(ctx context.Context) ([]AdminNot
 		if err := rows.Scan(&channel.ID, &channel.Name, &channel.Destination, &credential, &enabled, &createdAt, &updatedAt); err != nil {
 			return nil, err
 		}
-		channel.Credential = credential
 		channel.CredentialSet = strings.TrimSpace(credential) != ""
 		channel.Enabled = enabled != 0
 		channel.CreatedAt = unixStringOr(createdAt, time.Now().UTC())
@@ -64,8 +62,8 @@ func (s *SQLiteStore) CreateAdminNotificationChannel(ctx context.Context, create
 	}
 	now := time.Now().UTC().Unix()
 	result, err := s.db.ExecContext(ctx, `
-		INSERT OR IGNORE INTO notification_channels (id, name, type, destination, credential, enabled, created_at, updated_at)
-		VALUES (?, ?, 'telegram', ?, ?, ?, ?, ?)
+		INSERT OR IGNORE INTO notification_channels (id, name, destination, credential, enabled, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?)
 	`, channelID, create.Name, create.Destination, create.Credential, enabled, now, now)
 	if err != nil {
 		return AdminNotificationChannel{}, err
@@ -89,7 +87,7 @@ func (s *SQLiteStore) UpdateAdminNotificationChannel(ctx context.Context, channe
 		return AdminNotificationChannel{}, err
 	}
 	var exists int
-	if err := s.db.QueryRowContext(ctx, `SELECT 1 FROM notification_channels WHERE id = ? AND type = 'telegram'`, channelID).Scan(&exists); err != nil {
+	if err := s.db.QueryRowContext(ctx, `SELECT 1 FROM notification_channels WHERE id = ?`, channelID).Scan(&exists); err != nil {
 		if err == sql.ErrNoRows {
 			return AdminNotificationChannel{}, errNotificationChannelNotFound
 		}
@@ -133,7 +131,7 @@ func (s *SQLiteStore) DeleteAdminNotificationChannel(ctx context.Context, channe
 	if channelID == "" {
 		return errNotificationChannelNotFound
 	}
-	result, err := s.db.ExecContext(ctx, `DELETE FROM notification_channels WHERE id = ? AND type = 'telegram'`, channelID)
+	result, err := s.db.ExecContext(ctx, `DELETE FROM notification_channels WHERE id = ?`, channelID)
 	if err != nil {
 		return err
 	}
@@ -169,7 +167,7 @@ func (s *SQLiteStore) AdminNotificationDispatchChannel(ctx context.Context, chan
 	if err := s.db.QueryRowContext(ctx, `
 		SELECT id, name, destination, credential
 		FROM notification_channels
-		WHERE id = ? AND type = 'telegram'
+		WHERE id = ?
 	`, channelID).Scan(&channel.ID, &channel.Name, &channel.Destination, &channel.Credential); err != nil {
 		if err == sql.ErrNoRows {
 			return notificationDispatchChannel{}, errNotificationChannelNotFound
@@ -181,42 +179,6 @@ func (s *SQLiteStore) AdminNotificationDispatchChannel(ctx context.Context, chan
 	}
 	channel.Type = "telegram"
 	return channel, nil
-}
-
-func (s *SQLiteStore) AdminNotificationTypes(ctx context.Context) ([]AdminNotificationType, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT event_type, enabled, updated_at FROM notification_types`)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-
-	stored := map[string]AdminNotificationType{}
-	for rows.Next() {
-		var eventType string
-		var enabled int
-		var updatedAt sql.NullInt64
-		if err := rows.Scan(&eventType, &enabled, &updatedAt); err != nil {
-			return nil, err
-		}
-		label, ok := adminNotificationTypeLabel(eventType)
-		if !ok {
-			continue
-		}
-		stored[eventType] = AdminNotificationType{EventType: eventType, Label: label, Enabled: enabled != 0, UpdatedAt: unixStringOr(updatedAt, time.Now().UTC())}
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-
-	types := make([]AdminNotificationType, 0, len(adminNotificationTypeCatalog))
-	for _, catalogType := range adminNotificationTypeCatalog {
-		if storedType, ok := stored[catalogType.EventType]; ok {
-			types = append(types, storedType)
-			continue
-		}
-		types = append(types, catalogType)
-	}
-	return types, nil
 }
 
 func (s *SQLiteStore) UpdateAdminNotificationType(ctx context.Context, eventType string, update AdminNotificationTypeUpdateRequest) (AdminNotificationType, error) {

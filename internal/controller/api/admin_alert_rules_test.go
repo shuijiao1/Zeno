@@ -336,22 +336,16 @@ func TestAlertRuleScopeLimitsStateEvaluationAndCurrentStates(t *testing.T) {
 		t.Fatalf("backup status = %+v, want warning because cpu_high applies", backupTransition.Current)
 	}
 
-	states, err := store.AdminAlertRuleStates(ctx)
-	if err != nil {
-		t.Fatalf("alert rule states: %v", err)
+	var activeBackupCPU int
+	if err := store.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM alert_rule_states WHERE rule_id = 'cpu_high' AND node_id = 'backup' AND active = 1`).Scan(&activeBackupCPU); err != nil {
+		t.Fatalf("count backup cpu state: %v", err)
 	}
-	activeBackupCPU := 0
-	activeHytronCPU := 0
-	for _, state := range states {
-		if state.RuleID == "cpu_high" && state.NodeID == "backup" && state.Active {
-			activeBackupCPU++
-		}
-		if state.RuleID == "cpu_high" && state.NodeID == "hytron" && state.Active {
-			activeHytronCPU++
-		}
+	var activeHytronCPU int
+	if err := store.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM alert_rule_states WHERE rule_id = 'cpu_high' AND node_id = 'hytron' AND active = 1`).Scan(&activeHytronCPU); err != nil {
+		t.Fatalf("count hytron cpu state: %v", err)
 	}
 	if activeBackupCPU != 1 || activeHytronCPU != 0 {
-		t.Fatalf("active scoped CPU states backup=%d hytron=%d states=%+v, want backup only", activeBackupCPU, activeHytronCPU, states)
+		t.Fatalf("active scoped CPU states backup=%d hytron=%d, want backup only", activeBackupCPU, activeHytronCPU)
 	}
 }
 

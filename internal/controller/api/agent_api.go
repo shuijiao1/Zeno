@@ -2,12 +2,16 @@ package api
 
 import (
 	"context"
-	"encoding/json"
 	"net/http"
 	"strings"
 	"time"
 
 	"github.com/shuijiao1/zeno/internal/shared/probe"
+)
+
+const (
+	maxAgentProbeRounds          = 256
+	maxAgentProbeSamplesPerRound = 32
 )
 
 type agentStore interface {
@@ -66,13 +70,15 @@ func (h *handler) handleAgentProbeResults(w http.ResponseWriter, r *http.Request
 	}
 
 	var request AgentProbeResultsRequest
-	decoder := json.NewDecoder(r.Body)
-	if err := decoder.Decode(&request); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid json")
+	if !decodeJSONBody(w, r, &request, agentProbeJSONBodyLimit, false) {
 		return
 	}
 	if len(request.Rounds) == 0 {
 		writeError(w, http.StatusBadRequest, "rounds required")
+		return
+	}
+	if len(request.Rounds) > maxAgentProbeRounds {
+		writeError(w, http.StatusBadRequest, "too many rounds")
 		return
 	}
 
@@ -101,6 +107,10 @@ func (h *handler) handleAgentProbeResults(w http.ResponseWriter, r *http.Request
 			writeError(w, http.StatusBadRequest, "invalid timestamp")
 			return
 		}
+		if len(round.Samples) > maxAgentProbeSamplesPerRound {
+			writeError(w, http.StatusBadRequest, "too many samples")
+			return
+		}
 		samples := make([]probe.Sample, 0, len(round.Samples))
 		for index, sample := range round.Samples {
 			seq := sample.Seq
@@ -122,23 +132,6 @@ func (h *handler) handleAgentProbeResults(w http.ResponseWriter, r *http.Request
 			return
 		}
 	}
-	probeTS := latestPreparedProbeTS(prepared)
-	if transitionStore, ok := store.(probeAlertRuleTransitionStore); ok {
-		transition, err := transitionStore.RecordAgentProbeAlertRuleTransition(r.Context(), nodeID, probeTS, prepared)
-		if err != nil {
-			writeError(w, http.StatusInternalServerError, "internal error")
-			return
-		}
-		h.dispatchAgentStatusNotification(store, transition, probeTS)
-	} else if transitionStore, ok := store.(probeHealthTransitionStore); ok {
-		probeStatus := probeHealthStatus(prepared)
-		transition, err := transitionStore.RecordAgentProbeHealthTransition(r.Context(), nodeID, probeTS, probeStatus)
-		if err != nil {
-			writeError(w, http.StatusInternalServerError, "internal error")
-			return
-		}
-		h.dispatchAgentStatusNotification(store, transition, probeTS)
-	}
 	h.publishSummary(r.Context())
 	h.publishNodeLatency(r.Context(), nodeID)
 	seenTargetIDs := map[string]struct{}{}
@@ -152,32 +145,6 @@ func (h *handler) handleAgentProbeResults(w http.ResponseWriter, r *http.Request
 	writeJSON(w, http.StatusAccepted, map[string]any{"ok": true, "accepted": len(prepared)})
 }
 
-func probeHealthStatus(rounds []preparedAgentProbeRound) string {
-	for _, round := range rounds {
-		healthy := false
-		for _, sample := range round.samples {
-			if sample.Success {
-				healthy = true
-				break
-			}
-		}
-		if !healthy {
-			return "warning"
-		}
-	}
-	return "online"
-}
-
-func latestPreparedProbeTS(rounds []preparedAgentProbeRound) time.Time {
-	latest := time.Now().UTC()
-	for index, round := range rounds {
-		if index == 0 || round.ts.After(latest) {
-			latest = round.ts
-		}
-	}
-	return latest.UTC()
-}
-
 func (h *handler) handleAgentHeartbeat(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
@@ -188,8 +155,7 @@ func (h *handler) handleAgentHeartbeat(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var request AgentHeartbeatRequest
-	if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid json")
+	if !decodeJSONBody(w, r, &request, agentStateJSONBodyLimit, false) {
 		return
 	}
 	if request.TS <= 0 {
@@ -244,8 +210,7 @@ func (h *handler) handleAgentHost(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var request AgentHostRequest
-	if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid json")
+	if !decodeJSONBody(w, r, &request, agentStateJSONBodyLimit, false) {
 		return
 	}
 	if strings.TrimSpace(request.OSName) == "" || strings.TrimSpace(request.Arch) == "" {
@@ -274,8 +239,7 @@ func (h *handler) handleAgentState(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var request AgentStateRequest
-	if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid json")
+	if !decodeJSONBody(w, r, &request, agentStateJSONBodyLimit, false) {
 		return
 	}
 	if request.TS <= 0 {

@@ -16,17 +16,9 @@ type heartbeatTransitionStore interface {
 	RecordAgentHeartbeatTransition(ctx context.Context, nodeID string, ts time.Time, status, agentVersion string) (notificationStatusTransition, error)
 }
 
-type probeHealthTransitionStore interface {
-	RecordAgentProbeHealthTransition(ctx context.Context, nodeID string, ts time.Time, status string) (notificationStatusTransition, error)
-}
-
 type notificationEventStore interface {
 	NotificationNode(ctx context.Context, nodeID string) (notificationNodeSnapshot, error)
 	EnabledNotificationChannelsForEvent(ctx context.Context, eventType, nodeID string) (string, []notificationDispatchChannel, error)
-}
-
-type notificationDeliveryStore interface {
-	RecordNotificationDelivery(ctx context.Context, event notificationEvent, channel notificationDispatchChannel, success bool, deliveryError string) (AdminNotificationDelivery, error)
 }
 
 type notificationNodeSnapshot struct {
@@ -161,10 +153,7 @@ func (h *handler) dispatchAgentStatusNotification(store agentStore, transition n
 		go func() {
 			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 			defer cancel()
-			err := h.notificationSender.Send(ctx, channel, event)
-			if deliveryStore, ok := store.(notificationDeliveryStore); ok {
-				_, _ = deliveryStore.RecordNotificationDelivery(context.Background(), event, channel, err == nil, sanitizeNotificationDeliveryError(err))
-			}
+			_ = h.notificationSender.Send(ctx, channel, event)
 		}()
 	}
 }
@@ -265,7 +254,7 @@ func (s *SQLiteStore) EnabledNotificationChannelsForEvent(ctx context.Context, e
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT id, name, destination, credential
 		FROM notification_channels
-		WHERE enabled = 1 AND type = 'telegram' AND TRIM(credential) <> ''
+		WHERE enabled = 1 AND TRIM(credential) <> ''
 		ORDER BY id ASC
 	`)
 	if err != nil {

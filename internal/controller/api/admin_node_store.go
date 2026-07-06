@@ -123,15 +123,23 @@ func (s *SQLiteStore) DeleteAdminNode(ctx context.Context, nodeID string) error 
 		`DELETE FROM node_probe_targets WHERE node_id = ?`,
 		`DELETE FROM alert_rule_states WHERE node_id = ?`,
 		`DELETE FROM host_info WHERE node_id = ?`,
-		`DELETE FROM notification_deliveries WHERE node_id = ?`,
 	} {
 		if _, err := tx.ExecContext(ctx, statement, nodeID); err != nil {
 			return err
 		}
 	}
-	// Keep alert_rule_node_scopes rows for a deleted node. An empty scope list means
-	// "all servers" in the alert evaluator, so deleting the last scoped node row here
-	// would unexpectedly broaden a scoped alert rule to every remaining server.
+	if _, err := tx.ExecContext(ctx, `
+		UPDATE alert_rules
+		SET enabled = 0, updated_at = ?
+		WHERE id IN (
+			SELECT scope.rule_id
+			FROM alert_rule_node_scopes scope
+			WHERE scope.node_id = ?
+			  AND (SELECT COUNT(*) FROM alert_rule_node_scopes all_scope WHERE all_scope.rule_id = scope.rule_id) = 1
+		)
+	`, time.Now().UTC().Unix(), nodeID); err != nil {
+		return err
+	}
 	result, err := tx.ExecContext(ctx, `DELETE FROM nodes WHERE id = ?`, nodeID)
 	if err != nil {
 		return err

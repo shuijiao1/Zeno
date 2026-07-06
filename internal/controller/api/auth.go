@@ -9,7 +9,17 @@ import (
 	"encoding/base64"
 	"encoding/hex"
 	"fmt"
+	"strconv"
 	"strings"
+
+	"golang.org/x/crypto/argon2"
+)
+
+const (
+	adminPasswordArgonMemoryKB = 64 * 1024
+	adminPasswordArgonTime     = 3
+	adminPasswordArgonThreads  = 2
+	adminPasswordArgonKeyLen   = 32
 )
 
 func hashAgentToken(token string) string {
@@ -38,16 +48,55 @@ func randomToken() (string, error) {
 }
 
 func hashAdminPassword(password string) (string, error) {
-	salt, err := randomToken()
-	if err != nil {
+	salt := make([]byte, 16)
+	if _, err := rand.Read(salt); err != nil {
 		return "", err
 	}
-	return hashAdminPasswordWithSalt(password, salt), nil
+	hash := argon2.IDKey([]byte(strings.TrimSpace(password)), salt, adminPasswordArgonTime, adminPasswordArgonMemoryKB, adminPasswordArgonThreads, adminPasswordArgonKeyLen)
+	return fmt.Sprintf("argon2id:v=19:m=%d:t=%d:p=%d:%s:%s", adminPasswordArgonMemoryKB, adminPasswordArgonTime, adminPasswordArgonThreads, base64.RawStdEncoding.EncodeToString(salt), base64.RawStdEncoding.EncodeToString(hash)), nil
 }
 
 func hashAdminPasswordWithSalt(password, salt string) string {
 	sum := sha256.Sum256([]byte(strings.TrimSpace(password) + ":" + salt))
 	return fmt.Sprintf("sha256:%s:%s", salt, hex.EncodeToString(sum[:]))
+}
+
+func adminArgon2PasswordMatches(storedHash, password string) bool {
+	parts := strings.Split(storedHash, ":")
+	if len(parts) != 7 || parts[0] != "argon2id" || parts[1] != "v=19" {
+		return false
+	}
+	memoryKB, ok := parseKDFParam(parts[2], "m")
+	if !ok {
+		return false
+	}
+	timeCost, ok := parseKDFParam(parts[3], "t")
+	if !ok {
+		return false
+	}
+	threads, ok := parseKDFParam(parts[4], "p")
+	if !ok || threads == 0 || threads > 255 {
+		return false
+	}
+	salt, err := base64.RawStdEncoding.DecodeString(parts[5])
+	if err != nil {
+		return false
+	}
+	expected, err := base64.RawStdEncoding.DecodeString(parts[6])
+	if err != nil || len(expected) == 0 {
+		return false
+	}
+	computed := argon2.IDKey([]byte(strings.TrimSpace(password)), salt, uint32(timeCost), uint32(memoryKB), uint8(threads), uint32(len(expected)))
+	return subtle.ConstantTimeCompare(expected, computed) == 1
+}
+
+func parseKDFParam(raw, key string) (int, bool) {
+	prefix := key + "="
+	if !strings.HasPrefix(raw, prefix) {
+		return 0, false
+	}
+	value, err := strconv.Atoi(strings.TrimPrefix(raw, prefix))
+	return value, err == nil && value > 0
 }
 
 func validAdminUsername(username string) bool {
@@ -70,6 +119,9 @@ func adminPasswordMatches(storedHash, fallbackHash, password string) bool {
 		return false
 	}
 	storedHash = strings.TrimSpace(storedHash)
+	if strings.HasPrefix(storedHash, "argon2id:") {
+		return adminArgon2PasswordMatches(storedHash, password)
+	}
 	if strings.HasPrefix(storedHash, "sha256:") {
 		parts := strings.Split(storedHash, ":")
 		if len(parts) != 3 || parts[1] == "" || parts[2] == "" {

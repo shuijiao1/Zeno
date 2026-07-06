@@ -6,7 +6,7 @@ import { LatencyChart } from './components/LatencyChart'
 import { ServerCard } from './components/ServerCard'
 import { ServerFlag } from './components/ServerFlag'
 import { startLiveRefresh } from './lib/liveRefresh'
-import { nodePath, parseDashboardRoute, servicePath, type DashboardRoute } from './lib/route'
+import { nodePath, parseDashboardRoute, type DashboardRoute } from './lib/route'
 import type { AdminAlertRule, AdminNode, AdminNotificationChannel, AdminProbeTarget, AdminSettings, AdminTheme, HomeCardNode, LatencyPoint, ProbeType, ServiceTarget } from './types'
 
 type LoadState =
@@ -177,10 +177,6 @@ export function applyDocumentBranding(settings: AdminSettings) {
     document.head.appendChild(icon)
   }
   icon.href = branding.iconHref
-}
-
-function alertRuleAppliesToNode(rule: AdminAlertRule, nodeId: string): boolean {
-  return rule.scopeNodeIds.length === 0 || rule.scopeNodeIds.includes(nodeId)
 }
 
 export function App() {
@@ -660,13 +656,6 @@ export function App() {
     setNodeLatencyRange('1d')
     setStateRange('1h')
     setRoute({ kind: 'node', nodeId })
-  }
-
-  const navigateService = (targetId: string) => {
-    blurActiveElement()
-    window.history.pushState(null, '', servicePath(targetId))
-    setServiceLatencyRange('1h')
-    setRoute({ kind: 'service', targetId })
   }
 
   const setThemeMode = (nextTheme: AdminTheme) => {
@@ -2273,7 +2262,7 @@ function AdminNotificationChannelEditModal({ channel, onUpdate, onClose }: { cha
             </label>
             <label>
               <span>Telegram Bot Token</span>
-              <input name="channel-credential" autoComplete="off" defaultValue={channel.credential ?? ''} />
+              <input name="channel-credential" type="password" autoComplete="new-password" placeholder="留空保留原 Bot Token" />
             </label>
             <label className="admin-node-toggle">
               <input name="channel-enabled" type="checkbox" defaultChecked={channel.enabled} />

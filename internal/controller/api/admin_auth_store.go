@@ -11,6 +11,8 @@ import (
 const (
 	settingKeyAdminUsername     = "admin_username"
 	settingKeyAdminPasswordHash = "admin_password_hash"
+	adminSessionIdleTimeout     = 24 * time.Hour
+	adminSessionAbsoluteTimeout = 7 * 24 * time.Hour
 )
 
 var (
@@ -51,11 +53,16 @@ func (s *SQLiteStore) AuthorizeAdminSession(ctx context.Context, token string) (
 		return false, nil
 	}
 	now := time.Now().UTC().Unix()
+	if err := s.pruneExpiredAdminSessions(ctx, now); err != nil {
+		return false, err
+	}
 	result, err := s.db.ExecContext(ctx, `
 		UPDATE admin_sessions
 		SET last_seen_at = ?
 		WHERE token_hash = ?
-	`, now, HashAdminToken(token))
+		  AND created_at >= ?
+		  AND last_seen_at >= ?
+	`, now, HashAdminToken(token), now-int64(adminSessionAbsoluteTimeout.Seconds()), now-int64(adminSessionIdleTimeout.Seconds()))
 	if err != nil {
 		return false, err
 	}
@@ -167,56 +174,6 @@ func (s *SQLiteStore) UpdateAdminAccount(ctx context.Context, username, currentP
 	return AdminSession{Username: username, Token: token}, nil
 }
 
-func (s *SQLiteStore) UpdateAdminPassword(ctx context.Context, currentPassword, newPassword, fallbackHash string) (AdminSession, error) {
-	account, err := s.AdminAccount(ctx)
-	if err != nil {
-		return AdminSession{}, err
-	}
-	currentPassword = strings.TrimSpace(currentPassword)
-	newPassword = strings.TrimSpace(newPassword)
-	if currentPassword == "" || len([]rune(newPassword)) < 8 || len([]rune(newPassword)) > 128 {
-		return AdminSession{}, errInvalidAdminPasswordUpdate
-	}
-	if !s.adminPasswordMatches(ctx, currentPassword, fallbackHash) {
-		return AdminSession{}, errInvalidAdminPasswordUpdate
-	}
-	passwordHash, err := hashAdminPassword(newPassword)
-	if err != nil {
-		return AdminSession{}, err
-	}
-	token, err := randomToken()
-	if err != nil {
-		return AdminSession{}, err
-	}
-	now := time.Now().UTC().Unix()
-	tx, err := s.db.BeginTx(ctx, nil)
-	if err != nil {
-		return AdminSession{}, err
-	}
-	defer rollbackUnlessCommitted(tx)
-	if _, err := tx.ExecContext(ctx, `
-		INSERT INTO settings (key, value, updated_at)
-		VALUES (?, ?, ?)
-		ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at
-	`, settingKeyAdminPasswordHash, passwordHash, now); err != nil {
-		return AdminSession{}, err
-	}
-	if _, err := tx.ExecContext(ctx, `DELETE FROM admin_sessions`); err != nil {
-		return AdminSession{}, err
-	}
-	if _, err := tx.ExecContext(ctx, `
-		INSERT INTO admin_sessions (token_hash, created_at, last_seen_at)
-		VALUES (?, ?, ?)
-	`, HashAdminToken(token), now, now); err != nil {
-		return AdminSession{}, err
-	}
-	if err := tx.Commit(); err != nil {
-		return AdminSession{}, err
-	}
-	tx = nil
-	return AdminSession{Username: account.Username, Token: token}, nil
-}
-
 func (s *SQLiteStore) adminPasswordMatches(ctx context.Context, password, fallbackHash string) bool {
 	var storedHash string
 	err := s.db.QueryRowContext(ctx, `SELECT value FROM settings WHERE key = ?`, settingKeyAdminPasswordHash).Scan(&storedHash)
@@ -231,9 +188,20 @@ func (s *SQLiteStore) adminPasswordMatches(ctx context.Context, password, fallba
 
 func (s *SQLiteStore) createAdminSession(ctx context.Context, token string) error {
 	now := time.Now().UTC().Unix()
+	if err := s.pruneExpiredAdminSessions(ctx, now); err != nil {
+		return err
+	}
 	_, err := s.db.ExecContext(ctx, `
 		INSERT INTO admin_sessions (token_hash, created_at, last_seen_at)
 		VALUES (?, ?, ?)
 	`, HashAdminToken(token), now, now)
+	return err
+}
+
+func (s *SQLiteStore) pruneExpiredAdminSessions(ctx context.Context, now int64) error {
+	_, err := s.db.ExecContext(ctx, `
+		DELETE FROM admin_sessions
+		WHERE created_at < ? OR last_seen_at < ?
+	`, now-int64(adminSessionAbsoluteTimeout.Seconds()), now-int64(adminSessionIdleTimeout.Seconds()))
 	return err
 }

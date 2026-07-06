@@ -1,4 +1,4 @@
-import type { AdminAlertRule, AdminAlertRuleState, AdminNode, AdminNodeInstallCommand, AdminNotificationChannel, AdminNotificationDelivery, AdminNotificationType, AdminProbeTarget, AdminSettings, AdminTheme, HomeCardNode, LatencyPoint, ProbeType, ServiceTarget, StatePoint } from '../types'
+import type { AdminAlertRule, AdminNode, AdminNodeInstallCommand, AdminNotificationChannel, AdminNotificationDelivery, AdminNotificationType, AdminProbeTarget, AdminSettings, AdminTheme, HomeCardNode, LatencyPoint, ProbeType, ServiceTarget, StatePoint } from '../types'
 
 interface ApiSettings {
   site_title: string
@@ -188,7 +188,6 @@ interface ApiAdminNotificationChannel {
   id: string
   name: string
   destination: string
-  credential?: string
   credential_set: boolean
   enabled: boolean
   created_at: string
@@ -235,27 +234,6 @@ interface ApiAdminAlertRule {
   updated_at: string
 }
 
-interface ApiAdminAlertRuleState {
-  node_id: string
-  node_name: string
-  node_status: string
-  rule_id: string
-  rule_name: string
-  category: string
-  metric: string
-  comparator: string
-  threshold: number
-  threshold_unit: string
-  duration_sec: number
-  enabled: boolean
-  last_value: number | null
-  active: boolean
-  notification_event_type: string
-  notification_label: string
-  first_seen_at: string
-  last_seen_at: string
-  updated_at: string
-}
 
 export interface ApiAdminSettingsResponse {
   settings: ApiSettings
@@ -334,9 +312,6 @@ export interface ApiAdminNotificationChannelResponse {
   channel: ApiAdminNotificationChannel
 }
 
-export interface ApiAdminNotificationTypesResponse {
-  types: ApiAdminNotificationType[]
-}
 
 export interface ApiAdminNotificationTestResponse {
   delivery: ApiAdminNotificationDelivery
@@ -350,10 +325,6 @@ export interface ApiAdminAlertRulesResponse {
   rules: ApiAdminAlertRule[]
 }
 
-export interface ApiAdminAlertRuleStatesResponse {
-  states: ApiAdminAlertRuleState[] | null
-  active_count: number
-}
 
 export interface ApiAdminAlertRuleResponse {
   rule: ApiAdminAlertRule
@@ -395,18 +366,11 @@ export interface AdminNotificationChannelsData {
   channels: AdminNotificationChannel[]
 }
 
-export interface AdminNotificationTypesData {
-  types: AdminNotificationType[]
-}
 
 export interface AdminAlertRulesData {
   rules: AdminAlertRule[]
 }
 
-export interface AdminAlertRuleStatesData {
-  states: AdminAlertRuleState[]
-  activeCount: number
-}
 
 export interface AdminSettingsUpdateInput {
   siteTitle?: string
@@ -669,23 +633,6 @@ export async function updateAdminAccount(adminToken: string, username: string, c
   return { username: data.username, token: data.token }
 }
 
-export async function updateAdminPassword(adminToken: string, currentPassword: string, newPassword: string): Promise<AdminLoginData> {
-  const response = await fetch('/api/admin/v1/password', {
-    method: 'POST',
-    headers: {
-      Accept: 'application/json',
-      'Content-Type': 'application/json',
-      'X-Admin-Token': adminToken,
-    },
-    body: JSON.stringify({ current_password: currentPassword, new_password: newPassword }),
-  })
-  if (!response.ok) {
-    throw new Error(`admin password update failed: ${response.status}`)
-  }
-  const data = await response.json() as ApiAdminLoginResponse
-  return { username: data.username, token: data.token }
-}
-
 export async function fetchAdminSettings(adminToken: string): Promise<AdminSettings> {
   const response = await fetch('/api/admin/v1/settings', {
     headers: {
@@ -695,6 +642,23 @@ export async function fetchAdminSettings(adminToken: string): Promise<AdminSetti
   })
   if (!response.ok) {
     throw new Error(`admin settings request failed: ${response.status}`)
+  }
+  const data = await response.json() as ApiAdminSettingsResponse
+  return normalizeSettings(data.settings)
+}
+
+export async function updateAdminSettings(adminToken: string, input: AdminSettingsUpdateInput): Promise<AdminSettings> {
+  const response = await fetch('/api/admin/v1/settings', {
+    method: 'PATCH',
+    headers: {
+      Accept: 'application/json',
+      'Content-Type': 'application/json',
+      'X-Admin-Token': adminToken,
+    },
+    body: JSON.stringify(serializeAdminSettingsUpdate(input)),
+  })
+  if (!response.ok) {
+    throw new Error(`admin settings update failed: ${response.status}`)
   }
   const data = await response.json() as ApiAdminSettingsResponse
   return normalizeSettings(data.settings)
@@ -739,19 +703,6 @@ export async function fetchAdminNotificationChannels(adminToken: string): Promis
   return normalizeAdminNotificationChannels(await response.json() as ApiAdminNotificationChannelsResponse)
 }
 
-export async function fetchAdminNotificationTypes(adminToken: string): Promise<AdminNotificationTypesData> {
-  const response = await fetch('/api/admin/v1/notification-types', {
-    headers: {
-      Accept: 'application/json',
-      'X-Admin-Token': adminToken,
-    },
-  })
-  if (!response.ok) {
-    throw new Error(`admin notification types request failed: ${response.status}`)
-  }
-  return normalizeAdminNotificationTypes(await response.json() as ApiAdminNotificationTypesResponse)
-}
-
 export async function fetchAdminAlertRules(adminToken: string): Promise<AdminAlertRulesData> {
   const response = await fetch('/api/admin/v1/alert-rules', {
     headers: {
@@ -763,36 +714,6 @@ export async function fetchAdminAlertRules(adminToken: string): Promise<AdminAle
     throw new Error(`admin alert rules request failed: ${response.status}`)
   }
   return normalizeAdminAlertRules(await response.json() as ApiAdminAlertRulesResponse)
-}
-
-export async function fetchAdminAlertRuleStates(adminToken: string): Promise<AdminAlertRuleStatesData> {
-  const response = await fetch('/api/admin/v1/alert-rule-states', {
-    headers: {
-      Accept: 'application/json',
-      'X-Admin-Token': adminToken,
-    },
-  })
-  if (!response.ok) {
-    throw new Error(`admin alert rule states request failed: ${response.status}`)
-  }
-  return normalizeAdminAlertRuleStates(await response.json() as ApiAdminAlertRuleStatesResponse)
-}
-
-export async function updateAdminSettings(adminToken: string, input: AdminSettingsUpdateInput): Promise<AdminSettings> {
-  const response = await fetch('/api/admin/v1/settings', {
-    method: 'PATCH',
-    headers: {
-      Accept: 'application/json',
-      'Content-Type': 'application/json',
-      'X-Admin-Token': adminToken,
-    },
-    body: JSON.stringify(serializeAdminSettingsUpdate(input)),
-  })
-  if (!response.ok) {
-    throw new Error(`admin settings update failed: ${response.status}`)
-  }
-  const data = await response.json() as ApiAdminSettingsResponse
-  return normalizeSettings(data.settings)
 }
 
 export async function createAdminNode(adminToken: string, input: AdminNodeCreateInput): Promise<AdminNode> {
@@ -1066,22 +987,9 @@ export function normalizeAdminNotificationChannels(input: ApiAdminNotificationCh
   }
 }
 
-export function normalizeAdminNotificationTypes(input: ApiAdminNotificationTypesResponse): AdminNotificationTypesData {
-  return {
-    types: input.types.map(normalizeAdminNotificationType),
-  }
-}
-
 export function normalizeAdminAlertRules(input: ApiAdminAlertRulesResponse): AdminAlertRulesData {
   return {
     rules: (input.rules ?? []).map(normalizeAdminAlertRule),
-  }
-}
-
-export function normalizeAdminAlertRuleStates(input: ApiAdminAlertRuleStatesResponse): AdminAlertRuleStatesData {
-  return {
-    states: (input.states ?? []).map(normalizeAdminAlertRuleState),
-    activeCount: input.active_count ?? 0,
   }
 }
 
@@ -1417,7 +1325,6 @@ function normalizeAdminNotificationChannel(channel: ApiAdminNotificationChannel)
     id: channel.id,
     name: channel.name,
     destination: channel.destination,
-    credential: channel.credential,
     credentialSet: channel.credential_set,
     enabled: channel.enabled,
     createdAt: channel.created_at,
@@ -1468,29 +1375,5 @@ function normalizeAdminAlertRule(rule: ApiAdminAlertRule): AdminAlertRule {
     scopeNodeIds: rule.scope_node_ids ?? [],
     createdAt: rule.created_at,
     updatedAt: rule.updated_at,
-  }
-}
-
-function normalizeAdminAlertRuleState(state: ApiAdminAlertRuleState): AdminAlertRuleState {
-  return {
-    nodeId: state.node_id,
-    nodeName: state.node_name,
-    nodeStatus: state.node_status,
-    ruleId: state.rule_id,
-    ruleName: state.rule_name,
-    category: state.category,
-    metric: state.metric,
-    comparator: state.comparator,
-    threshold: state.threshold,
-    thresholdUnit: state.threshold_unit,
-    durationSec: state.duration_sec,
-    enabled: state.enabled,
-    lastValue: state.last_value ?? null,
-    active: state.active,
-    notificationEventType: state.notification_event_type,
-    notificationLabel: state.notification_label,
-    firstSeenAt: state.first_seen_at,
-    lastSeenAt: state.last_seen_at,
-    updatedAt: state.updated_at,
   }
 }

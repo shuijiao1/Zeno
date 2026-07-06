@@ -38,6 +38,24 @@ type handler struct {
 	summaryCacheUpdated  time.Time
 }
 
+const (
+	adminJSONBodyLimit      int64 = 64 << 10
+	agentStateJSONBodyLimit int64 = 64 << 10
+	agentProbeJSONBodyLimit int64 = 1 << 20
+)
+
+func decodeJSONBody(w http.ResponseWriter, r *http.Request, target any, limit int64, disallowUnknown bool) bool {
+	decoder := json.NewDecoder(http.MaxBytesReader(w, r.Body, limit))
+	if disallowUnknown {
+		decoder.DisallowUnknownFields()
+	}
+	if err := decoder.Decode(target); err != nil {
+		writeError(w, http.StatusBadRequest, "bad request")
+		return false
+	}
+	return true
+}
+
 type adminLoginLimiter struct {
 	mu       sync.Mutex
 	attempts map[string]adminLoginAttempt
@@ -124,15 +142,11 @@ func NewHandler(options ...HandlerOptions) http.Handler {
 	mux.HandleFunc("/api/admin/v1/login", h.handleAdminLogin)
 	mux.HandleFunc("/api/admin/v1/logout", h.handleAdminLogout)
 	mux.HandleFunc("/api/admin/v1/account", h.handleAdminAccount)
-	mux.HandleFunc("/api/admin/v1/password", h.handleAdminPassword)
 	mux.HandleFunc("/api/admin/v1/settings", h.handleAdminSettings)
 	mux.HandleFunc("/api/admin/v1/notification-channels", h.handleAdminNotificationChannels)
 	mux.HandleFunc("/api/admin/v1/notification-channels/", h.handleAdminNotificationChannelResource)
-	mux.HandleFunc("/api/admin/v1/notification-deliveries", h.handleAdminNotificationDeliveries)
 	mux.HandleFunc("/api/admin/v1/alert-rules", h.handleAdminAlertRules)
-	mux.HandleFunc("/api/admin/v1/alert-rule-states", h.handleAdminAlertRuleStates)
 	mux.HandleFunc("/api/admin/v1/alert-rules/", h.handleAdminAlertRuleResource)
-	mux.HandleFunc("/api/admin/v1/notification-types", h.handleAdminNotificationTypes)
 	mux.HandleFunc("/api/admin/v1/notification-types/", h.handleAdminNotificationTypeResource)
 	mux.HandleFunc("/api/admin/v1/probe-targets", h.handleAdminProbeTargets)
 	mux.HandleFunc("/api/admin/v1/probe-targets/", h.handleAdminProbeTargetResource)
@@ -209,6 +223,9 @@ func (h *handler) handleAgentBinary(w http.ResponseWriter, r *http.Request) {
 
 func requestBaseURL(r *http.Request) string {
 	proto := strings.TrimSpace(r.Header.Get("X-Forwarded-Proto"))
+	if proto != "http" && proto != "https" {
+		proto = ""
+	}
 	if proto == "" {
 		if r.TLS != nil {
 			proto = "https"
@@ -216,10 +233,7 @@ func requestBaseURL(r *http.Request) string {
 			proto = "http"
 		}
 	}
-	host := strings.TrimSpace(r.Header.Get("X-Forwarded-Host"))
-	if host == "" {
-		host = r.Host
-	}
+	host := strings.TrimSpace(r.Host)
 	if host == "" {
 		host = "127.0.0.1:18980"
 	}

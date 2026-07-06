@@ -3,7 +3,10 @@ package main
 import (
 	"context"
 	"flag"
+	"fmt"
 	"log"
+	"net"
+	"net/url"
 	"os"
 	"strings"
 	"time"
@@ -24,6 +27,7 @@ type config struct {
 	Once                    bool
 	Version                 string
 	IdentityRefreshInterval time.Duration
+	AllowInsecureHTTP       bool
 }
 
 func main() {
@@ -36,6 +40,7 @@ func main() {
 	flag.BoolVar(&cfg.Once, "once", false, "collect and report once, then exit")
 	flag.StringVar(&cfg.Version, "version", defaultVersion, "agent version string reported to controller")
 	flag.DurationVar(&cfg.IdentityRefreshInterval, "identity-refresh-interval", 6*time.Hour, "public IPv4/IPv6 and GeoIP refresh interval; best-effort and cached")
+	flag.BoolVar(&cfg.AllowInsecureHTTP, "allow-insecure-http", false, "allow bearer-token reporting to a non-local plain HTTP controller URL")
 	flag.Parse()
 
 	token, err := readToken(cfg.Token, cfg.TokenFile)
@@ -49,6 +54,9 @@ func main() {
 }
 
 func run(ctx context.Context, cfg config) error {
+	if err := validateControllerURL(cfg.ControllerURL, cfg.AllowInsecureHTTP); err != nil {
+		return err
+	}
 	client := agent.NewClient(cfg.ControllerURL, cfg.NodeID, cfg.Token)
 	collector := agent.NewMetricsCollector()
 	scheduler := agent.NewProbeScheduler()
@@ -83,6 +91,31 @@ func run(ctx context.Context, cfg config) error {
 			}
 		}
 	}
+}
+
+func validateControllerURL(rawURL string, allowInsecure bool) error {
+	parsed, err := url.Parse(strings.TrimSpace(rawURL))
+	if err != nil {
+		return err
+	}
+	if parsed.Scheme == "" || parsed.Host == "" {
+		return fmt.Errorf("controller URL %q must be absolute", rawURL)
+	}
+	if parsed.Scheme != "http" {
+		return nil
+	}
+	host := parsed.Hostname()
+	if host == "localhost" || host == "127.0.0.1" || host == "::1" {
+		return nil
+	}
+	if ip := net.ParseIP(host); ip != nil && ip.IsLoopback() {
+		return nil
+	}
+	if allowInsecure {
+		log.Printf("warning: reporting bearer token over insecure HTTP to %s", parsed.Host)
+		return nil
+	}
+	return fmt.Errorf("controller URL %q uses insecure HTTP; use HTTPS or pass -allow-insecure-http for trusted private testing", rawURL)
 }
 
 type networkIdentityDiscoverer interface {

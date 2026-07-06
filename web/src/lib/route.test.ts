@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { parseDashboardRoute, servicePath } from './route'
+import { parseDashboardRoute } from './route'
 
 describe('parseDashboardRoute', () => {
   it('keeps the public home page on slash-like paths', () => {
@@ -20,6 +20,5 @@ describe('parseDashboardRoute', () => {
   it('extracts decoded service target ids from service history URLs', () => {
     expect(parseDashboardRoute('/service/google')).toEqual({ kind: 'service', targetId: 'google' })
     expect(parseDashboardRoute('/service/Akari%20HK')).toEqual({ kind: 'service', targetId: 'Akari HK' })
-    expect(servicePath('Akari HK')).toBe('/service/Akari%20HK')
   })
 })

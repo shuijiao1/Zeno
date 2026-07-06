@@ -665,13 +665,6 @@ func TestAgentHeartbeatDoesNotDispatchRecoveryAfterStaleHeartbeatOffline(t *test
 	if len(paths) != 0 || len(forms) != 0 {
 		t.Fatalf("telegram calls paths=%+v forms=%+v, want no recovery notification", paths, forms)
 	}
-	deliveries, err := store.AdminNotificationDeliveries(ctx, 20)
-	if err != nil {
-		t.Fatalf("list notification deliveries: %v", err)
-	}
-	if len(deliveries) != 0 {
-		t.Fatalf("deliveries = %+v, want no recovery delivery", deliveries)
-	}
 }
 
 func TestAgentHeartbeatTransitionDoesNotDispatchOnlineWhenOutOfOrderHeartbeatStaysPubliclyOffline(t *testing.T) {
@@ -772,74 +765,6 @@ func TestAgentHeartbeatNotificationFailureDoesNotRejectHeartbeat(t *testing.T) {
 	}
 	if status != "online" {
 		t.Fatalf("stored node status = %q, want heartbeat status persisted despite notification failure", status)
-	}
-}
-
-func TestAgentHeartbeatRecordsNotificationDeliveryHistoryWithoutCredentialLeak(t *testing.T) {
-	store, err := OpenSQLiteStore(filepath.Join(t.TempDir(), "zeno.db"))
-	if err != nil {
-		t.Fatalf("open sqlite store: %v", err)
-	}
-	defer store.Close()
-	ctx := context.Background()
-	if err := store.SeedPreviewData(ctx, PreviewSeedOptions{NodeID: "hytron", DisplayName: "Hytron", CountryCode: "HK", AgentToken: "test-agent-token"}); err != nil {
-		t.Fatalf("seed preview data: %v", err)
-	}
-
-	telegramAPI := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusInternalServerError)
-	}))
-	defer telegramAPI.Close()
-	enabled := true
-	if _, err := store.CreateAdminNotificationChannel(ctx, AdminNotificationChannelCreateRequest{
-		ID:          "ops-telegram",
-		Name:        "Ops Telegram",
-		Destination: "7579942307",
-		Credential:  "telegram-bot-credential-value",
-		Enabled:     &enabled,
-	}); err != nil {
-		t.Fatalf("create notification channel: %v", err)
-	}
-	if _, err := store.UpdateAdminNotificationType(ctx, "node_offline", AdminNotificationTypeUpdateRequest{Enabled: &enabled}); err != nil {
-		t.Fatalf("enable notification type: %v", err)
-	}
-
-	now := time.Now().UTC().Truncate(time.Second)
-	if _, err := store.db.ExecContext(ctx, `UPDATE nodes SET status = 'online', last_seen_at = ? WHERE id = 'hytron'`, now.Unix()); err != nil {
-		t.Fatalf("set fresh heartbeat: %v", err)
-	}
-	postAgentHeartbeat(t, NewHandler(HandlerOptions{Store: store, NotificationClient: telegramAPI.Client(), TelegramAPIBaseURL: telegramAPI.URL}), now.Add(-nodeHeartbeatOfflineAfter-time.Minute).Unix(), "online")
-	waitUntil(t, time.Second, func() bool {
-		deliveries, err := store.AdminNotificationDeliveries(ctx, 20)
-		return err == nil && len(deliveries) == 1
-	})
-	deliveries, err := store.AdminNotificationDeliveries(ctx, 20)
-	if err != nil {
-		t.Fatalf("list notification deliveries: %v", err)
-	}
-	if len(deliveries) != 1 {
-		t.Fatalf("deliveries len = %d, want one recorded dispatch", len(deliveries))
-	}
-	delivery := deliveries[0]
-	if delivery.EventType != "node_offline" || delivery.Label != "离线" || delivery.ChannelID != "ops-telegram" || delivery.ChannelName != "Ops Telegram" || delivery.NodeID != "hytron" || delivery.NodeName != "Hytron" || delivery.PreviousStatus != "online" || delivery.Status != "offline" || delivery.Success {
-		t.Fatalf("delivery = %+v, want failed node_offline telegram delivery metadata", delivery)
-	}
-	if delivery.Error == "" || strings.Contains(delivery.Error, "telegram-bot-credential-value") || strings.Contains(delivery.Error, telegramAPI.URL) {
-		t.Fatalf("delivery error should be sanitized and useful, got %q", delivery.Error)
-	}
-
-	handler := NewHandler(HandlerOptions{Store: store, AdminTokenHash: HashAdminToken("admin-pass")})
-	recorder := httptest.NewRecorder()
-	request := httptest.NewRequest(http.MethodGet, "/api/admin/v1/notification-deliveries", nil)
-	request.Header.Set("X-Admin-Token", "admin-pass")
-	handler.ServeHTTP(recorder, request)
-	if recorder.Code != http.StatusOK {
-		t.Fatalf("history status = %d, want 200; body=%s", recorder.Code, recorder.Body.String())
-	}
-	raw := recorder.Body.String()
-	lower := bytes.ToLower([]byte(raw))
-	if bytes.Contains(lower, []byte("token")) || bytes.Contains(lower, []byte("secret")) || bytes.Contains(lower, []byte("hash")) || bytes.Contains(lower, []byte("channel_type")) || strings.Contains(raw, "telegram-bot-credential-value") || strings.Contains(raw, telegramAPI.URL) {
-		t.Fatalf("notification delivery history leaked sensitive or channel-type data: %s", raw)
 	}
 }
 

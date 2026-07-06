@@ -22,6 +22,10 @@ func OpenSQLiteStore(path string) (*SQLiteStore, error) {
 		return nil, err
 	}
 	db.SetMaxOpenConns(1)
+	if _, err := db.Exec(`PRAGMA foreign_keys = ON;`); err != nil {
+		_ = db.Close()
+		return nil, err
+	}
 	store := &SQLiteStore{db: db}
 	if err := store.ensureSchema(context.Background()); err != nil {
 		_ = db.Close()
@@ -36,6 +40,7 @@ func (s *SQLiteStore) Close() error {
 
 func (s *SQLiteStore) ensureSchema(ctx context.Context) error {
 	statements := []string{
+		`PRAGMA foreign_keys = ON;`,
 		`PRAGMA journal_mode = WAL;`,
 		`PRAGMA busy_timeout = 5000;`,
 		`CREATE TABLE IF NOT EXISTS nodes (
@@ -160,7 +165,6 @@ func (s *SQLiteStore) ensureSchema(ctx context.Context) error {
 		`CREATE TABLE IF NOT EXISTS notification_channels (
 			id TEXT PRIMARY KEY,
 			name TEXT NOT NULL,
-			type TEXT NOT NULL,
 			destination TEXT NOT NULL,
 			credential TEXT NOT NULL,
 			enabled INTEGER NOT NULL DEFAULT 1,
@@ -172,22 +176,6 @@ func (s *SQLiteStore) ensureSchema(ctx context.Context) error {
 			enabled INTEGER NOT NULL DEFAULT 0,
 			updated_at INTEGER NOT NULL
 		);`,
-		`CREATE TABLE IF NOT EXISTS notification_deliveries (
-			id INTEGER PRIMARY KEY AUTOINCREMENT,
-			event_type TEXT NOT NULL,
-			label TEXT NOT NULL,
-			node_id TEXT NOT NULL,
-			node_name TEXT NOT NULL,
-			previous_status TEXT NOT NULL,
-			status TEXT NOT NULL,
-			channel_id TEXT NOT NULL,
-			channel_name TEXT NOT NULL,
-			channel_type TEXT NOT NULL,
-			success INTEGER NOT NULL,
-			error TEXT NOT NULL DEFAULT '',
-			created_at INTEGER NOT NULL
-		);`,
-		`CREATE INDEX IF NOT EXISTS idx_notification_deliveries_created_at ON notification_deliveries(created_at DESC, id DESC);`,
 		`CREATE TABLE IF NOT EXISTS alert_rules (
 			id TEXT PRIMARY KEY,
 			name TEXT NOT NULL,
@@ -239,6 +227,12 @@ func (s *SQLiteStore) ensureSchema(ctx context.Context) error {
 			return err
 		}
 	}
+	if err := s.pruneRetiredTables(ctx); err != nil {
+		return err
+	}
+	if err := s.migrateNotificationChannels(ctx); err != nil {
+		return err
+	}
 	stateSampleColumns := map[string]string{
 		"load1":                "REAL",
 		"load5":                "REAL",
@@ -289,6 +283,58 @@ func (s *SQLiteStore) ensureSchema(ctx context.Context) error {
 	if err := s.pruneRetiredNotificationConfig(ctx); err != nil {
 		return err
 	}
+	return nil
+}
+
+func (s *SQLiteStore) pruneRetiredTables(ctx context.Context) error {
+	_, err := s.db.ExecContext(ctx, `DROP TABLE IF EXISTS notification_deliveries`)
+	return err
+}
+
+func (s *SQLiteStore) migrateNotificationChannels(ctx context.Context) error {
+	hasType, err := s.columnExists(ctx, "notification_channels", "type")
+	if err != nil {
+		return err
+	}
+	if !hasType {
+		return nil
+	}
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer rollbackUnlessCommitted(tx)
+	if _, err := tx.ExecContext(ctx, `
+		CREATE TABLE notification_channels_new (
+			id TEXT PRIMARY KEY,
+			name TEXT NOT NULL,
+			destination TEXT NOT NULL,
+			credential TEXT NOT NULL,
+			enabled INTEGER NOT NULL DEFAULT 1,
+			created_at INTEGER NOT NULL,
+			updated_at INTEGER NOT NULL
+		)
+	`); err != nil {
+		return err
+	}
+	if _, err := tx.ExecContext(ctx, `
+		INSERT OR IGNORE INTO notification_channels_new (id, name, destination, credential, enabled, created_at, updated_at)
+		SELECT id, name, destination, credential, enabled, created_at, updated_at
+		FROM notification_channels
+		WHERE type = 'telegram' OR TRIM(COALESCE(type, '')) = ''
+	`); err != nil {
+		return err
+	}
+	if _, err := tx.ExecContext(ctx, `DROP TABLE notification_channels`); err != nil {
+		return err
+	}
+	if _, err := tx.ExecContext(ctx, `ALTER TABLE notification_channels_new RENAME TO notification_channels`); err != nil {
+		return err
+	}
+	if err := tx.Commit(); err != nil {
+		return err
+	}
+	tx = nil
 	return nil
 }
 
@@ -1605,15 +1651,6 @@ func (s *SQLiteStore) statePoints(ctx context.Context, nodeID string, window lat
 		return nil, err
 	}
 	return points, nil
-}
-
-func preferredSummaryNodeID(nodes []Node) string {
-	for _, node := range nodes {
-		if node.ID == "hytron" {
-			return node.ID
-		}
-	}
-	return nodes[0].ID
 }
 
 func publicNodeStatus(status string, lastSeenAt sql.NullInt64, now time.Time) string {

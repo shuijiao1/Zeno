@@ -54,14 +54,6 @@ func buildController(config handlerConfig) (*controllerRuntime, error) {
 	return &controllerRuntime{Handler: api.NewHandler(options), Store: store, Cleanup: cleanup}, nil
 }
 
-func buildHandler(config handlerConfig) (http.Handler, func() error, error) {
-	runtime, err := buildController(config)
-	if err != nil {
-		return nil, func() error { return nil }, err
-	}
-	return runtime.Handler, runtime.Cleanup, nil
-}
-
 func readSecret(secretValue, secretFile string) (string, error) {
 	if secretFile != "" {
 		content, err := os.ReadFile(secretFile)
@@ -138,7 +130,16 @@ func main() {
 	if *seedPreview {
 		log.Printf("seeded preview data for node %s", *nodeID)
 	}
-	if err := http.ListenAndServe(*addr, runtime.Handler); err != nil {
+	server := &http.Server{
+		Addr:              *addr,
+		Handler:           runtime.Handler,
+		ReadHeaderTimeout: 5 * time.Second,
+		ReadTimeout:       15 * time.Second,
+		WriteTimeout:      30 * time.Second,
+		IdleTimeout:       60 * time.Second,
+		MaxHeaderBytes:    16 << 10,
+	}
+	if err := server.ListenAndServe(); err != nil {
 		log.Fatal(err)
 	}
 }

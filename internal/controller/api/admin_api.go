@@ -2,7 +2,6 @@ package api
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"net/http"
 	"strings"
@@ -14,12 +13,8 @@ type adminStore interface {
 	AdminNodes(ctx context.Context) ([]AdminNode, error)
 	AdminProbeTargets(ctx context.Context) ([]AdminProbeTarget, error)
 	AdminNotificationChannels(ctx context.Context) ([]AdminNotificationChannel, error)
-	AdminNotificationTypes(ctx context.Context) ([]AdminNotificationType, error)
-	AdminNotificationDeliveries(ctx context.Context, limit int) ([]AdminNotificationDelivery, error)
 	AdminAlertRules(ctx context.Context) ([]AdminAlertRule, error)
-	AdminAlertRuleStates(ctx context.Context) ([]AdminAlertRuleState, error)
 	AdminNotificationDispatchChannel(ctx context.Context, channelID string) (notificationDispatchChannel, error)
-	RecordNotificationDelivery(ctx context.Context, event notificationEvent, channel notificationDispatchChannel, success bool, deliveryError string) (AdminNotificationDelivery, error)
 	CreateAdminNode(ctx context.Context, create AdminNodeCreateRequest) (AdminNode, error)
 	UpdateAdminNode(ctx context.Context, nodeID string, update AdminNodeUpdateRequest) (AdminNode, error)
 	DeleteAdminNode(ctx context.Context, nodeID string) error
@@ -40,7 +35,6 @@ type adminAuthStore interface {
 	RevokeAdminSession(ctx context.Context, token string) error
 	AdminAccount(ctx context.Context) (AdminAccount, error)
 	UpdateAdminAccount(ctx context.Context, username, currentPassword, newPassword, fallbackHash string) (AdminSession, error)
-	UpdateAdminPassword(ctx context.Context, currentPassword, newPassword, fallbackHash string) (AdminSession, error)
 	AdminAccountConfigured(ctx context.Context) (bool, error)
 }
 
@@ -54,10 +48,7 @@ func (h *handler) handleAdminLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var request AdminLoginRequest
-	decoder := json.NewDecoder(r.Body)
-	decoder.DisallowUnknownFields()
-	if err := decoder.Decode(&request); err != nil {
-		writeError(w, http.StatusBadRequest, "bad request")
+	if !decodeJSONBody(w, r, &request, adminJSONBodyLimit, true) {
 		return
 	}
 	key := adminLoginRateLimitKey(r, request.Username)
@@ -127,10 +118,7 @@ func (h *handler) handleAdminAccount(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusOK, AdminAccountResponse{Account: account})
 	case http.MethodPost:
 		var request AdminAccountUpdateRequest
-		decoder := json.NewDecoder(r.Body)
-		decoder.DisallowUnknownFields()
-		if err := decoder.Decode(&request); err != nil {
-			writeError(w, http.StatusBadRequest, "bad request")
+		if !decodeJSONBody(w, r, &request, adminJSONBodyLimit, true) {
 			return
 		}
 		session, err := authStore.UpdateAdminAccount(r.Context(), request.Username, request.CurrentPassword, request.NewPassword, h.adminTokenHash)
@@ -142,34 +130,6 @@ func (h *handler) handleAdminAccount(w http.ResponseWriter, r *http.Request) {
 	default:
 		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
 	}
-}
-
-func (h *handler) handleAdminPassword(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
-		return
-	}
-	if _, ok := h.authorizeAdminRequest(w, r); !ok {
-		return
-	}
-	authStore, ok := h.store.(adminAuthStore)
-	if !ok {
-		writeError(w, http.StatusNotFound, "not found")
-		return
-	}
-	var request AdminPasswordUpdateRequest
-	decoder := json.NewDecoder(r.Body)
-	decoder.DisallowUnknownFields()
-	if err := decoder.Decode(&request); err != nil {
-		writeError(w, http.StatusBadRequest, "bad request")
-		return
-	}
-	session, err := authStore.UpdateAdminPassword(r.Context(), request.CurrentPassword, request.NewPassword, h.adminTokenHash)
-	if err != nil {
-		writeAdminError(w, err)
-		return
-	}
-	writeJSON(w, http.StatusOK, AdminLoginResponse{Username: session.Username, Token: session.Token})
 }
 
 func (h *handler) handleAdminSettings(w http.ResponseWriter, r *http.Request) {
@@ -187,10 +147,7 @@ func (h *handler) handleAdminSettings(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusOK, AdminSettingsResponse{Settings: settings})
 	case http.MethodPatch:
 		var update AdminSettingsUpdateRequest
-		decoder := json.NewDecoder(r.Body)
-		decoder.DisallowUnknownFields()
-		if err := decoder.Decode(&update); err != nil {
-			writeError(w, http.StatusBadRequest, "bad request")
+		if !decodeJSONBody(w, r, &update, adminJSONBodyLimit, true) {
 			return
 		}
 		settings, err := store.UpdateAdminSettings(r.Context(), update)
@@ -219,10 +176,7 @@ func (h *handler) handleAdminProbeTargets(w http.ResponseWriter, r *http.Request
 		writeJSON(w, http.StatusOK, AdminProbeTargetsResponse{Targets: targets})
 	case http.MethodPost:
 		var create AdminProbeTargetCreateRequest
-		decoder := json.NewDecoder(r.Body)
-		decoder.DisallowUnknownFields()
-		if err := decoder.Decode(&create); err != nil {
-			writeError(w, http.StatusBadRequest, "bad request")
+		if !decodeJSONBody(w, r, &create, adminJSONBodyLimit, true) {
 			return
 		}
 		target, err := store.CreateAdminProbeTarget(r.Context(), create)
@@ -260,10 +214,7 @@ func (h *handler) handleAdminProbeTargetResource(w http.ResponseWriter, r *http.
 		return
 	}
 	var update AdminProbeTargetUpdateRequest
-	decoder := json.NewDecoder(r.Body)
-	decoder.DisallowUnknownFields()
-	if err := decoder.Decode(&update); err != nil {
-		writeError(w, http.StatusBadRequest, "bad request")
+	if !decodeJSONBody(w, r, &update, adminJSONBodyLimit, true) {
 		return
 	}
 	target, err := store.UpdateAdminProbeTarget(r.Context(), parts[0], update)
@@ -289,10 +240,7 @@ func (h *handler) handleAdminNodes(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusOK, AdminNodesResponse{Nodes: nodes})
 	case http.MethodPost:
 		var create AdminNodeCreateRequest
-		decoder := json.NewDecoder(r.Body)
-		decoder.DisallowUnknownFields()
-		if err := decoder.Decode(&create); err != nil {
-			writeError(w, http.StatusBadRequest, "bad request")
+		if !decodeJSONBody(w, r, &create, adminJSONBodyLimit, true) {
 			return
 		}
 		node, err := store.CreateAdminNode(r.Context(), create)
@@ -335,10 +283,7 @@ func (h *handler) handleAdminNodeResource(w http.ResponseWriter, r *http.Request
 		return
 	}
 	var update AdminNodeUpdateRequest
-	decoder := json.NewDecoder(r.Body)
-	decoder.DisallowUnknownFields()
-	if err := decoder.Decode(&update); err != nil {
-		writeError(w, http.StatusBadRequest, "bad request")
+	if !decodeJSONBody(w, r, &update, adminJSONBodyLimit, true) {
 		return
 	}
 	node, err := store.UpdateAdminNode(r.Context(), nodeID, update)

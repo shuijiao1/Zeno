@@ -2,9 +2,7 @@ package api
 
 import (
 	"context"
-	"encoding/json"
 	"net/http"
-	"strconv"
 	"strings"
 	"time"
 )
@@ -24,10 +22,7 @@ func (h *handler) handleAdminNotificationChannels(w http.ResponseWriter, r *http
 		writeJSON(w, http.StatusOK, AdminNotificationChannelsResponse{Channels: channels})
 	case http.MethodPost:
 		var create AdminNotificationChannelCreateRequest
-		decoder := json.NewDecoder(r.Body)
-		decoder.DisallowUnknownFields()
-		if err := decoder.Decode(&create); err != nil {
-			writeError(w, http.StatusBadRequest, "bad request")
+		if !decodeJSONBody(w, r, &create, adminJSONBodyLimit, true) {
 			return
 		}
 		channel, err := store.CreateAdminNotificationChannel(r.Context(), create)
@@ -69,10 +64,7 @@ func (h *handler) handleAdminNotificationChannelResource(w http.ResponseWriter, 
 		return
 	}
 	var update AdminNotificationChannelUpdateRequest
-	decoder := json.NewDecoder(r.Body)
-	decoder.DisallowUnknownFields()
-	if err := decoder.Decode(&update); err != nil {
-		writeError(w, http.StatusBadRequest, "bad request")
+	if !decodeJSONBody(w, r, &update, adminJSONBodyLimit, true) {
 		return
 	}
 	channel, err := store.UpdateAdminNotificationChannel(r.Context(), parts[0], update)
@@ -102,10 +94,18 @@ func (h *handler) handleAdminNotificationChannelTest(w http.ResponseWriter, r *h
 	sendCtx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
 	defer cancel()
 	sendErr := h.notificationSender.Send(sendCtx, channel, event)
-	delivery, err := store.RecordNotificationDelivery(r.Context(), event, channel, sendErr == nil, sanitizeNotificationDeliveryError(sendErr))
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, "internal error")
-		return
+	delivery := AdminNotificationDelivery{
+		EventType:      event.EventType,
+		Label:          event.Label,
+		NodeID:         event.NodeID,
+		NodeName:       event.NodeName,
+		PreviousStatus: event.PreviousStatus,
+		Status:         event.Status,
+		ChannelID:      channel.ID,
+		ChannelName:    channel.Name,
+		Success:        sendErr == nil,
+		Error:          sanitizeNotificationDeliveryError(sendErr),
+		CreatedAt:      now.Format(time.RFC3339),
 	}
 	writeJSON(w, http.StatusOK, AdminNotificationTestResponse{Delivery: delivery})
 }
@@ -120,49 +120,6 @@ func adminTestNotificationEvent(ts time.Time) notificationEvent {
 		PreviousStatus: "test",
 		TS:             ts.Format(time.RFC3339),
 	}
-}
-
-func (h *handler) handleAdminNotificationTypes(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet {
-		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
-		return
-	}
-	store, ok := h.authorizeAdminRequest(w, r)
-	if !ok {
-		return
-	}
-	types, err := store.AdminNotificationTypes(r.Context())
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, "internal error")
-		return
-	}
-	writeJSON(w, http.StatusOK, AdminNotificationTypesResponse{Types: types})
-}
-
-func (h *handler) handleAdminNotificationDeliveries(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet {
-		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
-		return
-	}
-	store, ok := h.authorizeAdminRequest(w, r)
-	if !ok {
-		return
-	}
-	limit := 50
-	if rawLimit := strings.TrimSpace(r.URL.Query().Get("limit")); rawLimit != "" {
-		parsed, err := strconv.Atoi(rawLimit)
-		if err != nil || parsed <= 0 {
-			writeError(w, http.StatusBadRequest, "bad request")
-			return
-		}
-		limit = parsed
-	}
-	deliveries, err := store.AdminNotificationDeliveries(r.Context(), limit)
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, "internal error")
-		return
-	}
-	writeJSON(w, http.StatusOK, AdminNotificationDeliveriesResponse{Deliveries: deliveries})
 }
 
 func (h *handler) handleAdminNotificationTypeResource(w http.ResponseWriter, r *http.Request) {
@@ -181,10 +138,7 @@ func (h *handler) handleAdminNotificationTypeResource(w http.ResponseWriter, r *
 		return
 	}
 	var update AdminNotificationTypeUpdateRequest
-	decoder := json.NewDecoder(r.Body)
-	decoder.DisallowUnknownFields()
-	if err := decoder.Decode(&update); err != nil {
-		writeError(w, http.StatusBadRequest, "bad request")
+	if !decodeJSONBody(w, r, &update, adminJSONBodyLimit, true) {
 		return
 	}
 	notificationType, err := store.UpdateAdminNotificationType(r.Context(), parts[0], update)

@@ -168,7 +168,6 @@ export interface AdminNotificationChannel {
   id: string
   name: string
   destination: string
-  credential?: string
   credentialSet: boolean
   enabled: boolean
   createdAt: string
@@ -212,27 +211,5 @@ export interface AdminAlertRule {
   description: string
   scopeNodeIds: string[]
   createdAt: string
-  updatedAt: string
-}
-
-export interface AdminAlertRuleState {
-  nodeId: string
-  nodeName: string
-  nodeStatus: string
-  ruleId: string
-  ruleName: string
-  category: string
-  metric: string
-  comparator: string
-  threshold: number
-  thresholdUnit: string
-  durationSec: number
-  enabled: boolean
-  lastValue: number | null
-  active: boolean
-  notificationEventType: string
-  notificationLabel: string
-  firstSeenAt: string
-  lastSeenAt: string
   updatedAt: string
 }

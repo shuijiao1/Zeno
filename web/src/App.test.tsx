@@ -391,15 +391,11 @@ describe('AdminDashboard', () => {
     expect(html).toContain('测试发送')
     expect(html).not.toContain('zeno-telegram')
     expect(html).not.toContain('7579942307')
-    expect(html).not.toContain('最近发送')
-    expect(html).not.toContain('发送失败')
-    expect(html).not.toContain('telegram returned status 500')
-    expect(html).not.toContain('后续再接入')
     expect(html).not.toContain('telegram-bot-secret')
     expect(html).not.toContain('告警')
   })
 
-  it('renders notification type triggers without current-hit or delivery history sections', () => {
+  it('renders notification type triggers in the notifications section', () => {
     const html = renderAdmin('notifications')
 
     expect(html).toContain('通知类型')
@@ -415,9 +411,6 @@ describe('AdminDashboard', () => {
     expect(html).not.toContain('移除')
     expect(html).not.toContain('cpu_high · 资源')
     expect(html).not.toContain('触发条件</h4>')
-    expect(html).not.toContain('当前异常')
-    expect(html).not.toContain('当前值 95.25%')
-    expect(html).not.toContain('通知：异常')
     expect(html).not.toContain('告警')
     expect(html).not.toContain('telegram-bot-secret')
   })

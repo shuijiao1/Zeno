@@ -70,48 +70,6 @@ func (s *SQLiteStore) RecordAgentHeartbeatTransition(ctx context.Context, nodeID
 	return notificationStatusTransition{Previous: previous, Current: current}, nil
 }
 
-func (s *SQLiteStore) RecordAgentProbeHealthTransition(ctx context.Context, nodeID string, ts time.Time, status string) (notificationStatusTransition, error) {
-	now := time.Now().UTC()
-	nowUnix := now.Unix()
-	seenAt := ts.UTC().Unix()
-	tx, err := s.db.BeginTx(ctx, nil)
-	if err != nil {
-		return notificationStatusTransition{}, err
-	}
-	defer rollbackUnlessCommitted(tx)
-
-	var previous notificationNodeSnapshot
-	var storedStatus string
-	var lastSeenAt sql.NullInt64
-	if err := tx.QueryRowContext(ctx, `
-		SELECT id, display_name, status, last_seen_at
-		FROM nodes
-		WHERE id = ? AND disabled = 0
-	`, nodeID).Scan(&previous.ID, &previous.DisplayName, &storedStatus, &lastSeenAt); err != nil {
-		if err == sql.ErrNoRows {
-			return notificationStatusTransition{}, errNodeNotFound
-		}
-		return notificationStatusTransition{}, err
-	}
-	previous.Status = publicNodeStatus(storedStatus, lastSeenAt, now)
-	current := notificationNodeSnapshot{ID: previous.ID, DisplayName: previous.DisplayName}
-
-	if _, err := tx.ExecContext(ctx, `
-		UPDATE nodes
-		SET status = ?, last_seen_at = ?, updated_at = ?
-		WHERE id = ? AND disabled = 0
-	`, status, seenAt, nowUnix, nodeID); err != nil {
-		return notificationStatusTransition{}, err
-	}
-	current.Status = publicNodeStatus(status, sql.NullInt64{Int64: seenAt, Valid: true}, now)
-
-	if err := tx.Commit(); err != nil {
-		return notificationStatusTransition{}, err
-	}
-	tx = nil
-	return notificationStatusTransition{Previous: previous, Current: current}, nil
-}
-
 func (s *SQLiteStore) UpsertAgentHost(ctx context.Context, nodeID string, host AgentHostRequest) error {
 	now := time.Now().UTC().Unix()
 	tx, err := s.db.BeginTx(ctx, nil)

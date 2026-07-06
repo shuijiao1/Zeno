@@ -7,16 +7,8 @@ import (
 	"time"
 )
 
-type probeAlertRuleTransitionStore interface {
-	RecordAgentProbeAlertRuleTransition(ctx context.Context, nodeID string, ts time.Time, rounds []preparedAgentProbeRound) (notificationStatusTransition, error)
-}
-
 type stateAlertRuleTransitionStore interface {
 	RecordAgentStateAlertRuleTransition(ctx context.Context, nodeID string, ts time.Time, state AgentStateRequest) (notificationStatusTransition, error)
-}
-
-func (s *SQLiteStore) RecordAgentProbeAlertRuleTransition(ctx context.Context, nodeID string, ts time.Time, rounds []preparedAgentProbeRound) (notificationStatusTransition, error) {
-	return notificationStatusTransition{}, nil
 }
 
 func (s *SQLiteStore) RecordAgentStateAlertRuleTransition(ctx context.Context, nodeID string, ts time.Time, state AgentStateRequest) (notificationStatusTransition, error) {

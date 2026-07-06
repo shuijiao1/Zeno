@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { createAdminNode, createAdminNotificationChannel, createAdminProbeTarget, deleteAdminNode, deleteAdminNotificationChannel, deleteAdminProbeTarget, fetchAdminAccount, fetchAdminAlertRules, fetchAdminAlertRuleStates, fetchAdminNodes, fetchAdminNotificationChannels, fetchAdminNotificationTypes, fetchAdminProbeTargets, fetchAdminSettings, fetchPublicSettings, fetchServiceLatency, loginAdmin, logoutAdmin, normalizeAdminAlertRules, normalizeAdminAlertRuleStates, normalizeAdminNodes, normalizeAdminNotificationChannels, normalizeAdminNotificationTypes, normalizeAdminProbeTargets, normalizeSettings, normalizeNodeLatency, normalizeNodeState, normalizeServiceLatency, normalizeSummary, requestAdminNodeInstallCommand, subscribeNodeLatency, subscribeNodeState, subscribeServiceLatency, subscribeSummary, testAdminNotificationChannel, updateAdminAccount, updateAdminAlertRule, updateAdminNode, updateAdminNotificationChannel, updateAdminNotificationType, updateAdminPassword, updateAdminProbeTarget, updateAdminSettings } from './client'
+import { createAdminNode, createAdminNotificationChannel, createAdminProbeTarget, deleteAdminNode, deleteAdminNotificationChannel, deleteAdminProbeTarget, fetchAdminAccount, fetchAdminAlertRules, fetchAdminNodes, fetchAdminNotificationChannels, fetchAdminProbeTargets, fetchAdminSettings, fetchPublicSettings, fetchServiceLatency, loginAdmin, logoutAdmin, normalizeAdminAlertRules, normalizeAdminNodes, normalizeAdminNotificationChannels, normalizeAdminProbeTargets, normalizeSettings, normalizeNodeLatency, normalizeNodeState, normalizeServiceLatency, normalizeSummary, requestAdminNodeInstallCommand, subscribeNodeLatency, subscribeNodeState, subscribeServiceLatency, subscribeSummary, testAdminNotificationChannel, updateAdminAccount, updateAdminAlertRule, updateAdminNode, updateAdminNotificationChannel, updateAdminNotificationType, updateAdminProbeTarget, updateAdminSettings } from './client'
 
 describe('normalizeSummary', () => {
   it('maps controller snake_case JSON into frontend camelCase models', () => {
@@ -553,14 +553,13 @@ describe('normalizeAdminProbeTargets', () => {
 })
 
 describe('normalizeAdminNotifications', () => {
-  it('maps channels and types with editable credential values for admin forms', () => {
+  it('maps channels with write-only credential markers for admin forms', () => {
     const channels = normalizeAdminNotificationChannels({
       channels: [
         {
           id: 'zeno-telegram',
           name: 'Zeno Telegram',
           destination: '7579942307',
-          credential: 'telegram-bot-secret-value',
           credential_set: true,
           enabled: false,
           created_at: '2026-07-03T00:00:00Z',
@@ -568,16 +567,8 @@ describe('normalizeAdminNotifications', () => {
         },
       ],
     })
-    const types = normalizeAdminNotificationTypes({
-      types: [
-        { event_type: 'node_offline', label: '离线', enabled: true, updated_at: '2026-07-03T00:00:00Z' },
-      ],
-    })
 
     expect(channels.channels[0].credentialSet).toBe(true)
-    expect(channels.channels[0].credential).toBe('telegram-bot-secret-value')
-    expect(types.types[0].eventType).toBe('node_offline')
-    expect(types.types[0].enabled).toBe(true)
   })
 })
 
@@ -657,13 +648,12 @@ describe('admin auth client', () => {
     vi.restoreAllMocks()
   })
 
-  it('logs in, logs out, and changes the admin password through dedicated endpoints', async () => {
+  it('logs in, logs out, and updates the admin account', async () => {
     const fetchMock = vi.fn(async (url: string | URL | Request, init?: RequestInit) => {
       const textUrl = String(url)
       if (textUrl.endsWith('/login')) return new Response(JSON.stringify({ username: 'admin', token: 'session-token' }), { status: 200, headers: { 'Content-Type': 'application/json' } })
       if (textUrl.endsWith('/account') && !init?.method) return new Response(JSON.stringify({ account: { username: 'admin' } }), { status: 200, headers: { 'Content-Type': 'application/json' } })
       if (textUrl.endsWith('/account')) return new Response(JSON.stringify({ username: 'zeno-admin', token: 'account-session-token' }), { status: 200, headers: { 'Content-Type': 'application/json' } })
-      if (textUrl.endsWith('/password')) return new Response(JSON.stringify({ username: 'zeno-admin', token: 'rotated-session-token' }), { status: 200, headers: { 'Content-Type': 'application/json' } })
       return new Response(null, { status: 204 })
     })
     globalThis.fetch = fetchMock as unknown as typeof fetch
@@ -671,8 +661,7 @@ describe('admin auth client', () => {
     await expect(loginAdmin('admin', 'admin-pass')).resolves.toEqual({ username: 'admin', token: 'session-token' })
     await expect(fetchAdminAccount('session-token')).resolves.toEqual({ username: 'admin' })
     await expect(updateAdminAccount('session-token', 'zeno-admin', 'admin-pass', 'new-admin-pass')).resolves.toEqual({ username: 'zeno-admin', token: 'account-session-token' })
-    await expect(updateAdminPassword('account-session-token', 'new-admin-pass', 'newer-admin-pass')).resolves.toEqual({ username: 'zeno-admin', token: 'rotated-session-token' })
-    await expect(logoutAdmin('rotated-session-token')).resolves.toBeUndefined()
+    await expect(logoutAdmin('account-session-token')).resolves.toBeUndefined()
 
     expect(fetchMock).toHaveBeenNthCalledWith(1, '/api/admin/v1/login', {
       method: 'POST',
@@ -687,14 +676,9 @@ describe('admin auth client', () => {
       headers: { Accept: 'application/json', 'Content-Type': 'application/json', 'X-Admin-Token': 'session-token' },
       body: JSON.stringify({ username: 'zeno-admin', current_password: 'admin-pass', new_password: 'new-admin-pass' }),
     })
-    expect(fetchMock).toHaveBeenNthCalledWith(4, '/api/admin/v1/password', {
+    expect(fetchMock).toHaveBeenNthCalledWith(4, '/api/admin/v1/logout', {
       method: 'POST',
-      headers: { Accept: 'application/json', 'Content-Type': 'application/json', 'X-Admin-Token': 'account-session-token' },
-      body: JSON.stringify({ current_password: 'new-admin-pass', new_password: 'newer-admin-pass' }),
-    })
-    expect(fetchMock).toHaveBeenNthCalledWith(5, '/api/admin/v1/logout', {
-      method: 'POST',
-      headers: { 'X-Admin-Token': 'rotated-session-token' },
+      headers: { 'X-Admin-Token': 'account-session-token' },
     })
   })
 })
@@ -794,7 +778,7 @@ describe('fetchSettings', () => {
   })
 })
 
-describe('fetchAdminNotifications', () => {
+describe('fetchAdminNotificationChannels', () => {
   const originalFetch = globalThis.fetch
 
   afterEach(() => {
@@ -802,7 +786,7 @@ describe('fetchAdminNotifications', () => {
     vi.restoreAllMocks()
   })
 
-  it('fetches notification channels and types with X-Admin-Token only', async () => {
+  it('fetches notification channels with X-Admin-Token only', async () => {
     const fetchMock = vi.fn(async (url: string | URL | Request) => {
       if (String(url).includes('notification-channels')) {
         return new Response(JSON.stringify({ channels: [] }), { status: 200, headers: { 'Content-Type': 'application/json' } })
@@ -812,15 +796,8 @@ describe('fetchAdminNotifications', () => {
     globalThis.fetch = fetchMock as unknown as typeof fetch
 
     await fetchAdminNotificationChannels('admin-pass')
-    await fetchAdminNotificationTypes('admin-pass')
 
     expect(fetchMock).toHaveBeenNthCalledWith(1, '/api/admin/v1/notification-channels', {
-      headers: {
-        Accept: 'application/json',
-        'X-Admin-Token': 'admin-pass',
-      },
-    })
-    expect(fetchMock).toHaveBeenNthCalledWith(2, '/api/admin/v1/notification-types', {
       headers: {
         Accept: 'application/json',
         'X-Admin-Token': 'admin-pass',
@@ -1357,53 +1334,6 @@ describe('admin alert rules', () => {
     expect(String(calls[0]?.[0])).not.toContain('admin-pass')
   })
 
-  it('normalizes active rule states and fetches current hits with X-Admin-Token only', async () => {
-    const apiPayload = {
-      states: [
-        {
-          node_id: 'hytron',
-          node_name: 'Hytron',
-          node_status: 'warning',
-          rule_id: 'cpu_high',
-          rule_name: 'CPU 使用率',
-          category: 'resource',
-          metric: 'cpu_percent',
-          comparator: '>=',
-          threshold: 90,
-          threshold_unit: '%',
-          duration_sec: 300,
-          enabled: true,
-          last_value: 95.25,
-          active: true,
-          notification_event_type: 'probe_unhealthy',
-          notification_label: '异常',
-          first_seen_at: '2026-07-04T11:00:00Z',
-          last_seen_at: '2026-07-04T11:00:00Z',
-          updated_at: '2026-07-04T11:00:01Z',
-        },
-      ],
-      active_count: 1,
-    }
-    const normalized = normalizeAdminAlertRuleStates(apiPayload)
-    expect(normalized.states[0].nodeName).toBe('Hytron')
-    expect(normalized.states[0].ruleName).toBe('CPU 使用率')
-    expect(normalized.states[0].lastValue).toBe(95.25)
-    expect(normalized.activeCount).toBe(1)
-
-    const fetchMock = vi.fn(async () => new Response(JSON.stringify(apiPayload), { status: 200, headers: { 'Content-Type': 'application/json' } }))
-    globalThis.fetch = fetchMock as unknown as typeof fetch
-
-    const fetched = await fetchAdminAlertRuleStates('admin-pass')
-    expect(fetched.states[0].metric).toBe('cpu_percent')
-    expect(fetchMock).toHaveBeenCalledWith('/api/admin/v1/alert-rule-states', {
-      headers: {
-        Accept: 'application/json',
-        'X-Admin-Token': 'admin-pass',
-      },
-    })
-    const calls = fetchMock.mock.calls as unknown as Array<[RequestInfo | URL, RequestInit?]>
-    expect(String(calls[0]?.[0])).not.toContain('admin-pass')
-  })
 })
 
 

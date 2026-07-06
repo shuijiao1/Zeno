@@ -1,7 +1,6 @@
 package api
 
 import (
-	"encoding/json"
 	"net/http"
 	"strings"
 )
@@ -39,10 +38,7 @@ func (h *handler) handleAdminAlertRuleResource(w http.ResponseWriter, r *http.Re
 		return
 	}
 	var update AdminAlertRuleUpdateRequest
-	decoder := json.NewDecoder(r.Body)
-	decoder.DisallowUnknownFields()
-	if err := decoder.Decode(&update); err != nil {
-		writeError(w, http.StatusBadRequest, "bad request")
+	if !decodeJSONBody(w, r, &update, adminJSONBodyLimit, true) {
 		return
 	}
 	rule, err := store.UpdateAdminAlertRule(r.Context(), parts[0], update)
