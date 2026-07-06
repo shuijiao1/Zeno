@@ -915,6 +915,28 @@ function formatServiceLoss(value: number | null | undefined): string {
   return `${value.toFixed(2)}%`
 }
 
+function BrandLogo({ logoUrl, siteTitle }: { logoUrl?: string; siteTitle?: string }) {
+  const source = (logoUrl || defaultSettings.logoUrl).trim() || defaultSettings.logoUrl
+  const [currentSource, setCurrentSource] = useState(source)
+
+  useEffect(() => {
+    setCurrentSource(source)
+  }, [source])
+
+  return (
+    <img
+      src={currentSource}
+      width="32"
+      height="32"
+      decoding="async"
+      alt={`${siteTitle || 'Zeno'} logo`}
+      onError={() => {
+        if (currentSource !== defaultSettings.logoUrl) setCurrentSource(defaultSettings.logoUrl)
+      }}
+    />
+  )
+}
+
 function DashboardHeader({ settings = defaultSettings, onHome, onAdmin, adminLabel = '后台', trailingAction, onThemeChange, onBackgroundToggle, backgroundEnabled = true }: DashboardHeaderProps) {
   const [themeMenuOpen, setThemeMenuOpen] = useState(false)
   const themeMenuRef = useRef<HTMLDivElement>(null)
@@ -947,7 +969,7 @@ function DashboardHeader({ settings = defaultSettings, onHome, onAdmin, adminLab
   return (
     <header className="kulin-nav">
       <button className="brand" type="button" onClick={onHome}>
-        <span className="brand-logo"><img src={settings.logoUrl || defaultSettings.logoUrl} alt={`${settings.siteTitle || 'Zeno'} logo`} /></span>
+        <span className="brand-logo"><BrandLogo logoUrl={settings.logoUrl} siteTitle={settings.siteTitle} /></span>
         <span>{settings.siteTitle || 'Zeno'}</span>
       </button>
       <nav className="nav-actions" aria-label="dashboard actions">
