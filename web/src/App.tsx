@@ -1041,7 +1041,7 @@ export function AdminDashboard({
 
   return (
     <div className="kulin-container admin-container">
-      <section className="home-top-card admin-panel" aria-label="admin dashboard">
+      <section className={`home-top-card admin-panel${hasAdminToken ? '' : ' admin-panel--login'}`} aria-label="admin dashboard">
         <DashboardHeader
           settings={chromeSettings}
           onHome={onHome}

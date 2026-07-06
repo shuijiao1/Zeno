@@ -15,8 +15,8 @@
   --surface-soft: rgba(255, 255, 255, 0.56);
   --field-bg: rgba(255, 255, 255, 0.74);
   --control-bg: rgba(255, 255, 255, 0.76);
-  --usage-track-bg: rgba(148, 163, 184, 0.16);
-  --usage-track-border: rgba(148, 163, 184, 0.22);
+  --usage-track-bg: rgba(148, 163, 184, 0.08);
+  --usage-track-border: rgba(148, 163, 184, 0.12);
   --shadow-stone: rgba(15, 23, 42, 0.08);
   --metric-shadow: rgba(37, 99, 235, 0.12);
   --green: #10b981;
@@ -49,8 +49,8 @@
     --surface-soft: rgba(15, 23, 42, 0.34);
     --field-bg: rgba(15, 23, 42, 0.42);
     --control-bg: rgba(15, 23, 42, 0.48);
-    --usage-track-bg: rgba(148, 163, 184, 0.18);
-    --usage-track-border: rgba(148, 163, 184, 0.2);
+    --usage-track-bg: rgba(148, 163, 184, 0.12);
+    --usage-track-border: rgba(148, 163, 184, 0.14);
     --shadow-stone: rgba(0, 0, 0, 0.34);
     --metric-shadow: rgba(14, 165, 233, 0.1);
     --zeno-card-highlight: rgba(255, 255, 255, 0.1);
@@ -104,8 +104,8 @@ svg { display: block; }
   --surface-soft: rgba(255, 255, 255, 0.56);
   --field-bg: rgba(255, 255, 255, 0.74);
   --control-bg: rgba(255, 255, 255, 0.76);
-  --usage-track-bg: rgba(148, 163, 184, 0.16);
-  --usage-track-border: rgba(148, 163, 184, 0.22);
+  --usage-track-bg: rgba(148, 163, 184, 0.08);
+  --usage-track-border: rgba(148, 163, 184, 0.12);
   --shadow-stone: rgba(15, 23, 42, 0.08);
   --metric-shadow: rgba(37, 99, 235, 0.12);
   --zeno-card-highlight: #ffffff;
@@ -125,8 +125,8 @@ svg { display: block; }
   --surface-soft: rgba(15, 23, 42, 0.34);
   --field-bg: rgba(15, 23, 42, 0.42);
   --control-bg: rgba(15, 23, 42, 0.48);
-  --usage-track-bg: rgba(148, 163, 184, 0.18);
-  --usage-track-border: rgba(148, 163, 184, 0.2);
+  --usage-track-bg: rgba(148, 163, 184, 0.12);
+  --usage-track-border: rgba(148, 163, 184, 0.14);
   --shadow-stone: rgba(0, 0, 0, 0.34);
   --metric-shadow: rgba(14, 165, 233, 0.1);
   --zeno-card-highlight: rgba(255, 255, 255, 0.1);
@@ -151,7 +151,7 @@ svg { display: block; }
   align-items: center;
   min-width: 0;
   padding: 0;
-  border: 0;
+  border: 1px solid color-mix(in srgb, var(--border) 82%, rgba(37, 99, 235, 0.28));
   background: transparent;
   color: inherit;
   cursor: pointer;
@@ -263,6 +263,7 @@ svg { display: block; }
   content: "";
   position: absolute;
   inset: 1px;
+  border: 1px solid rgba(255, 255, 255, 0.34);
   border-radius: calc(var(--radius-panel) - 1px);
   pointer-events: none;
 }
@@ -402,6 +403,8 @@ svg { display: block; }
 .admin-panel { min-height: 360px; }
 .admin-container,
 .admin-container .home-top-card.admin-panel { width: 100%; }
+.admin-panel--login { min-height: min(760px, calc(100dvh - 72px)); display: flex; flex-direction: column; }
+.admin-panel--login .admin-login-card { margin: auto auto; }
 .admin-login-card {
   width: min(100%, 420px);
   margin: 24px auto 0;
@@ -526,7 +529,7 @@ svg { display: block; }
   justify-content: center;
   gap: 6px;
   padding: 9px 13px;
-  border: 0;
+  border: 1px solid var(--border);
   border-radius: var(--radius-field);
   background: transparent;
   color: color-mix(in srgb, var(--foreground) 72%, transparent);
@@ -2266,6 +2269,7 @@ svg { display: block; }
   .home-summary__metrics svg { width: 11px; height: 11px; }
   .admin-container { gap: 14px; }
   .admin-panel { min-height: calc(100dvh - 92px); }
+  .admin-panel--login { min-height: calc(100dvh - 28px); }
   .admin-toolbar { flex-direction: column; align-items: stretch; }
   .admin-section-nav {
     width: 100%;
@@ -2286,11 +2290,13 @@ svg { display: block; }
   .admin-list-head { display: none; }
   .admin-workspace-panel .admin-list { max-height: none; overflow: visible; padding-right: 0; scrollbar-gutter: auto; }
   .admin-node-section .admin-list { height: auto; }
-  .admin-list { border: 0; background: transparent; display: grid; gap: 4px; }
+  .admin-list { border: 0; background: transparent; display: grid; gap: 8px; }
   .admin-list-row {
-    grid-template-columns: 1fr;
-    gap: 6px;
-    padding: 11px 12px;
+    position: relative;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 7px 10px;
+    min-height: 0;
+    padding: 12px;
     border: 1px solid var(--border);
     border-radius: var(--radius-card);
     background: var(--surface-strong);
@@ -2298,10 +2304,14 @@ svg { display: block; }
   .admin-node-section .admin-list-row,
   .admin-target-list .admin-list-row,
   .admin-notification-list .admin-list-row,
-  .admin-alert-rule-list .admin-list-row { grid-template-columns: 1fr; }
+  .admin-alert-rule-list .admin-list-row { grid-template-columns: minmax(0, 1fr) auto; }
+  .admin-list-main { grid-column: 1 / 2; padding-right: 4px; gap: 2px; }
+  .admin-list-main strong { font-size: 15px; }
+  .admin-row-actions.admin-icon-actions { grid-column: 2 / 3; grid-row: 1; width: auto; align-self: start; justify-self: end; display: flex; justify-content: flex-end; gap: 6px; }
   .admin-list-row > span {
     min-width: 0;
     max-width: 100%;
+    grid-column: 1 / -1;
     display: flex;
     align-items: baseline;
     justify-content: space-between;
@@ -2311,8 +2321,10 @@ svg { display: block; }
     text-overflow: clip;
     white-space: normal;
     overflow-wrap: anywhere;
+    padding-top: 2px;
+    font-size: 12px;
   }
-  .admin-list-row > span[data-label]::before { content: attr(data-label); flex: none; color: var(--muted); font-size: 13px; font-weight: 500; }
+  .admin-list-row > span[data-label]::before { content: attr(data-label); flex: none; color: var(--muted); font-size: 12px; font-weight: 500; }
   .admin-list-row > .admin-ip-stack {
     display: grid;
     grid-template-columns: auto minmax(0, 1fr);
@@ -2323,13 +2335,14 @@ svg { display: block; }
   .admin-list-row > .admin-ip-stack span { max-width: 100%; justify-self: end; overflow-wrap: anywhere; text-align: right; white-space: normal; }
   .admin-list-row > .admin-ip-stack.is-single::before { grid-row: auto; }
   .admin-row-actions { width: 100%; justify-self: stretch; display: grid; grid-template-columns: repeat(auto-fit, minmax(96px, 1fr)); gap: 6px; }
-  .admin-row-actions.admin-icon-actions { display: flex; justify-content: flex-end; gap: 8px; }
-  .admin-notification-list .admin-row-actions.admin-icon-actions,
-  .admin-alert-rule-list .admin-row-actions.admin-icon-actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); justify-content: stretch; }
   .admin-row-action { justify-self: stretch; width: 100%; }
-  .admin-row-action.is-icon { width: 38px; flex: 0 0 38px; }
+  .admin-row-action.is-icon { width: 36px; height: 32px; flex: 0 0 36px; }
+  .admin-node-section .admin-row-action.is-icon,
+  .admin-target-list .admin-row-action.is-icon { border-radius: var(--radius-pill); background: var(--control-bg); }
+  .admin-notification-list .admin-row-actions.admin-icon-actions,
+  .admin-alert-rule-list .admin-row-actions.admin-icon-actions { grid-column: 1 / -1; grid-row: auto; width: 100%; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); justify-content: stretch; }
   .admin-notification-list .admin-row-action.is-icon,
-  .admin-alert-rule-list .admin-row-action.is-icon { width: 100%; flex: 1 1 auto; }
+  .admin-alert-rule-list .admin-row-action.is-icon { width: 100%; flex: 1 1 auto; border-radius: var(--radius-field); }
   .admin-modal-backdrop { align-items: flex-end; padding: 8px; }
   .admin-login-card { grid-template-columns: 1fr; align-items: stretch; padding: 12px; gap: 10px; }
   .admin-node-section,
