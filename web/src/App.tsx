@@ -840,7 +840,7 @@ function DashboardHeader({ settings = defaultSettings, onHome, onAdmin, adminLab
   const themeMenuRef = useRef<HTMLDivElement>(null)
   const themeMode = settings.theme
   const currentTheme = resolvedTheme(themeMode)
-  const currentThemeLabel = headerThemeOptions.find((option) => option.value === themeMode)?.label ?? '自适应'
+  const currentThemeLabel = headerThemeOptions.find((option) => option.value === themeMode)?.label ?? '跟随系统'
 
   useEffect(() => {
     if (!themeMenuOpen || typeof window === 'undefined') return undefined
@@ -879,7 +879,6 @@ function DashboardHeader({ settings = defaultSettings, onHome, onAdmin, adminLab
               {headerThemeOptions.map((option) => (
                 <button key={option.value} type="button" role="menuitemradio" aria-checked={themeMode === option.value} data-active={themeMode === option.value} onClick={() => selectTheme(option.value)}>
                   <span>{option.label}</span>
-                  <small>{option.description}</small>
                 </button>
               ))}
             </div>
@@ -2285,15 +2284,15 @@ function AdminFormSection({ title, description, children }: { title: string; des
 }
 
 const themeOptions = [
-  { value: 'system', label: '自适应' },
+  { value: 'system', label: '跟随系统' },
   { value: 'light', label: '浅色' },
   { value: 'dark', label: '深色' },
 ]
 
-const headerThemeOptions: Array<{ value: AdminTheme; label: string; description: string }> = [
-  { value: 'system', label: '自适应', description: '跟随系统' },
-  { value: 'light', label: '浅色', description: '始终浅色' },
-  { value: 'dark', label: '深色', description: '始终深色' },
+const headerThemeOptions: Array<{ value: AdminTheme; label: string }> = [
+  { value: 'system', label: '跟随系统' },
+  { value: 'light', label: '浅色' },
+  { value: 'dark', label: '深色' },
 ]
 
 const billingModeOptions = [

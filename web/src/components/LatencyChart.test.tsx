@@ -9,16 +9,14 @@ const points = [
 ]
 
 describe('LatencyChart', () => {
-  it('renders immediate custom hover columns without browser title tooltips', () => {
+  it('renders a single custom hover surface without browser title tooltips', () => {
     const html = renderToStaticMarkup(<LatencyChart points={points} activeTargetNames={['Alpha', 'Beta']} />)
 
-    expect(html).toContain('latency-hover-column')
-    expect(html).toContain('latency-hover-guide')
     expect(html).toContain('latency-hover-hit')
+    expect(html.match(/latency-hover-hit/g)).toHaveLength(1)
     expect(html).not.toContain('<title>')
     expect(html).toContain('aria-label=')
-    expect(html).toContain('Alpha · 42ms')
-    expect(html).toContain('Beta · 20ms')
+    expect(html).toContain('延迟图表悬浮区域')
     expect(html).not.toContain('丢包 25.00%')
   })
 

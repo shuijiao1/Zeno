@@ -138,6 +138,8 @@ svg { display: block; }
   max-width: 1024px;
   height: 36px;
   margin: 0 auto;
+  position: relative;
+  z-index: 8;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -168,8 +170,8 @@ svg { display: block; }
   position: absolute;
   top: calc(100% + 8px);
   right: 0;
-  z-index: 20;
-  width: 150px;
+  z-index: 80;
+  width: 128px;
   display: grid;
   gap: 4px;
   padding: 6px;
@@ -181,12 +183,10 @@ svg { display: block; }
 }
 .theme-menu-popover button {
   min-width: 0;
-  min-height: 42px;
-  display: grid;
-  grid-template-columns: minmax(0, 1fr);
-  align-content: center;
-  gap: 2px;
-  padding: 6px 9px;
+  min-height: 34px;
+  display: flex;
+  align-items: center;
+  padding: 0 10px;
   border: 1px solid transparent;
   border-radius: var(--radius-field);
   background: transparent;
@@ -197,7 +197,6 @@ svg { display: block; }
 .theme-menu-popover button:hover { border-color: color-mix(in srgb, var(--blue) 34%, var(--border)); background: color-mix(in srgb, var(--surface-soft) 88%, var(--blue) 10%); color: var(--blue); transform: translateY(-1px); }
 .theme-menu-popover button[data-active='true'] { border-color: var(--blue); background: var(--blue); color: #fff; box-shadow: 0 8px 18px -14px var(--blue); }
 .theme-menu-popover span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; font-weight: 500; }
-.theme-menu-popover small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: currentColor; opacity: .72; font-size: 11px; font-weight: 500; }
 .login-link,
 .nav-logout-button {
   min-height: 34px;
@@ -249,7 +248,7 @@ svg { display: block; }
 .home-top-card {
   width: 100%;
   position: relative;
-  overflow: hidden;
+  overflow: visible;
   padding: 16px;
   border: 1px solid color-mix(in srgb, var(--border) 82%, rgba(37, 99, 235, 0.28));
   border-radius: var(--radius-panel);
@@ -274,6 +273,7 @@ svg { display: block; }
   height: auto;
   margin: 0;
   padding: 0 2px 14px;
+  z-index: 12;
 }
 .home-top-card .nav-icon-button { background: var(--control-bg); }
 .home-top-card .nav-icon-button.is-solid { background: var(--blue); color: #fff; }

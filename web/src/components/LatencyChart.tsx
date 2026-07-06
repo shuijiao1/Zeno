@@ -1,4 +1,4 @@
-import { useEffect, useId, useMemo, useState } from 'react'
+import { useEffect, useId, useMemo, useState, type MouseEvent as ReactMouseEvent } from 'react'
 import type { LatencyPoint } from '../types'
 import {
   applyKulinPeakCut,
@@ -59,13 +59,45 @@ export function LatencyChart({
     ? series.filter((item) => activeTargetNames.includes(item.targetName))
     : series), [series, activeTargetKey])
   const [hoverColumn, setHoverColumn] = useState<HoverColumn | null>(null)
-  const hoverColumnCreatedAt = hoverColumn?.createdAt ?? null
 
   const x = (createdAt: number) => xByTimestamp.get(createdAt) ?? pad.left
   const yDelay = (value: number) => pad.top + (1 - (value - domain.min) / (domain.max - domain.min)) * plotHeight
   const yLoss = (value: number) => pad.top + (1 - Math.max(0, Math.min(100, value)) / 100) * plotHeight
 
-  const hitWidth = timestamps.length > 1 ? Math.max(18, xStep) : width - pad.left - pad.right
+  const setActiveHoverColumn = (column: HoverColumn | null) => {
+    setHoverColumn((current) => (current?.createdAt === column?.createdAt ? current : column))
+  }
+
+  const hoverColumnForSvgX = (svgX: number): HoverColumn | null => {
+    if (hoverColumns.length === 0 || timestamps.length === 0) return null
+    const plotWidth = width - pad.left - pad.right
+    const ratio = plotWidth > 0 ? Math.max(0, Math.min(1, (svgX - pad.left) / plotWidth)) : 0
+    const timestampIndex = Math.max(0, Math.min(timestamps.length - 1, Math.round(ratio * (timestamps.length - 1))))
+    const targetTimestamp = timestamps[timestampIndex]
+    let low = 0
+    let high = hoverColumns.length - 1
+    while (low < high) {
+      const middle = Math.floor((low + high) / 2)
+      if (hoverColumns[middle].createdAt < targetTimestamp) low = middle + 1
+      else high = middle
+    }
+    const right = hoverColumns[low]
+    const left = hoverColumns[Math.max(0, low - 1)]
+    if (!right) return left ?? null
+    if (!left) return right
+    return Math.abs(right.createdAt - targetTimestamp) < Math.abs(targetTimestamp - left.createdAt) ? right : left
+  }
+
+  const handleHoverMove = (event: ReactMouseEvent<SVGRectElement>) => {
+    const svg = event.currentTarget.ownerSVGElement
+    const ctm = svg?.getScreenCTM()
+    if (!svg || !ctm) return
+    const point = svg.createSVGPoint()
+    point.x = event.clientX
+    point.y = event.clientY
+    const svgPoint = point.matrixTransform(ctm.inverse())
+    setActiveHoverColumn(hoverColumnForSvgX(svgPoint.x))
+  }
 
   return (
     <section className={`latency-panel${compactHeader ? ' is-compact' : ''}`}>
@@ -140,43 +172,41 @@ export function LatencyChart({
           />
         ))}
 
-        {hoverColumns.map((column) => {
-          const xx = x(column.createdAt)
-          const isActive = hoverColumnCreatedAt === column.createdAt
-          return (
-            <g key={column.createdAt} className={`latency-hover-column${isActive ? ' is-active' : ''}`}>
-              <rect
-                className="latency-hover-hit"
-                x={Math.max(pad.left, xx - hitWidth / 2)}
-                y={pad.top}
-                width={Math.min(hitWidth, width - pad.right - Math.max(pad.left, xx - hitWidth / 2))}
-                height={plotHeight}
-                aria-label={column.title}
-                onMouseEnter={() => setHoverColumn(column)}
-                onMouseMove={() => setHoverColumn(column)}
+        {hoverColumn && (
+          <g className="latency-hover-column is-active">
+            <line
+              className="latency-hover-guide"
+              x1={x(hoverColumn.createdAt)}
+              x2={x(hoverColumn.createdAt)}
+              y1={pad.top}
+              y2={height - pad.bottom}
+              vectorEffect="non-scaling-stroke"
+            />
+            {hoverColumn.points.map((point) => (
+              <circle
+                key={`${point.key}-${hoverColumn.createdAt}`}
+                className="latency-hover-point"
+                cx={x(hoverColumn.createdAt)}
+                cy={yDelay(point.delay)}
+                r={5}
+                fill={palette[paletteIndexForKey(series, point.key, activeTargetNames) % palette.length]}
+                clipPath={`url(#${clipId})`}
               />
-              <line
-                className="latency-hover-guide"
-                x1={xx}
-                x2={xx}
-                y1={pad.top}
-                y2={height - pad.bottom}
-                vectorEffect="non-scaling-stroke"
-              />
-              {column.points.map((point) => (
-                <circle
-                  key={`${point.key}-${column.createdAt}`}
-                  className="latency-hover-point"
-                  cx={xx}
-                  cy={yDelay(point.delay)}
-                  r={5}
-                  fill={palette[paletteIndexForKey(series, point.key, activeTargetNames) % palette.length]}
-                  clipPath={`url(#${clipId})`}
-                />
-              ))}
-            </g>
-          )
-        })}
+            ))}
+          </g>
+        )}
+        <rect
+          className="latency-hover-hit"
+          x={pad.left}
+          y={pad.top}
+          width={width - pad.left - pad.right}
+          height={plotHeight}
+          aria-label={hoverColumn?.title ?? '延迟图表悬浮区域'}
+          onMouseEnter={handleHoverMove}
+          onMouseMove={handleHoverMove}
+          onFocus={() => setActiveHoverColumn(hoverColumns.at(-1) ?? null)}
+          tabIndex={0}
+        />
         {hoverColumn && (
           <LatencyTooltip
             column={hoverColumn}
