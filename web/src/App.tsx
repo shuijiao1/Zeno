@@ -2602,24 +2602,86 @@ const targetTypeOptions = [
 
 function AdminSegmentedField({ name, label, options, value, defaultValue, disabled = false, onChange, className = '' }: { name: string; label: string; options: Array<{ value: string; label: string }>; value?: string; defaultValue?: string; disabled?: boolean; onChange?: (value: string) => void; className?: string }) {
   const [internalValue, setInternalValue] = useState(defaultValue ?? options[0]?.value ?? '')
+  const [open, setOpen] = useState(false)
+  const triggerRef = useRef<HTMLButtonElement | null>(null)
+  const popoverRef = useRef<HTMLDivElement | null>(null)
+  const [popoverStyle, setPopoverStyle] = useState<CSSProperties>({})
   const selectedValue = value ?? internalValue
+  const selectedOption = options.find((option) => option.value === selectedValue) ?? options[0]
   const setSelectedValue = (nextValue: string) => {
     if (disabled) return
     if (value === undefined) setInternalValue(nextValue)
     onChange?.(nextValue)
+    setOpen(false)
   }
-  const classes = ['admin-form-control', 'admin-segmented-field', className, disabled ? 'is-disabled' : ''].filter(Boolean).join(' ')
+
+  useLayoutEffect(() => {
+    if (!open || disabled) return undefined
+    const updatePopoverPosition = () => {
+      const trigger = triggerRef.current
+      if (!trigger) return
+      const rect = trigger.getBoundingClientRect()
+      const margin = 12
+      const gap = 8
+      const width = Math.min(Math.max(rect.width, 160), Math.max(180, window.innerWidth - margin * 2))
+      const height = popoverRef.current?.offsetHeight ?? Math.min(260, options.length * 40 + 12)
+      const left = Math.min(Math.max(margin, rect.left), Math.max(margin, window.innerWidth - width - margin))
+      const belowTop = rect.bottom + gap
+      const aboveTop = rect.top - height - gap
+      const preferredTop = belowTop + height <= window.innerHeight - margin || aboveTop < margin ? belowTop : aboveTop
+      const top = Math.min(Math.max(margin, preferredTop), Math.max(margin, window.innerHeight - height - margin))
+      setPopoverStyle({ position: 'fixed', top, left, width })
+    }
+    updatePopoverPosition()
+    const frame = window.requestAnimationFrame(updatePopoverPosition)
+    const settleTimer = window.setTimeout(updatePopoverPosition, 80)
+    window.addEventListener('resize', updatePopoverPosition)
+    window.addEventListener('scroll', updatePopoverPosition, true)
+    return () => {
+      window.cancelAnimationFrame(frame)
+      window.clearTimeout(settleTimer)
+      window.removeEventListener('resize', updatePopoverPosition)
+      window.removeEventListener('scroll', updatePopoverPosition, true)
+    }
+  }, [open, disabled, options.length])
+
+  useEffect(() => {
+    if (!open) return undefined
+    const handlePointerDown = (event: PointerEvent) => {
+      const target = event.target as Node | null
+      if (target && (triggerRef.current?.contains(target) || popoverRef.current?.contains(target))) return
+      setOpen(false)
+    }
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setOpen(false)
+    }
+    document.addEventListener('pointerdown', handlePointerDown)
+    document.addEventListener('keydown', handleKeyDown)
+    return () => {
+      document.removeEventListener('pointerdown', handlePointerDown)
+      document.removeEventListener('keydown', handleKeyDown)
+    }
+  }, [open])
+
+  const classes = ['admin-form-control', 'admin-segmented-field admin-select-menu-field', className, disabled ? 'is-disabled' : ''].filter(Boolean).join(' ')
+  const popover = open && !disabled ? (
+    <div ref={popoverRef} className="admin-select-popover" role="listbox" aria-label={`${label}选项`} style={popoverStyle}>
+      {options.map((option) => (
+        <button key={option.value} type="button" role="option" aria-selected={selectedValue === option.value} data-active={selectedValue === option.value} onClick={() => setSelectedValue(option.value)}>
+          <span>{option.label}</span>
+        </button>
+      ))}
+    </div>
+  ) : null
   return (
     <div className={classes}>
       <span>{label}</span>
       <input type="hidden" name={name} value={selectedValue} disabled={disabled} />
-      <div className="admin-segmented-options" role="radiogroup" aria-label={label}>
-        {options.map((option) => (
-          <button key={option.value} type="button" role="radio" aria-checked={selectedValue === option.value} data-active={selectedValue === option.value} disabled={disabled} onClick={() => setSelectedValue(option.value)}>
-            {option.label}
-          </button>
-        ))}
-      </div>
+      <button ref={triggerRef} className="admin-select-trigger" type="button" aria-haspopup="listbox" aria-expanded={open} disabled={disabled} onClick={() => setOpen((current) => !current)}>
+        <span>{selectedOption?.label ?? selectedValue}</span>
+        <ChevronDownIcon expanded={open} />
+      </button>
+      {popover && (typeof document === 'undefined' ? popover : createPortal(popover, document.body))}
     </div>
   )
 }

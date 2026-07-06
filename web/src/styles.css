@@ -15,7 +15,7 @@
   --surface-soft: rgba(255, 255, 255, 0.56);
   --field-bg: rgba(255, 255, 255, 0.74);
   --control-bg: rgba(255, 255, 255, 0.76);
-  --admin-card-inner-bg: rgba(248, 250, 252, 0.86);
+  --admin-card-inner-bg: rgba(247, 247, 248, 0.9);
   --usage-track-bg: rgba(148, 163, 184, 0.16);
   --usage-track-border: rgba(148, 163, 184, 0.22);
   --shadow-stone: rgba(15, 23, 42, 0.08);
@@ -106,7 +106,7 @@ svg { display: block; }
   --surface-soft: rgba(255, 255, 255, 0.56);
   --field-bg: rgba(255, 255, 255, 0.74);
   --control-bg: rgba(255, 255, 255, 0.76);
-  --admin-card-inner-bg: rgba(248, 250, 252, 0.86);
+  --admin-card-inner-bg: rgba(247, 247, 248, 0.9);
   --usage-track-bg: rgba(148, 163, 184, 0.16);
   --usage-track-border: rgba(148, 163, 184, 0.22);
   --shadow-stone: rgba(15, 23, 42, 0.08);
@@ -406,6 +406,7 @@ svg { display: block; }
 .admin-panel { min-height: 360px; }
 .admin-container,
 .admin-container .home-top-card.admin-panel { width: 100%; }
+.admin-container .home-top-card.admin-panel { background: var(--admin-card-inner-bg); }
 .admin-login-card {
   width: min(100%, 420px);
   margin: 24px auto 0;
@@ -845,8 +846,8 @@ svg { display: block; }
 .admin-billing-control .admin-segmented-options { border-radius: var(--radius-field); }
 .admin-billing-control--cycle { grid-column: 1 / span 2; }
 .admin-billing-control--mode { grid-column: 3 / span 2; }
-.admin-billing-control--cycle .admin-segmented-options { grid-template-columns: repeat(7, minmax(0, 1fr)); }
-.admin-billing-control--mode .admin-segmented-options { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.admin-billing-control--cycle .admin-select-trigger,
+.admin-billing-control--mode .admin-select-trigger { width: 100%; }
 .admin-billing-control--expiry { min-width: 0; }
 .admin-quota-row .admin-form-control,
 .admin-quota-row label { min-width: 0; }
@@ -954,6 +955,80 @@ svg { display: block; }
   color: color-mix(in srgb, var(--green) 84%, #0f172a);
 }
 .admin-date-permanent:disabled { opacity: .56; cursor: not-allowed; }
+.admin-select-menu-field { position: relative; }
+.admin-select-trigger {
+  width: 100%;
+  min-width: 0;
+  height: 40px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 0 10px 0 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-field);
+  background: var(--field-bg);
+  color: var(--foreground);
+  font: inherit;
+  font-size: 14px;
+  text-align: left;
+  transition: background-color 150ms ease, border-color 150ms ease, color 150ms ease, box-shadow 150ms ease;
+}
+.admin-select-trigger > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.admin-select-trigger svg { width: 16px; height: 16px; flex: none; fill: currentColor; color: var(--muted); transition: transform 150ms ease, color 150ms ease; }
+.admin-select-trigger:hover,
+.admin-select-trigger:focus-visible,
+.admin-select-trigger[aria-expanded="true"] {
+  outline: none;
+  border-color: color-mix(in srgb, var(--blue) 52%, var(--border));
+  background: color-mix(in srgb, var(--field-bg) 94%, var(--blue) 6%);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--blue) 14%, transparent);
+}
+.admin-select-trigger:hover svg,
+.admin-select-trigger:focus-visible svg,
+.admin-select-trigger[aria-expanded="true"] svg { color: var(--blue); }
+.admin-select-popover {
+  z-index: 92;
+  max-height: min(320px, calc(100vh - 32px));
+  overflow: auto;
+  display: grid;
+  gap: 4px;
+  padding: 6px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-card);
+  background: color-mix(in srgb, var(--surface-strong) 98%, transparent);
+  box-shadow: 0 18px 40px -26px rgba(15, 23, 42, .36), 0 4px 12px -8px rgba(15, 23, 42, .16);
+  -webkit-backdrop-filter: blur(18px);
+  backdrop-filter: blur(18px);
+}
+.admin-select-popover button {
+  min-width: 0;
+  min-height: 34px;
+  display: flex;
+  align-items: center;
+  padding: 0 10px;
+  border: 1px solid transparent;
+  border-radius: var(--radius-field);
+  background: transparent;
+  color: var(--foreground);
+  text-align: left;
+  transition: background-color 150ms ease, border-color 150ms ease, color 150ms ease, transform 150ms ease, box-shadow 150ms ease;
+}
+.admin-select-popover button:hover,
+.admin-select-popover button:focus-visible {
+  outline: none;
+  border-color: color-mix(in srgb, var(--blue) 34%, var(--border));
+  background: color-mix(in srgb, var(--surface-soft) 88%, var(--blue) 10%);
+  color: var(--blue);
+  transform: translateY(-1px);
+}
+.admin-select-popover button[data-active='true'] {
+  border-color: var(--blue);
+  background: var(--blue);
+  color: #fff;
+  box-shadow: 0 8px 18px -14px var(--blue);
+}
+.admin-select-popover span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; font-weight: 500; }
 .admin-date-popover {
   z-index: 90;
   width: min(312px, calc(100vw - 40px));
