@@ -1593,6 +1593,13 @@ function installCommandReady(result: AdminNodeInstallCommand): InstallCommandSta
   }
 }
 
+function revealInstallPlatformPicker() {
+  if (typeof window === 'undefined') return
+  window.requestAnimationFrame(() => {
+    document.querySelector('.admin-modal .admin-install-platforms')?.scrollIntoView({ block: 'nearest', inline: 'nearest' })
+  })
+}
+
 function AdminNodeCreateModal({ onCreate, onInstallCommand, onClose }: { onCreate: (input: AdminNodeCreateInput) => Promise<AdminNode | void>; onInstallCommand: (nodeId: string) => Promise<AdminNodeInstallCommand>; onClose: () => void }) {
   const [createdNode, setCreatedNode] = useState<AdminNode | null>(null)
   const [submitting, setSubmitting] = useState(false)
@@ -1640,6 +1647,7 @@ function AdminNodeCreateModal({ onCreate, onInstallCommand, onClose }: { onCreat
     if (installCommandState.kind !== 'ready') return
     setInstallPlatformPickerOpen(true)
     setInstallCopyState({ kind: 'idle' })
+    revealInstallPlatformPicker()
   }
 
   const handleCopyInstallPlatform = (platform: AgentInstallPlatform) => {
@@ -1687,17 +1695,17 @@ function AdminNodeCreateModal({ onCreate, onInstallCommand, onClose }: { onCreat
         </AdminFormSection>
         <AdminFormSection title="Agent 接入">
           {createdNode && <p className="admin-help-note">已添加：{createdNode.displayName}</p>}
+          {installCommandState.kind === 'ready' && installPlatformPickerOpen && <div className="admin-install-platforms" role="group" aria-label="选择 Agent 安装系统">
+            {agentInstallPlatforms.map((platform) => (
+              <button key={platform.value} type="button" data-active={installCommandState.platform === platform.value} onClick={() => handleCopyInstallPlatform(platform.value)}>{platform.label}</button>
+            ))}
+          </div>}
           <div className="admin-inline-actions">
             <button type="button" onClick={handleInstallCommand} disabled={!createdNode || installCommandState.kind === 'loading'}>{installCommandState.kind === 'loading' ? '生成中…' : '生成安装命令'}</button>
             <button type="button" onClick={handleCopyInstallCommand} disabled={installCommandState.kind !== 'ready'}>复制安装命令</button>
           </div>
           {installCommandState.kind === 'ready' && (
             <>
-              {installPlatformPickerOpen && <div className="admin-install-platforms" role="group" aria-label="选择 Agent 安装系统">
-                {agentInstallPlatforms.map((platform) => (
-                  <button key={platform.value} type="button" data-active={installCommandState.platform === platform.value} onClick={() => handleCopyInstallPlatform(platform.value)}>{platform.label}</button>
-                ))}
-              </div>}
               {installCommandState.platform === 'windows' && <p className="admin-help-note">Windows 请使用管理员 PowerShell 运行。</p>}
               {installCommandState.platform === 'macos' && <p className="admin-help-note">macOS 请使用具备 sudo 权限的终端运行。</p>}
               {installCommandState.platform && <textarea className="admin-install-command" aria-label="新服务器 Agent 安装命令" readOnly value={installCommandText(installCommandState)} />}
@@ -1772,6 +1780,7 @@ function AdminNodeEditModal({ node, targets, onUpdate, onTargetUpdate, onInstall
     if (installCommandState.kind !== 'ready') return
     setInstallPlatformPickerOpen(true)
     setInstallCopyState({ kind: 'idle' })
+    revealInstallPlatformPicker()
   }
 
   const handleCopyInstallPlatform = (platform: AgentInstallPlatform) => {
@@ -1845,17 +1854,17 @@ function AdminNodeEditModal({ node, targets, onUpdate, onTargetUpdate, onInstall
         </AdminFormSection>
         <AdminFormSection title="Agent 接入">
           <p className="admin-help-note">当前 Agent 版本：{node.agentVersion || '暂无上报'}</p>
+          {installCommandState.kind === 'ready' && installPlatformPickerOpen && <div className="admin-install-platforms" role="group" aria-label="选择 Agent 安装系统">
+            {agentInstallPlatforms.map((platform) => (
+              <button key={platform.value} type="button" data-active={installCommandState.platform === platform.value} onClick={() => handleCopyInstallPlatform(platform.value)}>{platform.label}</button>
+            ))}
+          </div>}
           <div className="admin-inline-actions">
             <button type="button" onClick={handleInstallCommand} disabled={installCommandState.kind === 'loading'}>{installCommandState.kind === 'loading' ? '生成中…' : '重新生成安装命令'}</button>
             <button type="button" onClick={handleCopyInstallCommand} disabled={installCommandState.kind !== 'ready'}>复制安装命令</button>
           </div>
           {installCommandState.kind === 'ready' && (
             <>
-              {installPlatformPickerOpen && <div className="admin-install-platforms" role="group" aria-label="选择 Agent 安装系统">
-                {agentInstallPlatforms.map((platform) => (
-                  <button key={platform.value} type="button" data-active={installCommandState.platform === platform.value} onClick={() => handleCopyInstallPlatform(platform.value)}>{platform.label}</button>
-                ))}
-              </div>}
               {installCommandState.platform === 'windows' && <p className="admin-help-note">Windows 请使用管理员 PowerShell 运行。</p>}
               {installCommandState.platform === 'macos' && <p className="admin-help-note">macOS 请使用具备 sudo 权限的终端运行。</p>}
               {installCommandState.platform && <textarea className="admin-install-command" aria-label={`${node.displayName} Agent 安装命令`} readOnly value={installCommandText(installCommandState)} />}
