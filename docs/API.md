@@ -183,7 +183,7 @@ X-Admin-Token: <session-token>
       "type": "ping",
       "address": "8.8.8.8",
       "count": 20,
-      "timeout_ms": 1000,
+      "timeout_ms": 600,
       "interval_sec": 30
     },
     {
@@ -193,7 +193,7 @@ X-Admin-Token: <session-token>
       "address": "149.154.171.255",
       "port": 443,
       "count": 10,
-      "timeout_ms": 1000,
+      "timeout_ms": 600,
       "interval_sec": 30
     },
     {
@@ -202,7 +202,7 @@ X-Admin-Token: <session-token>
       "type": "http_get",
       "address": "https://example.com/health",
       "count": 2,
-      "timeout_ms": 1500,
+      "timeout_ms": 600,
       "interval_sec": 30
     }
   ]
@@ -608,7 +608,7 @@ X-Admin-Token: <admin-token>
       "address": "127.0.0.1",
       "port": 18980,
       "count": 3,
-      "timeout_ms": 1200,
+      "timeout_ms": 600,
       "interval_sec": 30,
       "display_order": 10,
       "enabled": true,
@@ -627,7 +627,7 @@ X-Admin-Token: <admin-token>
       "address": "https://example.com/health",
       "port": null,
       "count": 2,
-      "timeout_ms": 1500,
+      "timeout_ms": 600,
       "interval_sec": 30,
       "display_order": 20,
       "enabled": true,
@@ -652,7 +652,7 @@ HTTP GET 示例：
   "address": "https://example.com/health",
   "port": null,
   "count": 2,
-  "timeout_ms": 1500,
+  "timeout_ms": 600,
   "interval_sec": 30,
   "display_order": 20
 }

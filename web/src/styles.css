@@ -15,7 +15,6 @@
   --surface-soft: rgba(255, 255, 255, 0.56);
   --field-bg: rgba(255, 255, 255, 0.74);
   --control-bg: rgba(255, 255, 255, 0.76);
-  --admin-card-inner-bg: rgba(247, 247, 248, 0.9);
   --usage-track-bg: rgba(148, 163, 184, 0.16);
   --usage-track-border: rgba(148, 163, 184, 0.22);
   --shadow-stone: rgba(15, 23, 42, 0.08);
@@ -50,7 +49,6 @@
     --surface-soft: rgba(15, 23, 42, 0.34);
     --field-bg: rgba(15, 23, 42, 0.42);
     --control-bg: rgba(15, 23, 42, 0.48);
-    --admin-card-inner-bg: rgba(30, 41, 59, 0.42);
     --usage-track-bg: rgba(148, 163, 184, 0.18);
     --usage-track-border: rgba(148, 163, 184, 0.2);
     --shadow-stone: rgba(0, 0, 0, 0.34);
@@ -106,7 +104,6 @@ svg { display: block; }
   --surface-soft: rgba(255, 255, 255, 0.56);
   --field-bg: rgba(255, 255, 255, 0.74);
   --control-bg: rgba(255, 255, 255, 0.76);
-  --admin-card-inner-bg: rgba(247, 247, 248, 0.9);
   --usage-track-bg: rgba(148, 163, 184, 0.16);
   --usage-track-border: rgba(148, 163, 184, 0.22);
   --shadow-stone: rgba(15, 23, 42, 0.08);
@@ -253,7 +250,7 @@ svg { display: block; }
   position: relative;
   overflow: visible;
   padding: 16px;
-  border: 1px solid color-mix(in srgb, var(--border) 82%, rgba(37, 99, 235, 0.28));
+  border: 0;
   border-radius: var(--radius-panel);
   background: var(--surface-strong);
   color: var(--foreground);
@@ -266,7 +263,6 @@ svg { display: block; }
   content: "";
   position: absolute;
   inset: 1px;
-  border: 1px solid rgba(255, 255, 255, 0.34);
   border-radius: calc(var(--radius-panel) - 1px);
   pointer-events: none;
 }
@@ -406,7 +402,6 @@ svg { display: block; }
 .admin-panel { min-height: 360px; }
 .admin-container,
 .admin-container .home-top-card.admin-panel { width: 100%; }
-.admin-container .home-top-card.admin-panel { background: var(--admin-card-inner-bg); }
 .admin-login-card {
   width: min(100%, 420px);
   margin: 24px auto 0;
@@ -656,7 +651,7 @@ svg { display: block; }
   overflow: hidden;
   border: 1px solid var(--border);
   border-radius: var(--radius-card);
-  background: var(--admin-card-inner-bg);
+  background: var(--surface-strong);
 }
 .admin-workspace-panel .admin-list {
   max-height: none;
@@ -800,7 +795,7 @@ svg { display: block; }
   padding: 14px;
   border: 1px solid var(--border);
   border-radius: var(--radius-card);
-  background: var(--admin-card-inner-bg);
+  background: var(--surface-soft);
   overflow: hidden;
 }
 .admin-form-section-title {
@@ -835,23 +830,18 @@ svg { display: block; }
 }
  .admin-billing-grid {
   display: grid;
-  grid-template-columns: minmax(150px, 1.2fr) minmax(82px, .55fr) minmax(130px, .9fr) minmax(78px, .55fr);
+  gap: 12px;
+}
+.admin-billing-row {
+  display: grid;
   align-items: end;
   gap: 10px;
 }
-.admin-billing-row { display: contents; }
-.admin-quota-row { display: contents; }
+.admin-billing-row--cycle { grid-template-columns: minmax(180px, 1.35fr) minmax(112px, .7fr) minmax(128px, .8fr); }
+.admin-billing-row--traffic { grid-template-columns: minmax(168px, 1.05fr) minmax(120px, .8fr) minmax(96px, .55fr); }
 .admin-billing-control,
-.admin-quota-row { min-width: 0; }
-.admin-billing-control .admin-segmented-options { border-radius: var(--radius-field); }
-.admin-billing-control--cycle { grid-column: 1 / span 2; }
-.admin-billing-control--mode { grid-column: 3 / span 2; }
-.admin-billing-control--cycle .admin-select-trigger,
-.admin-billing-control--mode .admin-select-trigger { width: 100%; }
-.admin-billing-control--expiry { min-width: 0; }
-.admin-quota-row .admin-form-control,
-.admin-quota-row label { min-width: 0; }
-.admin-quota-unit .admin-segmented-options { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.admin-billing-row label { min-width: 0; }
+.admin-billing-control .admin-select-trigger { width: 100%; }
 .admin-form-control {
   min-width: 0;
   display: flex;
@@ -1604,7 +1594,7 @@ svg { display: block; }
   display: flex;
   flex-direction: column;
   padding: 16px;
-  border: 1px solid var(--border);
+  border: 0;
   border-radius: var(--radius-card);
   background: var(--surface-strong);
   color: var(--foreground);
@@ -2356,11 +2346,8 @@ svg { display: block; }
   .admin-modal-summary div { padding: 10px; }
   .admin-node-edit-form,
   .admin-form-grid { grid-template-columns: 1fr; }
-  .admin-billing-grid { grid-template-columns: 1fr; }
-  .admin-billing-control--cycle,
-  .admin-billing-control--mode { grid-column: auto; }
-  .admin-billing-control--cycle .admin-segmented-options,
-  .admin-billing-control--mode .admin-segmented-options { grid-template-columns: repeat(auto-fit, minmax(72px, 1fr)); }
+  .admin-billing-row--cycle,
+  .admin-billing-row--traffic { grid-template-columns: 1fr; }
   .admin-modal-actions {
     position: sticky;
     bottom: 0;

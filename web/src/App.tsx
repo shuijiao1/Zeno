@@ -1594,21 +1594,21 @@ function AdminNodeCreateModal({ onCreate, onInstallCommand, onClose }: { onCreat
         </AdminFormSection>
         <AdminFormSection title="账单与流量">
           <div className="admin-billing-grid">
-            <div className="admin-billing-row">
+            <div className="admin-billing-row admin-billing-row--cycle">
               <AdminDateField className="admin-billing-control admin-billing-control--expiry" name="new-expiry-date" label="到期日" permanentLabel="设为永久" disabled={Boolean(createdNode)} />
-              <label>
+              <label className="admin-billing-control admin-billing-control--reset">
                 <span>月流量重置日</span>
                 <input name="new-monthly-reset-day" type="number" min="1" max="31" step="1" defaultValue="1" disabled={Boolean(createdNode)} />
               </label>
+              <AdminSegmentedField className="admin-billing-control admin-billing-control--cycle" name="new-billing-cycle" label="账单周期" defaultValue="月" options={billingCycleOptions} disabled={Boolean(createdNode)} />
             </div>
-            <AdminSegmentedField className="admin-billing-control admin-billing-control--cycle" name="new-billing-cycle" label="账单周期" defaultValue="月" options={billingCycleOptions} disabled={Boolean(createdNode)} />
-            <AdminSegmentedField className="admin-billing-control admin-billing-control--mode" name="new-billing-mode" label="流量计费口径" defaultValue="both" options={billingModeOptions} disabled={Boolean(createdNode)} />
-            <div className="admin-quota-row">
-              <label>
+            <div className="admin-billing-row admin-billing-row--traffic">
+              <AdminSegmentedField className="admin-billing-control admin-billing-control--mode" name="new-billing-mode" label="流量计费口径" defaultValue="both" options={billingModeOptions} disabled={Boolean(createdNode)} />
+              <label className="admin-billing-control admin-billing-control--quota">
                 <span>月配额</span>
                 <input name="new-monthly-quota" type="number" min="0" step="0.01" disabled={Boolean(createdNode)} />
               </label>
-              <AdminSegmentedField className="admin-quota-unit" name="new-monthly-quota-unit" label="配额单位" defaultValue="GB" options={quotaUnitOptions} disabled={Boolean(createdNode)} />
+              <AdminSegmentedField className="admin-billing-control admin-billing-control--unit" name="new-monthly-quota-unit" label="配额单位" defaultValue="GB" options={quotaUnitOptions} disabled={Boolean(createdNode)} />
             </div>
           </div>
         </AdminFormSection>
@@ -1730,21 +1730,21 @@ function AdminNodeEditModal({ node, targets, onUpdate, onTargetUpdate, onInstall
         </AdminFormSection>
         <AdminFormSection title="账单与流量">
           <div className="admin-billing-grid">
-            <div className="admin-billing-row">
+            <div className="admin-billing-row admin-billing-row--cycle">
               <AdminDateField className="admin-billing-control admin-billing-control--expiry" name="expiry-date" label="到期日" defaultValue={node.expiryDate ?? ''} permanentLabel="设为永久" />
-              <label>
+              <label className="admin-billing-control admin-billing-control--reset">
                 <span>月流量重置日</span>
                 <input name="monthly-reset-day" type="number" min="1" max="31" step="1" defaultValue={node.monthlyResetDay || 1} />
               </label>
+              <AdminSegmentedField className="admin-billing-control admin-billing-control--cycle" name="billing-cycle" label="账单周期" defaultValue={normalizeBillingCycle(node.billingCycle)} options={billingCycleOptions} />
             </div>
-            <AdminSegmentedField className="admin-billing-control admin-billing-control--cycle" name="billing-cycle" label="账单周期" defaultValue={normalizeBillingCycle(node.billingCycle)} options={billingCycleOptions} />
-            <AdminSegmentedField className="admin-billing-control admin-billing-control--mode" name="billing-mode" label="流量计费口径" defaultValue={node.billingMode || 'both'} options={billingModeOptions} />
-            <div className="admin-quota-row">
-              <label>
+            <div className="admin-billing-row admin-billing-row--traffic">
+              <AdminSegmentedField className="admin-billing-control admin-billing-control--mode" name="billing-mode" label="流量计费口径" defaultValue={node.billingMode || 'both'} options={billingModeOptions} />
+              <label className="admin-billing-control admin-billing-control--quota">
                 <span>月配额</span>
                 <input name="monthly-quota" type="number" min="0" step="0.01" defaultValue={formatQuotaValue(node.monthlyQuotaBytes)} />
               </label>
-              <AdminSegmentedField className="admin-quota-unit" name="monthly-quota-unit" label="配额单位" defaultValue={quotaUnitForBytes(node.monthlyQuotaBytes)} options={quotaUnitOptions} />
+              <AdminSegmentedField className="admin-billing-control admin-billing-control--unit" name="monthly-quota-unit" label="配额单位" defaultValue={quotaUnitForBytes(node.monthlyQuotaBytes)} options={quotaUnitOptions} />
             </div>
           </div>
         </AdminFormSection>
@@ -1865,7 +1865,7 @@ function AdminTargetCreateModal({ nodes, onCreate, onClose }: { nodes: AdminNode
       address,
       port,
       count: parsePositiveInt(String(formData.get('new-target-count') ?? '')) ?? 3,
-      timeoutMs: parsePositiveInt(String(formData.get('new-target-timeout-ms') ?? '')) ?? 1200,
+      timeoutMs: parsePositiveInt(String(formData.get('new-target-timeout-ms') ?? '')) ?? 600,
       intervalSec: parsePositiveInt(String(formData.get('new-target-interval-sec') ?? '')) ?? 30,
       assignments: nodes.map((node) => ({ nodeId: node.id, enabled: assignmentNodeIds.includes(node.id) })),
     })
@@ -1912,7 +1912,7 @@ function AdminTargetCreateModal({ nodes, onCreate, onClose }: { nodes: AdminNode
             </label>
             <label>
               <span>超时 ms</span>
-              <input name="new-target-timeout-ms" type="number" min="1" defaultValue="1200" />
+              <input name="new-target-timeout-ms" type="number" min="1" defaultValue="600" />
             </label>
             <label>
               <span>间隔 s</span>
