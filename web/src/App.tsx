@@ -2890,12 +2890,7 @@ function parseNonNegativeInt(value: string): number | null {
 }
 
 async function copyTextToClipboard(text: string): Promise<void> {
-  try {
-    return await navigator.clipboard.writeText(text)
-  } catch (error) {
-    console.error('navigator clipboard copy failed', error)
-  }
-  const copied = await copy(text, { fallbackToPrompt: true })
+  const copied = await copy(text)
   if (!copied) throw new Error('当前浏览器不支持自动复制，请手动选中复制。')
 }
 
