@@ -109,6 +109,8 @@ describe('LatencyDetail', () => {
     expect(html).not.toContain('Hytron 网络延迟')
     expect(html).not.toContain('1 天 · 0 个监控服务')
     expect(html).toContain('monitor services')
+    expect(html).toContain('latency-target-toolbar')
+    expect(html).toContain('全选')
   })
 
   it('labels detail CPU cores as physical when the host does not look virtualized', () => {

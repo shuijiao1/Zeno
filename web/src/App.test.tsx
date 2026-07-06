@@ -1,6 +1,6 @@
 import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it } from 'vitest'
-import { AdminDashboard, HomeTopPanel, shellStyleForSettings, validateAdminSettingsInput } from './App'
+import { AdminDashboard, HomeTopPanel, documentBrandingForSettings, shellStyleForSettings, validateAdminSettingsInput } from './App'
 import type { AdminAlertRule, AdminNode, AdminNotificationChannel, AdminProbeTarget, AdminSettings } from './types'
 
 const overviewProps = {
@@ -195,6 +195,13 @@ function renderAdmin(section: 'nodes' | 'targets' | 'notifications' | 'account' 
 }
 
 describe('HomeTopPanel', () => {
+  it('uses the configured logo as the browser favicon source', () => {
+    expect(documentBrandingForSettings(settings)).toEqual({
+      title: '水饺监控',
+      iconHref: '/assets/logo/custom.png',
+    })
+  })
+
   it('turns configured desktop and mobile background images into safe shell variables', () => {
     expect(shellStyleForSettings(settings)).toEqual({
       '--zeno-desktop-background-image': 'url("https://example.com/desktop-bg.webp")',

@@ -131,6 +131,25 @@ export function shellStyleForSettings(settings: AdminSettings): CSSProperties | 
   } as CSSProperties
 }
 
+export function documentBrandingForSettings(settings: AdminSettings) {
+  const siteTitle = (settings.siteTitle || defaultSettings.siteTitle).trim() || defaultSettings.siteTitle
+  const logoUrl = (settings.logoUrl || defaultSettings.logoUrl).trim() || defaultSettings.logoUrl
+  return { title: siteTitle, iconHref: logoUrl }
+}
+
+export function applyDocumentBranding(settings: AdminSettings) {
+  if (typeof document === 'undefined') return
+  const branding = documentBrandingForSettings(settings)
+  document.title = branding.title
+  let icon = document.head.querySelector<HTMLLinkElement>('link[rel="icon"]')
+  if (!icon) {
+    icon = document.createElement('link')
+    icon.rel = 'icon'
+    document.head.appendChild(icon)
+  }
+  icon.href = branding.iconHref
+}
+
 function alertRuleAppliesToNode(rule: AdminAlertRule, nodeId: string): boolean {
   return rule.scopeNodeIds.length === 0 || rule.scopeNodeIds.includes(nodeId)
 }
@@ -164,6 +183,10 @@ export function App() {
       cancelled = true
     }
   }, [])
+
+  useEffect(() => {
+    applyDocumentBranding(settings)
+  }, [settings.siteTitle, settings.logoUrl])
 
   useEffect(() => {
     let cancelled = false
@@ -1632,13 +1655,15 @@ function AdminNodeEditModal({ node, targets, onUpdate, onTargetUpdate, onInstall
               value={selectedTargetIds}
               onChange={updateSelectedTargetIds}
               renderRight={(option, checked) => (
-                <label className={`admin-home-monitor-radio${checked ? '' : ' is-disabled'}`}>
+                <label className="admin-home-monitor-radio">
                   <input
                     type="radio"
                     name={`home-monitor-${node.id}`}
-                    checked={checked && homeTargetId === option.value}
-                    disabled={!checked}
-                    onChange={() => setHomeTargetId(option.value)}
+                    checked={homeTargetId === option.value}
+                    onChange={() => {
+                      if (!checked) updateSelectedTargetIds([...selectedTargetIds, option.value])
+                      setHomeTargetId(option.value)
+                    }}
                   />
                   <span>首页展示</span>
                 </label>
@@ -1836,6 +1861,8 @@ function AdminTargetCreateModal({ onCreate, onClose }: { onCreate: (input: Admin
 function AdminTargetEditModal({ target, nodes, onUpdate, onClose }: { target: AdminProbeTarget; nodes: AdminNode[]; onUpdate: (targetId: string, input: AdminProbeTargetUpdateInput) => void; onClose: () => void }) {
   const [targetType, setTargetType] = useState<ProbeType>(target.type)
   const assignmentRows = targetAssignmentRows(target, nodes)
+  const [assignmentNodeIds, setAssignmentNodeIds] = useState<string[]>(() => assignmentRows.filter((assignment) => assignment.enabled).map((assignment) => assignment.nodeId))
+  const selectedAssignmentNodes = new Set(assignmentNodeIds)
 
   const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
@@ -1855,7 +1882,7 @@ function AdminTargetEditModal({ target, nodes, onUpdate, onClose }: { target: Ad
       assignments: assignmentRows.length > 0
         ? assignmentRows.map((assignment) => ({
             nodeId: assignment.nodeId,
-            enabled: formData.get(`target-assignment-${assignment.nodeId}`) === 'on',
+            enabled: selectedAssignmentNodes.has(assignment.nodeId),
           }))
         : undefined,
     })
@@ -1911,10 +1938,27 @@ function AdminTargetEditModal({ target, nodes, onUpdate, onClose }: { target: Ad
         </AdminFormSection>
         {assignmentRows.length > 0 && (
           <AdminFormSection title="按节点启用">
+            <AdminBulkSelectBar
+              selectedCount={assignmentNodeIds.length}
+              totalCount={assignmentRows.length}
+              onSelectAll={() => setAssignmentNodeIds(assignmentRows.map((assignment) => assignment.nodeId))}
+              onClear={() => setAssignmentNodeIds([])}
+            />
             <div className="admin-target-assignment-list">
               {assignmentRows.map((assignment) => (
                 <label className="admin-node-toggle admin-target-assignment-toggle" key={assignment.nodeId}>
-                  <input name={`target-assignment-${assignment.nodeId}`} type="checkbox" defaultChecked={assignment.enabled} />
+                  <input
+                    name={`target-assignment-${assignment.nodeId}`}
+                    type="checkbox"
+                    checked={selectedAssignmentNodes.has(assignment.nodeId)}
+                    onChange={(event) => {
+                      setAssignmentNodeIds((current) => (
+                        event.currentTarget.checked
+                          ? Array.from(new Set([...current, assignment.nodeId]))
+                          : current.filter((nodeId) => nodeId !== assignment.nodeId)
+                      ))
+                    }}
+                  />
                   <span>{assignment.nodeDisplayName || assignment.nodeId}</span>
                 </label>
               ))}
@@ -2355,6 +2399,14 @@ function AdminExpandedCheckList({ options, value, onChange, title = '已选', em
       {expanded && (
         <div className="admin-expanded-checklist__list" role="list">
           {options.length === 0 && <div className="admin-expanded-checklist__empty">{emptyText}</div>}
+          {options.length > 0 && (
+            <AdminBulkSelectBar
+              selectedCount={normalizedValue.length}
+              totalCount={options.length}
+              onSelectAll={() => onChange(options.map((option) => option.value))}
+              onClear={() => onChange([])}
+            />
+          )}
           {options.map((option) => {
             const checked = selected.has(option.value)
             return (
@@ -2367,6 +2419,16 @@ function AdminExpandedCheckList({ options, value, onChange, title = '已选', em
           })}
         </div>
       )}
+    </div>
+  )
+}
+
+function AdminBulkSelectBar({ selectedCount, totalCount, onSelectAll, onClear }: { selectedCount: number; totalCount: number; onSelectAll: () => void; onClear: () => void }) {
+  const allSelected = totalCount > 0 && selectedCount === totalCount
+  return (
+    <div className="admin-bulk-select-bar">
+      <span>{selectedCount}/{totalCount}</span>
+      <button type="button" onClick={allSelected ? onClear : onSelectAll}>{allSelected ? '清空' : '全选'}</button>
     </div>
   )
 }

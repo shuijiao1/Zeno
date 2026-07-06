@@ -63,10 +63,14 @@ export function LatencyDetail({
     : '-- / -- / --'
   const hasLatencyData = points.length > 0 || targetSummaries.length > 0
   const showLatencySkeleton = loading && !hasLatencyData && !error
+  const allTargetsSelected = targetSummaries.length > 0 && activeTargetIds.length === targetSummaries.length
   const toggleTarget = (targetId: string) => {
     setActiveTargetIds((current) => (
       current.includes(targetId) ? current.filter((id) => id !== targetId) : [...current, targetId]
     ))
+  }
+  const toggleAllTargets = () => {
+    setActiveTargetIds(allTargetsSelected ? [] : targetSummaries.map((target) => target.targetId))
   }
 
   return (
@@ -128,6 +132,9 @@ export function LatencyDetail({
 
         {!showLatencySkeleton && !error && hasLatencyData && (
           <>
+            <div className="latency-target-toolbar">
+              <button type="button" onClick={toggleAllTargets}>{allTargetsSelected ? '清空选择' : '全选'}</button>
+            </div>
             <div className="latency-target-grid" aria-label="monitor services">
               {targetSummaries.map((target) => (
                 <button
