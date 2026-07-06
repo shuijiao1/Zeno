@@ -7,7 +7,7 @@
   --card: #ffffff;
   --foreground: #0f172a;
   --muted: #53657d;
-  --border: rgba(37, 99, 235, 0.40);
+  --border: rgba(37, 99, 235, 0.26);
   --secondary: rgba(255, 255, 255, 0.66);
   --metric-bg: rgba(255, 255, 255, 0.72);
   --surface: rgba(255, 255, 255, 0.82);
@@ -15,6 +15,7 @@
   --surface-soft: rgba(255, 255, 255, 0.56);
   --field-bg: rgba(255, 255, 255, 0.74);
   --control-bg: rgba(255, 255, 255, 0.76);
+  --admin-card-inner-bg: rgba(248, 250, 252, 0.86);
   --usage-track-bg: rgba(148, 163, 184, 0.16);
   --usage-track-border: rgba(148, 163, 184, 0.22);
   --shadow-stone: rgba(15, 23, 42, 0.08);
@@ -41,7 +42,7 @@
     --card: rgba(15, 23, 42, 0.62);
     --foreground: #f8fafc;
     --muted: #94a3b8;
-    --border: rgba(148, 163, 184, 0.42);
+    --border: rgba(148, 163, 184, 0.28);
     --secondary: rgba(15, 23, 42, 0.46);
     --metric-bg: rgba(15, 23, 42, 0.44);
     --surface: rgba(15, 23, 42, 0.54);
@@ -49,6 +50,7 @@
     --surface-soft: rgba(15, 23, 42, 0.34);
     --field-bg: rgba(15, 23, 42, 0.42);
     --control-bg: rgba(15, 23, 42, 0.48);
+    --admin-card-inner-bg: rgba(30, 41, 59, 0.42);
     --usage-track-bg: rgba(148, 163, 184, 0.18);
     --usage-track-border: rgba(148, 163, 184, 0.2);
     --shadow-stone: rgba(0, 0, 0, 0.34);
@@ -96,7 +98,7 @@ svg { display: block; }
   --card: #ffffff;
   --foreground: #0f172a;
   --muted: #53657d;
-  --border: rgba(37, 99, 235, 0.40);
+  --border: rgba(37, 99, 235, 0.26);
   --secondary: rgba(255, 255, 255, 0.66);
   --metric-bg: rgba(255, 255, 255, 0.72);
   --surface: rgba(255, 255, 255, 0.82);
@@ -104,6 +106,7 @@ svg { display: block; }
   --surface-soft: rgba(255, 255, 255, 0.56);
   --field-bg: rgba(255, 255, 255, 0.74);
   --control-bg: rgba(255, 255, 255, 0.76);
+  --admin-card-inner-bg: rgba(248, 250, 252, 0.86);
   --usage-track-bg: rgba(148, 163, 184, 0.16);
   --usage-track-border: rgba(148, 163, 184, 0.22);
   --shadow-stone: rgba(15, 23, 42, 0.08);
@@ -117,7 +120,7 @@ svg { display: block; }
   --card: rgba(15, 23, 42, 0.62);
   --foreground: #f8fafc;
   --muted: #94a3b8;
-  --border: rgba(148, 163, 184, 0.42);
+  --border: rgba(148, 163, 184, 0.28);
   --secondary: rgba(15, 23, 42, 0.46);
   --metric-bg: rgba(15, 23, 42, 0.44);
   --surface: rgba(15, 23, 42, 0.54);
@@ -440,7 +443,7 @@ svg { display: block; }
 .admin-row-action {
   height: 38px;
   padding: 0 14px;
-  border: 1.5px solid var(--border);
+  border: 1px solid var(--border);
   border-radius: var(--radius-field);
   background: var(--surface-soft);
   color: var(--foreground);
@@ -650,9 +653,9 @@ svg { display: block; }
 .admin-alert-rule-list .admin-node-status.status-disabled { color: var(--muted); }
 .admin-list {
   overflow: hidden;
-  border: 1.5px solid var(--border);
+  border: 1px solid var(--border);
   border-radius: var(--radius-card);
-  background: var(--surface-strong);
+  background: var(--admin-card-inner-bg);
 }
 .admin-workspace-panel .admin-list {
   max-height: none;
@@ -794,9 +797,9 @@ svg { display: block; }
 .admin-form-section {
   margin: 18px 0 0;
   padding: 14px;
-  border: 1.5px solid var(--border);
+  border: 1px solid var(--border);
   border-radius: var(--radius-card);
-  background: var(--surface-soft);
+  background: var(--admin-card-inner-bg);
   overflow: hidden;
 }
 .admin-form-section-title {
@@ -829,18 +832,25 @@ svg { display: block; }
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 10px;
 }
-.admin-billing-grid {
+ .admin-billing-grid {
   display: grid;
-  grid-template-columns: minmax(150px, 1.25fr) minmax(86px, .68fr) minmax(108px, .82fr) minmax(118px, .86fr);
+  grid-template-columns: minmax(150px, 1.2fr) minmax(82px, .55fr) minmax(130px, .9fr) minmax(78px, .55fr);
   align-items: end;
-  gap: 10px 12px;
+  gap: 10px;
 }
 .admin-billing-row { display: contents; }
 .admin-quota-row { display: contents; }
 .admin-billing-control,
-.admin-billing-grid > label { min-width: 0; }
-.admin-billing-control--expiry { grid-column: span 2; }
-.admin-billing-control--mode { grid-column: span 2; }
+.admin-quota-row { min-width: 0; }
+.admin-billing-control .admin-segmented-options { border-radius: var(--radius-field); }
+.admin-billing-control--cycle { grid-column: 1 / span 2; }
+.admin-billing-control--mode { grid-column: 3 / span 2; }
+.admin-billing-control--cycle .admin-segmented-options { grid-template-columns: repeat(7, minmax(0, 1fr)); }
+.admin-billing-control--mode .admin-segmented-options { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.admin-billing-control--expiry { min-width: 0; }
+.admin-quota-row .admin-form-control,
+.admin-quota-row label { min-width: 0; }
+.admin-quota-unit .admin-segmented-options { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 .admin-form-control {
   min-width: 0;
   display: flex;
@@ -876,7 +886,7 @@ svg { display: block; }
   min-width: 0;
   height: 40px;
   padding: 0 12px;
-  border: 1.5px solid var(--border);
+  border: 1px solid var(--border);
   border-radius: var(--radius-field);
   background: var(--field-bg);
   color: var(--foreground);
@@ -890,10 +900,6 @@ svg { display: block; }
   border-color: color-mix(in srgb, var(--blue) 52%, var(--border));
   box-shadow: 0 0 0 3px color-mix(in srgb, var(--blue) 14%, transparent);
 }
-.admin-select-field select {
-  appearance: auto;
-  padding-right: 12px;
-}
 .admin-date-field { position: relative; }
 .admin-date-picker { position: relative; min-width: 0; display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; }
 .admin-date-trigger {
@@ -904,7 +910,7 @@ svg { display: block; }
   justify-content: space-between;
   gap: 10px;
   padding: 0 10px 0 12px;
-  border: 1.5px solid var(--border);
+  border: 1px solid var(--border);
   border-radius: var(--radius-field);
   background: var(--field-bg);
   color: var(--foreground);
@@ -926,7 +932,7 @@ svg { display: block; }
 .admin-date-permanent {
   height: 40px;
   padding: 0 12px;
-  border: 1.5px solid var(--border);
+  border: 1px solid var(--border);
   border-radius: var(--radius-field);
   background: var(--control-bg);
   color: var(--muted);
@@ -1388,7 +1394,7 @@ svg { display: block; }
   flex-direction: column;
   overflow: hidden;
   padding: 20px;
-  border: 1.5px solid var(--border);
+  border: 1px solid var(--border);
   border-radius: var(--radius-panel);
   background: var(--surface-strong);
   color: var(--foreground);
@@ -2276,8 +2282,10 @@ svg { display: block; }
   .admin-node-edit-form,
   .admin-form-grid { grid-template-columns: 1fr; }
   .admin-billing-grid { grid-template-columns: 1fr; }
-  .admin-billing-control--expiry,
+  .admin-billing-control--cycle,
   .admin-billing-control--mode { grid-column: auto; }
+  .admin-billing-control--cycle .admin-segmented-options,
+  .admin-billing-control--mode .admin-segmented-options { grid-template-columns: repeat(auto-fit, minmax(72px, 1fr)); }
   .admin-modal-actions {
     position: sticky;
     bottom: 0;
