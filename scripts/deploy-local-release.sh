@@ -18,6 +18,7 @@ Options:
   --controller-url <url>        Default: http://127.0.0.1:18980
   --node-id <id>                Default: hytron
   --agent-interval <duration>   Default: 2s
+  --agent-version <version>     Default: release REVISION
   --agent-token-file <path>     Default: <data-dir>/agent-token
   --admin-token-file <path>     Default: <data-dir>/admin-token
   --seed-preview                Pass -seed-preview to Controller
@@ -37,6 +38,7 @@ controller_addr="0.0.0.0:18980"
 controller_url="http://127.0.0.1:18980"
 node_id="hytron"
 agent_interval="2s"
+agent_version=""
 agent_token_file=""
 admin_token_file=""
 seed_preview=0
@@ -55,6 +57,7 @@ while [ "$#" -gt 0 ]; do
     --controller-url) controller_url="${2:-}"; shift 2 ;;
     --node-id) node_id="${2:-}"; shift 2 ;;
     --agent-interval) agent_interval="${2:-}"; shift 2 ;;
+    --agent-version) agent_version="${2:-}"; shift 2 ;;
     --agent-token-file) agent_token_file="${2:-}"; shift 2 ;;
     --admin-token-file) admin_token_file="${2:-}"; shift 2 ;;
     --seed-preview) seed_preview=1; shift ;;
@@ -112,6 +115,7 @@ render_template() {
   local template="$1"
   local output="$2"
   local version="$3"
+  local reported_agent_version="$4"
   local seed_flag=""
   if [ "$seed_preview" -eq 1 ]; then seed_flag=" -seed-preview"; fi
   mkdir -p "$(dirname "$output")"
@@ -128,6 +132,7 @@ render_template() {
     -e "s/{{CONTROLLER_URL}}/$(sed_escape "$controller_url")/g" \
     -e "s/{{NODE_ID}}/$(sed_escape "$node_id")/g" \
     -e "s/{{AGENT_INTERVAL}}/$(sed_escape "$agent_interval")/g" \
+    -e "s/{{AGENT_VERSION}}/$(sed_escape "$reported_agent_version")/g" \
     -e "s/{{AGENT_TOKEN_FILE}}/$(sed_escape "$agent_token_file")/g" \
     -e "s/{{ADMIN_TOKEN_FILE}}/$(sed_escape "$admin_token_file")/g" \
     -e "s/{{SEED_PREVIEW_FLAG}}/$(sed_escape "$seed_flag")/g" \
@@ -178,6 +183,9 @@ if [ -z "$version" ]; then
   echo "release REVISION is empty" >&2
   exit 1
 fi
+if [ -z "$agent_version" ]; then
+  agent_version="$version"
+fi
 release_name=$(basename "$release_source")
 release_dir="$install_dir/releases/$release_name"
 
@@ -207,8 +215,8 @@ else
   if [ -f "$systemd_dir/zeno-controller.service" ]; then cp "$systemd_dir/zeno-controller.service" "$controller_unit_backup"; fi
   if [ -f "$systemd_dir/zeno-agent.service" ]; then cp "$systemd_dir/zeno-agent.service" "$agent_unit_backup"; fi
 fi
-render_template "$release_dir/packaging/systemd/zeno-controller.service" "$unit_output_dir/zeno-controller.service" "$version"
-render_template "$release_dir/packaging/systemd/zeno-agent.service" "$unit_output_dir/zeno-agent.service" "$version"
+render_template "$release_dir/packaging/systemd/zeno-controller.service" "$unit_output_dir/zeno-controller.service" "$version" "$agent_version"
+render_template "$release_dir/packaging/systemd/zeno-agent.service" "$unit_output_dir/zeno-agent.service" "$version" "$agent_version"
 
 if [ "$dry_run" -eq 1 ]; then
   printf 'dry-run ok: release=%s units=%s\n' "$release_dir" "$unit_output_dir"

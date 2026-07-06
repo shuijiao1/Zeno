@@ -96,7 +96,7 @@ function backgroundImageValue(url: string): string {
 function storedThemeOverride(): AdminTheme | null {
   if (typeof window === 'undefined') return null
   const value = window.localStorage.getItem('zeno_theme_override')
-  return value === 'light' || value === 'dark' ? value : null
+  return value === 'system' || value === 'light' || value === 'dark' ? value : null
 }
 
 function storedBackgroundEnabled(): boolean {
@@ -578,13 +578,9 @@ export function App() {
     setRoute({ kind: 'service', targetId })
   }
 
-  const toggleTheme = () => {
-    setThemeOverride((current) => {
-      const currentTheme = resolvedTheme(current ?? settings.theme)
-      const nextTheme: AdminTheme = currentTheme === 'dark' ? 'light' : 'dark'
-      window.localStorage.setItem('zeno_theme_override', nextTheme)
-      return nextTheme
-    })
+  const setThemeMode = (nextTheme: AdminTheme) => {
+    window.localStorage.setItem('zeno_theme_override', nextTheme)
+    setThemeOverride(nextTheme)
   }
 
   const toggleBackground = () => {
@@ -611,7 +607,7 @@ export function App() {
 
   return (
     <main className="kulin-shell" data-theme={effectiveSettings.theme} style={shellStyleForSettings(effectiveSettings)}>
-      {(route.kind === 'node' || route.kind === 'service') && <DashboardHeader settings={effectiveSettings} onHome={navigateHome} onAdmin={navigateAdmin} onThemeToggle={toggleTheme} onBackgroundToggle={toggleBackground} backgroundEnabled={backgroundEnabled} />}
+      {(route.kind === 'node' || route.kind === 'service') && <DashboardHeader settings={effectiveSettings} onHome={navigateHome} onAdmin={navigateAdmin} onThemeChange={setThemeMode} onBackgroundToggle={toggleBackground} backgroundEnabled={backgroundEnabled} />}
 
       {route.kind === 'admin' && (
         <AdminDashboard
@@ -637,7 +633,7 @@ export function App() {
           onAdminNotificationChannelTest={testAdminNotificationChannelDetails}
           onAdminAlertRuleUpdate={updateAdminAlertRuleDetails}
           onAdminSettingsUpdate={updateAdminSettingsDetails}
-          onThemeToggle={toggleTheme}
+          onThemeChange={setThemeMode}
           onBackgroundToggle={toggleBackground}
           backgroundEnabled={backgroundEnabled}
         />
@@ -696,7 +692,7 @@ export function App() {
             downSpeed={downSpeed}
             onHome={navigateHome}
             onAdmin={navigateAdmin}
-            onThemeToggle={toggleTheme}
+            onThemeChange={setThemeMode}
             onBackgroundToggle={toggleBackground}
             backgroundEnabled={backgroundEnabled}
           />
@@ -727,7 +723,7 @@ interface DashboardHeaderProps {
   onAdmin: () => void
   adminLabel?: string
   trailingAction?: ReactNode
-  onThemeToggle?: () => void
+  onThemeChange?: (theme: AdminTheme) => void
   onBackgroundToggle?: () => void
   backgroundEnabled?: boolean
 }
@@ -735,15 +731,15 @@ interface DashboardHeaderProps {
 interface HomeTopPanelProps extends HomeOverviewPanelProps {
   onHome: () => void
   onAdmin: () => void
-  onThemeToggle?: () => void
+  onThemeChange?: (theme: AdminTheme) => void
   onBackgroundToggle?: () => void
   backgroundEnabled?: boolean
 }
 
-export function HomeTopPanel({ settings = defaultSettings, onHome, onAdmin, onThemeToggle, onBackgroundToggle, backgroundEnabled = true, ...overview }: HomeTopPanelProps) {
+export function HomeTopPanel({ settings = defaultSettings, onHome, onAdmin, onThemeChange, onBackgroundToggle, backgroundEnabled = true, ...overview }: HomeTopPanelProps) {
   return (
     <section className="home-top-card" aria-label="homepage control panel">
-      <DashboardHeader settings={settings} onHome={onHome} onAdmin={onAdmin} onThemeToggle={onThemeToggle} onBackgroundToggle={onBackgroundToggle} backgroundEnabled={backgroundEnabled} />
+      <DashboardHeader settings={settings} onHome={onHome} onAdmin={onAdmin} onThemeChange={onThemeChange} onBackgroundToggle={onBackgroundToggle} backgroundEnabled={backgroundEnabled} />
       <HomeOverviewPanel settings={settings} {...overview} />
     </section>
   )
@@ -839,8 +835,35 @@ function formatServiceLoss(value: number | null | undefined): string {
   return `${value.toFixed(2)}%`
 }
 
-function DashboardHeader({ settings = defaultSettings, onHome, onAdmin, adminLabel = '后台', trailingAction, onThemeToggle, onBackgroundToggle, backgroundEnabled = true }: DashboardHeaderProps) {
-  const currentTheme = resolvedTheme(settings.theme)
+function DashboardHeader({ settings = defaultSettings, onHome, onAdmin, adminLabel = '后台', trailingAction, onThemeChange, onBackgroundToggle, backgroundEnabled = true }: DashboardHeaderProps) {
+  const [themeMenuOpen, setThemeMenuOpen] = useState(false)
+  const themeMenuRef = useRef<HTMLDivElement>(null)
+  const themeMode = settings.theme
+  const currentTheme = resolvedTheme(themeMode)
+  const currentThemeLabel = headerThemeOptions.find((option) => option.value === themeMode)?.label ?? '自适应'
+
+  useEffect(() => {
+    if (!themeMenuOpen || typeof window === 'undefined') return undefined
+    const handlePointerDown = (event: PointerEvent) => {
+      if (themeMenuRef.current?.contains(event.target as Node)) return
+      setThemeMenuOpen(false)
+    }
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setThemeMenuOpen(false)
+    }
+    window.addEventListener('pointerdown', handlePointerDown)
+    window.addEventListener('keydown', handleKeyDown)
+    return () => {
+      window.removeEventListener('pointerdown', handlePointerDown)
+      window.removeEventListener('keydown', handleKeyDown)
+    }
+  }, [themeMenuOpen])
+
+  const selectTheme = (nextTheme: AdminTheme) => {
+    onThemeChange?.(nextTheme)
+    setThemeMenuOpen(false)
+  }
+
   return (
     <header className="kulin-nav">
       <button className="brand" type="button" onClick={onHome}>
@@ -849,7 +872,19 @@ function DashboardHeader({ settings = defaultSettings, onHome, onAdmin, adminLab
       </button>
       <nav className="nav-actions" aria-label="dashboard actions">
         <button className="login-link" type="button" onClick={onAdmin}>{adminLabel}</button>
-        <button className={`nav-icon-button${currentTheme === 'light' ? ' is-solid' : ''}`} type="button" aria-label={currentTheme === 'dark' ? '切换浅色模式' : '切换深色模式'} onClick={onThemeToggle}><SunIcon /><span className="sr-only">切换深浅色</span></button>
+        <div className="theme-menu" ref={themeMenuRef}>
+          <button className={`nav-icon-button${themeMode !== 'system' ? ' is-solid' : ''}`} type="button" aria-label={`主题：${currentThemeLabel}`} aria-haspopup="menu" aria-expanded={themeMenuOpen} onClick={() => setThemeMenuOpen((open) => !open)}>{themeMode === 'system' ? <MonitorIcon /> : currentTheme === 'dark' ? <MoonIcon /> : <SunIcon />}<span className="sr-only">切换深浅色</span></button>
+          {themeMenuOpen && (
+            <div className="theme-menu-popover" role="menu">
+              {headerThemeOptions.map((option) => (
+                <button key={option.value} type="button" role="menuitemradio" aria-checked={themeMode === option.value} data-active={themeMode === option.value} onClick={() => selectTheme(option.value)}>
+                  <span>{option.label}</span>
+                  <small>{option.description}</small>
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
         <button className={`nav-icon-button${backgroundEnabled ? ' is-solid' : ''}`} type="button" aria-label={backgroundEnabled ? '关闭背景图' : '开启背景图'} onClick={onBackgroundToggle}><ImageMinusIcon /><span className="sr-only">开关背景图</span></button>
         {trailingAction}
       </nav>
@@ -881,7 +916,7 @@ interface AdminDashboardProps {
   onAdminNotificationChannelTest?: (channelId: string) => void
   onAdminAlertRuleUpdate?: (ruleId: string, input: AdminAlertRuleUpdateInput) => void
   onAdminSettingsUpdate?: (input: AdminSettingsUpdateInput) => void
-  onThemeToggle?: () => void
+  onThemeChange?: (theme: AdminTheme) => void
   onBackgroundToggle?: () => void
   backgroundEnabled?: boolean
 }
@@ -910,7 +945,7 @@ export function AdminDashboard({
   onAdminNotificationChannelTest = () => {},
   onAdminAlertRuleUpdate = () => {},
   onAdminSettingsUpdate = () => {},
-  onThemeToggle,
+  onThemeChange,
   onBackgroundToggle,
   backgroundEnabled = true,
 }: AdminDashboardProps) {
@@ -934,7 +969,7 @@ export function AdminDashboard({
           onAdmin={onHome}
           adminLabel="前台"
           trailingAction={hasAdminToken ? <button className="nav-logout-button" type="button" onClick={onAdminTokenClear}>退出</button> : undefined}
-          onThemeToggle={onThemeToggle}
+          onThemeChange={onThemeChange}
           onBackgroundToggle={onBackgroundToggle}
           backgroundEnabled={backgroundEnabled}
         />
@@ -2250,9 +2285,15 @@ function AdminFormSection({ title, description, children }: { title: string; des
 }
 
 const themeOptions = [
-  { value: 'system', label: '跟随系统' },
-  { value: 'dark', label: '深色' },
+  { value: 'system', label: '自适应' },
   { value: 'light', label: '浅色' },
+  { value: 'dark', label: '深色' },
+]
+
+const headerThemeOptions: Array<{ value: AdminTheme; label: string; description: string }> = [
+  { value: 'system', label: '自适应', description: '跟随系统' },
+  { value: 'light', label: '浅色', description: '始终浅色' },
+  { value: 'dark', label: '深色', description: '始终深色' },
 ]
 
 const billingModeOptions = [
@@ -2496,6 +2537,23 @@ function SunIcon() {
     <svg viewBox="0 0 24 24" aria-hidden="true">
       <circle cx="12" cy="12" r="4" />
       <path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41" />
+    </svg>
+  )
+}
+
+function MoonIcon() {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true">
+      <path d="M20.99 12.58A8.5 8.5 0 1 1 11.42 3a6.6 6.6 0 0 0 9.57 9.57Z" />
+    </svg>
+  )
+}
+
+function MonitorIcon() {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true">
+      <rect x="3" y="4" width="18" height="12" rx="2" />
+      <path d="M8 20h8M12 16v4" />
     </svg>
   )
 }
