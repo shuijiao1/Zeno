@@ -1579,6 +1579,11 @@ function installCommandText(state: InstallCommandState): string {
   return state.commands[state.platform] || state.command
 }
 
+function installCommandForPlatform(state: InstallCommandState, platform: AgentInstallPlatform): string {
+  if (state.kind !== 'ready') return ''
+  return state.commands[platform] || state.command
+}
+
 function installCommandReady(result: AdminNodeInstallCommand): InstallCommandState {
   return {
     kind: 'ready',
@@ -1594,6 +1599,7 @@ function AdminNodeCreateModal({ onCreate, onInstallCommand, onClose }: { onCreat
   const [formError, setFormError] = useState<string | null>(null)
   const [installCommandState, setInstallCommandState] = useState<InstallCommandState>({ kind: 'idle' })
   const [installCopyState, setInstallCopyState] = useState<{ kind: 'idle' } | { kind: 'ready'; message: string } | { kind: 'error'; message: string }>({ kind: 'idle' })
+  const [installPlatformPickerOpen, setInstallPlatformPickerOpen] = useState(false)
 
   const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
@@ -1624,6 +1630,7 @@ function AdminNodeCreateModal({ onCreate, onInstallCommand, onClose }: { onCreat
     if (!createdNode) return
     setInstallCommandState({ kind: 'loading' })
     setInstallCopyState({ kind: 'idle' })
+    setInstallPlatformPickerOpen(false)
     onInstallCommand(createdNode.id)
       .then((result) => setInstallCommandState(installCommandReady(result)))
       .catch((error: unknown) => setInstallCommandState({ kind: 'error', message: error instanceof Error ? error.message : 'unknown error' }))
@@ -1631,18 +1638,20 @@ function AdminNodeCreateModal({ onCreate, onInstallCommand, onClose }: { onCreat
 
   const handleCopyInstallCommand = () => {
     if (installCommandState.kind !== 'ready') return
-    if (!installCommandState.platform) {
-      setInstallCopyState({ kind: 'error', message: '请先选择目标系统。' })
-      return
-    }
-    copyTextToClipboard(installCommandText(installCommandState))
-      .then(() => setInstallCopyState({ kind: 'ready', message: '安装命令已复制。' }))
-      .catch((error: unknown) => setInstallCopyState({ kind: 'error', message: error instanceof Error ? error.message : '复制失败，请手动选中复制。' }))
+    setInstallPlatformPickerOpen(true)
+    setInstallCopyState({ kind: 'idle' })
   }
 
-  const handleInstallPlatformChange = (platform: AgentInstallPlatform) => {
-    setInstallCommandState((current) => current.kind === 'ready' ? { ...current, platform } : current)
-    setInstallCopyState({ kind: 'idle' })
+  const handleCopyInstallPlatform = (platform: AgentInstallPlatform) => {
+    const command = installCommandForPlatform(installCommandState, platform)
+    if (!command) return
+    copyTextToClipboard(command)
+      .then(() => {
+        setInstallCommandState((current) => current.kind === 'ready' ? { ...current, platform } : current)
+        setInstallPlatformPickerOpen(false)
+        setInstallCopyState({ kind: 'ready', message: '安装命令已复制。' })
+      })
+      .catch((error: unknown) => setInstallCopyState({ kind: 'error', message: error instanceof Error ? error.message : '复制失败，请手动选中复制。' }))
   }
 
   return (
@@ -1684,14 +1693,14 @@ function AdminNodeCreateModal({ onCreate, onInstallCommand, onClose }: { onCreat
           </div>
           {installCommandState.kind === 'ready' && (
             <>
-              <div className="admin-install-platforms" role="tablist" aria-label="选择 Agent 安装系统">
+              {installPlatformPickerOpen && <div className="admin-install-platforms" role="group" aria-label="选择 Agent 安装系统">
                 {agentInstallPlatforms.map((platform) => (
-                  <button key={platform.value} type="button" role="tab" aria-selected={installCommandState.platform === platform.value} data-active={installCommandState.platform === platform.value} onClick={() => handleInstallPlatformChange(platform.value)}>{platform.label}</button>
+                  <button key={platform.value} type="button" data-active={installCommandState.platform === platform.value} onClick={() => handleCopyInstallPlatform(platform.value)}>{platform.label}</button>
                 ))}
-              </div>
+              </div>}
               {installCommandState.platform === 'windows' && <p className="admin-help-note">Windows 请使用管理员 PowerShell 运行。</p>}
               {installCommandState.platform === 'macos' && <p className="admin-help-note">macOS 请使用具备 sudo 权限的终端运行。</p>}
-              {installCommandState.platform ? <textarea className="admin-install-command" aria-label="新服务器 Agent 安装命令" readOnly value={installCommandText(installCommandState)} /> : <p className="admin-help-note">先选择目标系统，再复制对应命令。</p>}
+              {installCommandState.platform && <textarea className="admin-install-command" aria-label="新服务器 Agent 安装命令" readOnly value={installCommandText(installCommandState)} />}
             </>
           )}
           {installCopyState.kind !== 'idle' && <div className={`admin-install-error${installCopyState.kind === 'ready' ? ' is-success' : ''}`}>{installCopyState.message}</div>}
@@ -1709,6 +1718,7 @@ function AdminNodeCreateModal({ onCreate, onInstallCommand, onClose }: { onCreat
 function AdminNodeEditModal({ node, targets, onUpdate, onTargetUpdate, onInstallCommand, onClose }: { node: AdminNode; targets: AdminProbeTarget[]; onUpdate: (nodeId: string, input: AdminNodeUpdateInput) => void; onTargetUpdate: (targetId: string, input: AdminProbeTargetUpdateInput) => void; onInstallCommand: (nodeId: string) => Promise<AdminNodeInstallCommand>; onClose: () => void }) {
   const [installCommandState, setInstallCommandState] = useState<InstallCommandState>({ kind: 'idle' })
   const [installCopyState, setInstallCopyState] = useState<{ kind: 'idle' } | { kind: 'ready'; message: string } | { kind: 'error'; message: string }>({ kind: 'idle' })
+  const [installPlatformPickerOpen, setInstallPlatformPickerOpen] = useState(false)
   const sortedTargets = sortAdminProbeTargets(targets)
   const initialSelectedTargetIds = sortedTargets.filter((target) => target.assignments.some((assignment) => assignment.nodeId === node.id && assignment.enabled)).map((target) => target.id)
   const [selectedTargetIds, setSelectedTargetIds] = useState<string[]>(initialSelectedTargetIds)
@@ -1752,6 +1762,7 @@ function AdminNodeEditModal({ node, targets, onUpdate, onTargetUpdate, onInstall
     }
     setInstallCommandState({ kind: 'loading' })
     setInstallCopyState({ kind: 'idle' })
+    setInstallPlatformPickerOpen(false)
     onInstallCommand(node.id)
       .then((result) => setInstallCommandState(installCommandReady(result)))
       .catch((error: unknown) => setInstallCommandState({ kind: 'error', message: error instanceof Error ? error.message : 'unknown error' }))
@@ -1759,18 +1770,20 @@ function AdminNodeEditModal({ node, targets, onUpdate, onTargetUpdate, onInstall
 
   const handleCopyInstallCommand = () => {
     if (installCommandState.kind !== 'ready') return
-    if (!installCommandState.platform) {
-      setInstallCopyState({ kind: 'error', message: '请先选择目标系统。' })
-      return
-    }
-    copyTextToClipboard(installCommandText(installCommandState))
-      .then(() => setInstallCopyState({ kind: 'ready', message: '安装命令已复制。' }))
-      .catch((error: unknown) => setInstallCopyState({ kind: 'error', message: error instanceof Error ? error.message : '复制失败，请手动选中复制。' }))
+    setInstallPlatformPickerOpen(true)
+    setInstallCopyState({ kind: 'idle' })
   }
 
-  const handleInstallPlatformChange = (platform: AgentInstallPlatform) => {
-    setInstallCommandState((current) => current.kind === 'ready' ? { ...current, platform } : current)
-    setInstallCopyState({ kind: 'idle' })
+  const handleCopyInstallPlatform = (platform: AgentInstallPlatform) => {
+    const command = installCommandForPlatform(installCommandState, platform)
+    if (!command) return
+    copyTextToClipboard(command)
+      .then(() => {
+        setInstallCommandState((current) => current.kind === 'ready' ? { ...current, platform } : current)
+        setInstallPlatformPickerOpen(false)
+        setInstallCopyState({ kind: 'ready', message: '安装命令已复制。' })
+      })
+      .catch((error: unknown) => setInstallCopyState({ kind: 'error', message: error instanceof Error ? error.message : '复制失败，请手动选中复制。' }))
   }
 
   return (
@@ -1838,14 +1851,14 @@ function AdminNodeEditModal({ node, targets, onUpdate, onTargetUpdate, onInstall
           </div>
           {installCommandState.kind === 'ready' && (
             <>
-              <div className="admin-install-platforms" role="tablist" aria-label="选择 Agent 安装系统">
+              {installPlatformPickerOpen && <div className="admin-install-platforms" role="group" aria-label="选择 Agent 安装系统">
                 {agentInstallPlatforms.map((platform) => (
-                  <button key={platform.value} type="button" role="tab" aria-selected={installCommandState.platform === platform.value} data-active={installCommandState.platform === platform.value} onClick={() => handleInstallPlatformChange(platform.value)}>{platform.label}</button>
+                  <button key={platform.value} type="button" data-active={installCommandState.platform === platform.value} onClick={() => handleCopyInstallPlatform(platform.value)}>{platform.label}</button>
                 ))}
-              </div>
+              </div>}
               {installCommandState.platform === 'windows' && <p className="admin-help-note">Windows 请使用管理员 PowerShell 运行。</p>}
               {installCommandState.platform === 'macos' && <p className="admin-help-note">macOS 请使用具备 sudo 权限的终端运行。</p>}
-              {installCommandState.platform ? <textarea className="admin-install-command" aria-label={`${node.displayName} Agent 安装命令`} readOnly value={installCommandText(installCommandState)} /> : <p className="admin-help-note">先选择目标系统，再复制对应命令。</p>}
+              {installCommandState.platform && <textarea className="admin-install-command" aria-label={`${node.displayName} Agent 安装命令`} readOnly value={installCommandText(installCommandState)} />}
             </>
           )}
           {installCopyState.kind !== 'idle' && <div className={`admin-install-error${installCopyState.kind === 'ready' ? ' is-success' : ''}`}>{installCopyState.message}</div>}
