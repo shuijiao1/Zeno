@@ -2392,7 +2392,7 @@ svg { display: block; }
   .admin-rule-picker-row { grid-template-columns: 1fr; }
   .admin-expanded-checklist__list { max-height: 38dvh; }
   .admin-segmented-options { grid-template-columns: repeat(auto-fit, minmax(78px, 1fr)); }
-  .admin-section-heading { align-items: center; flex-direction: row; flex-wrap: wrap; gap: 8px; margin-bottom: 10px; }
+  .admin-section-heading { align-items: center; flex-direction: row; flex-wrap: nowrap; gap: 8px; margin-bottom: 10px; }
   .admin-section-heading > div { min-width: 0; }
   .admin-section-heading h3 { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 21px; }
   .kulin-node-card { max-width: none; min-height: 394px; }
