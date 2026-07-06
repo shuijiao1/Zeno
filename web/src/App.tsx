@@ -1677,10 +1677,9 @@ function AdminNodeCreateModal({ onCreate, onInstallCommand, onClose }: { onCreat
         </AdminFormSection>
         <AdminFormSection title="Agent 接入">
           {createdNode && <p className="admin-help-note">已添加：{createdNode.displayName}</p>}
-          <p className="admin-help-note">Zeno 不需要提前知道目标系统；生成后按你要安装的机器选择 Linux、macOS 或 Windows。</p>
           <div className="admin-inline-actions">
-            <button type="button" onClick={handleInstallCommand} disabled={!createdNode || installCommandState.kind === 'loading'}>{installCommandState.kind === 'loading' ? '生成中…' : '生成三平台安装命令'}</button>
-            <button type="button" onClick={handleCopyInstallCommand} disabled={installCommandState.kind !== 'ready' || !installCommandState.platform}>复制安装命令</button>
+            <button type="button" onClick={handleInstallCommand} disabled={!createdNode || installCommandState.kind === 'loading'}>{installCommandState.kind === 'loading' ? '生成中…' : '生成安装命令'}</button>
+            <button type="button" onClick={handleCopyInstallCommand} disabled={installCommandState.kind !== 'ready'}>复制安装命令</button>
           </div>
           {installCommandState.kind === 'ready' && (
             <>
@@ -1832,10 +1831,9 @@ function AdminNodeEditModal({ node, targets, onUpdate, onTargetUpdate, onInstall
         </AdminFormSection>
         <AdminFormSection title="Agent 接入">
           <p className="admin-help-note">当前 Agent 版本：{node.agentVersion || '暂无上报'}</p>
-          <p className="admin-help-note">Zeno 不需要提前知道目标系统；生成后按你要安装的机器选择 Linux、macOS 或 Windows。</p>
           <div className="admin-inline-actions">
-            <button type="button" onClick={handleInstallCommand} disabled={installCommandState.kind === 'loading'}>{installCommandState.kind === 'loading' ? '生成中…' : '重新生成三平台安装命令'}</button>
-            <button type="button" onClick={handleCopyInstallCommand} disabled={installCommandState.kind !== 'ready' || !installCommandState.platform}>复制安装命令</button>
+            <button type="button" onClick={handleInstallCommand} disabled={installCommandState.kind === 'loading'}>{installCommandState.kind === 'loading' ? '生成中…' : '重新生成安装命令'}</button>
+            <button type="button" onClick={handleCopyInstallCommand} disabled={installCommandState.kind !== 'ready'}>复制安装命令</button>
           </div>
           {installCommandState.kind === 'ready' && (
             <>
@@ -2891,10 +2889,35 @@ function parseNonNegativeInt(value: string): number | null {
 }
 
 function copyTextToClipboard(text: string): Promise<void> {
-  if (typeof navigator === 'undefined' || !navigator.clipboard?.writeText) {
+  if (typeof navigator !== 'undefined' && navigator.clipboard?.writeText) {
+    return navigator.clipboard.writeText(text).catch(() => legacyCopyTextToClipboard(text))
+  }
+  return legacyCopyTextToClipboard(text)
+}
+
+function legacyCopyTextToClipboard(text: string): Promise<void> {
+  if (typeof document === 'undefined') {
     return Promise.reject(new Error('当前浏览器不支持自动复制，请手动选中复制。'))
   }
-  return navigator.clipboard.writeText(text)
+  const textarea = document.createElement('textarea')
+  textarea.value = text
+  textarea.setAttribute('readonly', '')
+  textarea.style.position = 'fixed'
+  textarea.style.left = '-9999px'
+  textarea.style.top = '0'
+  document.body.appendChild(textarea)
+  textarea.focus()
+  textarea.select()
+  textarea.setSelectionRange(0, textarea.value.length)
+  try {
+    const copied = document.execCommand('copy')
+    if (!copied) throw new Error('copy command failed')
+    return Promise.resolve()
+  } catch {
+    return Promise.reject(new Error('当前浏览器不支持自动复制，请手动选中复制。'))
+  } finally {
+    document.body.removeChild(textarea)
+  }
 }
 
 function parseMonthlyResetDay(value: string): number | null {
