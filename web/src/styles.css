@@ -378,7 +378,8 @@ svg { display: block; }
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.home-summary__metric--rate dd { font-weight: 600; }
+.home-summary__metric--rate dd { justify-content: flex-start; min-width: 12.5ch; font-weight: 600; }
+.home-summary__rate-value { min-width: 10.5ch; display: inline-block; text-align: right; font-variant-numeric: tabular-nums; }
 .home-summary__metrics svg { width: 12px; height: 12px; fill: currentColor; }
 
 .server-card-list {
@@ -1334,9 +1335,10 @@ svg { display: block; }
 .node-metric {
   --metric-accent: var(--blue);
   min-height: 40px;
-  display: flex;
+  display: grid;
+  grid-template-columns: auto auto minmax(7.5ch, 1fr);
   align-items: center;
-  justify-content: center;
+  justify-content: stretch;
   gap: 6px;
   min-width: 0;
   padding: 0 10px;
@@ -1349,7 +1351,9 @@ svg { display: block; }
 .metric-icon { width: 20px; height: 20px; flex: none; display: inline-flex; align-items: center; justify-content: center; line-height: 1; }
 .metric-icon svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.75; stroke-linecap: round; stroke-linejoin: round; }
 .metric-label { color: var(--metric-accent); font-weight: 500; white-space: nowrap; }
-.node-metric strong { min-width: 0; margin-left: auto; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--metric-accent); font-weight: 500; font-variant-numeric: tabular-nums; }
+.node-metric strong { min-width: 7.5ch; margin-left: 0; overflow: hidden; text-align: right; text-overflow: ellipsis; white-space: nowrap; color: var(--metric-accent); font-weight: 500; font-variant-numeric: tabular-nums; }
+.metric-up strong,
+.metric-down strong { min-width: 9.5ch; }
 .metric-up { --metric-accent: var(--blue); }
 .metric-down { --metric-accent: var(--purple); }
 .metric-latency { --metric-accent: var(--green); }

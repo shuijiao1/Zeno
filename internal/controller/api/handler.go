@@ -23,13 +23,16 @@ type HandlerOptions struct {
 }
 
 type handler struct {
-	store              Store
-	adminTokenHash     string
-	agentBinaryPath    string
-	agentVersion       string
-	notificationSender notificationSender
-	loginLimiter       *adminLoginLimiter
-	liveHub            *liveUpdateHub
+	store                Store
+	adminTokenHash       string
+	agentBinaryPath      string
+	agentVersion         string
+	notificationSender   notificationSender
+	loginLimiter         *adminLoginLimiter
+	liveHub              *liveUpdateHub
+	summaryPublishMu     sync.Mutex
+	summaryPublishTimer  *time.Timer
+	summaryLastPublished time.Time
 }
 
 type adminLoginLimiter struct {

@@ -1,6 +1,7 @@
 package api
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"net/http"
@@ -15,10 +16,11 @@ import (
 type liveUpdateHub struct {
 	mu      sync.Mutex
 	clients map[string]map[chan []byte]struct{}
+	last    map[string][]byte
 }
 
 func newLiveUpdateHub() *liveUpdateHub {
-	return &liveUpdateHub{clients: map[string]map[chan []byte]struct{}{}}
+	return &liveUpdateHub{clients: map[string]map[chan []byte]struct{}{}, last: map[string][]byte{}}
 }
 
 func (hub *liveUpdateHub) subscribe(topic string) (<-chan []byte, func()) {
@@ -55,6 +57,10 @@ func (hub *liveUpdateHub) hasClients(topic string) bool {
 func (hub *liveUpdateHub) publish(topic string, payload []byte) {
 	hub.mu.Lock()
 	defer hub.mu.Unlock()
+	if bytes.Equal(hub.last[topic], payload) {
+		return
+	}
+	hub.last[topic] = append(hub.last[topic][:0], payload...)
 	clients := hub.clients[topic]
 	for updates := range clients {
 		select {
@@ -73,6 +79,11 @@ func (hub *liveUpdateHub) publish(topic string, payload []byte) {
 }
 
 const summaryLiveTopic = "summary"
+
+const (
+	summaryPublishCoalesceDelay = 250 * time.Millisecond
+	summaryPublishMinInterval   = 1 * time.Second
+)
 
 func nodeStateLiveTopic(nodeID, rangeName string) string {
 	return "node-state:" + nodeID + ":" + rangeName
@@ -227,7 +238,47 @@ func (h *handler) serviceLatencyJSON(ctx context.Context, targetID string, windo
 	return json.Marshal(latency)
 }
 
-func (h *handler) publishSummary(ctx context.Context) {
+func (h *handler) publishSummary(_ context.Context) {
+	if h.liveHub == nil || !h.liveHub.hasClients(summaryLiveTopic) {
+		return
+	}
+	h.scheduleSummaryPublish()
+}
+
+func (h *handler) scheduleSummaryPublish() {
+	now := time.Now()
+	h.summaryPublishMu.Lock()
+	if h.summaryPublishTimer != nil {
+		h.summaryPublishMu.Unlock()
+		return
+	}
+	wait := summaryPublishCoalesceDelay
+	if !h.summaryLastPublished.IsZero() {
+		minWait := h.summaryLastPublished.Add(summaryPublishMinInterval).Sub(now)
+		if minWait > wait {
+			wait = minWait
+		}
+	}
+	var timer *time.Timer
+	timer = time.AfterFunc(wait, func() {
+		h.summaryPublishMu.Lock()
+		if h.summaryPublishTimer != timer {
+			h.summaryPublishMu.Unlock()
+			return
+		}
+		h.summaryPublishTimer = nil
+		h.summaryLastPublished = time.Now()
+		h.summaryPublishMu.Unlock()
+
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		h.publishSummaryNow(ctx)
+	})
+	h.summaryPublishTimer = timer
+	h.summaryPublishMu.Unlock()
+}
+
+func (h *handler) publishSummaryNow(ctx context.Context) {
 	if h.liveHub == nil || !h.liveHub.hasClients(summaryLiveTopic) {
 		return
 	}

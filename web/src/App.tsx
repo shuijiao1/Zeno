@@ -2556,11 +2556,11 @@ export function HomeOverviewPanel({ totalCount, onlineCount, offlineCount: _offl
         </div>
         <div className="home-summary__metric home-summary__metric--upload-rate home-summary__metric--rate">
           <dt>上传</dt>
-          <dd><CircleArrowIcon direction="up" />{compactRate(upSpeed)}</dd>
+          <dd><CircleArrowIcon direction="up" /><span className="home-summary__rate-value">{compactRate(upSpeed)}</span></dd>
         </div>
         <div className="home-summary__metric home-summary__metric--download-rate home-summary__metric--rate">
           <dt>下载</dt>
-          <dd><CircleArrowIcon direction="down" />{compactRate(downSpeed)}</dd>
+          <dd><CircleArrowIcon direction="down" /><span className="home-summary__rate-value">{compactRate(downSpeed)}</span></dd>
         </div>
       </dl>
     </section>
