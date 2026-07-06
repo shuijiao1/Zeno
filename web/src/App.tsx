@@ -1,5 +1,6 @@
 import { type CSSProperties, type DragEvent, type FormEvent, type ReactNode, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
+import copy from 'copy-to-clipboard'
 import { createAdminNode, createAdminNotificationChannel, createAdminProbeTarget, deleteAdminNode, deleteAdminNotificationChannel, deleteAdminProbeTarget, fetchAdminAccount, fetchAdminAlertRules, fetchAdminNodes, fetchAdminNotificationChannels, fetchAdminProbeTargets, fetchAdminSettings, fetchNodeLatency, fetchNodeState, fetchPublicSettings, fetchServiceLatency, fetchSummary, subscribeNodeLatency, subscribeNodeState, subscribeServiceLatency, subscribeSummary, loginAdmin, logoutAdmin, requestAdminNodeInstallCommand, testAdminNotificationChannel, updateAdminAccount, updateAdminAlertRule, updateAdminNode, updateAdminNotificationChannel, updateAdminNotificationType, updateAdminProbeTarget, updateAdminSettings, type AdminAccountData, type AdminAlertRuleUpdateInput, type AdminNodeCreateInput, type AdminNodeUpdateInput, type AdminNotificationChannelCreateInput, type AdminNotificationChannelUpdateInput, type AdminProbeTargetInput, type AdminProbeTargetUpdateInput, type AdminSettingsUpdateInput, type NodeLatencyData, type NodeStateData, type ServiceLatencyData, type SummaryData } from './api/client'
 import { LatencyDetail } from './components/LatencyDetail'
 import { LatencyChart } from './components/LatencyChart'
@@ -2888,55 +2889,14 @@ function parseNonNegativeInt(value: string): number | null {
   return parsed
 }
 
-function copyTextToClipboard(text: string): Promise<void> {
-  return legacyCopyTextToClipboard(text).catch((legacyError) => {
-    if (typeof navigator !== 'undefined' && navigator.clipboard?.writeText) {
-      return navigator.clipboard.writeText(text)
-    }
-    throw legacyError
-  })
-}
-
-function selectTextareaText(textarea: HTMLTextAreaElement) {
-  textarea.focus()
-  textarea.select()
-  textarea.setSelectionRange(0, textarea.value.length)
-  const selection = typeof window === 'undefined' ? null : window.getSelection()
-  if (selection) {
-    const range = document.createRange()
-    range.selectNodeContents(textarea)
-    selection.removeAllRanges()
-    selection.addRange(range)
-  }
-}
-
-function legacyCopyTextToClipboard(text: string): Promise<void> {
-  if (typeof document === 'undefined') {
-    return Promise.reject(new Error('当前浏览器不支持自动复制，请手动选中复制。'))
-  }
-  const textarea = document.createElement('textarea')
-  textarea.value = text
-  textarea.style.position = 'fixed'
-  textarea.style.left = '0'
-  textarea.style.top = '0'
-  textarea.style.width = '1px'
-  textarea.style.height = '1px'
-  textarea.style.padding = '0'
-  textarea.style.border = '0'
-  textarea.style.opacity = '0'
-  textarea.style.fontSize = '16px'
-  textarea.style.pointerEvents = 'none'
-  document.body.appendChild(textarea)
-  selectTextareaText(textarea)
+async function copyTextToClipboard(text: string): Promise<void> {
   try {
-    const copied = document.execCommand('copy')
-    if (!copied) throw new Error('copy command failed')
-    return Promise.resolve()
-  } catch {
-    return Promise.reject(new Error('当前浏览器不支持自动复制，请手动选中复制。'))
-  } finally {
-    document.body.removeChild(textarea)
+    return await navigator.clipboard.writeText(text)
+  } catch (error) {
+    console.error('navigator clipboard copy failed', error)
   }
+  const copied = await copy(text, { fallbackToPrompt: true })
+  if (!copied) throw new Error('当前浏览器不支持自动复制，请手动选中复制。')
 }
 
 function parseMonthlyResetDay(value: string): number | null {
