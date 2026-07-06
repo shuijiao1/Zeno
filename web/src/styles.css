@@ -74,7 +74,7 @@ svg { display: block; }
   overflow: hidden;
   clip: rect(0, 0, 0, 0);
   white-space: nowrap;
-  border: 0;
+  border: 1px solid color-mix(in srgb, var(--border) 82%, rgba(37, 99, 235, 0.28));
 }
 
 .kulin-shell {
@@ -250,7 +250,7 @@ svg { display: block; }
   position: relative;
   overflow: visible;
   padding: 16px;
-  border: 0;
+  border: 1px solid var(--border);
   border-radius: var(--radius-panel);
   background: var(--surface-strong);
   color: var(--foreground);
@@ -1597,7 +1597,7 @@ svg { display: block; }
   display: flex;
   flex-direction: column;
   padding: 16px;
-  border: 0;
+  border: 1px solid var(--border);
   border-radius: var(--radius-card);
   background: var(--surface-strong);
   color: var(--foreground);
