@@ -1534,22 +1534,26 @@ function AdminNodeCreateModal({ onCreate, onInstallCommand, onClose }: { onCreat
           </div>
         </AdminFormSection>
         <AdminFormSection title="账单与流量" description="账单信息可以留空，后续再补。">
-          <div className="admin-form-grid">
-            <label>
-              <span>到期日</span>
-              <input name="new-expiry-date" type="text" inputMode="numeric" autoComplete="off" placeholder="YYYY-MM-DD" disabled={Boolean(createdNode)} />
-            </label>
-            <AdminSegmentedField name="new-billing-cycle" label="账单周期" defaultValue="月" options={billingCycleOptions} disabled={Boolean(createdNode)} />
-            <AdminSegmentedField name="new-billing-mode" label="流量计费口径" defaultValue="both" options={billingModeOptions} disabled={Boolean(createdNode)} />
-            <label>
-              <span>月流量重置日</span>
-              <input name="new-monthly-reset-day" type="number" min="1" max="31" step="1" defaultValue="1" disabled={Boolean(createdNode)} />
-            </label>
-            <label>
-              <span>月配额</span>
-              <input name="new-monthly-quota" type="number" min="0" step="0.01" disabled={Boolean(createdNode)} />
-            </label>
-            <AdminSegmentedField name="new-monthly-quota-unit" label="配额单位" defaultValue="GB" options={quotaUnitOptions} disabled={Boolean(createdNode)} />
+          <div className="admin-billing-grid">
+            <div className="admin-billing-row">
+              <label className="admin-date-field">
+                <span>到期日</span>
+                <input name="new-expiry-date" type="date" autoComplete="off" disabled={Boolean(createdNode)} />
+              </label>
+              <label>
+                <span>月流量重置日</span>
+                <input name="new-monthly-reset-day" type="number" min="1" max="31" step="1" defaultValue="1" disabled={Boolean(createdNode)} />
+              </label>
+            </div>
+            <AdminSegmentedField className="admin-billing-control admin-billing-control--cycle" name="new-billing-cycle" label="账单周期" defaultValue="月" options={billingCycleOptions} disabled={Boolean(createdNode)} />
+            <AdminSegmentedField className="admin-billing-control admin-billing-control--mode" name="new-billing-mode" label="流量计费口径" defaultValue="both" options={billingModeOptions} disabled={Boolean(createdNode)} />
+            <div className="admin-quota-row">
+              <label>
+                <span>月配额</span>
+                <input name="new-monthly-quota" type="number" min="0" step="0.01" disabled={Boolean(createdNode)} />
+              </label>
+              <AdminSegmentedField className="admin-quota-unit" name="new-monthly-quota-unit" label="配额单位" defaultValue="GB" options={quotaUnitOptions} disabled={Boolean(createdNode)} />
+            </div>
           </div>
         </AdminFormSection>
         <AdminFormSection title="Agent 接入" description={createdNode ? '服务器已添加，可以直接生成 Agent 安装命令。' : '先添加服务器，随后在这里生成 Agent 安装命令。'}>
@@ -1670,22 +1674,26 @@ function AdminNodeEditModal({ node, targets, onUpdate, onTargetUpdate, onInstall
           )}
         </AdminFormSection>
         <AdminFormSection title="账单与流量" description="账单信息可以留空，后续再补。">
-          <div className="admin-form-grid">
-            <label>
-              <span>到期日</span>
-              <input name="expiry-date" type="text" inputMode="numeric" defaultValue={node.expiryDate ?? ''} autoComplete="off" placeholder="YYYY-MM-DD" />
-            </label>
-            <AdminSegmentedField name="billing-cycle" label="账单周期" defaultValue={normalizeBillingCycle(node.billingCycle)} options={billingCycleOptions} />
-            <AdminSegmentedField name="billing-mode" label="流量计费口径" defaultValue={node.billingMode || 'both'} options={billingModeOptions} />
-            <label>
-              <span>月流量重置日</span>
-              <input name="monthly-reset-day" type="number" min="1" max="31" step="1" defaultValue={node.monthlyResetDay || 1} />
-            </label>
-            <label>
-              <span>月配额</span>
-              <input name="monthly-quota" type="number" min="0" step="0.01" defaultValue={formatQuotaValue(node.monthlyQuotaBytes)} />
-            </label>
-            <AdminSegmentedField name="monthly-quota-unit" label="配额单位" defaultValue={quotaUnitForBytes(node.monthlyQuotaBytes)} options={quotaUnitOptions} />
+          <div className="admin-billing-grid">
+            <div className="admin-billing-row">
+              <label className="admin-date-field">
+                <span>到期日</span>
+                <input name="expiry-date" type="date" defaultValue={node.expiryDate ?? ''} autoComplete="off" />
+              </label>
+              <label>
+                <span>月流量重置日</span>
+                <input name="monthly-reset-day" type="number" min="1" max="31" step="1" defaultValue={node.monthlyResetDay || 1} />
+              </label>
+            </div>
+            <AdminSegmentedField className="admin-billing-control admin-billing-control--cycle" name="billing-cycle" label="账单周期" defaultValue={normalizeBillingCycle(node.billingCycle)} options={billingCycleOptions} />
+            <AdminSegmentedField className="admin-billing-control admin-billing-control--mode" name="billing-mode" label="流量计费口径" defaultValue={node.billingMode || 'both'} options={billingModeOptions} />
+            <div className="admin-quota-row">
+              <label>
+                <span>月配额</span>
+                <input name="monthly-quota" type="number" min="0" step="0.01" defaultValue={formatQuotaValue(node.monthlyQuotaBytes)} />
+              </label>
+              <AdminSegmentedField className="admin-quota-unit" name="monthly-quota-unit" label="配额单位" defaultValue={quotaUnitForBytes(node.monthlyQuotaBytes)} options={quotaUnitOptions} />
+            </div>
           </div>
         </AdminFormSection>
         <AdminFormSection title="Agent 接入" description="生成安装命令会轮换该服务器的 Agent Token；已在线服务器执行新命令前会停止上报。">
@@ -2345,7 +2353,7 @@ const targetTypeOptions = [
   { value: 'http_get', label: 'HTTP GET' },
 ]
 
-function AdminSegmentedField({ name, label, options, value, defaultValue, disabled = false, onChange }: { name: string; label: string; options: Array<{ value: string; label: string }>; value?: string; defaultValue?: string; disabled?: boolean; onChange?: (value: string) => void }) {
+function AdminSegmentedField({ name, label, options, value, defaultValue, disabled = false, onChange, className = '' }: { name: string; label: string; options: Array<{ value: string; label: string }>; value?: string; defaultValue?: string; disabled?: boolean; onChange?: (value: string) => void; className?: string }) {
   const [internalValue, setInternalValue] = useState(defaultValue ?? options[0]?.value ?? '')
   const selectedValue = value ?? internalValue
   const setSelectedValue = (nextValue: string) => {
@@ -2353,8 +2361,9 @@ function AdminSegmentedField({ name, label, options, value, defaultValue, disabl
     if (value === undefined) setInternalValue(nextValue)
     onChange?.(nextValue)
   }
+  const classes = ['admin-form-control', 'admin-segmented-field', className, disabled ? 'is-disabled' : ''].filter(Boolean).join(' ')
   return (
-    <div className={`admin-form-control admin-segmented-field${disabled ? ' is-disabled' : ''}`}>
+    <div className={classes}>
       <span>{label}</span>
       <input type="hidden" name={name} value={selectedValue} disabled={disabled} />
       <div className="admin-segmented-options" role="radiogroup" aria-label={label}>

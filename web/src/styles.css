@@ -793,6 +793,25 @@ svg { display: block; }
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 10px;
 }
+.admin-billing-grid {
+  display: grid;
+  gap: 12px;
+}
+.admin-billing-row,
+.admin-quota-row {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-items: end;
+  gap: 10px;
+}
+.admin-billing-control,
+.admin-quota-row { min-width: 0; }
+.admin-billing-control .admin-segmented-options { border-radius: var(--radius-field); }
+.admin-billing-control--cycle .admin-segmented-options { grid-template-columns: repeat(7, minmax(0, 1fr)); }
+.admin-billing-control--mode .admin-segmented-options { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.admin-quota-row .admin-form-control,
+.admin-quota-row label { min-width: 0; }
+.admin-quota-unit .admin-segmented-options { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 .admin-form-control {
   min-width: 0;
   display: flex;
@@ -834,6 +853,35 @@ svg { display: block; }
   font: inherit;
   font-size: 14px;
   appearance: none;
+}
+.admin-node-edit-form input:not([type="checkbox"]):not([type="radio"]):focus-visible,
+.admin-node-edit-form select:focus-visible {
+  outline: none;
+  border-color: color-mix(in srgb, var(--blue) 52%, var(--border));
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--blue) 14%, transparent);
+}
+.admin-node-edit-form .admin-date-field input[type="date"] {
+  appearance: auto;
+  padding-right: 10px;
+  color-scheme: light;
+  font-variant-numeric: tabular-nums;
+}
+[data-theme='dark'] .admin-node-edit-form .admin-date-field input[type="date"] { color-scheme: dark; }
+.admin-node-edit-form .admin-date-field input[type="date"]::-webkit-calendar-picker-indicator {
+  width: 18px;
+  height: 18px;
+  margin-right: -4px;
+  padding: 5px;
+  border-radius: var(--radius-pill);
+  background-color: color-mix(in srgb, var(--blue) 10%, transparent);
+  cursor: pointer;
+  opacity: .82;
+  transition: background-color 150ms ease, opacity 150ms ease, transform 150ms ease;
+}
+.admin-node-edit-form .admin-date-field input[type="date"]::-webkit-calendar-picker-indicator:hover {
+  background-color: color-mix(in srgb, var(--blue) 18%, transparent);
+  opacity: 1;
+  transform: translateY(-1px);
 }
 .admin-segmented-options {
   min-width: 0;
@@ -1030,6 +1078,7 @@ svg { display: block; }
 }
 .admin-home-monitor-radio input[type="radio"]:hover { border-color: var(--blue); transform: translateY(-1px); }
 .admin-node-edit-form button { align-self: end; }
+.admin-segmented-options button { align-self: stretch; }
 .admin-settings-form > button[type="submit"] { margin-top: 16px; }
 .admin-install-command {
   width: 100%;
@@ -1983,6 +2032,10 @@ svg { display: block; }
   .admin-modal-summary div { padding: 10px; }
   .admin-node-edit-form,
   .admin-form-grid { grid-template-columns: 1fr; }
+  .admin-billing-row,
+  .admin-quota-row { grid-template-columns: 1fr; }
+  .admin-billing-control--cycle .admin-segmented-options,
+  .admin-billing-control--mode .admin-segmented-options { grid-template-columns: repeat(auto-fit, minmax(72px, 1fr)); }
   .admin-modal-actions {
     position: sticky;
     bottom: 0;
