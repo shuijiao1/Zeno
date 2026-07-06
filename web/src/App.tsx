@@ -110,13 +110,15 @@ function summaryLatencyPoints(node: HomeCardNode | undefined): LatencyPoint[] {
 const defaultSettings: AdminSettings = {
   siteTitle: 'Zeno',
   siteSubtitle: '服务器运行概览',
-  logoUrl: 'https://raw.githubusercontent.com/shuijiao1/Fly/refs/heads/main/ID-128.webp',
+  logoUrl: 'https://cdn.jsdelivr.net/gh/shuijiao1/Fly@main/ID-128.webp',
   theme: 'system',
   agentControllerUrl: '',
   backgroundUrl: '',
   desktopBackgroundUrl: '',
   mobileBackgroundUrl: '',
 }
+
+const fallbackLogoUrl = 'https://cdn.jsdelivr.net/gh/shuijiao1/Fly@main/ID-128.png'
 
 function backgroundImageValue(url: string): string {
   return `url("${url.replaceAll('"', '%22')}")`
@@ -932,6 +934,7 @@ function BrandLogo({ logoUrl, siteTitle }: { logoUrl?: string; siteTitle?: strin
       alt={`${siteTitle || 'Zeno'} logo`}
       onError={() => {
         if (currentSource !== defaultSettings.logoUrl) setCurrentSource(defaultSettings.logoUrl)
+        else if (currentSource !== fallbackLogoUrl) setCurrentSource(fallbackLogoUrl)
       }}
     />
   )
