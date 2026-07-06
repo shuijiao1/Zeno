@@ -2889,10 +2889,25 @@ function parseNonNegativeInt(value: string): number | null {
 }
 
 function copyTextToClipboard(text: string): Promise<void> {
-  if (typeof navigator !== 'undefined' && navigator.clipboard?.writeText) {
-    return navigator.clipboard.writeText(text).catch(() => legacyCopyTextToClipboard(text))
+  return legacyCopyTextToClipboard(text).catch((legacyError) => {
+    if (typeof navigator !== 'undefined' && navigator.clipboard?.writeText) {
+      return navigator.clipboard.writeText(text)
+    }
+    throw legacyError
+  })
+}
+
+function selectTextareaText(textarea: HTMLTextAreaElement) {
+  textarea.focus()
+  textarea.select()
+  textarea.setSelectionRange(0, textarea.value.length)
+  const selection = typeof window === 'undefined' ? null : window.getSelection()
+  if (selection) {
+    const range = document.createRange()
+    range.selectNodeContents(textarea)
+    selection.removeAllRanges()
+    selection.addRange(range)
   }
-  return legacyCopyTextToClipboard(text)
 }
 
 function legacyCopyTextToClipboard(text: string): Promise<void> {
@@ -2901,14 +2916,18 @@ function legacyCopyTextToClipboard(text: string): Promise<void> {
   }
   const textarea = document.createElement('textarea')
   textarea.value = text
-  textarea.setAttribute('readonly', '')
   textarea.style.position = 'fixed'
-  textarea.style.left = '-9999px'
+  textarea.style.left = '0'
   textarea.style.top = '0'
+  textarea.style.width = '1px'
+  textarea.style.height = '1px'
+  textarea.style.padding = '0'
+  textarea.style.border = '0'
+  textarea.style.opacity = '0'
+  textarea.style.fontSize = '16px'
+  textarea.style.pointerEvents = 'none'
   document.body.appendChild(textarea)
-  textarea.focus()
-  textarea.select()
-  textarea.setSelectionRange(0, textarea.value.length)
+  selectTextareaText(textarea)
   try {
     const copied = document.execCommand('copy')
     if (!copied) throw new Error('copy command failed')
