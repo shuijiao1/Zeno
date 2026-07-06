@@ -471,14 +471,9 @@ svg { display: block; }
 .admin-primary-action:hover,
 .admin-row-action:hover,
 .admin-segmented-options button:hover,
-.admin-expanded-checklist__trigger:hover,
-.admin-expanded-checklist__item > button:hover,
-.admin-bulk-select-bar button:hover,
 .range-tabs button:hover,
 .detail-range-row > button:hover,
-.latency-target-toolbar button:hover,
-.latency-target-grid button:hover,
-.detail-title-button:hover {
+.latency-target-grid button:hover {
   border-color: color-mix(in srgb, var(--blue) 34%, var(--border));
   background: color-mix(in srgb, var(--surface-soft) 88%, var(--blue) 10%);
   color: var(--blue);
@@ -912,24 +907,40 @@ svg { display: block; }
   gap: 8px;
 }
 .admin-target-assignment-toggle { min-height: 34px; }
-.admin-expanded-checklist { display: grid; gap: 8px; }
-.admin-expanded-checklist__trigger {
-  width: 100%;
-  min-height: 40px;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  padding: 0 12px;
+.admin-expanded-checklist {
+  overflow: hidden;
   border: 1px solid var(--border);
   border-radius: var(--radius-field);
+  background: var(--surface-strong);
+}
+.admin-expanded-checklist__header {
+  min-height: 42px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px 6px 12px;
   background: var(--field-bg);
+}
+.admin-expanded-checklist__trigger {
+  width: 100%;
+  min-height: 30px;
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 8px;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
   color: var(--foreground);
   font-size: 14px;
   font-weight: 500;
   cursor: pointer;
-  transition: background-color 150ms ease, border-color 150ms ease, color 150ms ease, box-shadow 150ms ease, transform 150ms ease;
+  transition: color 150ms ease;
 }
+.admin-expanded-checklist__trigger:hover { border-color: transparent; background: transparent; color: var(--blue); box-shadow: none; transform: none; }
+.admin-expanded-checklist__trigger small { color: var(--muted); font-size: 12px; font-weight: 500; }
 .admin-expanded-checklist__trigger svg {
   width: 17px;
   height: 17px;
@@ -944,8 +955,8 @@ svg { display: block; }
 .admin-expanded-checklist__list {
   max-height: 260px;
   overflow: auto;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-field);
+  border-top: 1px solid var(--border);
+  border-radius: 0;
   background: var(--surface-strong);
 }
 .admin-expanded-checklist__item {
@@ -958,20 +969,7 @@ svg { display: block; }
   border-bottom: 1px solid var(--border);
 }
 .admin-expanded-checklist__item:last-child { border-bottom: 0; }
-.admin-bulk-select-bar {
-  min-height: 38px;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 10px;
-  padding: 8px 10px;
-  border-bottom: 1px solid var(--border);
-  background: color-mix(in srgb, var(--surface-soft) 86%, var(--blue) 6%);
-  color: var(--muted);
-  font-size: 12px;
-  font-weight: 500;
-}
-.admin-bulk-select-bar button {
+.admin-bulk-select-button {
   min-width: 58px;
   min-height: 28px;
   padding: 0 11px;
@@ -984,7 +982,7 @@ svg { display: block; }
   cursor: pointer;
   transition: background-color 150ms ease, border-color 150ms ease, color 150ms ease, transform 150ms ease;
 }
-.admin-bulk-select-bar button:hover { background: var(--blue); border-color: var(--blue); color: #fff; transform: translateY(-1px); }
+.admin-bulk-select-button:hover { background: var(--blue); border-color: var(--blue); color: #fff; transform: translateY(-1px); }
 .admin-expanded-checklist__item > button {
   min-width: 0;
   padding: 0;
@@ -1000,6 +998,8 @@ svg { display: block; }
   cursor: pointer;
   transition: color 150ms ease, transform 150ms ease;
 }
+.admin-expanded-checklist__item > button:hover,
+.admin-expanded-checklist__item > button:focus-visible { border-color: transparent; background: transparent; color: var(--blue); box-shadow: none; outline: none; transform: none; }
 .admin-expanded-checklist__empty { padding: 18px 10px; color: var(--muted); text-align: center; font-size: 13px; }
 .admin-home-monitor-radio {
   min-height: 26px;
@@ -1451,6 +1451,8 @@ svg { display: block; }
   cursor: pointer;
   transition: color 150ms ease, transform 150ms ease;
 }
+.detail-title-button:hover,
+.detail-title-button:focus-visible { color: var(--blue); background: transparent; outline: none; transform: none; }
 .detail-title-flag { flex: none; font-size: 16px; }
 .detail-title-button span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; }
 .detail-title-button svg {
@@ -1726,23 +1728,6 @@ svg { display: block; }
   gap: 6px;
   padding: 0 24px 18px;
   border-top: 0;
-}
-.latency-target-toolbar {
-  display: flex;
-  justify-content: flex-end;
-  padding: 0 24px 8px;
-}
-.latency-target-toolbar button {
-  min-height: 30px;
-  padding: 0 13px;
-  border: 1px solid color-mix(in srgb, var(--blue) 34%, var(--border));
-  border-radius: 999px;
-  background: var(--surface-soft);
-  color: var(--blue);
-  font-size: 12px;
-  font-weight: 500;
-  cursor: pointer;
-  transition: background-color 150ms ease, border-color 150ms ease, color 150ms ease, box-shadow 150ms ease, transform 150ms ease;
 }
 .latency-target-grid button {
   position: relative;

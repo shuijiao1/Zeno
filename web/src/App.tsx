@@ -896,7 +896,7 @@ function DashboardHeader({ settings = defaultSettings, onHome, onAdmin, adminLab
       <nav className="nav-actions" aria-label="dashboard actions">
         <button className="login-link" type="button" onClick={onAdmin}>{adminLabel}</button>
         <div className="theme-menu" ref={themeMenuRef}>
-          <button className={`nav-icon-button${themeMode !== 'system' ? ' is-solid' : ''}`} type="button" aria-label={`主题：${currentThemeLabel}`} aria-haspopup="menu" aria-expanded={themeMenuOpen} onClick={() => setThemeMenuOpen((open) => !open)}>{themeMode === 'system' ? <MonitorIcon /> : currentTheme === 'dark' ? <MoonIcon /> : <SunIcon />}<span className="sr-only">切换深浅色</span></button>
+          <button className="nav-icon-button" type="button" aria-label={`主题：${currentThemeLabel}`} aria-haspopup="menu" aria-expanded={themeMenuOpen} onClick={() => setThemeMenuOpen((open) => !open)}>{themeMode === 'system' ? <MonitorIcon /> : currentTheme === 'dark' ? <MoonIcon /> : <SunIcon />}<span className="sr-only">切换深浅色</span></button>
           {themeMenuOpen && (
             <div className="theme-menu-popover" role="menu">
               {headerThemeOptions.map((option) => (
@@ -1497,7 +1497,7 @@ function AdminNodeCreateModal({ onCreate, onInstallCommand, onClose }: { onCreat
       billingCycle: String(formData.get('new-billing-cycle') ?? '').trim(),
       billingMode: String(formData.get('new-billing-mode') ?? 'both'),
       monthlyResetDay: parseMonthlyResetDay(String(formData.get('new-monthly-reset-day') ?? '')) ?? 1,
-      monthlyQuotaBytes: parseQuotaGigabytes(String(formData.get('new-monthly-quota-gb') ?? '')),
+      monthlyQuotaBytes: parseQuota(String(formData.get('new-monthly-quota') ?? ''), String(formData.get('new-monthly-quota-unit') ?? 'GB')),
     })
       .then((node) => {
         if (node) setCreatedNode(node)
@@ -1537,21 +1537,19 @@ function AdminNodeCreateModal({ onCreate, onInstallCommand, onClose }: { onCreat
           <div className="admin-form-grid">
             <label>
               <span>到期日</span>
-              <input name="new-expiry-date" type="date" autoComplete="off" disabled={Boolean(createdNode)} />
+              <input name="new-expiry-date" type="text" inputMode="numeric" autoComplete="off" placeholder="YYYY-MM-DD" disabled={Boolean(createdNode)} />
             </label>
-            <label>
-              <span>账单周期</span>
-              <input name="new-billing-cycle" autoComplete="off" placeholder="月付 / 年付" disabled={Boolean(createdNode)} />
-            </label>
+            <AdminSegmentedField name="new-billing-cycle" label="账单周期" defaultValue="月" options={billingCycleOptions} disabled={Boolean(createdNode)} />
             <AdminSegmentedField name="new-billing-mode" label="流量计费口径" defaultValue="both" options={billingModeOptions} disabled={Boolean(createdNode)} />
             <label>
               <span>月流量重置日</span>
               <input name="new-monthly-reset-day" type="number" min="1" max="31" step="1" defaultValue="1" disabled={Boolean(createdNode)} />
             </label>
             <label>
-              <span>月配额 GB</span>
-              <input name="new-monthly-quota-gb" type="number" min="0" step="0.01" disabled={Boolean(createdNode)} />
+              <span>月配额</span>
+              <input name="new-monthly-quota" type="number" min="0" step="0.01" disabled={Boolean(createdNode)} />
             </label>
+            <AdminSegmentedField name="new-monthly-quota-unit" label="配额单位" defaultValue="GB" options={quotaUnitOptions} disabled={Boolean(createdNode)} />
           </div>
         </AdminFormSection>
         <AdminFormSection title="Agent 接入" description={createdNode ? '服务器已添加，可以直接生成 Agent 安装命令。' : '先添加服务器，随后在这里生成 Agent 安装命令。'}>
@@ -1602,7 +1600,7 @@ function AdminNodeEditModal({ node, targets, onUpdate, onTargetUpdate, onInstall
       billingCycle: String(formData.get('billing-cycle') ?? '').trim(),
       billingMode: String(formData.get('billing-mode') ?? node.billingMode),
       monthlyResetDay: parseMonthlyResetDay(String(formData.get('monthly-reset-day') ?? '')) ?? node.monthlyResetDay,
-      monthlyQuotaBytes: parseQuotaGigabytes(String(formData.get('monthly-quota-gb') ?? '')),
+      monthlyQuotaBytes: parseQuota(String(formData.get('monthly-quota') ?? ''), String(formData.get('monthly-quota-unit') ?? quotaUnitForBytes(node.monthlyQuotaBytes))),
     })
     sortedTargets.forEach((target) => {
       const currentEnabled = target.assignments.some((assignment) => assignment.nodeId === node.id && assignment.enabled)
@@ -1675,21 +1673,19 @@ function AdminNodeEditModal({ node, targets, onUpdate, onTargetUpdate, onInstall
           <div className="admin-form-grid">
             <label>
               <span>到期日</span>
-              <input name="expiry-date" type="date" defaultValue={node.expiryDate ?? ''} autoComplete="off" />
+              <input name="expiry-date" type="text" inputMode="numeric" defaultValue={node.expiryDate ?? ''} autoComplete="off" placeholder="YYYY-MM-DD" />
             </label>
-            <label>
-              <span>账单周期</span>
-              <input name="billing-cycle" defaultValue={node.billingCycle ?? ''} autoComplete="off" />
-            </label>
+            <AdminSegmentedField name="billing-cycle" label="账单周期" defaultValue={normalizeBillingCycle(node.billingCycle)} options={billingCycleOptions} />
             <AdminSegmentedField name="billing-mode" label="流量计费口径" defaultValue={node.billingMode || 'both'} options={billingModeOptions} />
             <label>
               <span>月流量重置日</span>
               <input name="monthly-reset-day" type="number" min="1" max="31" step="1" defaultValue={node.monthlyResetDay || 1} />
             </label>
             <label>
-              <span>月配额 GB</span>
-              <input name="monthly-quota-gb" type="number" min="0" step="0.01" defaultValue={formatQuotaGigabytes(node.monthlyQuotaBytes)} />
+              <span>月配额</span>
+              <input name="monthly-quota" type="number" min="0" step="0.01" defaultValue={formatQuotaValue(node.monthlyQuotaBytes)} />
             </label>
+            <AdminSegmentedField name="monthly-quota-unit" label="配额单位" defaultValue={quotaUnitForBytes(node.monthlyQuotaBytes)} options={quotaUnitOptions} />
           </div>
         </AdminFormSection>
         <AdminFormSection title="Agent 接入" description="生成安装命令会轮换该服务器的 Agent Token；已在线服务器执行新命令前会停止上报。">
@@ -1937,32 +1933,14 @@ function AdminTargetEditModal({ target, nodes, onUpdate, onClose }: { target: Ad
           </div>
         </AdminFormSection>
         {assignmentRows.length > 0 && (
-          <AdminFormSection title="按节点启用">
-            <AdminBulkSelectBar
-              selectedCount={assignmentNodeIds.length}
-              totalCount={assignmentRows.length}
-              onSelectAll={() => setAssignmentNodeIds(assignmentRows.map((assignment) => assignment.nodeId))}
-              onClear={() => setAssignmentNodeIds([])}
+          <AdminFormSection title="按服务器启用">
+            <AdminExpandedCheckList
+              title="已启用服务器"
+              emptyText="暂无服务器"
+              options={assignmentRows.map((assignment) => ({ value: assignment.nodeId, label: assignment.nodeDisplayName || assignment.nodeId }))}
+              value={assignmentNodeIds}
+              onChange={setAssignmentNodeIds}
             />
-            <div className="admin-target-assignment-list">
-              {assignmentRows.map((assignment) => (
-                <label className="admin-node-toggle admin-target-assignment-toggle" key={assignment.nodeId}>
-                  <input
-                    name={`target-assignment-${assignment.nodeId}`}
-                    type="checkbox"
-                    checked={selectedAssignmentNodes.has(assignment.nodeId)}
-                    onChange={(event) => {
-                      setAssignmentNodeIds((current) => (
-                        event.currentTarget.checked
-                          ? Array.from(new Set([...current, assignment.nodeId]))
-                          : current.filter((nodeId) => nodeId !== assignment.nodeId)
-                      ))
-                    }}
-                  />
-                  <span>{assignment.nodeDisplayName || assignment.nodeId}</span>
-                </label>
-              ))}
-            </div>
           </AdminFormSection>
         )}
         <div className="admin-modal-actions">
@@ -2346,6 +2324,21 @@ const billingModeOptions = [
   { value: 'max', label: '出入取大' },
 ]
 
+const billingCycleOptions = [
+  { value: '月', label: '月' },
+  { value: '季', label: '季' },
+  { value: '半年', label: '半年' },
+  { value: '年', label: '年' },
+  { value: '两年', label: '两年' },
+  { value: '三年', label: '三年' },
+  { value: '五年', label: '五年' },
+]
+
+const quotaUnitOptions = [
+  { value: 'GB', label: 'GB' },
+  { value: 'TB', label: 'TB' },
+]
+
 const targetTypeOptions = [
   { value: 'tcping', label: 'TCP Ping' },
   { value: 'ping', label: 'ICMP Ping' },
@@ -2392,21 +2385,17 @@ function AdminExpandedCheckList({ options, value, onChange, title = '已选', em
 
   return (
     <div className="admin-expanded-checklist">
-      <button className="admin-expanded-checklist__trigger" type="button" aria-expanded={expanded} onClick={() => setExpanded((current) => !current)}>
-        <span>{title} {normalizedValue.length}/{options.length}</span>
-        <ChevronDownIcon expanded={expanded} />
-      </button>
+      <div className="admin-expanded-checklist__header">
+        <button className="admin-expanded-checklist__trigger" type="button" aria-expanded={expanded} onClick={() => setExpanded((current) => !current)}>
+          <span>{title}</span>
+          <small>{normalizedValue.length}/{options.length}</small>
+          <ChevronDownIcon expanded={expanded} />
+        </button>
+        {options.length > 0 && <AdminBulkSelectButton selectedCount={normalizedValue.length} totalCount={options.length} onSelectAll={() => onChange(options.map((option) => option.value))} onClear={() => onChange([])} />}
+      </div>
       {expanded && (
         <div className="admin-expanded-checklist__list" role="list">
           {options.length === 0 && <div className="admin-expanded-checklist__empty">{emptyText}</div>}
-          {options.length > 0 && (
-            <AdminBulkSelectBar
-              selectedCount={normalizedValue.length}
-              totalCount={options.length}
-              onSelectAll={() => onChange(options.map((option) => option.value))}
-              onClear={() => onChange([])}
-            />
-          )}
           {options.map((option) => {
             const checked = selected.has(option.value)
             return (
@@ -2423,14 +2412,9 @@ function AdminExpandedCheckList({ options, value, onChange, title = '已选', em
   )
 }
 
-function AdminBulkSelectBar({ selectedCount, totalCount, onSelectAll, onClear }: { selectedCount: number; totalCount: number; onSelectAll: () => void; onClear: () => void }) {
+function AdminBulkSelectButton({ selectedCount, totalCount, onSelectAll, onClear }: { selectedCount: number; totalCount: number; onSelectAll: () => void; onClear: () => void }) {
   const allSelected = totalCount > 0 && selectedCount === totalCount
-  return (
-    <div className="admin-bulk-select-bar">
-      <span>{selectedCount}/{totalCount}</span>
-      <button type="button" onClick={allSelected ? onClear : onSelectAll}>{allSelected ? '清空' : '全选'}</button>
-    </div>
-  )
+  return <button className="admin-bulk-select-button" type="button" onClick={allSelected ? onClear : onSelectAll}>{allSelected ? '清空' : '全选'}</button>
 }
 
 function sortAdminProbeTargets(targets: AdminProbeTarget[]): AdminProbeTarget[] {
@@ -2474,9 +2458,9 @@ function formatTargetEndpoint(target: AdminProbeTarget): string {
 }
 
 function formatTargetAssignmentSummary(target: AdminProbeTarget): string {
-  if (target.assignments.length === 0) return '未分配节点'
+  if (target.assignments.length === 0) return '未分配服务器'
   const enabled = target.assignments.filter((assignment) => assignment.enabled).length
-  return `${enabled} / ${target.assignments.length} 节点启用`
+  return `${enabled} / ${target.assignments.length} 服务器启用`
 }
 
 function formatAlertRuleScope(rule: AdminAlertRule, nodes: AdminNode[]): string {
@@ -2515,18 +2499,36 @@ function parseMonthlyResetDay(value: string): number | null {
   return parsed
 }
 
-function formatQuotaGigabytes(value: number | null): string {
-  if (!value || value <= 0) return ''
-  const gigabytes = value / (1024 ** 3)
-  return String(Math.round(gigabytes * 100) / 100)
+function normalizeBillingCycle(value?: string | null): string {
+  const trimmed = (value ?? '').trim()
+  if (trimmed.includes('五')) return '五年'
+  if (trimmed.includes('三')) return '三年'
+  if (trimmed.includes('两') || trimmed.includes('二') || trimmed.includes('2')) return '两年'
+  if (trimmed.includes('半')) return '半年'
+  if (trimmed.includes('季')) return '季'
+  if (trimmed.includes('年')) return '年'
+  return '月'
 }
 
-function parseQuotaGigabytes(value: string): number | null {
+function quotaUnitForBytes(value: number | null): 'GB' | 'TB' {
+  if (!value || value < 1024 ** 4) return 'GB'
+  return 'TB'
+}
+
+function formatQuotaValue(value: number | null): string {
+  if (!value || value <= 0) return ''
+  const unit = quotaUnitForBytes(value)
+  const divisor = unit === 'TB' ? 1024 ** 4 : 1024 ** 3
+  return String(Math.round((value / divisor) * 100) / 100)
+}
+
+function parseQuota(value: string, unit: string): number | null {
   const trimmed = value.trim()
   if (trimmed === '') return null
   const parsed = Number(trimmed)
   if (!Number.isFinite(parsed) || parsed < 0) return null
-  return Math.round(parsed * (1024 ** 3))
+  const multiplier = unit === 'TB' ? 1024 ** 4 : 1024 ** 3
+  return Math.round(parsed * multiplier)
 }
 
 function formatAdminDate(value?: string): string {

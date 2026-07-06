@@ -489,7 +489,7 @@ describe('AdminDashboard', () => {
     expect(html).not.toContain('顺序 20')
     expect(html).toContain('127.0.0.1:18980')
     expect(html).not.toContain('3 次 / 1200ms / 60s')
-    expect(html).toContain('1 / 2 节点启用')
+    expect(html).toContain('1 / 2 服务器启用')
     expect(html).toContain('aria-label="编辑目标 Hytron"')
     expect(html).toContain('aria-label="删除目标 Hytron"')
     expect(html).toContain('admin-row-action is-icon')
@@ -513,7 +513,7 @@ describe('AdminDashboard', () => {
     expect(html).not.toContain('ICMP Ping')
     expect(html).toContain('8.8.8.8')
     expect(html).not.toContain('4 次 / 900ms / 45s')
-    expect(html).toContain('1 / 1 节点启用')
+    expect(html).toContain('1 / 1 服务器启用')
     expect(html).not.toContain('8.8.8.8:')
   })
 
@@ -524,7 +524,7 @@ describe('AdminDashboard', () => {
     expect(html).not.toContain('HTTP GET')
     expect(html).toContain('https://example.com/health')
     expect(html).not.toContain('2 次 / 1500ms / 60s')
-    expect(html).toContain('1 / 1 节点启用')
+    expect(html).toContain('1 / 1 服务器启用')
     expect(html).not.toContain('https://example.com/health:')
   })
 
