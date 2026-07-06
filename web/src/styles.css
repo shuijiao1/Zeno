@@ -2282,10 +2282,13 @@ svg { display: block; }
   .admin-section-nav button { min-width: 0; min-height: 40px; padding: 0 8px; border-radius: var(--radius-field); }
   .admin-section-icon { width: auto; height: auto; font-size: 13px; }
   .admin-section-nav span { font-size: 12px; }
-  .admin-section-actions { width: 100%; flex: 1 1 100%; justify-content: flex-start; flex-wrap: wrap; gap: 6px; }
+  .admin-section-heading { align-items: center; gap: 8px; flex-wrap: nowrap; }
+  .admin-section-heading > div { min-width: 0; }
+  .admin-section-heading h3 { white-space: nowrap; font-size: 22px; }
+  .admin-section-actions { width: auto; flex: 0 0 auto; margin-left: auto; justify-content: flex-end; flex-wrap: nowrap; gap: 6px; }
   .admin-section-actions button,
   .admin-section-heading > button,
-  .admin-block-heading .admin-primary-action { height: 36px; padding: 0 12px; font-size: 13px; }
+  .admin-block-heading .admin-primary-action { height: 34px; padding: 0 10px; font-size: 12px; }
   .admin-list-head { display: none; }
   .admin-workspace-panel .admin-list { max-height: none; overflow: visible; padding-right: 0; scrollbar-gutter: auto; }
   .admin-node-section .admin-list { height: auto; }
