@@ -378,8 +378,8 @@ svg { display: block; }
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.home-summary__metric--rate dd { justify-content: flex-start; min-width: 12.5ch; font-weight: 600; }
-.home-summary__rate-value { min-width: 10.5ch; display: inline-block; text-align: right; font-variant-numeric: tabular-nums; }
+.home-summary__metric--rate dd { width: 13.5ch; min-width: 13.5ch; justify-self: start; justify-content: flex-start; font-weight: 600; }
+.home-summary__rate-value { width: 11.5ch; min-width: 11.5ch; display: inline-block; text-align: left; font-variant-numeric: tabular-nums; }
 .home-summary__metrics svg { width: 12px; height: 12px; fill: currentColor; }
 
 .server-card-list {
@@ -612,6 +612,9 @@ svg { display: block; }
 }
 .admin-node-status {
   flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
   padding: 3px 7px;
   border-radius: var(--radius-pill);
   background: color-mix(in srgb, var(--muted) 18%, transparent);
@@ -627,8 +630,21 @@ svg { display: block; }
 .admin-notification-list .admin-node-status,
 .admin-alert-rule-list .admin-node-status {
   padding: 0;
+  border-radius: 0;
   background: transparent !important;
   color: color-mix(in srgb, var(--foreground) 74%, transparent);
+}
+.admin-status-indicator { white-space: nowrap; }
+.admin-status-dot {
+  width: 7px;
+  height: 7px;
+  flex: none;
+  border-radius: var(--radius-pill);
+  background: color-mix(in srgb, var(--muted) 58%, transparent);
+}
+.admin-status-indicator.status-online .admin-status-dot {
+  background: var(--green);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--green) 12%, transparent);
 }
 .admin-notification-list .admin-node-status.status-disabled,
 .admin-alert-rule-list .admin-node-status.status-disabled { color: var(--muted); }
@@ -699,8 +715,25 @@ svg { display: block; }
 }
 .admin-notification-list .admin-list-head,
 .admin-notification-list .admin-list-row {
-  grid-template-columns: minmax(170px, 1.05fr) minmax(84px, .52fr) minmax(150px, .9fr) minmax(112px, .7fr) auto;
+  grid-template-columns: minmax(130px, 1fr) minmax(74px, .45fr) minmax(78px, .5fr) minmax(96px, .62fr) minmax(190px, 1.08fr);
 }
+.admin-notification-list .admin-list-head > span:nth-child(2),
+.admin-notification-list .admin-list-head > span:nth-child(3),
+.admin-notification-list .admin-list-head > span:nth-child(4),
+.admin-alert-rule-list .admin-list-head > span:nth-child(3) { justify-self: start; text-align: left; }
+.admin-notification-list .admin-node-status,
+.admin-alert-rule-list .admin-node-status {
+  justify-self: start;
+  overflow: visible;
+  text-overflow: clip;
+}
+.admin-notification-list .admin-row-actions.admin-icon-actions {
+  justify-content: flex-start;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+.admin-notification-list .admin-row-action { height: 30px; padding: 0 10px; font-size: 12px; }
+.admin-notification-list .admin-row-action.is-icon { width: 30px; padding: 0; }
 .admin-ip-stack {
   min-height: 38px;
   display: flex;
@@ -1111,6 +1144,7 @@ svg { display: block; }
 }
 .admin-notification-type-card { gap: 8px; align-items: flex-start; }
 .admin-notification-destination { font-variant-numeric: normal; }
+.admin-modal-summary .admin-status-indicator { color: var(--foreground); font-size: 12px; font-weight: 500; }
 .admin-rule-picker {
   display: grid;
   gap: 8px;

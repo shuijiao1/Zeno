@@ -2021,7 +2021,7 @@ function AdminAlertRuleList({ rules, nodes, onEdit, onUpdate }: { rules: AdminAl
             <strong>{rule.name}</strong>
           </div>
           <span data-label="范围">{formatAlertRuleScope(rule, nodes)}</span>
-          <span data-label="状态" className={`admin-node-status status-${rule.enabled ? 'online' : 'disabled'}`}>{rule.enabled ? '启用中' : '已停用'}</span>
+          <AdminStatusBadge label={rule.enabled ? '启用中' : '已停用'} status={rule.enabled ? 'online' : 'disabled'} dataLabel="状态" />
           <div className="admin-row-actions admin-icon-actions">
             <button className="admin-row-action is-icon" type="button" aria-label={`编辑通知类型 ${rule.name}`} title="编辑通知类型" onClick={() => onEdit(rule)}><EditActionIcon /><span className="sr-only">编辑通知类型</span></button>
             <button className="admin-row-action is-icon is-danger" type="button" aria-label={`删除通知类型 ${rule.name}`} title="删除通知类型" onClick={() => confirmDelete(rule)}><TrashActionIcon /><span className="sr-only">删除通知类型</span></button>
@@ -2071,7 +2071,7 @@ function AdminAlertRuleEditModal({ rule, nodes, onUpdate, onClose }: { rule: Adm
       <dl className="admin-modal-summary">
         <div><dt>作用范围</dt><dd>{formatAlertRuleScope(rule, nodes)}</dd></div>
         <div><dt>通知类型</dt><dd>{rule.notificationLabel || rule.notificationEventType}</dd></div>
-        <div><dt>当前状态</dt><dd>{rule.enabled ? '启用中' : '已停用'}</dd></div>
+        <div><dt>当前状态</dt><dd><AdminStatusBadge label={rule.enabled ? '启用中' : '已停用'} status={rule.enabled ? 'online' : 'disabled'} /></dd></div>
       </dl>
       <form className="admin-alert-rule-edit-form admin-node-edit-form is-sectioned" aria-label={`${rule.name} 通知类型编辑`} onSubmit={handleSubmit}>
         <AdminFormSection title="通知设置">
@@ -2158,7 +2158,7 @@ function AdminNotificationChannelList({ channels, onUpdate, onDelete, onTest, on
       <div className="admin-list-head" aria-hidden="true">
         <span>渠道</span>
         <span>状态</span>
-        <span>Chat ID</span>
+          <span>接收人</span>
         <span>Bot Token</span>
         <span>操作</span>
       </div>
@@ -2166,10 +2166,9 @@ function AdminNotificationChannelList({ channels, onUpdate, onDelete, onTest, on
         <article className="admin-list-row" role="listitem" key={channel.id}>
           <div className="admin-list-main">
             <strong>{channel.name}</strong>
-            <small>{channel.id}</small>
           </div>
-          <span data-label="状态" className={`admin-node-status status-${channel.enabled ? 'online' : 'disabled'}`}>{channel.enabled ? '启用中' : '已停用'}</span>
-          <span data-label="Chat ID" className="admin-notification-destination">{channel.destination}</span>
+          <AdminStatusBadge label={channel.enabled ? '启用中' : '已停用'} status={channel.enabled ? 'online' : 'disabled'} dataLabel="状态" />
+          <span data-label="接收人" className="admin-notification-destination">{channel.destination ? '已设置' : '未设置'}</span>
           <span data-label="Bot Token">{channel.credentialSet ? '凭据已设置' : '未设置凭据'}</span>
           <div className="admin-row-actions admin-icon-actions">
             <button className="admin-row-action" type="button" onClick={() => onTest(channel.id)}>测试发送</button>
@@ -2185,6 +2184,10 @@ function AdminNotificationChannelList({ channels, onUpdate, onDelete, onTest, on
   )
 }
 
+function AdminStatusBadge({ label, status, dataLabel }: { label: string; status: 'online' | 'disabled'; dataLabel?: string }) {
+  return <span data-label={dataLabel} className={`admin-node-status admin-status-indicator status-${status}`}><i className="admin-status-dot" aria-hidden="true" />{label}</span>
+}
+
 function AdminNotificationChannelEditModal({ channel, onUpdate, onClose }: { channel: AdminNotificationChannel; onUpdate: (channelId: string, input: AdminNotificationChannelUpdateInput) => void; onClose: () => void }) {
   const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
@@ -2192,10 +2195,10 @@ function AdminNotificationChannelEditModal({ channel, onUpdate, onClose }: { cha
     const name = String(formData.get('channel-name') ?? '').trim()
     const destination = String(formData.get('channel-destination') ?? '').trim()
     const credential = String(formData.get('channel-credential') ?? '').trim()
-    if (name === '' || destination === '') return
+    if (name === '') return
     onUpdate(channel.id, {
       name,
-      destination,
+      ...(destination !== '' ? { destination } : {}),
       ...(credential !== '' ? { credential } : {}),
       enabled: formData.get('channel-enabled') === 'on',
     })
@@ -2203,6 +2206,10 @@ function AdminNotificationChannelEditModal({ channel, onUpdate, onClose }: { cha
 
   return (
     <AdminModal title="编辑通知渠道" eyebrow="Notify" onClose={onClose}>
+      <dl className="admin-modal-summary">
+        <div><dt>当前状态</dt><dd><AdminStatusBadge label={channel.enabled ? '启用中' : '已停用'} status={channel.enabled ? 'online' : 'disabled'} /></dd></div>
+        <div><dt>接收人</dt><dd>{channel.destination ? '已设置' : '未设置'}</dd></div>
+      </dl>
       <form className="admin-notification-edit-form admin-node-edit-form is-sectioned" aria-label="编辑通知渠道" onSubmit={handleSubmit}>
         <AdminFormSection title="渠道配置">
           <div className="admin-form-grid">
@@ -2212,7 +2219,7 @@ function AdminNotificationChannelEditModal({ channel, onUpdate, onClose }: { cha
             </label>
             <label>
               <span>Telegram Chat ID</span>
-              <input name="channel-destination" autoComplete="off" defaultValue={channel.destination} />
+              <input name="channel-destination" autoComplete="off" placeholder={channel.destination ? '留空则保留当前 Chat ID' : '请输入 Telegram Chat ID'} />
             </label>
             <label>
               <span>Telegram Bot Token</span>
@@ -2259,7 +2266,7 @@ function AdminNotificationChannelCreateModal({ onCreate, onClose }: { onCreate: 
             </label>
             <label>
               <span>Telegram Chat ID</span>
-              <input name="new-channel-destination" autoComplete="off" placeholder="7579942307" />
+              <input name="new-channel-destination" autoComplete="off" placeholder="请输入 Telegram Chat ID" />
             </label>
             <label>
               <span>Telegram Bot Token</span>
