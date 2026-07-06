@@ -52,11 +52,18 @@ describe('ServerCard', () => {
     expect(html).toContain('node-specs')
     expect(html).toContain('node-usage')
     expect(html).toContain('Hytron')
+    expect(html).toContain('永久')
     expect(html).toContain('>流量</span>')
     expect(html).not.toContain('流量 ·')
     expect(html).not.toContain('7/1')
     expect(html).not.toContain('每月 1 日重置')
     expect(html).not.toContain('node-offline-watermark')
     expect(html).not.toContain('node-offline-state')
+  })
+
+  it('shows permanent expiry for nodes without an expiry date', () => {
+    const html = renderToStaticMarkup(<ServerCard node={{ ...baseNode, expiryLabel: '' }} onOpen={vi.fn()} />)
+
+    expect(html).toContain('永久')
   })
 })

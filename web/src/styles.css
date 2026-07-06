@@ -74,7 +74,7 @@ svg { display: block; }
   overflow: hidden;
   clip: rect(0, 0, 0, 0);
   white-space: nowrap;
-  border: 1px solid color-mix(in srgb, var(--border) 82%, rgba(37, 99, 235, 0.28));
+  border: 0;
 }
 
 .kulin-shell {
@@ -151,7 +151,7 @@ svg { display: block; }
   align-items: center;
   min-width: 0;
   padding: 0;
-  border: 1px solid color-mix(in srgb, var(--border) 82%, rgba(37, 99, 235, 0.28));
+  border: 0;
   background: transparent;
   color: inherit;
   cursor: pointer;
@@ -160,7 +160,7 @@ svg { display: block; }
   transition: color 150ms ease, transform 150ms ease;
 }
 .brand-logo { margin-right: 4px; display: inline-flex; align-items: center; justify-content: flex-start; }
-.brand img { width: 32px; height: 32px; object-fit: cover; object-position: top; border: 2px solid transparent; }
+.brand img { width: 32px; height: 32px; object-fit: cover; object-position: top; border: 0; }
 .brand span:last-child { white-space: nowrap; }
 .brand:hover { color: var(--blue); transform: translateY(-1px); }
 
@@ -263,7 +263,6 @@ svg { display: block; }
   content: "";
   position: absolute;
   inset: 1px;
-  border: 1px solid rgba(255, 255, 255, 0.34);
   border-radius: calc(var(--radius-panel) - 1px);
   pointer-events: none;
 }
@@ -529,7 +528,7 @@ svg { display: block; }
   justify-content: center;
   gap: 6px;
   padding: 9px 13px;
-  border: 1px solid var(--border);
+  border: 0;
   border-radius: var(--radius-field);
   background: transparent;
   color: color-mix(in srgb, var(--foreground) 72%, transparent);
@@ -1660,7 +1659,7 @@ svg { display: block; }
 .node-dot.status-warning { background: #f59e0b; }
 .node-dot.status-no_data { background: var(--purple); }
 .node-flag { margin-top: -1px; flex: none; color: var(--muted); font-size: 14px; }
-.node-expiry { position: absolute; right: 0; top: 0; font-size: 11px; font-weight: 600; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.node-expiry { position: absolute; right: 0; top: 0; font-size: 11px; font-weight: 400; white-space: nowrap; font-variant-numeric: tabular-nums; }
 .node-expiry.is-safe { color: var(--green); }
 .node-expiry.is-soon { color: var(--orange); }
 .node-expiry.is-urgent,
