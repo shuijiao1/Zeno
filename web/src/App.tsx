@@ -110,7 +110,7 @@ function summaryLatencyPoints(node: HomeCardNode | undefined): LatencyPoint[] {
 const defaultSettings: AdminSettings = {
   siteTitle: 'Zeno',
   siteSubtitle: '服务器运行概览',
-  logoUrl: '/assets/logo/id.png',
+  logoUrl: 'https://raw.githubusercontent.com/shuijiao1/Fly/refs/heads/main/ID-128.webp',
   theme: 'system',
   agentControllerUrl: '',
   backgroundUrl: '',
