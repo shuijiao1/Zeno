@@ -2339,6 +2339,7 @@ function AdminDateField({ name, label, defaultValue = '', disabled = false }: { 
   const [value, setValue] = useState(defaultValue ?? '')
   const [month, setMonth] = useState(() => adminDateMonthStart(defaultValue))
   const [open, setOpen] = useState(false)
+  const [openPanel, setOpenPanel] = useState<'year' | 'month' | null>(null)
   const triggerRef = useRef<HTMLButtonElement | null>(null)
   const popoverRef = useRef<HTMLDivElement | null>(null)
   const [popoverStyle, setPopoverStyle] = useState<CSSProperties>({})
@@ -2357,13 +2358,24 @@ function AdminDateField({ name, label, defaultValue = '', disabled = false }: { 
     setValue(formatAdminDateValue(date))
     setMonth(new Date(date.getFullYear(), date.getMonth(), 1))
     setOpen(false)
+    setOpenPanel(null)
   }
-  const shiftMonth = (delta: number) => setMonth((current) => new Date(current.getFullYear(), current.getMonth() + delta, 1))
-  const selectYear = (year: number) => setMonth((current) => new Date(year, current.getMonth(), 1))
-  const selectMonth = (nextMonth: number) => setMonth((current) => new Date(current.getFullYear(), nextMonth, 1))
+  const shiftMonth = (delta: number) => {
+    setMonth((current) => new Date(current.getFullYear(), current.getMonth() + delta, 1))
+    setOpenPanel(null)
+  }
+  const selectYear = (year: number) => {
+    setMonth((current) => new Date(year, current.getMonth(), 1))
+    setOpenPanel(null)
+  }
+  const selectMonth = (nextMonth: number) => {
+    setMonth((current) => new Date(current.getFullYear(), nextMonth, 1))
+    setOpenPanel(null)
+  }
   const clearDate = () => {
     setValue('')
     setOpen(false)
+    setOpenPanel(null)
   }
 
   useLayoutEffect(() => {
@@ -2379,55 +2391,73 @@ function AdminDateField({ name, label, defaultValue = '', disabled = false }: { 
       const left = Math.min(Math.max(margin, rect.left), Math.max(margin, window.innerWidth - width - margin))
       const belowTop = rect.bottom + gap
       const aboveTop = rect.top - height - gap
-      const top = belowTop + height <= window.innerHeight - margin || aboveTop < margin
-        ? Math.min(belowTop, Math.max(margin, window.innerHeight - height - margin))
-        : Math.max(margin, aboveTop)
+      const maxTop = Math.max(margin, window.innerHeight - height - margin)
+      const preferredTop = belowTop + height <= window.innerHeight - margin || aboveTop < margin ? belowTop : aboveTop
+      const top = Math.min(Math.max(margin, preferredTop), maxTop)
       setPopoverStyle({ position: 'fixed', top, left, width })
     }
     updatePopoverPosition()
+    const frame = window.requestAnimationFrame(updatePopoverPosition)
+    const settleTimer = window.setTimeout(updatePopoverPosition, 80)
     window.addEventListener('resize', updatePopoverPosition)
     window.addEventListener('scroll', updatePopoverPosition, true)
     return () => {
+      window.cancelAnimationFrame(frame)
+      window.clearTimeout(settleTimer)
       window.removeEventListener('resize', updatePopoverPosition)
       window.removeEventListener('scroll', updatePopoverPosition, true)
     }
-  }, [open, disabled, visibleYear, visibleMonth])
+  }, [open, disabled, visibleYear, visibleMonth, openPanel])
 
   const calendar = open && !disabled ? (
     <div ref={popoverRef} className="admin-date-popover" role="dialog" aria-label={`${label}日历`} style={popoverStyle}>
       <div className="admin-date-calendar-header">
         <button type="button" aria-label="上个月" onClick={() => shiftMonth(-1)}>‹</button>
         <div className="admin-date-current" aria-label="选择年月">
-          <select aria-label="选择年份" value={visibleYear} onChange={(event) => selectYear(Number(event.currentTarget.value))}>
-            {yearOptions.map((year) => <option key={year} value={year}>{year} 年</option>)}
-          </select>
-          <select aria-label="选择月份" value={visibleMonth} onChange={(event) => selectMonth(Number(event.currentTarget.value))}>
-            {adminDateMonthOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
-          </select>
+          <button className="admin-date-current-button" type="button" aria-expanded={openPanel === 'year'} onClick={() => setOpenPanel((current) => (current === 'year' ? null : 'year'))}>{visibleYear} 年</button>
+          <button className="admin-date-current-button" type="button" aria-expanded={openPanel === 'month'} onClick={() => setOpenPanel((current) => (current === 'month' ? null : 'month'))}>{visibleMonth + 1} 月</button>
         </div>
         <button type="button" aria-label="下个月" onClick={() => shiftMonth(1)}>›</button>
       </div>
-      <div className="admin-date-weekdays" aria-hidden="true">
-        {adminDateWeekdays.map((weekday) => <span key={weekday}>{weekday}</span>)}
-      </div>
-      <div className="admin-date-grid">
-        {calendarCells.map((cell) => {
-          if (cell.day === null) return <span className="admin-date-empty" key={cell.key} />
-          const date = new Date(month.getFullYear(), month.getMonth(), cell.day)
-          const dateValue = formatAdminDateValue(date)
-          const isSelected = selectedDate ? dateValue === formatAdminDateValue(selectedDate) : false
-          const isToday = dateValue === formatAdminDateValue(today)
-          return (
-            <button className={`${isSelected ? 'is-selected' : ''}${isToday ? ' is-today' : ''}`} type="button" key={cell.key} onClick={() => pickDate(date)}>
-              {cell.day}
-            </button>
-          )
-        })}
-      </div>
-      <div className="admin-date-actions">
-        <button type="button" onClick={clearDate}>清空</button>
-        <button type="button" onClick={() => pickDate(today)}>今天</button>
-      </div>
+      {openPanel === 'year' && (
+        <div className="admin-date-option-panel admin-date-year-panel" aria-label="年份选项">
+          {yearOptions.map((year) => (
+            <button className={year === visibleYear ? 'is-selected' : ''} type="button" key={year} onClick={() => selectYear(year)}>{year}</button>
+          ))}
+        </div>
+      )}
+      {openPanel === 'month' && (
+        <div className="admin-date-option-panel admin-date-month-panel" aria-label="月份选项">
+          {adminDateMonthOptions.map((option) => (
+            <button className={option.value === visibleMonth ? 'is-selected' : ''} type="button" key={option.value} onClick={() => selectMonth(option.value)}>{option.label}</button>
+          ))}
+        </div>
+      )}
+      {openPanel === null && (
+        <>
+          <div className="admin-date-weekdays" aria-hidden="true">
+            {adminDateWeekdays.map((weekday) => <span key={weekday}>{weekday}</span>)}
+          </div>
+          <div className="admin-date-grid">
+            {calendarCells.map((cell) => {
+              if (cell.day === null) return <span className="admin-date-empty" key={cell.key} />
+              const date = new Date(month.getFullYear(), month.getMonth(), cell.day)
+              const dateValue = formatAdminDateValue(date)
+              const isSelected = selectedDate ? dateValue === formatAdminDateValue(selectedDate) : false
+              const isToday = dateValue === formatAdminDateValue(today)
+              return (
+                <button className={`${isSelected ? 'is-selected' : ''}${isToday ? ' is-today' : ''}`} type="button" key={cell.key} onClick={() => pickDate(date)}>
+                  {cell.day}
+                </button>
+              )
+            })}
+          </div>
+          <div className="admin-date-actions">
+            <button type="button" onClick={clearDate}>清空</button>
+            <button type="button" onClick={() => pickDate(today)}>今天</button>
+          </div>
+        </>
+      )}
     </div>
   ) : null
 
@@ -2436,7 +2466,10 @@ function AdminDateField({ name, label, defaultValue = '', disabled = false }: { 
       <span>{label}</span>
       <input type="hidden" name={name} value={value} disabled={disabled} />
       <div className="admin-date-picker">
-        <button ref={triggerRef} className="admin-date-trigger" type="button" aria-expanded={open} disabled={disabled} onClick={() => setOpen((current) => !current)}>
+        <button ref={triggerRef} className="admin-date-trigger" type="button" aria-expanded={open} disabled={disabled} onClick={() => setOpen((current) => {
+          if (current) setOpenPanel(null)
+          return !current
+        })}>
           <span className={value ? '' : 'is-placeholder'}>{value || 'YYYY-MM-DD'}</span>
           <CalendarIcon />
         </button>
