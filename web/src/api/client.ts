@@ -188,6 +188,7 @@ interface ApiAdminNotificationChannel {
   id: string
   name: string
   destination: string
+  credential?: string
   credential_set: boolean
   enabled: boolean
   created_at: string
@@ -1416,6 +1417,7 @@ function normalizeAdminNotificationChannel(channel: ApiAdminNotificationChannel)
     id: channel.id,
     name: channel.name,
     destination: channel.destination,
+    credential: channel.credential,
     credentialSet: channel.credential_set,
     enabled: channel.enabled,
     createdAt: channel.created_at,

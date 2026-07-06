@@ -4,6 +4,7 @@ import { createAdminNode, createAdminNotificationChannel, createAdminProbeTarget
 import { LatencyDetail } from './components/LatencyDetail'
 import { LatencyChart } from './components/LatencyChart'
 import { ServerCard } from './components/ServerCard'
+import { ServerFlag } from './components/ServerFlag'
 import { startLiveRefresh } from './lib/liveRefresh'
 import { nodePath, parseDashboardRoute, servicePath, type DashboardRoute } from './lib/route'
 import type { AdminAlertRule, AdminNode, AdminNotificationChannel, AdminProbeTarget, AdminSettings, AdminTheme, HomeCardNode, LatencyPoint, ProbeType, ServiceTarget } from './types'
@@ -1254,7 +1255,9 @@ function AdminSettingsSection({ settings, onUpdate }: { settings: AdminSettings;
           </div>
         </AdminFormSection>
         {settingsError && <p className="admin-install-error">{settingsError}</p>}
-        <button type="submit">保存设置</button>
+        <div className="admin-modal-actions">
+          <button type="submit">保存设置</button>
+        </div>
       </form>
     </section>
   )
@@ -1374,7 +1377,7 @@ function AdminNodeList({ nodes, onEdit, onDelete }: { nodes: AdminNode[]; onEdit
       {nodes.map((node) => (
         <article className="admin-list-row" role="listitem" key={node.id}>
           <div className="admin-list-main">
-            <strong>{node.displayName}</strong>
+            <strong className="admin-node-title"><ServerFlag countryCode={node.countryCode} className="admin-list-flag" /><span>{node.displayName}</span></strong>
           </div>
           <span data-label="公网 IP" className={`admin-ip-stack${node.publicIPv6 ? '' : ' is-single'}`}>
             {node.publicIPv4 && <span>{node.publicIPv4}</span>}
@@ -1533,13 +1536,10 @@ function AdminNodeCreateModal({ onCreate, onInstallCommand, onClose }: { onCreat
             </label>
           </div>
         </AdminFormSection>
-        <AdminFormSection title="账单与流量" description="账单信息可以留空，后续再补。">
+        <AdminFormSection title="账单与流量">
           <div className="admin-billing-grid">
             <div className="admin-billing-row">
-              <label className="admin-date-field">
-                <span>到期日</span>
-                <input name="new-expiry-date" type="date" autoComplete="off" disabled={Boolean(createdNode)} />
-              </label>
+              <AdminDateField name="new-expiry-date" label="到期日" disabled={Boolean(createdNode)} />
               <label>
                 <span>月流量重置日</span>
                 <input name="new-monthly-reset-day" type="number" min="1" max="31" step="1" defaultValue="1" disabled={Boolean(createdNode)} />
@@ -1556,7 +1556,7 @@ function AdminNodeCreateModal({ onCreate, onInstallCommand, onClose }: { onCreat
             </div>
           </div>
         </AdminFormSection>
-        <AdminFormSection title="Agent 接入" description={createdNode ? '服务器已添加，可以直接生成 Agent 安装命令。' : '先添加服务器，随后在这里生成 Agent 安装命令。'}>
+        <AdminFormSection title="Agent 接入">
           {createdNode && <p className="admin-help-note">已添加：{createdNode.displayName}</p>}
           <div className="admin-inline-actions">
             <button type="button" onClick={handleInstallCommand} disabled={!createdNode || installCommandState.kind === 'loading'}>{installCommandState.kind === 'loading' ? '生成中…' : '生成安装命令'}</button>
@@ -1618,7 +1618,7 @@ function AdminNodeEditModal({ node, targets, onUpdate, onTargetUpdate, onInstall
   const handleInstallCommand = () => {
     const shouldConfirmRotation = !node.disabled && node.status !== 'no_data'
     if (shouldConfirmRotation) {
-      const ok = typeof window === 'undefined' ? true : window.confirm('生成安装命令会轮换该服务器的 Agent Token；当前 Agent 需要用新命令重新安装后才会继续上报。确认继续？')
+      const ok = typeof window === 'undefined' ? true : window.confirm('重新生成安装命令会更新该服务器的 Agent Token；当前 Agent 需要用新命令重新安装后才会继续上报。确认继续？')
       if (!ok) return
     }
     setInstallCommandState({ kind: 'loading' })
@@ -1646,7 +1646,7 @@ function AdminNodeEditModal({ node, targets, onUpdate, onTargetUpdate, onInstall
             </label>
           </div>
         </AdminFormSection>
-        <AdminFormSection title="关联延迟监控" description="选择这台服务器要执行的延迟监控目标。">
+        <AdminFormSection title="关联延迟监控">
           {sortedTargets.length === 0 ? (
             <div className="admin-state-card is-compact">暂无延迟监控。</div>
           ) : (
@@ -1673,13 +1673,10 @@ function AdminNodeEditModal({ node, targets, onUpdate, onTargetUpdate, onInstall
             />
           )}
         </AdminFormSection>
-        <AdminFormSection title="账单与流量" description="账单信息可以留空，后续再补。">
+        <AdminFormSection title="账单与流量">
           <div className="admin-billing-grid">
             <div className="admin-billing-row">
-              <label className="admin-date-field">
-                <span>到期日</span>
-                <input name="expiry-date" type="date" defaultValue={node.expiryDate ?? ''} autoComplete="off" />
-              </label>
+              <AdminDateField name="expiry-date" label="到期日" defaultValue={node.expiryDate ?? ''} />
               <label>
                 <span>月流量重置日</span>
                 <input name="monthly-reset-day" type="number" min="1" max="31" step="1" defaultValue={node.monthlyResetDay || 1} />
@@ -1696,10 +1693,10 @@ function AdminNodeEditModal({ node, targets, onUpdate, onTargetUpdate, onInstall
             </div>
           </div>
         </AdminFormSection>
-        <AdminFormSection title="Agent 接入" description="生成安装命令会轮换该服务器的 Agent Token；已在线服务器执行新命令前会停止上报。">
+        <AdminFormSection title="Agent 接入">
           <p className="admin-help-note">当前 Agent 版本：{node.agentVersion || '暂无上报'}</p>
           <div className="admin-inline-actions">
-            <button type="button" onClick={handleInstallCommand} disabled={installCommandState.kind === 'loading'}>{installCommandState.kind === 'loading' ? '生成中…' : '轮换并生成安装命令'}</button>
+            <button type="button" onClick={handleInstallCommand} disabled={installCommandState.kind === 'loading'}>{installCommandState.kind === 'loading' ? '生成中…' : '重新生成安装命令'}</button>
             <button type="button" onClick={handleCopyInstallCommand} disabled={installCommandState.kind !== 'ready'}>复制安装命令</button>
           </div>
           {installCommandState.kind === 'ready' && (
@@ -1894,12 +1891,6 @@ function AdminTargetEditModal({ target, nodes, onUpdate, onClose }: { target: Ad
 
   return (
     <AdminModal title={`编辑延迟监控 · ${target.name}`} eyebrow={target.id} onClose={onClose}>
-      <dl className="admin-modal-summary">
-        <div><dt>类型</dt><dd>{formatTargetTypeLabel(target.type)}</dd></div>
-        <div><dt>地址</dt><dd>{formatTargetEndpoint(target)}</dd></div>
-        <div><dt>参数</dt><dd>{target.count} 次 / {target.timeoutMs}ms / {target.intervalSec}s</dd></div>
-        <div><dt>节点</dt><dd>{formatTargetAssignmentSummary(target)}</dd></div>
-      </dl>
       <form className="admin-target-edit-form admin-node-edit-form is-sectioned" aria-label={`${target.name} 探针目标编辑`} onSubmit={handleSubmit}>
         <AdminFormSection title="目标信息">
           <div className="admin-form-grid">
@@ -2056,6 +2047,7 @@ function AdminAlertRuleAddModal({ rules, nodes, onAdd, onClose }: { rules: Admin
 }
 
 function AdminAlertRuleEditModal({ rule, nodes, onUpdate, onClose }: { rule: AdminAlertRule; nodes: AdminNode[]; onUpdate: (ruleId: string, input: AdminAlertRuleUpdateInput) => void; onClose: () => void }) {
+  const initialScopeNodeIds = rule.scopeNodeIds.length === 0 ? nodes.map((node) => node.id) : rule.scopeNodeIds
   const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
     const formData = new FormData(event.currentTarget)
@@ -2068,11 +2060,6 @@ function AdminAlertRuleEditModal({ rule, nodes, onUpdate, onClose }: { rule: Adm
 
   return (
     <AdminModal title={`编辑通知类型 · ${rule.name}`} eyebrow={rule.id} onClose={onClose}>
-      <dl className="admin-modal-summary">
-        <div><dt>作用范围</dt><dd>{formatAlertRuleScope(rule, nodes)}</dd></div>
-        <div><dt>通知类型</dt><dd>{rule.notificationLabel || rule.notificationEventType}</dd></div>
-        <div><dt>当前状态</dt><dd><AdminStatusBadge label={rule.enabled ? '启用中' : '已停用'} status={rule.enabled ? 'online' : 'disabled'} /></dd></div>
-      </dl>
       <form className="admin-alert-rule-edit-form admin-node-edit-form is-sectioned" aria-label={`${rule.name} 通知类型编辑`} onSubmit={handleSubmit}>
         <AdminFormSection title="通知设置">
           <div className="admin-form-grid">
@@ -2083,11 +2070,11 @@ function AdminAlertRuleEditModal({ rule, nodes, onUpdate, onClose }: { rule: Adm
           </div>
         </AdminFormSection>
         {nodes.length > 0 && (
-          <AdminFormSection title="作用服务器" description="不选表示全部服务器。">
+          <AdminFormSection title="作用服务器">
             <div className="admin-rule-scope-list admin-target-assignment-list">
               {nodes.map((node) => (
                 <label className="admin-node-toggle admin-target-assignment-toggle" key={node.id}>
-                  <input name={`rule-scope-${node.id}`} type="checkbox" defaultChecked={rule.scopeNodeIds.includes(node.id)} />
+                  <input name={`rule-scope-${node.id}`} type="checkbox" defaultChecked={initialScopeNodeIds.includes(node.id)} />
                   <span>{node.displayName || node.id}</span>
                 </label>
               ))}
@@ -2206,10 +2193,6 @@ function AdminNotificationChannelEditModal({ channel, onUpdate, onClose }: { cha
 
   return (
     <AdminModal title="编辑通知渠道" eyebrow="Notify" onClose={onClose}>
-      <dl className="admin-modal-summary">
-        <div><dt>当前状态</dt><dd><AdminStatusBadge label={channel.enabled ? '启用中' : '已停用'} status={channel.enabled ? 'online' : 'disabled'} /></dd></div>
-        <div><dt>接收人</dt><dd>{channel.destination ? '已设置' : '未设置'}</dd></div>
-      </dl>
       <form className="admin-notification-edit-form admin-node-edit-form is-sectioned" aria-label="编辑通知渠道" onSubmit={handleSubmit}>
         <AdminFormSection title="渠道配置">
           <div className="admin-form-grid">
@@ -2219,11 +2202,11 @@ function AdminNotificationChannelEditModal({ channel, onUpdate, onClose }: { cha
             </label>
             <label>
               <span>Telegram Chat ID</span>
-              <input name="channel-destination" autoComplete="off" placeholder={channel.destination ? '留空则保留当前 Chat ID' : '请输入 Telegram Chat ID'} />
+              <input name="channel-destination" autoComplete="off" defaultValue={channel.destination} />
             </label>
             <label>
               <span>Telegram Bot Token</span>
-              <input name="channel-credential" type="password" autoComplete="new-password" placeholder={channel.credentialSet ? '留空则保留当前 Bot Token' : '仅写入，不回显'} />
+              <input name="channel-credential" autoComplete="off" defaultValue={channel.credential ?? ''} />
             </label>
             <label className="admin-node-toggle">
               <input name="channel-enabled" type="checkbox" defaultChecked={channel.enabled} />
@@ -2320,6 +2303,73 @@ function AdminFormSection({ title, description, children }: { title: string; des
   )
 }
 
+function AdminDateField({ name, label, defaultValue = '', disabled = false }: { name: string; label: string; defaultValue?: string | null; disabled?: boolean }) {
+  const [value, setValue] = useState(defaultValue ?? '')
+  const [month, setMonth] = useState(() => adminDateMonthStart(defaultValue))
+  const [open, setOpen] = useState(false)
+  const selectedDate = parseAdminDateValue(value)
+  const today = new Date()
+  const daysInMonth = new Date(month.getFullYear(), month.getMonth() + 1, 0).getDate()
+  const leadingBlankDays = (new Date(month.getFullYear(), month.getMonth(), 1).getDay() + 6) % 7
+  const calendarCells = [
+    ...Array.from({ length: leadingBlankDays }, (_, index) => ({ key: `blank-${index}`, day: null })),
+    ...Array.from({ length: daysInMonth }, (_, index) => ({ key: `day-${index + 1}`, day: index + 1 })),
+  ]
+  const pickDate = (date: Date) => {
+    setValue(formatAdminDateValue(date))
+    setMonth(new Date(date.getFullYear(), date.getMonth(), 1))
+    setOpen(false)
+  }
+  const shiftMonth = (delta: number) => setMonth((current) => new Date(current.getFullYear(), current.getMonth() + delta, 1))
+  const clearDate = () => {
+    setValue('')
+    setOpen(false)
+  }
+
+  return (
+    <div className="admin-form-control admin-date-field">
+      <span>{label}</span>
+      <input type="hidden" name={name} value={value} disabled={disabled} />
+      <div className="admin-date-picker">
+        <button className="admin-date-trigger" type="button" aria-expanded={open} disabled={disabled} onClick={() => setOpen((current) => !current)}>
+          <span className={value ? '' : 'is-placeholder'}>{value || 'YYYY-MM-DD'}</span>
+          <CalendarIcon />
+        </button>
+        {open && !disabled && (
+          <div className="admin-date-popover" role="dialog" aria-label={`${label}日历`}>
+            <div className="admin-date-calendar-header">
+              <button type="button" aria-label="上个月" onClick={() => shiftMonth(-1)}>‹</button>
+              <strong>{month.getFullYear()} 年 {month.getMonth() + 1} 月</strong>
+              <button type="button" aria-label="下个月" onClick={() => shiftMonth(1)}>›</button>
+            </div>
+            <div className="admin-date-weekdays" aria-hidden="true">
+              {adminDateWeekdays.map((weekday) => <span key={weekday}>{weekday}</span>)}
+            </div>
+            <div className="admin-date-grid">
+              {calendarCells.map((cell) => {
+                if (cell.day === null) return <span className="admin-date-empty" key={cell.key} />
+                const date = new Date(month.getFullYear(), month.getMonth(), cell.day)
+                const dateValue = formatAdminDateValue(date)
+                const isSelected = selectedDate ? dateValue === formatAdminDateValue(selectedDate) : false
+                const isToday = dateValue === formatAdminDateValue(today)
+                return (
+                  <button className={`${isSelected ? 'is-selected' : ''}${isToday ? ' is-today' : ''}`} type="button" key={cell.key} onClick={() => pickDate(date)}>
+                    {cell.day}
+                  </button>
+                )
+              })}
+            </div>
+            <div className="admin-date-actions">
+              <button type="button" onClick={clearDate}>清空</button>
+              <button type="button" onClick={() => pickDate(today)}>今天</button>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
 const themeOptions = [
   { value: 'system', label: '跟随系统' },
   { value: 'light', label: '浅色' },
@@ -2353,6 +2403,32 @@ const quotaUnitOptions = [
   { value: 'GB', label: 'GB' },
   { value: 'TB', label: 'TB' },
 ]
+
+const adminDateWeekdays = ['一', '二', '三', '四', '五', '六', '日']
+
+function parseAdminDateValue(value?: string | null): Date | null {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec((value ?? '').trim())
+  if (!match) return null
+  const year = Number(match[1])
+  const month = Number(match[2]) - 1
+  const day = Number(match[3])
+  const date = new Date(year, month, day)
+  if (date.getFullYear() !== year || date.getMonth() !== month || date.getDate() !== day) return null
+  return date
+}
+
+function formatAdminDateValue(date: Date): string {
+  const year = date.getFullYear()
+  const month = String(date.getMonth() + 1).padStart(2, '0')
+  const day = String(date.getDate()).padStart(2, '0')
+  return `${year}-${month}-${day}`
+}
+
+function adminDateMonthStart(value?: string | null): Date {
+  const parsed = parseAdminDateValue(value)
+  const source = parsed ?? new Date()
+  return new Date(source.getFullYear(), source.getMonth(), 1)
+}
 
 const targetTypeOptions = [
   { value: 'tcping', label: 'TCP Ping' },
@@ -2455,12 +2531,6 @@ function targetAssignmentRows(target: AdminProbeTarget, nodes: AdminNode[]) {
       enabled: assignment.enabled,
     }))
   return [...nodeAssignmentRows, ...staleAssignmentRows]
-}
-
-function formatTargetTypeLabel(type: ProbeType): string {
-  if (type === 'ping') return 'ICMP Ping'
-  if (type === 'http_get') return 'HTTP GET'
-  return 'TCP Ping'
 }
 
 function normalizeTargetFormType(value: string): ProbeType {
@@ -2607,6 +2677,14 @@ function TrashActionIcon() {
       <path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
       <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" />
       <path d="M10 11v6M14 11v6" />
+    </svg>
+  )
+}
+
+function CalendarIcon() {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true">
+      <path d="M7 2.75a.75.75 0 0 1 .75.75V5h8.5V3.5a.75.75 0 0 1 1.5 0V5H19a3 3 0 0 1 3 3v10.25A3.75 3.75 0 0 1 18.25 22H5.75A3.75 3.75 0 0 1 2 18.25V8a3 3 0 0 1 3-3h1.25V3.5A.75.75 0 0 1 7 2.75ZM3.5 10v8.25a2.25 2.25 0 0 0 2.25 2.25h12.5a2.25 2.25 0 0 0 2.25-2.25V10h-17ZM5 6.5A1.5 1.5 0 0 0 3.5 8v.5h17V8A1.5 1.5 0 0 0 19 6.5H5Z" />
     </svg>
   )
 }

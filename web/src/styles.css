@@ -698,6 +698,9 @@ svg { display: block; }
 }
 .admin-list-main { min-width: 0; display: flex; flex-direction: column; gap: 1px; }
 .admin-list-main strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--foreground); font-size: 15px; line-height: 1.28; font-weight: 500; }
+.admin-list-main .admin-node-title { display: inline-flex; align-items: center; gap: 7px; }
+.admin-list-main .admin-node-title span:last-child { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.admin-list-flag { flex: none; font-size: 15px; }
 .admin-list-main small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--muted); font-size: 12px; line-height: 1.28; font-weight: 500; }
 .admin-node-section .admin-list-main strong { color: var(--blue); }
 .admin-target-section .admin-list-main strong { color: var(--purple); }
@@ -893,29 +896,82 @@ svg { display: block; }
   border-color: color-mix(in srgb, var(--blue) 52%, var(--border));
   box-shadow: 0 0 0 3px color-mix(in srgb, var(--blue) 14%, transparent);
 }
-.admin-node-edit-form .admin-date-field input[type="date"] {
-  appearance: auto;
-  padding-right: 10px;
-  color-scheme: light;
+.admin-date-field { position: relative; }
+.admin-date-picker { position: relative; min-width: 0; }
+.admin-date-trigger {
+  width: 100%;
+  height: 40px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 0 10px 0 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-field);
+  background: var(--field-bg);
+  color: var(--foreground);
+  font: inherit;
+  font-size: 14px;
   font-variant-numeric: tabular-nums;
+  text-align: left;
 }
-[data-theme='dark'] .admin-node-edit-form .admin-date-field input[type="date"] { color-scheme: dark; }
-.admin-node-edit-form .admin-date-field input[type="date"]::-webkit-calendar-picker-indicator {
-  width: 18px;
-  height: 18px;
-  margin-right: -4px;
-  padding: 5px;
+.admin-date-trigger:hover,
+.admin-date-trigger:focus-visible,
+.admin-date-trigger[aria-expanded="true"] {
+  outline: none;
+  border-color: color-mix(in srgb, var(--blue) 52%, var(--border));
+  background: color-mix(in srgb, var(--field-bg) 94%, var(--blue) 6%);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--blue) 14%, transparent);
+}
+.admin-date-trigger .is-placeholder { color: color-mix(in srgb, var(--muted) 72%, transparent); }
+.admin-date-trigger svg { width: 18px; height: 18px; flex: none; fill: currentColor; color: var(--blue); }
+.admin-date-popover {
+  position: absolute;
+  z-index: 55;
+  top: calc(100% + 8px);
+  left: 0;
+  width: min(312px, calc(100vw - 40px));
+  padding: 12px;
+  border: 1px solid color-mix(in srgb, var(--blue) 18%, var(--border));
+  border-radius: var(--radius-card);
+  background: color-mix(in srgb, var(--surface-strong) 98%, transparent);
+  box-shadow: 0 20px 42px -28px rgba(15, 23, 42, .48), inset 0 1px 0 var(--zeno-card-highlight);
+}
+.admin-date-calendar-header,
+.admin-date-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.admin-date-calendar-header { margin-bottom: 10px; }
+.admin-date-calendar-header strong { color: var(--foreground); font-size: 14px; font-weight: 500; }
+.admin-date-calendar-header button,
+.admin-date-actions button,
+.admin-date-grid button {
+  height: 30px;
+  border: 1px solid transparent;
   border-radius: var(--radius-pill);
-  background-color: color-mix(in srgb, var(--blue) 10%, transparent);
+  background: transparent;
+  color: var(--foreground);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 500;
   cursor: pointer;
-  opacity: .82;
-  transition: background-color 150ms ease, opacity 150ms ease, transform 150ms ease;
 }
-.admin-node-edit-form .admin-date-field input[type="date"]::-webkit-calendar-picker-indicator:hover {
-  background-color: color-mix(in srgb, var(--blue) 18%, transparent);
-  opacity: 1;
-  transform: translateY(-1px);
-}
+.admin-date-calendar-header button { width: 30px; color: var(--blue); background: color-mix(in srgb, var(--blue) 9%, transparent); }
+.admin-date-weekdays,
+.admin-date-grid { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 5px; }
+.admin-date-weekdays { margin-bottom: 6px; color: var(--muted); font-size: 11px; font-weight: 500; text-align: center; }
+.admin-date-empty { min-height: 30px; }
+.admin-date-grid button { min-width: 0; padding: 0; color: color-mix(in srgb, var(--foreground) 78%, transparent); font-variant-numeric: tabular-nums; }
+.admin-date-grid button:hover,
+.admin-date-calendar-header button:hover,
+.admin-date-actions button:hover { background: color-mix(in srgb, var(--blue) 10%, transparent); color: var(--blue); }
+.admin-date-grid button.is-today { color: var(--blue); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--blue) 36%, transparent); }
+.admin-date-grid button.is-selected { background: var(--blue); color: #fff; box-shadow: 0 10px 20px -16px var(--blue); }
+.admin-date-actions { margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--border); }
+.admin-date-actions button { padding: 0 11px; color: var(--muted); background: var(--surface-soft); border-color: var(--border); }
 .admin-segmented-options {
   min-width: 0;
   display: grid;
@@ -1241,6 +1297,7 @@ svg { display: block; }
   display: flex;
   flex-wrap: wrap;
   align-items: center;
+  justify-content: flex-end;
   gap: 10px;
   margin-top: 16px;
   padding-top: 14px;

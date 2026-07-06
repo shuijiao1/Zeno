@@ -33,6 +33,7 @@ func (s *SQLiteStore) AdminNotificationChannels(ctx context.Context) ([]AdminNot
 		if err := rows.Scan(&channel.ID, &channel.Name, &channel.Destination, &credential, &enabled, &createdAt, &updatedAt); err != nil {
 			return nil, err
 		}
+		channel.Credential = credential
 		channel.CredentialSet = strings.TrimSpace(credential) != ""
 		channel.Enabled = enabled != 0
 		channel.CreatedAt = unixStringOr(createdAt, time.Now().UTC())

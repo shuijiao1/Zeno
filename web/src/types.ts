@@ -168,6 +168,7 @@ export interface AdminNotificationChannel {
   id: string
   name: string
   destination: string
+  credential?: string
   credentialSet: boolean
   enabled: boolean
   createdAt: string

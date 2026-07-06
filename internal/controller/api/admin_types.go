@@ -762,6 +762,7 @@ type AdminNotificationChannel struct {
 	ID            string `json:"id"`
 	Name          string `json:"name"`
 	Destination   string `json:"destination"`
+	Credential    string `json:"credential,omitempty"`
 	CredentialSet bool   `json:"credential_set"`
 	Enabled       bool   `json:"enabled"`
 	CreatedAt     string `json:"created_at"`
