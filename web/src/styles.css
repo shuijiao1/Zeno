@@ -1436,6 +1436,20 @@ svg { display: block; }
 }
 .admin-install-error { margin-top: 10px; color: var(--red); font-size: 13px; font-weight: 500; }
 .admin-install-error.is-success { color: var(--green); }
+.admin-install-error.is-warning { color: var(--orange); }
+.admin-install-confirm {
+  margin-top: 12px;
+  padding: 12px;
+  border: 1px solid color-mix(in srgb, var(--orange) 35%, transparent);
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--orange) 8%, transparent);
+}
+.admin-install-confirm p {
+  margin: 0 0 10px;
+  color: var(--text);
+  font-size: 13px;
+  line-height: 1.5;
+}
 .admin-notification-block { margin-top: 14px; }
 .admin-notification-block h4 { margin: 0 0 10px; font-size: 15px; font-weight: 500; }
 .admin-block-heading {
