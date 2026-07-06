@@ -85,7 +85,7 @@ zeno.example.com {
 
 Agent 已拆分到独立仓库：[`shuijiao1/Zeno-Agent`](https://github.com/shuijiao1/Zeno-Agent)。
 
-推荐方式：在 Zeno 后台创建服务器，复制后台生成的安装命令到目标服务器执行。该命令会自动下载匹配架构的 Agent Release，并安装 `zeno-agent.service`。
+推荐方式：在 Zeno 后台创建服务器，选择 Linux / macOS / Windows，复制后台生成的安装命令到目标服务器执行。该命令会自动下载匹配系统和架构的 Agent Release；Linux 会安装 `zeno-agent.service`，macOS 会安装 LaunchDaemon，Windows 会安装 `zeno-agent` 服务。
 
 手动安装示例：
 
@@ -97,6 +97,8 @@ curl -fsSL https://raw.githubusercontent.com/shuijiao1/Zeno-Agent/main/install.s
   ZENO_AGENT_VERSION=v0.1.0 \
   bash
 ```
+
+Windows 需要在管理员 PowerShell 中执行后台生成的命令；macOS 需要具备 sudo 权限。
 
 Agent 只负责上报，不会修改 Controller，也不会打开远程命令入口。
 

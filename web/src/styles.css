@@ -1393,6 +1393,32 @@ svg { display: block; }
 .admin-node-edit-form button { align-self: end; }
 .admin-segmented-options button { align-self: stretch; }
 .admin-settings-form > button[type="submit"] { margin-top: 16px; }
+.admin-install-platforms {
+  display: inline-grid;
+  grid-template-columns: repeat(3, minmax(78px, 1fr));
+  gap: 6px;
+  margin-top: 12px;
+  padding: 4px;
+  border: 1px solid var(--border-soft);
+  border-radius: 999px;
+  background: var(--field-bg);
+}
+.admin-install-platforms button {
+  min-height: 32px;
+  padding: 0 12px;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+}
+.admin-install-platforms button[data-active='true'] {
+  background: var(--foreground);
+  color: var(--background);
+  box-shadow: 0 8px 20px -16px var(--foreground);
+}
 .admin-install-command {
   width: 100%;
   min-height: 120px;

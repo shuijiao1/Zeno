@@ -85,7 +85,7 @@ zeno.example.com {
 
 The Agent is maintained in a separate repository: [`shuijiao1/Zeno-Agent`](https://github.com/shuijiao1/Zeno-Agent).
 
-Recommended flow: create a server in the Zeno admin dashboard and run the generated install command on the target server. The command downloads the matching Agent release and installs `zeno-agent.service`.
+Recommended flow: create a server in the Zeno admin dashboard, choose Linux / macOS / Windows, and run the generated install command on the target server. The command downloads the matching Agent release; Linux installs `zeno-agent.service`, macOS installs a LaunchDaemon, and Windows installs the `zeno-agent` service.
 
 Manual example:
 
@@ -97,6 +97,8 @@ curl -fsSL https://raw.githubusercontent.com/shuijiao1/Zeno-Agent/main/install.s
   ZENO_AGENT_VERSION=v0.1.0 \
   bash
 ```
+
+Run the Windows command from an elevated PowerShell window. The macOS command requires sudo privileges.
 
 The Agent only reports metrics and probe results. It does not modify the Controller or expose a remote command channel.
 

@@ -142,6 +142,7 @@ export interface AdminNode {
 export interface AdminNodeInstallCommand {
   nodeId: string
   command: string
+  commands: Partial<Record<'linux' | 'macos' | 'windows', string>>
 }
 
 export interface AdminProbeTargetAssignment {

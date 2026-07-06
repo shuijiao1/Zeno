@@ -276,8 +276,9 @@ type AdminNodeResponse struct {
 }
 
 type AdminNodeInstallCommandResponse struct {
-	NodeID  string `json:"node_id"`
-	Command string `json:"command"`
+	NodeID   string            `json:"node_id"`
+	Command  string            `json:"command"`
+	Commands map[string]string `json:"commands,omitempty"`
 }
 
 type AdminNodeCreateRequest struct {

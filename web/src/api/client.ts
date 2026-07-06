@@ -294,6 +294,7 @@ export interface ApiAdminNodeResponse {
 export interface ApiAdminNodeInstallCommandResponse {
   node_id: string
   command: string
+  commands?: Record<string, string>
 }
 
 export interface ApiAdminProbeTargetsResponse {
@@ -889,7 +890,7 @@ export async function requestAdminNodeInstallCommand(adminToken: string, nodeId:
     throw new Error(`admin node install command failed: ${response.status}`)
   }
   const data = await response.json() as ApiAdminNodeInstallCommandResponse
-  return { nodeId: data.node_id, command: data.command }
+  return { nodeId: data.node_id, command: data.command, commands: data.commands ?? { linux: data.command } }
 }
 
 export async function updateAdminNode(adminToken: string, nodeId: string, input: AdminNodeUpdateInput): Promise<AdminNode> {

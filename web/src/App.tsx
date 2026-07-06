@@ -7,7 +7,7 @@ import { ServerCard } from './components/ServerCard'
 import { ServerFlag } from './components/ServerFlag'
 import { startLiveRefresh } from './lib/liveRefresh'
 import { nodePath, parseDashboardRoute, type DashboardRoute } from './lib/route'
-import type { AdminAlertRule, AdminNode, AdminNotificationChannel, AdminProbeTarget, AdminSettings, AdminTheme, HomeCardNode, LatencyPoint, ProbeType, ServiceTarget } from './types'
+import type { AdminAlertRule, AdminNode, AdminNodeInstallCommand, AdminNotificationChannel, AdminProbeTarget, AdminSettings, AdminTheme, HomeCardNode, LatencyPoint, ProbeType, ServiceTarget } from './types'
 
 type LoadState =
   | { kind: 'loading' }
@@ -485,9 +485,9 @@ export function App() {
       })
   }
 
-  const requestAdminInstallCommand = (nodeId: string): Promise<string> => {
+  const requestAdminInstallCommand = (nodeId: string): Promise<AdminNodeInstallCommand> => {
     if (adminToken === '') return Promise.reject(new Error('missing admin token'))
-    return requestAdminNodeInstallCommand(adminToken, nodeId).then((result) => result.command)
+    return requestAdminNodeInstallCommand(adminToken, nodeId)
   }
 
   const updateAdminNodeDetails = (nodeId: string, input: AdminNodeUpdateInput) => {
@@ -1010,7 +1010,7 @@ interface AdminDashboardProps {
   onAdminNodeCreate?: (input: AdminNodeCreateInput) => Promise<AdminNode | void>
   onAdminNodeUpdate?: (nodeId: string, input: AdminNodeUpdateInput) => void
   onAdminNodeDelete?: (nodeId: string) => void
-  onAdminInstallCommand?: (nodeId: string) => Promise<string>
+  onAdminInstallCommand?: (nodeId: string) => Promise<AdminNodeInstallCommand>
   onAdminProbeTargetCreate?: (input: AdminProbeTargetInput) => void
   onAdminProbeTargetUpdate?: (targetId: string, input: AdminProbeTargetUpdateInput) => void
   onAdminProbeTargetDelete?: (targetId: string) => void
@@ -1375,7 +1375,7 @@ function validAgentControllerURL(value: string): boolean {
   }
 }
 
-function AdminNodeSection({ nodes, targets, onCreate, onUpdate, onDelete, onTargetUpdate, onInstallCommand }: { nodes: AdminNode[]; targets: AdminProbeTarget[]; onCreate: (input: AdminNodeCreateInput) => Promise<AdminNode | void>; onUpdate: (nodeId: string, input: AdminNodeUpdateInput) => void; onDelete: (nodeId: string) => void; onTargetUpdate: (targetId: string, input: AdminProbeTargetUpdateInput) => void; onInstallCommand: (nodeId: string) => Promise<string> }) {
+function AdminNodeSection({ nodes, targets, onCreate, onUpdate, onDelete, onTargetUpdate, onInstallCommand }: { nodes: AdminNode[]; targets: AdminProbeTarget[]; onCreate: (input: AdminNodeCreateInput) => Promise<AdminNode | void>; onUpdate: (nodeId: string, input: AdminNodeUpdateInput) => void; onDelete: (nodeId: string) => void; onTargetUpdate: (targetId: string, input: AdminProbeTargetUpdateInput) => void; onInstallCommand: (nodeId: string) => Promise<AdminNodeInstallCommand> }) {
   const [creatingNode, setCreatingNode] = useState(false)
   const [editingNodeId, setEditingNodeId] = useState<string | null>(null)
   const [sortingNodes, setSortingNodes] = useState(false)
@@ -1558,11 +1558,39 @@ function AdminNodeSortModal({ nodes, onSave, onClose }: { nodes: AdminNode[]; on
   )
 }
 
-function AdminNodeCreateModal({ onCreate, onInstallCommand, onClose }: { onCreate: (input: AdminNodeCreateInput) => Promise<AdminNode | void>; onInstallCommand: (nodeId: string) => Promise<string>; onClose: () => void }) {
+type AgentInstallPlatform = 'linux' | 'macos' | 'windows'
+
+type InstallCommandState =
+  | { kind: 'idle' }
+  | { kind: 'loading' }
+  | { kind: 'ready'; command: string; commands: Partial<Record<AgentInstallPlatform, string>>; platform: AgentInstallPlatform }
+  | { kind: 'error'; message: string }
+
+const agentInstallPlatforms: Array<{ value: AgentInstallPlatform; label: string }> = [
+  { value: 'linux', label: 'Linux' },
+  { value: 'macos', label: 'macOS' },
+  { value: 'windows', label: 'Windows' },
+]
+
+function installCommandText(state: InstallCommandState): string {
+  if (state.kind !== 'ready') return ''
+  return state.commands[state.platform] || state.command
+}
+
+function installCommandReady(result: AdminNodeInstallCommand): InstallCommandState {
+  return {
+    kind: 'ready',
+    command: result.command,
+    commands: { linux: result.command, ...result.commands },
+    platform: 'linux',
+  }
+}
+
+function AdminNodeCreateModal({ onCreate, onInstallCommand, onClose }: { onCreate: (input: AdminNodeCreateInput) => Promise<AdminNode | void>; onInstallCommand: (nodeId: string) => Promise<AdminNodeInstallCommand>; onClose: () => void }) {
   const [createdNode, setCreatedNode] = useState<AdminNode | null>(null)
   const [submitting, setSubmitting] = useState(false)
   const [formError, setFormError] = useState<string | null>(null)
-  const [installCommandState, setInstallCommandState] = useState<{ kind: 'idle' } | { kind: 'loading' } | { kind: 'ready'; command: string } | { kind: 'error'; message: string }>({ kind: 'idle' })
+  const [installCommandState, setInstallCommandState] = useState<InstallCommandState>({ kind: 'idle' })
   const [installCopyState, setInstallCopyState] = useState<{ kind: 'idle' } | { kind: 'ready'; message: string } | { kind: 'error'; message: string }>({ kind: 'idle' })
 
   const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
@@ -1595,15 +1623,20 @@ function AdminNodeCreateModal({ onCreate, onInstallCommand, onClose }: { onCreat
     setInstallCommandState({ kind: 'loading' })
     setInstallCopyState({ kind: 'idle' })
     onInstallCommand(createdNode.id)
-      .then((command) => setInstallCommandState({ kind: 'ready', command }))
+      .then((result) => setInstallCommandState(installCommandReady(result)))
       .catch((error: unknown) => setInstallCommandState({ kind: 'error', message: error instanceof Error ? error.message : 'unknown error' }))
   }
 
   const handleCopyInstallCommand = () => {
     if (installCommandState.kind !== 'ready') return
-    copyTextToClipboard(installCommandState.command)
+    copyTextToClipboard(installCommandText(installCommandState))
       .then(() => setInstallCopyState({ kind: 'ready', message: '安装命令已复制。' }))
       .catch((error: unknown) => setInstallCopyState({ kind: 'error', message: error instanceof Error ? error.message : '复制失败，请手动选中复制。' }))
+  }
+
+  const handleInstallPlatformChange = (platform: AgentInstallPlatform) => {
+    setInstallCommandState((current) => current.kind === 'ready' ? { ...current, platform } : current)
+    setInstallCopyState({ kind: 'idle' })
   }
 
   return (
@@ -1644,7 +1677,16 @@ function AdminNodeCreateModal({ onCreate, onInstallCommand, onClose }: { onCreat
             <button type="button" onClick={handleCopyInstallCommand} disabled={installCommandState.kind !== 'ready'}>复制安装命令</button>
           </div>
           {installCommandState.kind === 'ready' && (
-            <textarea className="admin-install-command" aria-label="新服务器 Agent 安装命令" readOnly value={installCommandState.command} />
+            <>
+              <div className="admin-install-platforms" role="tablist" aria-label="选择 Agent 安装系统">
+                {agentInstallPlatforms.map((platform) => (
+                  <button key={platform.value} type="button" role="tab" aria-selected={installCommandState.platform === platform.value} data-active={installCommandState.platform === platform.value} onClick={() => handleInstallPlatformChange(platform.value)}>{platform.label}</button>
+                ))}
+              </div>
+              {installCommandState.platform === 'windows' && <p className="admin-help-note">Windows 请使用管理员 PowerShell 运行。</p>}
+              {installCommandState.platform === 'macos' && <p className="admin-help-note">macOS 请使用具备 sudo 权限的终端运行。</p>}
+              <textarea className="admin-install-command" aria-label="新服务器 Agent 安装命令" readOnly value={installCommandText(installCommandState)} />
+            </>
           )}
           {installCopyState.kind !== 'idle' && <div className={`admin-install-error${installCopyState.kind === 'ready' ? ' is-success' : ''}`}>{installCopyState.message}</div>}
           {installCommandState.kind === 'error' && <div className="admin-install-error">安装命令生成失败：{installCommandState.message}</div>}
@@ -1658,8 +1700,8 @@ function AdminNodeCreateModal({ onCreate, onInstallCommand, onClose }: { onCreat
   )
 }
 
-function AdminNodeEditModal({ node, targets, onUpdate, onTargetUpdate, onInstallCommand, onClose }: { node: AdminNode; targets: AdminProbeTarget[]; onUpdate: (nodeId: string, input: AdminNodeUpdateInput) => void; onTargetUpdate: (targetId: string, input: AdminProbeTargetUpdateInput) => void; onInstallCommand: (nodeId: string) => Promise<string>; onClose: () => void }) {
-  const [installCommandState, setInstallCommandState] = useState<{ kind: 'idle' } | { kind: 'loading' } | { kind: 'ready'; command: string } | { kind: 'error'; message: string }>({ kind: 'idle' })
+function AdminNodeEditModal({ node, targets, onUpdate, onTargetUpdate, onInstallCommand, onClose }: { node: AdminNode; targets: AdminProbeTarget[]; onUpdate: (nodeId: string, input: AdminNodeUpdateInput) => void; onTargetUpdate: (targetId: string, input: AdminProbeTargetUpdateInput) => void; onInstallCommand: (nodeId: string) => Promise<AdminNodeInstallCommand>; onClose: () => void }) {
+  const [installCommandState, setInstallCommandState] = useState<InstallCommandState>({ kind: 'idle' })
   const [installCopyState, setInstallCopyState] = useState<{ kind: 'idle' } | { kind: 'ready'; message: string } | { kind: 'error'; message: string }>({ kind: 'idle' })
   const sortedTargets = sortAdminProbeTargets(targets)
   const initialSelectedTargetIds = sortedTargets.filter((target) => target.assignments.some((assignment) => assignment.nodeId === node.id && assignment.enabled)).map((target) => target.id)
@@ -1705,15 +1747,20 @@ function AdminNodeEditModal({ node, targets, onUpdate, onTargetUpdate, onInstall
     setInstallCommandState({ kind: 'loading' })
     setInstallCopyState({ kind: 'idle' })
     onInstallCommand(node.id)
-      .then((command) => setInstallCommandState({ kind: 'ready', command }))
+      .then((result) => setInstallCommandState(installCommandReady(result)))
       .catch((error: unknown) => setInstallCommandState({ kind: 'error', message: error instanceof Error ? error.message : 'unknown error' }))
   }
 
   const handleCopyInstallCommand = () => {
     if (installCommandState.kind !== 'ready') return
-    copyTextToClipboard(installCommandState.command)
+    copyTextToClipboard(installCommandText(installCommandState))
       .then(() => setInstallCopyState({ kind: 'ready', message: '安装命令已复制。' }))
       .catch((error: unknown) => setInstallCopyState({ kind: 'error', message: error instanceof Error ? error.message : '复制失败，请手动选中复制。' }))
+  }
+
+  const handleInstallPlatformChange = (platform: AgentInstallPlatform) => {
+    setInstallCommandState((current) => current.kind === 'ready' ? { ...current, platform } : current)
+    setInstallCopyState({ kind: 'idle' })
   }
 
   return (
@@ -1780,7 +1827,16 @@ function AdminNodeEditModal({ node, targets, onUpdate, onTargetUpdate, onInstall
             <button type="button" onClick={handleCopyInstallCommand} disabled={installCommandState.kind !== 'ready'}>复制安装命令</button>
           </div>
           {installCommandState.kind === 'ready' && (
-            <textarea className="admin-install-command" aria-label={`${node.displayName} Agent 安装命令`} readOnly value={installCommandState.command} />
+            <>
+              <div className="admin-install-platforms" role="tablist" aria-label="选择 Agent 安装系统">
+                {agentInstallPlatforms.map((platform) => (
+                  <button key={platform.value} type="button" role="tab" aria-selected={installCommandState.platform === platform.value} data-active={installCommandState.platform === platform.value} onClick={() => handleInstallPlatformChange(platform.value)}>{platform.label}</button>
+                ))}
+              </div>
+              {installCommandState.platform === 'windows' && <p className="admin-help-note">Windows 请使用管理员 PowerShell 运行。</p>}
+              {installCommandState.platform === 'macos' && <p className="admin-help-note">macOS 请使用具备 sudo 权限的终端运行。</p>}
+              <textarea className="admin-install-command" aria-label={`${node.displayName} Agent 安装命令`} readOnly value={installCommandText(installCommandState)} />
+            </>
           )}
           {installCopyState.kind !== 'idle' && <div className={`admin-install-error${installCopyState.kind === 'ready' ? ' is-success' : ''}`}>{installCopyState.message}</div>}
           {installCommandState.kind === 'error' && <div className="admin-install-error">安装命令生成失败：{installCommandState.message}</div>}

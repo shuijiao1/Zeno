@@ -183,7 +183,7 @@ function renderAdmin(section: 'nodes' | 'targets' | 'notifications' | 'account' 
       onAdminAccountUpdate={async () => {}}
       onAdminNodeCreate={async () => undefined}
       onAdminNodeUpdate={() => {}}
-      onAdminInstallCommand={async () => 'install command'}
+      onAdminInstallCommand={async () => ({ nodeId: 'hytron', command: 'install command', commands: { linux: 'install command' } })}
       onAdminProbeTargetCreate={() => {}}
       onAdminProbeTargetUpdate={() => {}}
       onAdminNotificationChannelCreate={() => {}}

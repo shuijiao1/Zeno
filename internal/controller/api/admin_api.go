@@ -18,7 +18,7 @@ type adminStore interface {
 	CreateAdminNode(ctx context.Context, create AdminNodeCreateRequest) (AdminNode, error)
 	UpdateAdminNode(ctx context.Context, nodeID string, update AdminNodeUpdateRequest) (AdminNode, error)
 	DeleteAdminNode(ctx context.Context, nodeID string) error
-	AdminNodeInstallCommand(ctx context.Context, nodeID, controllerURL, agentVersion string) (string, error)
+	AdminNodeInstallCommand(ctx context.Context, nodeID, controllerURL, agentVersion string) (AgentInstallCommands, error)
 	CreateAdminProbeTarget(ctx context.Context, create AdminProbeTargetCreateRequest) (AdminProbeTarget, error)
 	UpdateAdminProbeTarget(ctx context.Context, targetID string, update AdminProbeTargetUpdateRequest) (AdminProbeTarget, error)
 	DeleteAdminProbeTarget(ctx context.Context, targetID string) error
@@ -312,12 +312,12 @@ func (h *handler) handleAdminNodeInstallCommand(w http.ResponseWriter, r *http.R
 	if strings.TrimSpace(settings.AgentControllerURL) != "" {
 		controllerURL = settings.AgentControllerURL
 	}
-	command, err := store.AdminNodeInstallCommand(r.Context(), nodeID, controllerURL, h.agentVersion)
+	commands, err := store.AdminNodeInstallCommand(r.Context(), nodeID, controllerURL, h.agentVersion)
 	if err != nil {
 		writeAdminError(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, AdminNodeInstallCommandResponse{NodeID: nodeID, Command: command})
+	writeJSON(w, http.StatusOK, AdminNodeInstallCommandResponse{NodeID: nodeID, Command: commands.Linux, Commands: commands.Map()})
 }
 
 func (h *handler) authorizeAdminRequest(w http.ResponseWriter, r *http.Request) (adminStore, bool) {

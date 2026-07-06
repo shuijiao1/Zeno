@@ -1521,6 +1521,11 @@ describe('requestAdminNodeInstallCommand', () => {
     const fetchMock = vi.fn(async () => new Response(JSON.stringify({
       node_id: 'hytron',
       command: "curl -fsSL 'https://raw.githubusercontent.com/shuijiao1/Zeno-Agent/main/install.sh' | sudo env ZENO_CONTROLLER_URL='https://probe.example.com' ZENO_NODE_ID='hytron' bash",
+      commands: {
+        linux: "curl -fsSL 'https://raw.githubusercontent.com/shuijiao1/Zeno-Agent/main/install.sh' | sudo env ZENO_CONTROLLER_URL='https://probe.example.com' ZENO_NODE_ID='hytron' bash",
+        macos: "curl -fsSL 'https://raw.githubusercontent.com/shuijiao1/Zeno-Agent/main/install.sh' | sudo env ZENO_CONTROLLER_URL='https://probe.example.com' ZENO_NODE_ID='hytron' bash",
+        windows: "powershell -NoProfile -ExecutionPolicy Bypass -Command \"$env:ZENO_CONTROLLER_URL='https://probe.example.com'; irm 'https://raw.githubusercontent.com/shuijiao1/Zeno-Agent/main/install.ps1' | iex\"",
+      },
     }), { status: 200, headers: { 'Content-Type': 'application/json' } }))
     globalThis.fetch = fetchMock as unknown as typeof fetch
 
@@ -1528,6 +1533,7 @@ describe('requestAdminNodeInstallCommand', () => {
 
     expect(result.nodeId).toBe('hytron')
     expect(result.command).toContain('Zeno-Agent/main/install.sh')
+    expect(result.commands.windows).toContain('install.ps1')
     expect(fetchMock).toHaveBeenCalledWith('/api/admin/v1/nodes/hytron/install-command', {
       method: 'POST',
       headers: {

@@ -74,32 +74,46 @@ func (s *SQLiteStore) CreateAdminNode(ctx context.Context, create AdminNodeCreat
 	return s.adminNodeByID(ctx, nodeID)
 }
 
-func (s *SQLiteStore) AdminNodeInstallCommand(ctx context.Context, nodeID, controllerURL, agentVersion string) (string, error) {
+type AgentInstallCommands struct {
+	Linux   string
+	MacOS   string
+	Windows string
+}
+
+func (commands AgentInstallCommands) Map() map[string]string {
+	return map[string]string{
+		"linux":   commands.Linux,
+		"macos":   commands.MacOS,
+		"windows": commands.Windows,
+	}
+}
+
+func (s *SQLiteStore) AdminNodeInstallCommand(ctx context.Context, nodeID, controllerURL, agentVersion string) (AgentInstallCommands, error) {
 	nodeID = strings.TrimSpace(nodeID)
 	if nodeID == "" || strings.Contains(nodeID, "/") {
-		return "", errNodeNotFound
+		return AgentInstallCommands{}, errNodeNotFound
 	}
 	var exists int
 	if err := s.db.QueryRowContext(ctx, `SELECT 1 FROM nodes WHERE id = ?`, nodeID).Scan(&exists); err != nil {
-		return "", errNodeNotFound
+		return AgentInstallCommands{}, errNodeNotFound
 	}
 	credential, err := randomAdminCredential()
 	if err != nil {
-		return "", err
+		return AgentInstallCommands{}, err
 	}
 	now := time.Now().UTC().Unix()
 	result, err := s.db.ExecContext(ctx, `UPDATE nodes SET token_hash = ?, updated_at = ? WHERE id = ?`, hashAgentToken(credential), now, nodeID)
 	if err != nil {
-		return "", err
+		return AgentInstallCommands{}, err
 	}
 	affected, err := result.RowsAffected()
 	if err != nil {
-		return "", err
+		return AgentInstallCommands{}, err
 	}
 	if affected == 0 {
-		return "", errNodeNotFound
+		return AgentInstallCommands{}, errNodeNotFound
 	}
-	return buildAgentInstallCommand(controllerURL, nodeID, credential, agentVersion), nil
+	return buildAgentInstallCommands(controllerURL, nodeID, credential, agentVersion), nil
 }
 
 func (s *SQLiteStore) DeleteAdminNode(ctx context.Context, nodeID string) error {
@@ -221,19 +235,31 @@ func randomHex(size int) (string, error) {
 	return hex.EncodeToString(buf), nil
 }
 
-func buildAgentInstallCommand(controllerURL, nodeID, credential, agentVersion string) string {
+func buildAgentInstallCommands(controllerURL, nodeID, credential, agentVersion string) AgentInstallCommands {
 	controllerURL = strings.TrimRight(strings.TrimSpace(controllerURL), "/")
 	if controllerURL == "" {
 		controllerURL = "http://127.0.0.1:18980"
 	}
 	versionEnv := ""
+	windowsVersionEnv := ""
 	if strings.TrimSpace(agentVersion) != "" {
-		versionEnv = " ZENO_AGENT_VERSION=" + shellSingleQuote(strings.TrimSpace(agentVersion))
+		version := strings.TrimSpace(agentVersion)
+		versionEnv = " ZENO_AGENT_VERSION=" + shellSingleQuote(version)
+		windowsVersionEnv = "$env:ZENO_AGENT_VERSION=" + powershellSingleQuote(version) + "; "
 	}
 	installURL := "https://raw.githubusercontent.com/shuijiao1/Zeno-Agent/main/install.sh"
-	return fmt.Sprintf(`curl -fsSL %s | sudo env ZENO_CONTROLLER_URL=%s ZENO_NODE_ID=%s ZENO_AGENT_TOKEN=%s%s bash`, shellSingleQuote(installURL), shellSingleQuote(controllerURL), shellSingleQuote(nodeID), shellSingleQuote(credential), versionEnv)
+	windowsInstallURL := "https://raw.githubusercontent.com/shuijiao1/Zeno-Agent/main/install.ps1"
+	return AgentInstallCommands{
+		Linux:   fmt.Sprintf(`curl -fsSL %s | sudo env ZENO_CONTROLLER_URL=%s ZENO_NODE_ID=%s ZENO_AGENT_TOKEN=%s%s bash`, shellSingleQuote(installURL), shellSingleQuote(controllerURL), shellSingleQuote(nodeID), shellSingleQuote(credential), versionEnv),
+		MacOS:   fmt.Sprintf(`curl -fsSL %s | sudo env ZENO_CONTROLLER_URL=%s ZENO_NODE_ID=%s ZENO_AGENT_TOKEN=%s%s bash`, shellSingleQuote(installURL), shellSingleQuote(controllerURL), shellSingleQuote(nodeID), shellSingleQuote(credential), versionEnv),
+		Windows: fmt.Sprintf(`powershell -NoProfile -ExecutionPolicy Bypass -Command "%s$env:ZENO_CONTROLLER_URL=%s; $env:ZENO_NODE_ID=%s; $env:ZENO_AGENT_TOKEN=%s; irm %s | iex"`, windowsVersionEnv, powershellSingleQuote(controllerURL), powershellSingleQuote(nodeID), powershellSingleQuote(credential), powershellSingleQuote(windowsInstallURL)),
+	}
 }
 
 func shellSingleQuote(value string) string {
 	return "'" + strings.ReplaceAll(value, "'", "'\\''") + "'"
+}
+
+func powershellSingleQuote(value string) string {
+	return "'" + strings.ReplaceAll(value, "'", "''") + "'"
 }
