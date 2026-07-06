@@ -849,7 +849,6 @@ function DashboardHeader({ settings = defaultSettings, onHome, onAdmin, adminLab
       </button>
       <nav className="nav-actions" aria-label="dashboard actions">
         <button className="login-link" type="button" onClick={onAdmin}>{adminLabel}</button>
-        <button className="nav-icon-button is-solid" type="button" aria-label="language"><MapIcon /></button>
         <button className={`nav-icon-button${currentTheme === 'light' ? ' is-solid' : ''}`} type="button" aria-label={currentTheme === 'dark' ? '切换浅色模式' : '切换深色模式'} onClick={onThemeToggle}><SunIcon /><span className="sr-only">切换深浅色</span></button>
         <button className={`nav-icon-button${backgroundEnabled ? ' is-solid' : ''}`} type="button" aria-label={backgroundEnabled ? '关闭背景图' : '开启背景图'} onClick={onBackgroundToggle}><ImageMinusIcon /><span className="sr-only">开关背景图</span></button>
         {trailingAction}
@@ -1254,7 +1253,7 @@ function AdminNodeSection({ nodes, targets, onCreate, onUpdate, onDelete, onTarg
           <h3>服务器列表</h3>
         </div>
         <div className="admin-section-actions">
-          <button type="button" onClick={() => setSortingNodes(true)}>服务器排序</button>
+          <button className="admin-primary-action" type="button" onClick={() => setSortingNodes(true)}>服务器排序</button>
           <button className="admin-primary-action" type="button" onClick={() => setCreatingNode(true)}>添加服务器</button>
         </div>
       </header>
@@ -2488,16 +2487,6 @@ function TrashActionIcon() {
       <path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
       <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" />
       <path d="M10 11v6M14 11v6" />
-    </svg>
-  )
-}
-
-function MapIcon() {
-  return (
-    <svg viewBox="0 0 24 24" aria-hidden="true">
-      <path d="M14.106 5.553a2 2 0 0 0 1.788 0l3.659-1.83A1 1 0 0 1 21 4.619v12.764a1 1 0 0 1-.553.894l-4.553 2.277a2 2 0 0 1-1.788 0l-4.212-2.106a2 2 0 0 0-1.788 0l-3.659 1.83A1 1 0 0 1 3 19.381V6.618a1 1 0 0 1 .553-.894l4.553-2.277a2 2 0 0 1 1.788 0z" />
-      <path d="M15 5.764v15" />
-      <path d="M9 3.236v15" />
     </svg>
   )
 }

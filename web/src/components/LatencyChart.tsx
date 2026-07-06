@@ -217,21 +217,21 @@ function useLatencyChartLayout() {
 
 function LatencyTooltip({ column, series, activeTargetNames, x: tooltipAnchorX, layout }: { column: HoverColumn; series: KulinTargetSeries[]; activeTargetNames: string[]; x: number; layout: typeof desktopLayout }) {
   const { width, height, pad } = layout
-  const tooltipWidth = 232
-  const rowHeight = 18
-  const tooltipHeight = 34 + column.points.length * rowHeight + 10
+  const tooltipWidth = 260
+  const rowHeight = 20
+  const tooltipHeight = 46 + column.points.length * rowHeight
   const tooltipX = Math.max(pad.left, Math.min(width - pad.right - tooltipWidth, tooltipAnchorX + 12))
   const tooltipY = Math.max(pad.top + 4, Math.min(height - pad.bottom - tooltipHeight, pad.top + 8))
 
   return (
     <g className="latency-chart-tooltip" transform={`translate(${tooltipX} ${tooltipY})`}>
       <rect width={tooltipWidth} height={tooltipHeight} rx={12} ry={12} />
-      <text x={12} y={20} className="latency-tooltip-time">{formatTooltipTime(column.createdAt)}</text>
+      <text x={12} y={21} className="latency-tooltip-time">{formatTooltipTime(column.createdAt)}</text>
       {column.points.map((point, index) => (
-        <g key={`${point.key}-${column.createdAt}`} transform={`translate(12 ${34 + index * rowHeight})`}>
+        <g key={`${point.key}-${column.createdAt}`} transform={`translate(12 ${42 + index * rowHeight})`}>
           <circle cx={4} cy={-4} r={3.5} fill={palette[paletteIndexForKey(series, point.key, activeTargetNames) % palette.length]} />
-          <text x={14} y={0} className="latency-tooltip-label">{point.label}</text>
-          <text x={tooltipWidth - 24} y={0} textAnchor="end" className="latency-tooltip-value">{formatLatencyValue(point.delay)}</text>
+          <text x={17} y={0} className="latency-tooltip-label">{point.label}</text>
+          <text x={tooltipWidth - 16} y={0} textAnchor="end" className="latency-tooltip-value">{formatLatencyValue(point.delay)}</text>
         </g>
       ))}
     </g>

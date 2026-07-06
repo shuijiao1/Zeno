@@ -218,6 +218,7 @@ describe('HomeTopPanel', () => {
     expect(html).toContain('home-top-card')
     expect(html).toContain('dashboard actions')
     expect(html).toContain('后台')
+    expect(html).not.toContain('aria-label="language"')
     expect(html).not.toContain('Zeno Overview')
     expect(html).toContain('水饺监控')
     expect(html).toContain('/assets/logo/custom.png')
