@@ -218,31 +218,12 @@ func buildAgentInstallCommand(controllerURL, nodeID, credential, agentVersion st
 	if controllerURL == "" {
 		controllerURL = "http://127.0.0.1:18980"
 	}
-	versionArg := ""
+	versionEnv := ""
 	if strings.TrimSpace(agentVersion) != "" {
-		versionArg = " -version " + shellSingleQuote(strings.TrimSpace(agentVersion))
+		versionEnv = " ZENO_AGENT_VERSION=" + shellSingleQuote(strings.TrimSpace(agentVersion))
 	}
-	binaryURL := controllerURL + "/api/public/v1/agent/linux-amd64"
-	return fmt.Sprintf(`curl -fsSL %s -o /tmp/zeno-agent && \
-sudo install -m 755 /tmp/zeno-agent /usr/local/bin/zeno-agent && \
-sudo install -d -m 700 /etc/zeno && \
-printf '%%s\n' %s | sudo tee /etc/zeno/agent-token >/dev/null && \
-sudo tee /etc/systemd/system/zeno-agent.service >/dev/null <<'ZENO_SERVICE'
-[Unit]
-Description=Zeno Agent
-After=network-online.target
-Wants=network-online.target
-
-[Service]
-Type=simple
-ExecStart=/usr/local/bin/zeno-agent -controller-url %s -node-id %s -token-file /etc/zeno/agent-token -interval 2s%s
-Restart=always
-RestartSec=5s
-
-[Install]
-WantedBy=multi-user.target
-ZENO_SERVICE
-sudo systemctl daemon-reload && sudo systemctl enable --now zeno-agent`, shellSingleQuote(binaryURL), shellSingleQuote(credential), shellSingleQuote(controllerURL), shellSingleQuote(nodeID), versionArg)
+	installURL := "https://raw.githubusercontent.com/shuijiao1/Zeno-Agent/main/install.sh"
+	return fmt.Sprintf(`curl -fsSL %s | sudo env ZENO_CONTROLLER_URL=%s ZENO_NODE_ID=%s ZENO_AGENT_TOKEN=%s%s bash`, shellSingleQuote(installURL), shellSingleQuote(controllerURL), shellSingleQuote(nodeID), shellSingleQuote(credential), versionEnv)
 }
 
 func shellSingleQuote(value string) string {

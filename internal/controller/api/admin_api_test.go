@@ -607,7 +607,7 @@ func TestAdminNodeInstallCommandRotatesAgentCredentialAndUsesRequestHost(t *test
 	request.Host = "probe.example.com"
 	request.Header.Set("X-Forwarded-Proto", "https")
 	request.Header.Set("X-Admin-Token", "admin-pass")
-	NewHandler(HandlerOptions{Store: store, AdminTokenHash: HashAdminToken("admin-pass"), AgentBinaryPath: "/opt/zeno/current/bin/zeno-agent", AgentVersion: "testsha"}).ServeHTTP(recorder, request)
+	NewHandler(HandlerOptions{Store: store, AdminTokenHash: HashAdminToken("admin-pass"), AgentVersion: "testsha"}).ServeHTTP(recorder, request)
 
 	if recorder.Code != http.StatusOK {
 		t.Fatalf("status = %d, want 200; body=%s", recorder.Code, recorder.Body.String())
@@ -622,13 +622,10 @@ func TestAdminNodeInstallCommandRotatesAgentCredentialAndUsesRequestHost(t *test
 	if response.NodeID != "hytron" {
 		t.Fatalf("node_id = %q, want hytron", response.NodeID)
 	}
-	if !strings.Contains(response.Command, "https://probe.example.com") || !strings.Contains(response.Command, "/api/public/v1/agent/linux-amd64") || !strings.Contains(response.Command, "-node-id 'hytron'") || !strings.Contains(response.Command, "-version 'testsha'") {
-		t.Fatalf("install command missing controller URL, binary endpoint, node id, or version: %s", response.Command)
+	if !strings.Contains(response.Command, "https://raw.githubusercontent.com/shuijiao1/Zeno-Agent/main/install.sh") || !strings.Contains(response.Command, "ZENO_CONTROLLER_URL='https://probe.example.com'") || !strings.Contains(response.Command, "ZENO_NODE_ID='hytron'") || !strings.Contains(response.Command, "ZENO_AGENT_VERSION='testsha'") {
+		t.Fatalf("install command missing agent installer, controller URL, node id, or version: %s", response.Command)
 	}
-	if !strings.Contains(response.Command, "-interval 2s") {
-		t.Fatalf("install command should use realtime-friendly state interval: %s", response.Command)
-	}
-	if !strings.Contains(response.Command, "/usr/local/bin/zeno-agent") || !strings.Contains(response.Command, "/etc/zeno/agent-token") || !strings.Contains(response.Command, "zeno-agent.service") {
+	if !strings.Contains(response.Command, "ZENO_AGENT_TOKEN='") || !strings.Contains(response.Command, "sudo env") {
 		t.Fatalf("install command should use Zeno agent names and paths: %s", response.Command)
 	}
 	credential := extractQuotedInstallCredential(t, response.Command)
@@ -664,7 +661,7 @@ func TestAdminNodeInstallCommandPrefersConfiguredAgentControllerURL(t *testing.T
 	request.Host = "admin.localhost:18980"
 	request.Header.Set("X-Forwarded-Proto", "http")
 	request.Header.Set("X-Admin-Token", "admin-pass")
-	NewHandler(HandlerOptions{Store: store, AdminTokenHash: HashAdminToken("admin-pass"), AgentBinaryPath: "/opt/zeno/current/bin/zeno-agent"}).ServeHTTP(recorder, request)
+	NewHandler(HandlerOptions{Store: store, AdminTokenHash: HashAdminToken("admin-pass")}).ServeHTTP(recorder, request)
 
 	if recorder.Code != http.StatusOK {
 		t.Fatalf("status = %d, want 200; body=%s", recorder.Code, recorder.Body.String())
@@ -675,7 +672,7 @@ func TestAdminNodeInstallCommandPrefersConfiguredAgentControllerURL(t *testing.T
 	if err := json.NewDecoder(bytes.NewBufferString(recorder.Body.String())).Decode(&response); err != nil {
 		t.Fatalf("decode install command: %v", err)
 	}
-	if !strings.Contains(response.Command, "https://zeno.example.com/api/public/v1/agent/linux-amd64") || !strings.Contains(response.Command, "-controller-url 'https://zeno.example.com'") {
+	if !strings.Contains(response.Command, "ZENO_CONTROLLER_URL='https://zeno.example.com'") || !strings.Contains(response.Command, "Zeno-Agent/main/install.sh") {
 		t.Fatalf("install command should use configured agent controller URL: %s", response.Command)
 	}
 	if strings.Contains(response.Command, "admin.localhost") {
@@ -685,7 +682,7 @@ func TestAdminNodeInstallCommandPrefersConfiguredAgentControllerURL(t *testing.T
 
 func extractQuotedInstallCredential(t *testing.T, command string) string {
 	t.Helper()
-	marker := "printf '%s\\n' '"
+	marker := "ZENO_AGENT_TOKEN='"
 	start := strings.Index(command, marker)
 	if start < 0 {
 		t.Fatalf("install command does not contain quoted credential: %s", command)
@@ -707,7 +704,7 @@ func TestAdminNodeInstallCommandRequiresAdminTokenAndKnownNode(t *testing.T) {
 	if err := store.SeedPreviewData(context.Background(), PreviewSeedOptions{NodeID: "hytron", DisplayName: "Hytron", CountryCode: "HK", AgentToken: "test-agent-token"}); err != nil {
 		t.Fatalf("seed preview data: %v", err)
 	}
-	handler := NewHandler(HandlerOptions{Store: store, AdminTokenHash: HashAdminToken("admin-pass"), AgentBinaryPath: "/opt/zeno/current/bin/zeno-agent"})
+	handler := NewHandler(HandlerOptions{Store: store, AdminTokenHash: HashAdminToken("admin-pass")})
 
 	cases := []struct {
 		name       string

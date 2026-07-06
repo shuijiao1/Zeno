@@ -22,8 +22,8 @@ Zeno 是一个从零实现的轻量服务器探针 / 在线监控系统。
 - Admin API/UI：单管理员登录、账户页修改账号/密码、退出登录、登录失败限速、服务器、服务器排序、Agent 安装命令轮换/复制、Agent 接入 URL、探针目标、探针目标排序、节点分配、通知、外观设置；外观和 Agent 接入 URL 保存前会先校验格式。
 - 服务器元数据：到期日、账单周期、显示顺序（后台可整理，也可在编辑里调整）、国家码/国旗、公网 IPv4、公网 IPv6；Agent 可 best-effort 自动识别公网 IPv4 / IPv6 / 国家码。
 - 通知：Telegram-only 渠道，支持离线、异常、测试发送；通知页只展示已添加的通知类型，可通过“添加通知类型”弹窗选择 CPU / 内存 / 磁盘 / 离线通知，并支持按服务器范围生效。
-- 发布工具：Linux amd64 release 打包、systemd 模板、本机安装/更新脚本、GUKO 服务器清单导入脚本、Controller health 失败回滚。
-- Hytron 预览部署：`/opt/zeno`，`zeno-controller.service`，`zeno-agent.service`，端口 `18980`。
+- 发布工具：Docker Compose 自托管、一键安装脚本、Linux amd64 传统 release 打包、GUKO 服务器清单导入脚本。
+- Hytron 预览部署：`/opt/zeno`，Controller 通过 Docker Compose 运行并仅绑定 `127.0.0.1:18980`，公网走反代域名。
 
 ## 当前不做
 
@@ -36,63 +36,51 @@ Zeno 是一个从零实现的轻量服务器探针 / 在线监控系统。
 
 ## 安装 Controller
 
-完整自部署流程见 [`docs/SELF_HOSTING.md`](docs/SELF_HOSTING.md)。
-
-先在构建机打包：
+推荐使用 Docker Compose，一条命令安装 / 更新 Controller：
 
 ```bash
-scripts/package-release.sh
+bash <(curl -fsSL https://raw.githubusercontent.com/shuijiao1/Zeno/main/install.sh)
 ```
 
-脚本会输出 `build/releases/zeno-<sha>-linux-amd64.tar.gz`，包内包含 Controller、Agent、Web 静态文件、`REVISION`、systemd 模板和安装脚本。
-
-在目标 Controller 机器上解压并执行包内脚本：
-
-```bash
-tar -xzf /tmp/zeno-<sha>-linux-amd64.tar.gz -C /tmp
-sudo /tmp/zeno-<sha>-linux-amd64/scripts/deploy-local-release.sh \
-  --archive /tmp/zeno-<sha>-linux-amd64.tar.gz \
-  --install-dir /opt/zeno \
-  --controller-addr 0.0.0.0:18980 \
-  --controller-url http://127.0.0.1:18980 \
-  --node-id hytron \
-  --seed-preview
-```
-
-部署结构：
+默认部署结构：
 
 ```text
-/opt/zeno/current -> /opt/zeno/releases/zeno-<sha>-linux-amd64
+/opt/zeno/docker-compose.yml
+/opt/zeno/.env
 /opt/zeno/data/zeno.db
-/opt/zeno/data/agent-token
-/opt/zeno/data/admin-token
-/etc/systemd/system/zeno-controller.service
-/etc/systemd/system/zeno-agent.service
+/opt/zeno/secrets/zeno_admin_token
+/opt/zeno/secrets/zeno_agent_token
 ```
 
-`agent-token` / `admin-token` 已存在时会保留；缺失时由脚本生成并写入 `0600` 文件。
+容器默认只把 Controller 绑定到 `127.0.0.1:18980`。公网访问请用 Caddy/Nginx 反代到本机端口，不要直接暴露 `18980`。
+
+自定义参数可用环境变量：
+
+```bash
+ZENO_INSTALL_DIR=/opt/zeno \
+ZENO_HOST_PORT=18980 \
+ZENO_IMAGE=ghcr.io/shuijiao1/zeno:latest \
+bash <(curl -fsSL https://raw.githubusercontent.com/shuijiao1/Zeno/main/install.sh)
+```
 
 ## 安装 Agent
 
-对于非 Controller 机器，先在 Admin 后台创建服务器并生成该节点的 Agent token，然后把 release 包里的 `zeno-agent` 和脚本传到目标机，执行：
+Agent 已拆到独立仓库：[`shuijiao1/Zeno-Agent`](https://github.com/shuijiao1/Zeno-Agent)。
+
+在 Admin 后台创建 / 编辑服务器，生成该节点安装命令后直接执行即可。安装命令会调用 Agent 仓库的一键脚本，下载对应架构的 `zeno-agent` Release，并写入 `zeno-agent.service`。
+
+手工安装示例：
 
 ```bash
-sudo scripts/install-agent.sh \
-  --controller-url https://example.com \
-  --node-id <node-id> \
-  --token <agent-token>
+curl -fsSL https://raw.githubusercontent.com/shuijiao1/Zeno-Agent/main/install.sh | sudo env \
+  ZENO_CONTROLLER_URL=https://zeno.example.com \
+  ZENO_NODE_ID=<node-id> \
+  ZENO_AGENT_TOKEN=<agent-token> \
+  ZENO_AGENT_VERSION=v0.1.0 \
+  bash
 ```
 
-也可以使用 token 文件：
-
-```bash
-sudo scripts/install-agent.sh \
-  --controller-url https://example.com \
-  --node-id <node-id> \
-  --token-file /opt/zeno/data/agent-token
-```
-
-Agent 安装脚本只安装 `zeno-agent.service`，不会修改 Controller。
+Agent 安装脚本只安装 / 更新 `zeno-agent.service`，不会修改 Controller。
 
 ## 更新 Zeno
 

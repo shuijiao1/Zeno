@@ -1,0 +1,17 @@
+services:
+  zeno:
+    image: ${ZENO_IMAGE:-ghcr.io/shuijiao1/zeno:latest}
+    container_name: ${ZENO_CONTAINER_NAME:-zeno}
+    restart: unless-stopped
+    environment:
+      TZ: ${TZ:-Asia/Shanghai}
+    ports:
+      - "127.0.0.1:${ZENO_HOST_PORT:-18980}:18980"
+    volumes:
+      - ./data:/data
+      - ./secrets:/run/secrets:ro
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:18980/health >/dev/null || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3

@@ -1589,14 +1589,14 @@ describe('requestAdminNodeInstallCommand', () => {
   it('requests an install command from the node edit context without putting the admin token in the URL', async () => {
     const fetchMock = vi.fn(async () => new Response(JSON.stringify({
       node_id: 'hytron',
-      command: "curl -fsSL 'https://probe.example.com/api/public/v1/agent/linux-amd64'",
+      command: "curl -fsSL 'https://raw.githubusercontent.com/shuijiao1/Zeno-Agent/main/install.sh' | sudo env ZENO_CONTROLLER_URL='https://probe.example.com' ZENO_NODE_ID='hytron' bash",
     }), { status: 200, headers: { 'Content-Type': 'application/json' } }))
     globalThis.fetch = fetchMock as unknown as typeof fetch
 
     const result = await requestAdminNodeInstallCommand('admin-pass', 'hytron')
 
     expect(result.nodeId).toBe('hytron')
-    expect(result.command).toContain('/api/public/v1/agent/linux-amd64')
+    expect(result.command).toContain('Zeno-Agent/main/install.sh')
     expect(fetchMock).toHaveBeenCalledWith('/api/admin/v1/nodes/hytron/install-command', {
       method: 'POST',
       headers: {
