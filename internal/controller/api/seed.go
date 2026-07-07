@@ -149,7 +149,7 @@ func previewTarget(id, name, address string, port int) ProbeTarget {
 		Address:     address,
 		Port:        &port,
 		Count:       3,
-		TimeoutMS:   600,
+		TimeoutMS:   1000,
 		IntervalSec: 30,
 	}
 }

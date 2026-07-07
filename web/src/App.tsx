@@ -2100,7 +2100,7 @@ function AdminTargetCreateModal({ nodes, onCreate, onClose }: { nodes: AdminNode
       address,
       port,
       count: parsePositiveInt(String(formData.get('new-target-count') ?? '')) ?? 3,
-      timeoutMs: parsePositiveInt(String(formData.get('new-target-timeout-ms') ?? '')) ?? 600,
+      timeoutMs: parsePositiveInt(String(formData.get('new-target-timeout-ms') ?? '')) ?? 1000,
       intervalSec: parsePositiveInt(String(formData.get('new-target-interval-sec') ?? '')) ?? 30,
       assignments: nodes.map((node) => ({ nodeId: node.id, enabled: assignmentNodeIds.includes(node.id) })),
     })
@@ -2147,7 +2147,7 @@ function AdminTargetCreateModal({ nodes, onCreate, onClose }: { nodes: AdminNode
             </label>
             <label>
               <span>超时 ms</span>
-              <input name="new-target-timeout-ms" type="number" min="1" defaultValue="600" />
+              <input name="new-target-timeout-ms" type="number" min="1" defaultValue="1000" />
             </label>
             <label>
               <span>间隔 s</span>

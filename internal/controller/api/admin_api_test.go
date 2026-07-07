@@ -892,7 +892,7 @@ func TestAdminProbeTargetsListsTargetsAndAssignmentsWithoutSecrets(t *testing.T)
 		}{}
 	}
 	hytron := findTarget("hytron-local")
-	if hytron.ID == "" || hytron.Name != "Hytron" || hytron.Type != "tcping" || hytron.Address != "127.0.0.1" || hytron.Port == nil || *hytron.Port != 18980 || hytron.Count != 3 || hytron.TimeoutMS != 600 || hytron.IntervalSec != 30 || !hytron.Enabled {
+	if hytron.ID == "" || hytron.Name != "Hytron" || hytron.Type != "tcping" || hytron.Address != "127.0.0.1" || hytron.Port == nil || *hytron.Port != 18980 || hytron.Count != 3 || hytron.TimeoutMS != 1000 || hytron.IntervalSec != 30 || !hytron.Enabled {
 		t.Fatalf("hytron target = %+v, want full target config", hytron)
 	}
 	if len(hytron.Assignments) != 1 || hytron.Assignments[0].NodeID != "hytron" || hytron.Assignments[0].NodeDisplayName != "Hytron" || !hytron.Assignments[0].Enabled {
