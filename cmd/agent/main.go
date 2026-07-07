@@ -28,6 +28,8 @@ type config struct {
 	Version                 string
 	IdentityRefreshInterval time.Duration
 	AllowInsecureHTTP       bool
+	NetworkInterfaces       string
+	DiskMounts              string
 }
 
 func main() {
@@ -41,6 +43,8 @@ func main() {
 	flag.StringVar(&cfg.Version, "version", defaultVersion, "agent version string reported to controller")
 	flag.DurationVar(&cfg.IdentityRefreshInterval, "identity-refresh-interval", 6*time.Hour, "public IPv4/IPv6 and GeoIP refresh interval; best-effort and cached")
 	flag.BoolVar(&cfg.AllowInsecureHTTP, "allow-insecure-http", false, "allow bearer-token reporting to a non-local plain HTTP controller URL")
+	flag.StringVar(&cfg.NetworkInterfaces, "network-interfaces", "", "comma-separated network interface allowlist; default excludes virtual/container interfaces")
+	flag.StringVar(&cfg.DiskMounts, "disk-mounts", "", "comma-separated disk mount/path allowlist; default sums real filesystems")
 	flag.Parse()
 
 	token, err := readToken(cfg.Token, cfg.TokenFile)
@@ -58,7 +62,7 @@ func run(ctx context.Context, cfg config) error {
 		return err
 	}
 	client := agent.NewClient(cfg.ControllerURL, cfg.NodeID, cfg.Token)
-	collector := agent.NewMetricsCollector()
+	collector := agent.NewMetricsCollector(agent.MetricsOptions{NetworkInterfaceAllowlist: splitCommaList(cfg.NetworkInterfaces), DiskMountAllowlist: splitCommaList(cfg.DiskMounts)})
 	scheduler := agent.NewProbeScheduler()
 	identityDiscoverer := agent.NewCachedNetworkIdentityDiscoverer(agent.NewNetworkIdentityDiscoverer(), cfg.IdentityRefreshInterval)
 	if err := reportOnce(ctx, client, collector, cfg.Version, true, scheduler, identityDiscoverer); err != nil {
@@ -166,6 +170,21 @@ func reportOnce(ctx context.Context, client *agent.Client, collector *agent.Metr
 func reportStateOnly(ctx context.Context, client *agent.Client, collector *agent.MetricsCollector) error {
 	now := time.Now().UTC()
 	return client.PostState(ctx, collector.CollectState(now))
+}
+
+func splitCommaList(value string) []string {
+	if strings.TrimSpace(value) == "" {
+		return nil
+	}
+	parts := strings.Split(value, ",")
+	result := make([]string, 0, len(parts))
+	for _, part := range parts {
+		trimmed := strings.TrimSpace(part)
+		if trimmed != "" {
+			result = append(result, trimmed)
+		}
+	}
+	return result
 }
 
 func readToken(token, tokenFile string) (string, error) {

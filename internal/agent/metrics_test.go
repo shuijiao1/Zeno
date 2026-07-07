@@ -1,8 +1,10 @@
 package agent
 
 import (
+	"bufio"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
@@ -34,6 +36,66 @@ func TestTCPConnectionCountFromFileSkipsHeader(t *testing.T) {
 
 	if got := tcpConnectionCountFromFile(path); got != 2 {
 		t.Fatalf("tcp connection count = %d, want 2 data rows", got)
+	}
+}
+
+func TestIncludeNetworkInterfaceFiltersVirtualDefaults(t *testing.T) {
+	for _, name := range []string{"lo", "docker0", "vethabc", "br-123", "tun0", "tailscale0", "kube-ipvs0", "vmbr0", "tap1", "cni0", "flannel.1", "cali123", "virbr0"} {
+		if includeNetworkInterface(name, nil) {
+			t.Fatalf("interface %s included by default, want excluded", name)
+		}
+	}
+	for _, name := range []string{"eth0", "ens3", "enp1s0", "wlan0"} {
+		if !includeNetworkInterface(name, nil) {
+			t.Fatalf("interface %s excluded by default, want included", name)
+		}
+	}
+}
+
+func TestNetworkInterfaceAllowlistOverridesDefaultFilter(t *testing.T) {
+	allowlist := allowlistSet([]string{"tailscale0", "eth0"})
+	if !includeNetworkInterface("tailscale0", allowlist) {
+		t.Fatal("allowlisted tailscale0 should be included")
+	}
+	if includeNetworkInterface("ens3", allowlist) {
+		t.Fatal("non-allowlisted ens3 should be excluded when allowlist is set")
+	}
+}
+
+func TestParseMountInfoFiltersPseudoAndContainerMounts(t *testing.T) {
+	fixture := filepath.Join(t.TempDir(), "mountinfo")
+	content := `26 23 8:1 / / rw,relatime - ext4 /dev/vda1 rw
+27 26 0:24 / /proc rw,nosuid,nodev,noexec,relatime - proc proc rw
+28 26 0:25 / /run rw,nosuid,nodev - tmpfs tmpfs rw
+29 26 0:26 / /var/lib/docker/overlay2/abc/merged rw,relatime - overlay overlay rw
+30 26 8:2 / /data rw,relatime - xfs /dev/vdb1 rw
+31 26 8:2 / /mnt/data-bind rw,relatime - xfs /dev/vdb1 rw
+`
+	if err := os.WriteFile(fixture, []byte(content), 0o600); err != nil {
+		t.Fatalf("write mountinfo fixture: %v", err)
+	}
+	file, err := os.Open(fixture)
+	if err != nil {
+		t.Fatalf("open mountinfo fixture: %v", err)
+	}
+	defer file.Close()
+
+	var included []string
+	scanner := bufio.NewScanner(file)
+	seen := map[string]struct{}{}
+	for scanner.Scan() {
+		mount, ok := parseMountInfoLine(scanner.Text())
+		if !ok || !includeDiskMount(mount.mountPoint, mount.fsType, mount.source) {
+			continue
+		}
+		if _, exists := seen[mount.device]; exists {
+			continue
+		}
+		seen[mount.device] = struct{}{}
+		included = append(included, mount.mountPoint)
+	}
+	if strings.Join(included, ",") != "/,/data" {
+		t.Fatalf("included mounts = %v, want root and data only once", included)
 	}
 }
 

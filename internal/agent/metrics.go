@@ -11,20 +11,34 @@ import (
 )
 
 type MetricsCollector struct {
-	previousCPU   cpuTimes
-	hasCPU        bool
-	previousNet   networkTotals
-	previousNetAt time.Time
-	hasNet        bool
+	previousCPU      cpuTimes
+	hasCPU           bool
+	previousNet      networkTotals
+	previousNetAt    time.Time
+	hasNet           bool
+	networkAllowlist map[string]struct{}
+	diskAllowlist    []string
 }
 
-func NewMetricsCollector() *MetricsCollector {
-	return &MetricsCollector{}
+type MetricsOptions struct {
+	NetworkInterfaceAllowlist []string
+	DiskMountAllowlist        []string
+}
+
+func NewMetricsCollector(options ...MetricsOptions) *MetricsCollector {
+	var opts MetricsOptions
+	if len(options) > 0 {
+		opts = options[0]
+	}
+	return &MetricsCollector{
+		networkAllowlist: allowlistSet(opts.NetworkInterfaceAllowlist),
+		diskAllowlist:    normalizeAllowlist(opts.DiskMountAllowlist),
+	}
 }
 
 func (c *MetricsCollector) CollectHost(version string) HostInfo {
 	memTotal, _ := readMemoryTotals()
-	_, diskTotal := diskUsage("/")
+	_, diskTotal := diskUsage(c.diskAllowlist)
 	hostname, _ := os.Hostname()
 	osName, osVersion := osRelease()
 	return HostInfo{
@@ -48,8 +62,8 @@ func (c *MetricsCollector) CollectState(now time.Time) StateSample {
 	memTotal, memAvailable := readMemoryTotals()
 	swapTotal, swapFree := readSwapTotals()
 	load1, load5, load15 := readLoadAverages()
-	diskUsed, diskTotal := diskUsage("/")
-	netTotals := readNetworkTotals()
+	diskUsed, diskTotal := diskUsage(c.diskAllowlist)
+	netTotals := readNetworkTotals(c.networkAllowlist)
 	var inSpeed, outSpeed float64
 	if c.hasNet {
 		elapsed := now.Sub(c.previousNetAt).Seconds()
@@ -259,7 +273,151 @@ func tcpConnectionCountFromFile(path string) int64 {
 	return int64(len(lines) - 1)
 }
 
-func diskUsage(path string) (used int64, total int64) {
+var defaultExcludedDiskFSTypes = map[string]struct{}{
+	"autofs":      {},
+	"binfmt_misc": {},
+	"bpf":         {},
+	"cgroup":      {},
+	"cgroup2":     {},
+	"configfs":    {},
+	"debugfs":     {},
+	"devpts":      {},
+	"devtmpfs":    {},
+	"fusectl":     {},
+	"hugetlbfs":   {},
+	"mqueue":      {},
+	"nsfs":        {},
+	"overlay":     {},
+	"proc":        {},
+	"pstore":      {},
+	"ramfs":       {},
+	"rpc_pipefs":  {},
+	"securityfs":  {},
+	"squashfs":    {},
+	"sysfs":       {},
+	"tmpfs":       {},
+	"tracefs":     {},
+}
+
+var defaultExcludedDiskMountPrefixes = []string{
+	"/dev",
+	"/proc",
+	"/run",
+	"/sys",
+	"/var/lib/docker",
+	"/var/lib/containerd",
+	"/var/lib/kubelet",
+	"/var/lib/containers/storage",
+	"/snap",
+}
+
+func diskUsage(allowlist []string) (used int64, total int64) {
+	if len(allowlist) > 0 {
+		return diskUsageForAllowlist(allowlist)
+	}
+	return diskUsageFromMountInfo("/proc/self/mountinfo")
+}
+
+func diskUsageForAllowlist(paths []string) (used int64, total int64) {
+	seen := map[uint64]struct{}{}
+	for _, path := range normalizeAllowlist(paths) {
+		key, ok := statDeviceKey(path)
+		if ok {
+			if _, exists := seen[key]; exists {
+				continue
+			}
+			seen[key] = struct{}{}
+		}
+		pathUsed, pathTotal := diskUsageForPath(path)
+		used += pathUsed
+		total += pathTotal
+	}
+	return used, total
+}
+
+func diskUsageFromMountInfo(path string) (used int64, total int64) {
+	file, err := os.Open(path)
+	if err != nil {
+		return diskUsageForPath("/")
+	}
+	defer file.Close()
+
+	seen := map[string]struct{}{}
+	scanner := bufio.NewScanner(file)
+	for scanner.Scan() {
+		mount, ok := parseMountInfoLine(scanner.Text())
+		if !ok || !includeDiskMount(mount.mountPoint, mount.fsType, mount.source) {
+			continue
+		}
+		if _, exists := seen[mount.device]; exists {
+			continue
+		}
+		seen[mount.device] = struct{}{}
+		mountUsed, mountTotal := diskUsageForPath(mount.mountPoint)
+		if mountTotal <= 0 {
+			continue
+		}
+		used += mountUsed
+		total += mountTotal
+	}
+	if total == 0 {
+		return diskUsageForPath("/")
+	}
+	return used, total
+}
+
+type mountInfoEntry struct {
+	device     string
+	mountPoint string
+	fsType     string
+	source     string
+}
+
+func parseMountInfoLine(line string) (mountInfoEntry, bool) {
+	left, right, ok := strings.Cut(line, " - ")
+	if !ok {
+		return mountInfoEntry{}, false
+	}
+	leftFields := strings.Fields(left)
+	rightFields := strings.Fields(right)
+	if len(leftFields) < 5 || len(rightFields) < 2 {
+		return mountInfoEntry{}, false
+	}
+	return mountInfoEntry{
+		device:     leftFields[2],
+		mountPoint: decodeMountInfoField(leftFields[4]),
+		fsType:     strings.ToLower(rightFields[0]),
+		source:     decodeMountInfoField(rightFields[1]),
+	}, true
+}
+
+func decodeMountInfoField(value string) string {
+	replacer := strings.NewReplacer(`\040`, " ", `\011`, "\t", `\012`, "\n", `\134`, `\`)
+	return replacer.Replace(value)
+}
+
+func includeDiskMount(mountPoint, fsType, source string) bool {
+	mountPoint = strings.TrimSpace(mountPoint)
+	if mountPoint == "" {
+		return false
+	}
+	if _, excluded := defaultExcludedDiskFSTypes[strings.ToLower(fsType)]; excluded {
+		return false
+	}
+	lowerMount := strings.ToLower(mountPoint)
+	for _, prefix := range defaultExcludedDiskMountPrefixes {
+		if lowerMount == prefix || strings.HasPrefix(lowerMount, prefix+"/") {
+			return false
+		}
+	}
+	lowerSource := strings.ToLower(strings.TrimSpace(source))
+	if lowerSource == "" || lowerSource == "none" || strings.HasPrefix(lowerSource, "overlay") {
+		return false
+	}
+	return true
+}
+
+func diskUsageForPath(path string) (used int64, total int64) {
 	var stat syscall.Statfs_t
 	if err := syscall.Statfs(path, &stat); err != nil {
 		return 0, 0
@@ -270,12 +428,52 @@ func diskUsage(path string) (used int64, total int64) {
 	return used, total
 }
 
+func statDeviceKey(path string) (uint64, bool) {
+	info, err := os.Stat(path)
+	if err != nil {
+		return 0, false
+	}
+	stat, ok := info.Sys().(*syscall.Stat_t)
+	if !ok {
+		return 0, false
+	}
+	return uint64(stat.Dev), true
+}
+
 type networkTotals struct {
 	InBytes  int64
 	OutBytes int64
 }
 
-func readNetworkTotals() networkTotals {
+var defaultExcludedInterfacePrefixes = []string{
+	"lo",
+	"docker",
+	"veth",
+	"br-",
+	"tun",
+	"tailscale",
+	"kube",
+	"vmbr",
+	"tap",
+	"cni",
+	"flannel",
+	"cali",
+	"weave",
+	"virbr",
+	"vnet",
+	"vethernet",
+	"virtualbox",
+	"vmware",
+	"hyper-v",
+	"loopback",
+	"isatap",
+	"teredo",
+	"npcap",
+	"bluetooth",
+	"zt",
+}
+
+func readNetworkTotals(allowlist map[string]struct{}) networkTotals {
 	content, err := os.ReadFile("/proc/net/dev")
 	if err != nil {
 		return networkTotals{}
@@ -289,7 +487,7 @@ func readNetworkTotals() networkTotals {
 		}
 		iface, rest, _ := strings.Cut(line, ":")
 		iface = strings.TrimSpace(iface)
-		if iface == "lo" {
+		if !includeNetworkInterface(iface, allowlist) {
 			continue
 		}
 		fields := strings.Fields(rest)
@@ -302,6 +500,53 @@ func readNetworkTotals() networkTotals {
 		totals.OutBytes += outBytes
 	}
 	return totals
+}
+
+func normalizeAllowlist(values []string) []string {
+	seen := map[string]struct{}{}
+	result := make([]string, 0, len(values))
+	for _, value := range values {
+		trimmed := strings.TrimSpace(value)
+		if trimmed == "" {
+			continue
+		}
+		if _, ok := seen[trimmed]; ok {
+			continue
+		}
+		seen[trimmed] = struct{}{}
+		result = append(result, trimmed)
+	}
+	return result
+}
+
+func allowlistSet(values []string) map[string]struct{} {
+	list := normalizeAllowlist(values)
+	if len(list) == 0 {
+		return nil
+	}
+	set := make(map[string]struct{}, len(list))
+	for _, value := range list {
+		set[value] = struct{}{}
+	}
+	return set
+}
+
+func includeNetworkInterface(name string, allowlist map[string]struct{}) bool {
+	trimmed := strings.TrimSpace(name)
+	if trimmed == "" {
+		return false
+	}
+	if len(allowlist) > 0 {
+		_, ok := allowlist[trimmed]
+		return ok
+	}
+	lower := strings.ToLower(trimmed)
+	for _, prefix := range defaultExcludedInterfacePrefixes {
+		if lower == prefix || strings.HasPrefix(lower, prefix) {
+			return false
+		}
+	}
+	return true
 }
 
 func osRelease() (string, string) {

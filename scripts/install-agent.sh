@@ -20,6 +20,8 @@ Options:
   --token-file <path>         Existing/written token file path
   --interval <duration>       Default: 2s
   --version <version>         Default: REVISION next to agent binary, or unknown
+  --network-interfaces <list> Comma-separated interface allowlist; default excludes virtual/container interfaces
+  --disk-mounts <list>        Comma-separated disk path allowlist; default sums real filesystems
   --dry-run                   Copy/render but do not call systemctl
   -h, --help                  Show help
 USAGE
@@ -37,6 +39,8 @@ token=""
 token_file=""
 interval="2s"
 version=""
+network_interfaces=""
+disk_mounts=""
 dry_run=0
 
 while [ "$#" -gt 0 ]; do
@@ -52,6 +56,8 @@ while [ "$#" -gt 0 ]; do
     --token-file) token_file="${2:-}"; shift 2 ;;
     --interval) interval="${2:-}"; shift 2 ;;
     --version) version="${2:-}"; shift 2 ;;
+    --network-interfaces) network_interfaces="${2:-}"; shift 2 ;;
+    --disk-mounts) disk_mounts="${2:-}"; shift 2 ;;
     --dry-run) dry_run=1; shift ;;
     -h|--help) usage; exit 0 ;;
     *) echo "unknown argument: $1" >&2; usage >&2; exit 2 ;;
@@ -81,6 +87,11 @@ if [ -z "$version" ]; then
 fi
 
 sed_escape() { printf '%s' "$1" | sed -e 's/[\/&]/\\&/g'; }
+systemd_extra_args=""
+extra_args=()
+if [ -n "$network_interfaces" ]; then extra_args+=("-network-interfaces" "$network_interfaces"); fi
+if [ -n "$disk_mounts" ]; then extra_args+=("-disk-mounts" "$disk_mounts"); fi
+if [ "${#extra_args[@]}" -gt 0 ]; then printf -v systemd_extra_args ' %q' "${extra_args[@]}"; fi
 mkdir -p "$install_dir/agent" "$data_dir"
 install -m 0755 "$agent_binary" "$install_dir/agent/zeno-agent"
 if [ -n "$token" ]; then
@@ -104,7 +115,8 @@ sed \
   -e "s/{{NODE_ID}}/$(sed_escape "$node_id")/g" \
   -e "s/{{AGENT_INTERVAL}}/$(sed_escape "$interval")/g" \
   -e "s/{{AGENT_TOKEN_FILE}}/$(sed_escape "$token_file")/g" \
-  -e "s/{{VERSION}}/$(sed_escape "$version")/g" \
+  -e "s/{{AGENT_VERSION}}/$(sed_escape "$version")/g" \
+  -e "s/{{AGENT_EXTRA_ARGS}}/$(sed_escape "$systemd_extra_args")/g" \
   -e '/{{/d' \
   "$script_dir/../packaging/systemd/zeno-agent.service" > "$unit_output_dir/zeno-agent.service"
 

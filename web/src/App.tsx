@@ -3141,11 +3141,11 @@ export function HomeOverviewPanel({ totalCount, onlineCount, offlineCount: _offl
       <dl className="home-summary__tile home-summary__tile--rates" aria-label="network speeds">
         <div className="home-summary__metric home-summary__metric--upload-rate home-summary__metric--rate">
           <dt>上传</dt>
-          <dd><CircleArrowIcon direction="up" /><span className="home-summary__rate-value"><span>{uploadRate.value}</span><span className="home-summary__rate-unit">{uploadRate.unit}</span></span></dd>
+          <dd><span className="home-summary__rate-value"><span>{uploadRate.value} </span><span className="home-summary__rate-unit">{uploadRate.unit}</span></span></dd>
         </div>
         <div className="home-summary__metric home-summary__metric--download-rate home-summary__metric--rate">
           <dt>下载</dt>
-          <dd><CircleArrowIcon direction="down" /><span className="home-summary__rate-value"><span>{downloadRate.value}</span><span className="home-summary__rate-unit">{downloadRate.unit}</span></span></dd>
+          <dd><span className="home-summary__rate-value"><span>{downloadRate.value} </span><span className="home-summary__rate-unit">{downloadRate.unit}</span></span></dd>
         </div>
       </dl>
     </section>
@@ -3221,18 +3221,6 @@ function ImageMinusIcon() {
       <path d="M16 5h6" />
       <circle cx="9" cy="9" r="2" />
       <path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21" />
-    </svg>
-  )
-}
-
-function CircleArrowIcon({ direction }: { direction: 'up' | 'down' }) {
-  return direction === 'up' ? (
-    <svg viewBox="0 0 20 20" aria-hidden="true">
-      <path fillRule="evenodd" d="M10 18a8 8 0 1 0 0-16 8 8 0 0 0 0 16Zm-.75-4.75a.75.75 0 0 0 1.5 0V8.66l1.95 2.1a.75.75 0 1 0 1.1-1.02l-3.25-3.5a.75.75 0 0 0-1.1 0L6.2 9.74a.75.75 0 1 0 1.1 1.02l1.95-2.1v4.59Z" clipRule="evenodd" />
-    </svg>
-  ) : (
-    <svg viewBox="0 0 20 20" aria-hidden="true">
-      <path fillRule="evenodd" d="M10 18a8 8 0 1 0 0-16 8 8 0 0 0 0 16Zm.75-11.25a.75.75 0 0 0-1.5 0v4.59L7.3 9.24a.75.75 0 0 0-1.1 1.02l3.25 3.5a.75.75 0 0 0 1.1 0l3.25-3.5a.75.75 0 1 0-1.1-1.02l-1.95 2.1V6.75Z" clipRule="evenodd" />
     </svg>
   )
 }
