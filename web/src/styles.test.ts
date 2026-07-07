@@ -152,6 +152,8 @@ describe('homepage and admin shell layout', () => {
     expect(styles).toContain('.admin-notification-list .admin-node-status')
     expect(styles).toContain('.admin-install-copy-menu')
     expect(styles).toContain('.admin-install-copy-button')
+    expect(styles).toContain('.admin-install-copy-row { flex-wrap: nowrap; gap: 10px; }')
+    expect(styles).toContain('.admin-inline-note')
     expect(styles).toContain('.admin-install-platforms {\n  position: fixed')
     expect(styles).not.toContain('scroll-margin: 96px 0')
     expect(styles).not.toContain('.admin-install-command')

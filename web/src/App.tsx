@@ -1726,14 +1726,15 @@ function AdminNodeCreateModal({ onCreate, onInstallCommand, onClose }: { onCreat
         </AdminFormSection>
         <AdminFormSection title="Agent 接入">
           {createdNode && <p className="admin-help-note">已添加：{createdNode.displayName}</p>}
-          <div className="admin-inline-actions">
+          <div className="admin-inline-actions admin-install-copy-row">
             <div className="admin-install-copy-menu">
               <button ref={installCopyButtonRef} className="admin-primary-action admin-install-copy-button" type="button" onClick={handleCopyInstallCommand} disabled={!createdNode || installCommandState.kind === 'loading'}>{installCommandState.kind === 'loading' ? '生成中…' : '复制安装命令'}</button>
               {installPlatformPickerOpen && <AdminInstallPlatformPopover state={installCommandState} style={installPlatformMenuStyle} onSelect={handleCopyInstallPlatform} />}
             </div>
+            {!createdNode && <span className="admin-inline-note">先填写服务器名称并添加服务器，才能复制对应安装命令。</span>}
+            {installCommandState.kind === 'loading' && <span className="admin-inline-note is-warning">正在准备安装命令…</span>}
+            {installCopyState.kind !== 'idle' && <span className={`admin-inline-note${installCopyState.kind === 'ready' ? ' is-success' : installCopyState.kind === 'warning' ? ' is-warning' : ' is-error'}`}>{installCopyState.message}</span>}
           </div>
-          {installCommandState.kind === 'loading' && <div className="admin-install-error is-warning">正在准备安装命令…</div>}
-          {installCopyState.kind !== 'idle' && <div className={`admin-install-error${installCopyState.kind === 'ready' ? ' is-success' : installCopyState.kind === 'warning' ? ' is-warning' : ''}`}>{installCopyState.message}</div>}
           {installCommandState.kind === 'error' && <div className="admin-install-error">安装命令生成失败：{installCommandState.message}</div>}
         </AdminFormSection>
         {formError && <div className="admin-install-error">{formError}</div>}
@@ -1884,14 +1885,14 @@ function AdminNodeEditModal({ node, targets, onUpdate, onTargetUpdate, onInstall
         </AdminFormSection>
         <AdminFormSection title="Agent 接入">
           <p className="admin-help-note">当前 Agent 版本：{node.agentVersion || '暂无上报'}</p>
-          <div className="admin-inline-actions">
+          <div className="admin-inline-actions admin-install-copy-row">
             <div className="admin-install-copy-menu">
               <button ref={installCopyButtonRef} className="admin-primary-action admin-install-copy-button" type="button" onClick={handleCopyInstallCommand} disabled={installCommandState.kind === 'loading'}>{installCommandState.kind === 'loading' ? '生成中…' : '复制安装命令'}</button>
               {installPlatformPickerOpen && <AdminInstallPlatformPopover state={installCommandState} style={installPlatformMenuStyle} onSelect={handleCopyInstallPlatform} />}
             </div>
+            {installCommandState.kind === 'loading' && <span className="admin-inline-note is-warning">正在准备安装命令…</span>}
+            {installCopyState.kind !== 'idle' && <span className={`admin-inline-note${installCopyState.kind === 'ready' ? ' is-success' : installCopyState.kind === 'warning' ? ' is-warning' : ' is-error'}`}>{installCopyState.message}</span>}
           </div>
-          {installCommandState.kind === 'loading' && <div className="admin-install-error is-warning">正在准备安装命令…</div>}
-          {installCopyState.kind !== 'idle' && <div className={`admin-install-error${installCopyState.kind === 'ready' ? ' is-success' : installCopyState.kind === 'warning' ? ' is-warning' : ''}`}>{installCopyState.message}</div>}
           {installCommandState.kind === 'error' && <div className="admin-install-error">安装命令生成失败：{installCommandState.message}</div>}
         </AdminFormSection>
         <div className="admin-modal-actions">
