@@ -119,6 +119,9 @@ type HomeRateSnapshot = {
   downSpeed: number
 }
 
+const HOME_RATE_SNAPSHOT_INTERVAL_MS = 2000
+const HOME_RATE_SNAPSHOT_FRAME_TOLERANCE_MS = 150
+
 function sum(values: Array<number | null | undefined>): number {
   return values.reduce<number>((total, value) => total + (value ?? 0), 0)
 }
@@ -128,6 +131,14 @@ function homeRateSnapshotForNodes(nodes: HomeCardNode[]): HomeRateSnapshot {
     upSpeed: sum(nodes.map((node) => node.netOutSpeedBps)),
     downSpeed: sum(nodes.map((node) => node.netInSpeedBps)),
   }
+}
+
+export function shouldRefreshHomeRateSnapshot(lastUpdatedAt: number | null, now: number): boolean {
+  return lastUpdatedAt === null || now - lastUpdatedAt >= HOME_RATE_SNAPSHOT_INTERVAL_MS - HOME_RATE_SNAPSHOT_FRAME_TOLERANCE_MS
+}
+
+function monotonicNowMs(): number {
+  return typeof performance !== 'undefined' ? performance.now() : Date.now()
 }
 
 function compactBytes(value: number): string {
@@ -264,8 +275,7 @@ export function App() {
   const [serviceLatencyState, setServiceLatencyState] = useState<ServiceLatencyLoadState>({ kind: 'idle' })
   const nodeLatencyCacheRef = useRef(new Map<string, NodeLatencyData>())
   const nodeStateCacheRef = useRef(new Map<string, NodeStateData>())
-  const latestSummaryRef = useRef<SummaryData | null>(state.kind === 'ready' ? state.data : null)
-  const rateSnapshotInitializedRef = useRef(state.kind === 'ready')
+  const rateSnapshotLastUpdatedAtRef = useRef<number | null>(null)
   const [homeRateSnapshot, setHomeRateSnapshot] = useState<HomeRateSnapshot | null>(() => state.kind === 'ready' ? homeRateSnapshotForNodes(state.data.nodes) : null)
   const [adminToken, setAdminToken] = useState(loadStoredAdminToken)
   const [adminAuthState, setAdminAuthState] = useState<AdminAuthState>({ kind: 'idle' })
@@ -293,15 +303,19 @@ export function App() {
 
   useEffect(() => {
     let cancelled = false
+    const refreshHomeRateSnapshot = (data: SummaryData) => {
+      const now = monotonicNowMs()
+      if (!shouldRefreshHomeRateSnapshot(rateSnapshotLastUpdatedAtRef.current, now)) return
+      rateSnapshotLastUpdatedAtRef.current = now
+      setHomeRateSnapshot(homeRateSnapshotForNodes(data.nodes))
+    }
     const stopSummaryStream = subscribeSummary(
       (data) => {
-        latestSummaryRef.current = data
         rememberSummary(data)
-        if (!rateSnapshotInitializedRef.current) {
-          rateSnapshotInitializedRef.current = true
-          setHomeRateSnapshot(homeRateSnapshotForNodes(data.nodes))
+        if (!cancelled) {
+          refreshHomeRateSnapshot(data)
+          setState({ kind: 'ready', data })
         }
-        if (!cancelled) setState({ kind: 'ready', data })
       },
       (error) => {
         if (!cancelled) setState((current) => (current.kind === 'ready' ? current : { kind: 'error', message: error.message }))
@@ -310,13 +324,11 @@ export function App() {
     if (!stopSummaryStream) {
       fetchSummary()
         .then((data) => {
-          latestSummaryRef.current = data
           rememberSummary(data)
-          if (!rateSnapshotInitializedRef.current) {
-            rateSnapshotInitializedRef.current = true
-            setHomeRateSnapshot(homeRateSnapshotForNodes(data.nodes))
+          if (!cancelled) {
+            refreshHomeRateSnapshot(data)
+            setState({ kind: 'ready', data })
           }
-          if (!cancelled) setState({ kind: 'ready', data })
         })
         .catch((error: unknown) => {
           if (!cancelled) setState((current) => (current.kind === 'ready' ? current : { kind: 'error', message: error instanceof Error ? error.message : 'summary request failed' }))
@@ -326,14 +338,6 @@ export function App() {
       cancelled = true
       stopSummaryStream?.()
     }
-  }, [])
-
-  useEffect(() => {
-    const timer = window.setInterval(() => {
-      const latest = latestSummaryRef.current
-      if (latest) setHomeRateSnapshot(homeRateSnapshotForNodes(latest.nodes))
-    }, 2000)
-    return () => window.clearInterval(timer)
   }, [])
 
   useEffect(() => {

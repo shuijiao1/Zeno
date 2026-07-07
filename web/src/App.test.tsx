@@ -1,6 +1,6 @@
 import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it } from 'vitest'
-import { AdminDashboard, HomeTopPanel, documentBrandingForSettings, orderHomeNodes, shellStyleForSettings, validateAdminSettingsInput } from './App'
+import { AdminDashboard, HomeTopPanel, documentBrandingForSettings, orderHomeNodes, shellStyleForSettings, shouldRefreshHomeRateSnapshot, validateAdminSettingsInput } from './App'
 import type { AdminAlertRule, AdminNode, AdminNotificationChannel, AdminProbeTarget, AdminSettings, HomeCardNode } from './types'
 
 const overviewProps = {
@@ -195,6 +195,13 @@ function renderAdmin(section: 'nodes' | 'targets' | 'notifications' | 'account' 
 }
 
 describe('HomeTopPanel', () => {
+  it('paces aggregate homepage rate refreshes on live summary frames', () => {
+    expect(shouldRefreshHomeRateSnapshot(null, 100)).toBe(true)
+    expect(shouldRefreshHomeRateSnapshot(100, 1800)).toBe(false)
+    expect(shouldRefreshHomeRateSnapshot(100, 1950)).toBe(true)
+    expect(shouldRefreshHomeRateSnapshot(100, 2100)).toBe(true)
+  })
+
   it('keeps configured order inside online/offline groups but moves offline homepage cards last', () => {
     const nodes = [
       { id: 'offline-first', status: 'offline' },
