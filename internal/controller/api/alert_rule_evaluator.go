@@ -22,6 +22,16 @@ func (s *SQLiteStore) RecordAgentStateAlertRuleTransition(ctx context.Context, n
 	if err != nil {
 		return notificationStatusTransition{}, err
 	}
+	enabledRules := rules[:0]
+	for _, rule := range rules {
+		if rule.Enabled {
+			enabledRules = append(enabledRules, rule)
+		}
+	}
+	if len(enabledRules) == 0 {
+		return notificationStatusTransition{}, nil
+	}
+	rules = enabledRules
 	values := stateAlertMetricValues(state)
 	_, hadRelevantActive, err := setAlertRuleStates(ctx, tx, nodeID, ts, rules, values)
 	if err != nil {
