@@ -19,6 +19,7 @@ const summaryCacheKey = 'zeno_summary_cache_v1'
 const adminTokenStorageKey = 'zeno_admin_token'
 const adminTokenStoredAtKey = 'zeno_admin_token_saved_at'
 const adminTokenMaxAgeMs = 7 * 24 * 60 * 60 * 1000
+const renewalDayOptions = Array.from({ length: 31 }, (_, index) => index)
 
 function loadStoredAdminToken(): string {
   if (typeof window === 'undefined') return ''
@@ -2269,7 +2270,7 @@ function AdminAlertRuleList({ rules, nodes, onEdit, onUpdate }: { rules: AdminAl
         <article className="admin-list-row" role="listitem" key={rule.id}>
           <div className="admin-list-main">
             <strong>{rule.name}</strong>
-            {rule.description && <small>{rule.description}</small>}
+            {formatAlertRuleNote(rule) && <small>{formatAlertRuleNote(rule)}</small>}
           </div>
           <span data-label="范围">{formatAlertRuleScope(rule, nodes)}</span>
           <AdminStatusBadge label={rule.enabled ? '启用中' : '已停用'} status={rule.enabled ? 'online' : 'disabled'} dataLabel="状态" />
@@ -2294,7 +2295,7 @@ function AdminAlertRuleAddModal({ rules, nodes, onAdd, onClose }: { rules: Admin
               <article className="admin-rule-picker-row" role="listitem" key={rule.id}>
                 <div className="admin-list-main">
                   <strong>{rule.name}</strong>
-                  <small>{rule.description || formatAlertRuleScope(rule, nodes)}</small>
+                  <small>{formatAlertRuleNote(rule) || formatAlertRuleScope(rule, nodes)}</small>
                 </div>
                 <button className="admin-primary-action" type="button" onClick={() => onAdd(rule.id)}>添加</button>
               </article>
@@ -2308,12 +2309,15 @@ function AdminAlertRuleAddModal({ rules, nodes, onAdd, onClose }: { rules: Admin
 
 function AdminAlertRuleEditModal({ rule, nodes, onUpdate, onClose }: { rule: AdminAlertRule; nodes: AdminNode[]; onUpdate: (ruleId: string, input: AdminAlertRuleUpdateInput) => void; onClose: () => void }) {
   const initialScopeNodeIds = rule.scopeNodeIds.length === 0 ? nodes.map((node) => node.id) : rule.scopeNodeIds
+  const isRenewalRule = rule.metric === 'expiry_days'
   const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
     const formData = new FormData(event.currentTarget)
     const scopeNodeIds = nodes.filter((node) => formData.get(`rule-scope-${node.id}`) === 'on').map((node) => node.id)
+    const renewalThreshold = isRenewalRule ? parseRenewalThreshold(String(formData.get('rule-renewal-days') ?? '')) : null
     onUpdate(rule.id, {
       enabled: formData.get('rule-enabled') === 'on',
+      ...(isRenewalRule && renewalThreshold !== null ? { threshold: renewalThreshold } : {}),
       scopeNodeIds,
     })
   }
@@ -2327,6 +2331,16 @@ function AdminAlertRuleEditModal({ rule, nodes, onUpdate, onClose }: { rule: Adm
               <input name="rule-enabled" type="checkbox" defaultChecked={rule.enabled} />
               <span>启用通知类型</span>
             </label>
+            {isRenewalRule && (
+              <label>
+                <span>提前提醒</span>
+                <select name="rule-renewal-days" defaultValue={String(Math.max(0, Math.min(30, Math.round(rule.threshold))))}>
+                  {renewalDayOptions.map((days) => (
+                    <option value={days} key={days}>{formatRenewalDayOption(days)}</option>
+                  ))}
+                </select>
+              </label>
+            )}
           </div>
         </AdminFormSection>
         {nodes.length > 0 && (
@@ -2973,6 +2987,24 @@ function formatAlertRuleScope(rule: AdminAlertRule, nodes: AdminNode[]): string 
     return node?.displayName || nodeId
   })
   return labels.join('、')
+}
+
+function formatAlertRuleNote(rule: AdminAlertRule): string {
+  if (rule.metric === 'expiry_days') {
+    return `${formatRenewalDayOption(Math.max(0, Math.min(30, Math.round(rule.threshold))))}，每天最多一次`
+  }
+  return rule.description
+}
+
+function formatRenewalDayOption(days: number): string {
+  if (days === 0) return '当天提醒'
+  return `提前 ${days} 天`
+}
+
+function parseRenewalThreshold(value: string): number | null {
+  const parsed = parseNonNegativeInt(value)
+  if (parsed === null || parsed > 30) return null
+  return parsed
 }
 
 function parsePositiveInt(value: string): number | null {

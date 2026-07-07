@@ -778,7 +778,7 @@ func TestAgentHeartbeatDispatchesRenewalDueNotificationOncePerDay(t *testing.T) 
 	if err := store.SeedPreviewData(ctx, PreviewSeedOptions{NodeID: "hytron", DisplayName: "Hytron", CountryCode: "HK", AgentToken: "test-agent-token"}); err != nil {
 		t.Fatalf("seed preview data: %v", err)
 	}
-	expiryDate := time.Now().UTC().Add(7 * 24 * time.Hour).Format("2006-01-02")
+	expiryDate := time.Now().UTC().Add(3 * 24 * time.Hour).Format("2006-01-02")
 	if _, err := store.UpdateAdminNode(ctx, "hytron", AdminNodeUpdateRequest{ExpiryDate: &expiryDate}); err != nil {
 		t.Fatalf("set expiry date: %v", err)
 	}

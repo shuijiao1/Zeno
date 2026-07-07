@@ -62,7 +62,7 @@ var defaultAdminAlertRules = []AdminAlertRule{
 		Category:              "billing",
 		Metric:                "expiry_days",
 		Comparator:            "<=",
-		Threshold:             7,
+		Threshold:             3,
 		ThresholdUnit:         "d",
 		DurationSec:           0,
 		Enabled:               false,
@@ -163,12 +163,18 @@ func (s *SQLiteStore) UpdateAdminAlertRule(ctx context.Context, ruleID string, u
 	}
 	defer rollbackUnlessCommitted(tx)
 
-	var exists int
-	if err := tx.QueryRowContext(ctx, `SELECT 1 FROM alert_rules WHERE id = ?`, ruleID).Scan(&exists); err != nil {
+	var metric string
+	if err := tx.QueryRowContext(ctx, `SELECT metric FROM alert_rules WHERE id = ?`, ruleID).Scan(&metric); err != nil {
 		if err == sql.ErrNoRows {
 			return AdminAlertRule{}, errAlertRuleNotFound
 		}
 		return AdminAlertRule{}, err
+	}
+	if update.Threshold != nil && metric == "expiry_days" {
+		threshold := *update.Threshold
+		if threshold < 0 || threshold > 30 || threshold != float64(int(threshold)) {
+			return AdminAlertRule{}, errInvalidAdminAlertRuleUpdate
+		}
 	}
 	sets := make([]string, 0, 4)
 	args := make([]any, 0, 5)
