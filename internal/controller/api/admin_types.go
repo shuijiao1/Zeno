@@ -284,7 +284,6 @@ type AdminNodeInstallCommandResponse struct {
 type AdminNodeCreateRequest struct {
 	ID                string             `json:"id,omitempty"`
 	DisplayName       string             `json:"display_name"`
-	InstallToken      string             `json:"install_token,omitempty"`
 	CountryCode       string             `json:"country_code,omitempty"`
 	Region            string             `json:"region,omitempty"`
 	ExpiryDate        string             `json:"expiry_date,omitempty"`
@@ -305,10 +304,6 @@ func (request *AdminNodeCreateRequest) normalize() error {
 	}
 	request.DisplayName = trimmedName
 	request.ID = strings.TrimSpace(request.ID)
-	request.InstallToken = strings.TrimSpace(request.InstallToken)
-	if len(request.InstallToken) > 256 {
-		return errInvalidAdminNodeCreate
-	}
 	request.CountryCode = strings.ToUpper(strings.TrimSpace(request.CountryCode))
 	if len(request.CountryCode) > 8 {
 		return errInvalidAdminNodeCreate

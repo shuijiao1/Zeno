@@ -403,7 +403,6 @@ export interface AdminNodeUpdateInput {
 export interface AdminNodeCreateInput {
   id?: string
   displayName: string
-  installToken?: string
   countryCode?: string
   region?: string
   expiryDate?: string
@@ -1031,7 +1030,6 @@ function serializeAdminNodeCreate(input: AdminNodeCreateInput) {
   return {
     ...(input.id !== undefined && input.id.trim() !== '' ? { id: input.id } : {}),
     display_name: input.displayName,
-    ...(input.installToken !== undefined && input.installToken.trim() !== '' ? { install_token: input.installToken } : {}),
     ...(input.countryCode !== undefined ? { country_code: input.countryCode } : {}),
     ...(input.region !== undefined ? { region: input.region } : {}),
     ...(input.expiryDate !== undefined ? { expiry_date: input.expiryDate } : {}),

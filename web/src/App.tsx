@@ -1118,7 +1118,6 @@ export function AdminDashboard({
                 onDelete={onAdminNodeDelete}
                 onTargetUpdate={onAdminProbeTargetUpdate}
                 onInstallCommand={onAdminInstallCommand}
-                agentControllerUrl={settings.agentControllerUrl}
               />
             )}
 
@@ -1377,7 +1376,7 @@ function validAgentControllerURL(value: string): boolean {
   }
 }
 
-function AdminNodeSection({ nodes, targets, onCreate, onUpdate, onDelete, onTargetUpdate, onInstallCommand, agentControllerUrl }: { nodes: AdminNode[]; targets: AdminProbeTarget[]; onCreate: (input: AdminNodeCreateInput) => Promise<AdminNode | void>; onUpdate: (nodeId: string, input: AdminNodeUpdateInput) => void; onDelete: (nodeId: string) => void; onTargetUpdate: (targetId: string, input: AdminProbeTargetUpdateInput) => void; onInstallCommand: (nodeId: string) => Promise<AdminNodeInstallCommand>; agentControllerUrl?: string }) {
+function AdminNodeSection({ nodes, targets, onCreate, onUpdate, onDelete, onTargetUpdate, onInstallCommand }: { nodes: AdminNode[]; targets: AdminProbeTarget[]; onCreate: (input: AdminNodeCreateInput) => Promise<AdminNode | void>; onUpdate: (nodeId: string, input: AdminNodeUpdateInput) => void; onDelete: (nodeId: string) => void; onTargetUpdate: (targetId: string, input: AdminProbeTargetUpdateInput) => void; onInstallCommand: (nodeId: string) => Promise<AdminNodeInstallCommand> }) {
   const [creatingNode, setCreatingNode] = useState(false)
   const [editingNodeId, setEditingNodeId] = useState<string | null>(null)
   const [sortingNodes, setSortingNodes] = useState(false)
@@ -1409,7 +1408,6 @@ function AdminNodeSection({ nodes, targets, onCreate, onUpdate, onDelete, onTarg
           onClose={() => setCreatingNode(false)}
           onCreate={onCreate}
           onInstallCommand={onInstallCommand}
-          agentControllerUrl={agentControllerUrl}
         />
       )}
 
@@ -1595,71 +1593,6 @@ function installCommandReady(result: AdminNodeInstallCommand): InstallCommandSta
   }
 }
 
-type DraftInstallCommand = {
-  displayName: string
-  nodeId: string
-  token: string
-  state: InstallCommandState
-}
-
-function randomBase64URL(byteLength: number): string {
-  const bytes = new Uint8Array(byteLength)
-  if (typeof crypto !== 'undefined' && crypto.getRandomValues) {
-    crypto.getRandomValues(bytes)
-  } else {
-    for (let index = 0; index < bytes.length; index += 1) bytes[index] = Math.floor(Math.random() * 256)
-  }
-  let binary = ''
-  bytes.forEach((byte) => { binary += String.fromCharCode(byte) })
-  return btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/g, '')
-}
-
-function randomHexString(byteLength: number): string {
-  const bytes = new Uint8Array(byteLength)
-  if (typeof crypto !== 'undefined' && crypto.getRandomValues) {
-    crypto.getRandomValues(bytes)
-  } else {
-    for (let index = 0; index < bytes.length; index += 1) bytes[index] = Math.floor(Math.random() * 256)
-  }
-  return Array.from(bytes, (byte) => byte.toString(16).padStart(2, '0')).join('')
-}
-
-function normalizeDraftNodeID(value: string): string {
-  const normalized = value.toLowerCase().trim().replace(/[^a-z0-9_\s-]+/g, '').replace(/[\s_/-]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 48).replace(/-+$/g, '')
-  return normalized || 'node'
-}
-
-function shellSingleQuote(value: string): string {
-  return `'${value.replace(/'/g, `'\''`)}'`
-}
-
-function powershellSingleQuote(value: string): string {
-  return `'${value.replace(/'/g, `''`)}'`
-}
-
-function installControllerURL(configuredURL?: string): string {
-  const configured = (configuredURL ?? '').trim().replace(/\/+$/g, '')
-  if (configured !== '') return configured
-  if (typeof window !== 'undefined' && window.location.origin) return window.location.origin.replace(/\/+$/g, '')
-  return 'http://127.0.0.1:18980'
-}
-
-function buildDraftInstallCommand(displayName: string, controllerURL?: string): DraftInstallCommand {
-  const nodeId = `${normalizeDraftNodeID(displayName)}-${randomHexString(4)}`
-  const token = randomBase64URL(32)
-  const controller = installControllerURL(controllerURL)
-  const installURL = 'https://raw.githubusercontent.com/shuijiao1/Zeno-Agent/main/install.sh'
-  const windowsInstallURL = 'https://raw.githubusercontent.com/shuijiao1/Zeno-Agent/main/install.ps1'
-  const linux = `curl -fsSL ${shellSingleQuote(installURL)} | sudo env ZENO_CONTROLLER_URL=${shellSingleQuote(controller)} ZENO_NODE_ID=${shellSingleQuote(nodeId)} ZENO_AGENT_TOKEN=${shellSingleQuote(token)} bash`
-  const windows = `powershell -NoProfile -ExecutionPolicy Bypass -Command "$env:ZENO_CONTROLLER_URL=${powershellSingleQuote(controller)}; $env:ZENO_NODE_ID=${powershellSingleQuote(nodeId)}; $env:ZENO_AGENT_TOKEN=${powershellSingleQuote(token)}; irm ${powershellSingleQuote(windowsInstallURL)} | iex"`
-  return {
-    displayName,
-    nodeId,
-    token,
-    state: { kind: 'ready', command: linux, commands: { linux, macos: linux, windows }, platform: null },
-  }
-}
-
 function installPlatformMenuPosition(trigger: HTMLButtonElement | null): CSSProperties {
   if (typeof window === 'undefined' || !trigger) return {}
   const rect = trigger.getBoundingClientRect()
@@ -1685,12 +1618,11 @@ function AdminInstallPlatformPopover({ state, style, onSelect }: { state: Instal
   return typeof document === 'undefined' ? popover : createPortal(popover, document.body)
 }
 
-function AdminNodeCreateModal({ onCreate, onInstallCommand, agentControllerUrl, onClose }: { onCreate: (input: AdminNodeCreateInput) => Promise<AdminNode | void>; onInstallCommand: (nodeId: string) => Promise<AdminNodeInstallCommand>; agentControllerUrl?: string; onClose: () => void }) {
+function AdminNodeCreateModal({ onCreate, onInstallCommand, onClose }: { onCreate: (input: AdminNodeCreateInput) => Promise<AdminNode | void>; onInstallCommand: (nodeId: string) => Promise<AdminNodeInstallCommand>; onClose: () => void }) {
   const [createdNode, setCreatedNode] = useState<AdminNode | null>(null)
   const [submitting, setSubmitting] = useState(false)
   const [formError, setFormError] = useState<string | null>(null)
   const [installCommandState, setInstallCommandState] = useState<InstallCommandState>({ kind: 'idle' })
-  const [draftInstallCommand, setDraftInstallCommand] = useState<DraftInstallCommand | null>(null)
   const [installCopyState, setInstallCopyState] = useState<InstallNoticeState>({ kind: 'idle' })
   const [installPlatformPickerOpen, setInstallPlatformPickerOpen] = useState(false)
   const [installPlatformMenuStyle, setInstallPlatformMenuStyle] = useState<CSSProperties>({})
@@ -1701,9 +1633,7 @@ function AdminNodeCreateModal({ onCreate, onInstallCommand, agentControllerUrl, 
     const formData = new FormData(form)
     const displayName = String(formData.get('new-display-name') ?? '').trim()
     if (displayName === '') return null
-    const draft = draftInstallCommand && draftInstallCommand.displayName === displayName ? draftInstallCommand : null
     return {
-      ...(draft ? { id: draft.nodeId, installToken: draft.token } : {}),
       displayName,
       expiryDate: String(formData.get('new-expiry-date') ?? '').trim(),
       billingCycle: String(formData.get('new-billing-cycle') ?? '').trim(),
@@ -1713,14 +1643,10 @@ function AdminNodeCreateModal({ onCreate, onInstallCommand, agentControllerUrl, 
     }
   }
 
-  const createNodeFromForm = (form: HTMLFormElement, missingNameTarget: 'form' | 'copy' = 'form'): Promise<AdminNode | null> => {
+  const createNodeFromForm = (form: HTMLFormElement): Promise<AdminNode | null> => {
     const input = nodeInputFromForm(form)
     if (!input) {
-      if (missingNameTarget === 'copy') {
-        setInstallCopyState({ kind: 'error', message: '请先填写服务器名称。' })
-      } else {
-        setFormError('请先填写服务器名称。')
-      }
+      setFormError('请先填写服务器名称。')
       return Promise.resolve(null)
     }
     setSubmitting(true)
@@ -1761,22 +1687,7 @@ function AdminNodeCreateModal({ onCreate, onInstallCommand, agentControllerUrl, 
 
   const handleCopyInstallCommand = () => {
     if (installCommandState.kind === 'loading' || submitting) return
-    if (!createdNode) {
-      const form = formRef.current
-      if (!form) return
-      const input = nodeInputFromForm(form)
-      if (!input) {
-        setInstallCopyState({ kind: 'error', message: '请先填写服务器名称。' })
-        return
-      }
-      const draft = draftInstallCommand && draftInstallCommand.displayName === input.displayName ? draftInstallCommand : buildDraftInstallCommand(input.displayName, agentControllerUrl)
-      setDraftInstallCommand(draft)
-      setInstallCommandState(draft.state)
-      setInstallCopyState({ kind: 'idle' })
-      setInstallPlatformPickerOpen(true)
-      setInstallPlatformMenuStyle(installPlatformMenuPosition(installCopyButtonRef.current))
-      return
-    }
+    if (!createdNode) return
     if (installCommandState.kind !== 'ready') {
       requestInstallCommand(true)
       return
@@ -1829,17 +1740,19 @@ function AdminNodeCreateModal({ onCreate, onInstallCommand, agentControllerUrl, 
             </div>
           </div>
         </AdminFormSection>
-        <AdminFormSection title="Agent 接入">
-          <div className="admin-inline-actions admin-install-copy-row">
-            <div className="admin-install-copy-menu">
-              <button ref={installCopyButtonRef} className="admin-primary-action admin-install-copy-button" type="button" onClick={handleCopyInstallCommand} disabled={submitting || installCommandState.kind === 'loading'}>复制安装命令</button>
-              {installPlatformPickerOpen && <AdminInstallPlatformPopover state={installCommandState} style={installPlatformMenuStyle} onSelect={handleCopyInstallPlatform} />}
+        {createdNode && (
+          <AdminFormSection title="Agent 接入">
+            <div className="admin-inline-actions admin-install-copy-row">
+              <div className="admin-install-copy-menu">
+                <button ref={installCopyButtonRef} className="admin-primary-action admin-install-copy-button" type="button" onClick={handleCopyInstallCommand} disabled={installCommandState.kind === 'loading'}>{installCommandState.kind === 'loading' ? '生成中…' : '复制安装命令'}</button>
+                {installPlatformPickerOpen && <AdminInstallPlatformPopover state={installCommandState} style={installPlatformMenuStyle} onSelect={handleCopyInstallPlatform} />}
+              </div>
+              {installCopyState.kind === 'idle' && <span className="admin-inline-note is-success">已添加：{createdNode.displayName}</span>}
+              {installCopyState.kind !== 'idle' && <span className={`admin-inline-note${installCopyState.kind === 'ready' ? ' is-success' : installCopyState.kind === 'warning' ? ' is-warning' : ' is-error'}`}>{installCopyState.message}</span>}
             </div>
-            {createdNode && installCopyState.kind === 'idle' && <span className="admin-inline-note is-success">已添加：{createdNode.displayName}</span>}
-            {installCopyState.kind !== 'idle' && <span className={`admin-inline-note${installCopyState.kind === 'ready' ? ' is-success' : installCopyState.kind === 'warning' ? ' is-warning' : ' is-error'}`}>{installCopyState.message}</span>}
-          </div>
-          {installCommandState.kind === 'error' && <div className="admin-install-error">安装命令生成失败：{installCommandState.message}</div>}
-        </AdminFormSection>
+            {installCommandState.kind === 'error' && <div className="admin-install-error">安装命令生成失败：{installCommandState.message}</div>}
+          </AdminFormSection>
+        )}
         {formError && <div className="admin-install-error">{formError}</div>}
         <div className="admin-modal-actions">
           <button type="submit" disabled={submitting || Boolean(createdNode)}>{submitting ? '添加中…' : createdNode ? '服务器已添加' : '添加服务器'}</button>
