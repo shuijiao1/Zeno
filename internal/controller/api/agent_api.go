@@ -197,6 +197,7 @@ func (h *handler) handleAgentHeartbeat(w http.ResponseWriter, r *http.Request) {
 	}
 	h.dispatchAgentStatusNotification(store, transition, heartbeatTS)
 	h.dispatchRenewalNotifications(store)
+	h.invalidateSummaryCache()
 	h.publishSummary(r.Context())
 	writeJSON(w, http.StatusAccepted, map[string]any{"ok": true})
 }
@@ -227,6 +228,7 @@ func (h *handler) handleAgentHost(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	h.dispatchRenewalNotifications(store)
+	h.invalidateSummaryCache()
 	h.publishSummary(r.Context())
 	writeJSON(w, http.StatusAccepted, map[string]any{"ok": true})
 }

@@ -16,6 +16,9 @@ const baseNode: HomeCardNode = {
   cpuCores: 2,
   expiryLabel: '永 久',
   cpuPercent: 12.5,
+  load1: 0.42,
+  load5: 0.35,
+  load15: 0.28,
   memoryUsedBytes: 1024,
   memoryTotalBytes: 4096,
   diskUsedBytes: 2048,
@@ -54,6 +57,8 @@ describe('ServerCard', () => {
     expect(html).toContain('Hytron')
     expect(html).toContain('永久')
     expect(html).toContain('>流量</span>')
+    expect(html).toContain('>负载</span>')
+    expect(html).toContain('0.42 / 0.35 / 0.28')
     expect(html).not.toContain('流量 ·')
     expect(html).not.toContain('7/1')
     expect(html).not.toContain('每月 1 日重置')

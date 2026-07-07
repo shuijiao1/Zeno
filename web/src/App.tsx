@@ -114,27 +114,30 @@ function blurActiveElement() {
   if (activeElement instanceof HTMLElement || activeElement instanceof SVGElement) activeElement.blur()
 }
 
-type HomeRateSnapshot = {
+type HomeRealtimeSnapshot = {
+  nodes: HomeCardNode[]
   upSpeed: number
   downSpeed: number
 }
 
-const HOME_RATE_SNAPSHOT_INTERVAL_MS = 2000
-const HOME_RATE_SNAPSHOT_FRAME_TOLERANCE_MS = 150
+const HOME_REALTIME_SNAPSHOT_INTERVAL_MS = 2000
+const HOME_REALTIME_SNAPSHOT_FRAME_TOLERANCE_MS = 150
+const HOME_REALTIME_STARTUP_SYNC_MS = 1000
 
 function sum(values: Array<number | null | undefined>): number {
   return values.reduce<number>((total, value) => total + (value ?? 0), 0)
 }
 
-function homeRateSnapshotForNodes(nodes: HomeCardNode[]): HomeRateSnapshot {
+function homeRealtimeSnapshotForNodes(nodes: HomeCardNode[]): HomeRealtimeSnapshot {
   return {
+    nodes,
     upSpeed: sum(nodes.map((node) => node.netOutSpeedBps)),
     downSpeed: sum(nodes.map((node) => node.netInSpeedBps)),
   }
 }
 
-export function shouldRefreshHomeRateSnapshot(lastUpdatedAt: number | null, now: number): boolean {
-  return lastUpdatedAt === null || now - lastUpdatedAt >= HOME_RATE_SNAPSHOT_INTERVAL_MS - HOME_RATE_SNAPSHOT_FRAME_TOLERANCE_MS
+export function shouldRefreshHomeRealtimeSnapshot(lastUpdatedAt: number | null, now: number, mountedAt = now): boolean {
+  return lastUpdatedAt === null || now - mountedAt <= HOME_REALTIME_STARTUP_SYNC_MS || now - lastUpdatedAt >= HOME_REALTIME_SNAPSHOT_INTERVAL_MS - HOME_REALTIME_SNAPSHOT_FRAME_TOLERANCE_MS
 }
 
 function monotonicNowMs(): number {
@@ -275,8 +278,9 @@ export function App() {
   const [serviceLatencyState, setServiceLatencyState] = useState<ServiceLatencyLoadState>({ kind: 'idle' })
   const nodeLatencyCacheRef = useRef(new Map<string, NodeLatencyData>())
   const nodeStateCacheRef = useRef(new Map<string, NodeStateData>())
-  const rateSnapshotLastUpdatedAtRef = useRef<number | null>(null)
-  const [homeRateSnapshot, setHomeRateSnapshot] = useState<HomeRateSnapshot | null>(() => state.kind === 'ready' ? homeRateSnapshotForNodes(state.data.nodes) : null)
+  const homeRealtimeMountedAtRef = useRef(monotonicNowMs())
+  const homeRealtimeLastUpdatedAtRef = useRef<number | null>(null)
+  const [homeRealtimeSnapshot, setHomeRealtimeSnapshot] = useState<HomeRealtimeSnapshot | null>(() => state.kind === 'ready' ? homeRealtimeSnapshotForNodes(state.data.nodes) : null)
   const [adminToken, setAdminToken] = useState(loadStoredAdminToken)
   const [adminAuthState, setAdminAuthState] = useState<AdminAuthState>({ kind: 'idle' })
   const [adminState, setAdminState] = useState<AdminLoadState>({ kind: 'idle' })
@@ -303,17 +307,17 @@ export function App() {
 
   useEffect(() => {
     let cancelled = false
-    const refreshHomeRateSnapshot = (data: SummaryData) => {
+    const refreshHomeRealtimeSnapshot = (data: SummaryData) => {
       const now = monotonicNowMs()
-      if (!shouldRefreshHomeRateSnapshot(rateSnapshotLastUpdatedAtRef.current, now)) return
-      rateSnapshotLastUpdatedAtRef.current = now
-      setHomeRateSnapshot(homeRateSnapshotForNodes(data.nodes))
+      if (!shouldRefreshHomeRealtimeSnapshot(homeRealtimeLastUpdatedAtRef.current, now, homeRealtimeMountedAtRef.current)) return
+      homeRealtimeLastUpdatedAtRef.current = now
+      setHomeRealtimeSnapshot(homeRealtimeSnapshotForNodes(data.nodes))
     }
     const stopSummaryStream = subscribeSummary(
       (data) => {
         rememberSummary(data)
         if (!cancelled) {
-          refreshHomeRateSnapshot(data)
+          refreshHomeRealtimeSnapshot(data)
           setState({ kind: 'ready', data })
         }
       },
@@ -326,7 +330,7 @@ export function App() {
         .then((data) => {
           rememberSummary(data)
           if (!cancelled) {
-            refreshHomeRateSnapshot(data)
+            refreshHomeRealtimeSnapshot(data)
             setState({ kind: 'ready', data })
           }
         })
@@ -754,19 +758,20 @@ export function App() {
 
   const effectiveSettings = settingsForChrome(settings, themeOverride, backgroundEnabled)
   const nodes = state.kind === 'ready' ? state.data.nodes : []
-  const homeNodes = orderHomeNodes(nodes)
+  const homeRealtimeNodes = homeRealtimeSnapshot?.nodes ?? nodes
+  const homeNodes = orderHomeNodes(homeRealtimeNodes)
   const services = state.kind === 'ready' ? state.data.services : []
   const selectedNode = route.kind === 'node' ? nodes.find((node) => node.id === route.nodeId) : undefined
   const selectedNodeLatencyPoints = latencyState.kind === 'ready' ? latencyState.data.points : summaryLatencyPoints(selectedNode)
   const selectedService = route.kind === 'service' ? services.find((service) => service.id === route.targetId) : undefined
-  const totalCount = nodes.length
-  const onlineCount = nodes.filter((node) => node.status === 'online').length
-  const offlineCount = nodes.filter((node) => node.status === 'offline').length
-  const totalUp = sum(nodes.map((node) => node.netOutTotalBytes))
-  const totalDown = sum(nodes.map((node) => node.netInTotalBytes))
-  const currentRateSnapshot = homeRateSnapshot ?? homeRateSnapshotForNodes(nodes)
-  const upSpeed = currentRateSnapshot.upSpeed
-  const downSpeed = currentRateSnapshot.downSpeed
+  const totalCount = homeRealtimeNodes.length
+  const onlineCount = homeRealtimeNodes.filter((node) => node.status === 'online').length
+  const offlineCount = homeRealtimeNodes.filter((node) => node.status === 'offline').length
+  const totalUp = sum(homeRealtimeNodes.map((node) => node.netOutTotalBytes))
+  const totalDown = sum(homeRealtimeNodes.map((node) => node.netInTotalBytes))
+  const currentRealtimeSnapshot = homeRealtimeSnapshot ?? homeRealtimeSnapshotForNodes(homeRealtimeNodes)
+  const upSpeed = currentRealtimeSnapshot.upSpeed
+  const downSpeed = currentRealtimeSnapshot.downSpeed
 
   return (
     <main className="kulin-shell" data-theme={effectiveSettings.theme} style={shellStyleForSettings(effectiveSettings)}>
@@ -3118,11 +3123,11 @@ export function HomeOverviewPanel({ totalCount, onlineCount, offlineCount: _offl
   const downloadRate = compactRateParts(downSpeed)
   return (
     <section className="home-summary" aria-label="server overview">
-      <div className="home-summary__status-line" aria-label="服务器在线摘要">
+      <div className="home-summary__tile home-summary__status-line" aria-label="服务器在线摘要">
         <strong>{onlineCount} / {totalCount} 在线</strong>
       </div>
 
-      <dl className="home-summary__metrics" aria-label="traffic totals and speeds">
+      <dl className="home-summary__tile home-summary__tile--traffic" aria-label="traffic totals">
         <div className="home-summary__metric home-summary__metric--send">
           <dt>发送</dt>
           <dd>{compactBytes(totalUp)}</dd>
@@ -3131,6 +3136,9 @@ export function HomeOverviewPanel({ totalCount, onlineCount, offlineCount: _offl
           <dt>接收</dt>
           <dd>{compactBytes(totalDown)}</dd>
         </div>
+      </dl>
+
+      <dl className="home-summary__tile home-summary__tile--rates" aria-label="network speeds">
         <div className="home-summary__metric home-summary__metric--upload-rate home-summary__metric--rate">
           <dt>上传</dt>
           <dd><CircleArrowIcon direction="up" /><span className="home-summary__rate-value"><span>{uploadRate.value}</span><span className="home-summary__rate-unit">{uploadRate.unit}</span></span></dd>

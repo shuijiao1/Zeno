@@ -1,6 +1,6 @@
 import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it } from 'vitest'
-import { AdminDashboard, HomeTopPanel, documentBrandingForSettings, orderHomeNodes, shellStyleForSettings, shouldRefreshHomeRateSnapshot, validateAdminSettingsInput } from './App'
+import { AdminDashboard, HomeTopPanel, documentBrandingForSettings, orderHomeNodes, shellStyleForSettings, shouldRefreshHomeRealtimeSnapshot, validateAdminSettingsInput } from './App'
 import type { AdminAlertRule, AdminNode, AdminNotificationChannel, AdminProbeTarget, AdminSettings, HomeCardNode } from './types'
 
 const overviewProps = {
@@ -195,11 +195,12 @@ function renderAdmin(section: 'nodes' | 'targets' | 'notifications' | 'account' 
 }
 
 describe('HomeTopPanel', () => {
-  it('paces aggregate homepage rate refreshes on live summary frames', () => {
-    expect(shouldRefreshHomeRateSnapshot(null, 100)).toBe(true)
-    expect(shouldRefreshHomeRateSnapshot(100, 1800)).toBe(false)
-    expect(shouldRefreshHomeRateSnapshot(100, 1950)).toBe(true)
-    expect(shouldRefreshHomeRateSnapshot(100, 2100)).toBe(true)
+  it('paces aggregate homepage realtime refreshes on live summary frames', () => {
+    expect(shouldRefreshHomeRealtimeSnapshot(null, 100, 100)).toBe(true)
+    expect(shouldRefreshHomeRealtimeSnapshot(100, 800, 100)).toBe(true)
+    expect(shouldRefreshHomeRealtimeSnapshot(100, 1800, 100)).toBe(false)
+    expect(shouldRefreshHomeRealtimeSnapshot(100, 1950, 100)).toBe(true)
+    expect(shouldRefreshHomeRealtimeSnapshot(100, 2100, 100)).toBe(true)
   })
 
   it('keeps configured order inside online/offline groups but moves offline homepage cards last', () => {
@@ -252,7 +253,8 @@ describe('HomeTopPanel', () => {
     expect(html).toContain('home-summary')
     expect(html).toContain('home-summary__status-line')
     expect(html).toContain('9 / 11 在线')
-    expect(html).toContain('home-summary__metrics')
+    expect(html).toContain('home-summary__tile--traffic')
+    expect(html).toContain('home-summary__tile--rates')
     expect(html).not.toContain('Zeno Overview')
     expect(html).not.toContain('服务器运行概览')
     expect(html).not.toContain('在线率')

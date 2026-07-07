@@ -49,9 +49,10 @@ describe('homepage and admin shell layout', () => {
 
   it('uses a compact homepage summary without duplicate title/online-rate tiles', () => {
     expect(styles).toContain('.home-summary__status-line')
-    expect(styles).toContain('.home-summary__metrics')
+    expect(styles).toContain('.home-summary__tile--traffic')
+    expect(styles).toContain('.home-summary__tile--rates')
     expect(styles).toContain('.home-summary__metric')
-    expect(styles).toContain('grid-template-columns: repeat(5, minmax(0, 1fr))')
+    expect(styles).toContain('grid-template-columns: minmax(118px, .82fr) repeat(2, minmax(160px, 1fr))')
     expect(styles).toContain('--summary-accent')
     expect(styles).toContain('.home-summary__metric--send')
     expect(styles).toContain('.home-summary__metric--rate dd { justify-self: end; justify-content: flex-end; gap: 5px; font-weight: 500; }')
@@ -214,7 +215,7 @@ describe('Kulin-inspired color polish', () => {
 
   it('uses solid accent colors without gradients and keeps key identity emphasized', () => {
     expect(styles).toContain('.home-summary__status-line strong')
-    expect(styles).toContain('.home-summary__metrics dd')
+    expect(styles).toContain('.home-summary__metric dd')
     expect(styles).toContain('.metric-label { color: var(--metric-accent)')
     expect(styles).toContain('.node-title-line p { min-width: 0; margin: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--foreground); font-size: 13px; font-weight: 600')
     expect(styles).toContain('.detail-title-button span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; }')

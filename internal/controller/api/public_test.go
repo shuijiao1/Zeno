@@ -143,6 +143,58 @@ func TestSummaryWebSocketPublishesAgentStateUpdates(t *testing.T) {
 	}
 }
 
+func TestAgentHeartbeatInvalidatesCachedSummary(t *testing.T) {
+	store, err := OpenSQLiteStore(filepath.Join(t.TempDir(), "zeno.db"))
+	if err != nil {
+		t.Fatalf("open sqlite store: %v", err)
+	}
+	defer store.Close()
+	ctx := context.Background()
+	if err := store.SeedPreviewData(ctx, PreviewSeedOptions{NodeID: "hytron", DisplayName: "Hytron", CountryCode: "HK", AgentToken: "test-agent-token"}); err != nil {
+		t.Fatalf("seed preview data: %v", err)
+	}
+
+	server := httptest.NewServer(NewHandler(HandlerOptions{Store: store}))
+	defer server.Close()
+
+	initialResponse, err := server.Client().Get(server.URL + "/api/public/v1/summary")
+	if err != nil {
+		t.Fatalf("get initial summary: %v", err)
+	}
+	initial := readAllString(t, initialResponse.Body)
+	initialResponse.Body.Close()
+	if !strings.Contains(initial, `"status":"no_data"`) {
+		t.Fatalf("initial summary = %s, want cached no_data node", initial)
+	}
+
+	payload := []byte(`{"ts":` + strconv.FormatInt(time.Now().UTC().Unix(), 10) + `,"status":"online","agent_version":"agent-test"}`)
+	request, err := http.NewRequest(http.MethodPost, server.URL+"/api/agent/v1/heartbeat", bytes.NewReader(payload))
+	if err != nil {
+		t.Fatalf("new heartbeat request: %v", err)
+	}
+	request.Header.Set("X-Node-ID", "hytron")
+	request.Header.Set("Authorization", "Bearer test-agent-token")
+	request.Header.Set("Content-Type", "application/json")
+	heartbeatResponse, err := server.Client().Do(request)
+	if err != nil {
+		t.Fatalf("post heartbeat: %v", err)
+	}
+	defer heartbeatResponse.Body.Close()
+	if heartbeatResponse.StatusCode != http.StatusAccepted {
+		t.Fatalf("heartbeat status = %d, want 202; body=%s", heartbeatResponse.StatusCode, readAllString(t, heartbeatResponse.Body))
+	}
+
+	updatedResponse, err := server.Client().Get(server.URL + "/api/public/v1/summary")
+	if err != nil {
+		t.Fatalf("get updated summary: %v", err)
+	}
+	updated := readAllString(t, updatedResponse.Body)
+	updatedResponse.Body.Close()
+	if !strings.Contains(updated, `"status":"online"`) || strings.Contains(updated, `"status":"no_data"`) {
+		t.Fatalf("updated summary = %s, want fresh online heartbeat", updated)
+	}
+}
+
 func TestNodeStateWebSocketPublishesAgentStateUpdates(t *testing.T) {
 	store, err := OpenSQLiteStore(filepath.Join(t.TempDir(), "zeno.db"))
 	if err != nil {

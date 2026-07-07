@@ -334,6 +334,13 @@ func (h *handler) rememberSummaryJSON(payload []byte) {
 	h.summaryCacheMu.Unlock()
 }
 
+func (h *handler) invalidateSummaryCache() {
+	h.summaryCacheMu.Lock()
+	h.summaryCache = nil
+	h.summaryCacheUpdated = time.Time{}
+	h.summaryCacheMu.Unlock()
+}
+
 func (h *handler) summaryCacheStale(maxAge time.Duration) bool {
 	h.summaryCacheMu.RLock()
 	defer h.summaryCacheMu.RUnlock()
