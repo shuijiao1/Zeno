@@ -81,8 +81,9 @@ func (hub *liveUpdateHub) publish(topic string, payload []byte) {
 const summaryLiveTopic = "summary"
 
 const (
-	summaryPublishCoalesceDelay = 250 * time.Millisecond
-	summaryPublishMinInterval   = 1 * time.Second
+	summaryPublishCoalesceDelay  = 250 * time.Millisecond
+	summaryPublishMinInterval    = 1 * time.Second
+	summaryWebSocketRefreshEvery = 2 * time.Second
 )
 
 func nodeStateLiveTopic(nodeID, rangeName string) string {
@@ -129,22 +130,30 @@ func (h *handler) handleSummaryWebSocket(w http.ResponseWriter, r *http.Request)
 		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
 		return
 	}
-	initial, cached := h.cachedSummaryJSON(0)
-	if !cached {
-		var err error
-		initial, err = h.summaryJSON(r.Context())
-		if err != nil {
-			writeStoreError(w, err)
-			return
-		}
+	initial, err := h.summaryJSON(r.Context())
+	if err != nil {
+		writeStoreError(w, err)
+		return
 	}
 	updates, unsubscribe := h.liveHub.subscribe(summaryLiveTopic)
-	if cached {
-		h.scheduleSummaryPublishAfter(summaryCacheBackgroundDelay)
-	}
+	refreshCtx, cancelRefresh := context.WithCancel(r.Context())
+	defer cancelRefresh()
+	go h.refreshSummaryWhileConnected(refreshCtx)
 	h.handleLiveJSONWebSocket(w, r, initial, updates, unsubscribe)
 }
 
+func (h *handler) refreshSummaryWhileConnected(ctx context.Context) {
+	ticker := time.NewTicker(summaryWebSocketRefreshEvery)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			h.publishSummaryNow(ctx)
+		}
+	}
+}
 func (h *handler) handleNodeStateWebSocket(w http.ResponseWriter, r *http.Request, nodeID string, window latencyWindow) {
 	payload, err := h.nodeStateJSON(r.Context(), nodeID, window)
 	if err != nil {

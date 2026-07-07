@@ -132,7 +132,7 @@ func (h *handler) handleAgentProbeResults(w http.ResponseWriter, r *http.Request
 			return
 		}
 	}
-	h.publishSummary(r.Context())
+	h.publishSummaryNow(r.Context())
 	h.publishNodeLatency(r.Context(), nodeID)
 	seenTargetIDs := map[string]struct{}{}
 	for _, round := range prepared {
@@ -200,7 +200,7 @@ func (h *handler) handleAgentHeartbeat(w http.ResponseWriter, r *http.Request) {
 	if transition.Previous.Status != transition.Current.Status {
 		h.invalidateSummaryCache()
 	}
-	h.publishSummary(r.Context())
+	h.publishSummaryNow(r.Context())
 	writeJSON(w, http.StatusAccepted, map[string]any{"ok": true})
 }
 
@@ -231,7 +231,7 @@ func (h *handler) handleAgentHost(w http.ResponseWriter, r *http.Request) {
 	}
 	h.dispatchRenewalNotifications(store)
 	h.invalidateSummaryCache()
-	h.publishSummary(r.Context())
+	h.publishSummaryNow(r.Context())
 	writeJSON(w, http.StatusAccepted, map[string]any{"ok": true})
 }
 

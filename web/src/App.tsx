@@ -1,7 +1,7 @@
 import { type CSSProperties, type DragEvent, type FormEvent, type ReactNode, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import copy from 'copy-to-clipboard'
-import { createAdminNode, createAdminNotificationChannel, createAdminProbeTarget, deleteAdminNode, deleteAdminNotificationChannel, deleteAdminProbeTarget, fetchAdminAccount, fetchAdminAlertRules, fetchAdminNodes, fetchAdminNotificationChannels, fetchAdminProbeTargets, fetchAdminSettings, fetchNodeLatency, fetchNodeState, fetchPublicSettings, fetchServiceLatency, fetchSummary, subscribeNodeLatency, subscribeNodeState, subscribeServiceLatency, subscribeSummary, loginAdmin, logoutAdmin, requestAdminNodeInstallCommand, testAdminNotificationChannel, updateAdminAccount, updateAdminAlertRule, updateAdminNode, updateAdminNotificationChannel, updateAdminNotificationType, updateAdminProbeTarget, updateAdminSettings, type AdminAccountData, type AdminAlertRuleUpdateInput, type AdminNodeCreateInput, type AdminNodeUpdateInput, type AdminNotificationChannelCreateInput, type AdminNotificationChannelUpdateInput, type AdminProbeTargetInput, type AdminProbeTargetUpdateInput, type AdminSettingsUpdateInput, type NodeLatencyData, type NodeStateData, type ServiceLatencyData, type SummaryData } from './api/client'
+import { createAdminNode, createAdminNotificationChannel, createAdminProbeTarget, deleteAdminNode, deleteAdminNotificationChannel, deleteAdminProbeTarget, fetchAdminAccount, fetchAdminAlertRules, fetchAdminNodes, fetchAdminNotificationChannels, fetchAdminProbeTargets, fetchAdminSettings, fetchPublicSettings, fetchSummary, subscribeNodeLatency, subscribeNodeState, subscribeServiceLatency, subscribeSummary, loginAdmin, logoutAdmin, requestAdminNodeInstallCommand, testAdminNotificationChannel, updateAdminAccount, updateAdminAlertRule, updateAdminNode, updateAdminNotificationChannel, updateAdminNotificationType, updateAdminProbeTarget, updateAdminSettings, type AdminAccountData, type AdminAlertRuleUpdateInput, type AdminNodeCreateInput, type AdminNodeUpdateInput, type AdminNotificationChannelCreateInput, type AdminNotificationChannelUpdateInput, type AdminProbeTargetInput, type AdminProbeTargetUpdateInput, type AdminSettingsUpdateInput, type NodeLatencyData, type NodeStateData, type ServiceLatencyData, type SummaryData } from './api/client'
 import { LatencyDetail } from './components/LatencyDetail'
 import { LatencyChart } from './components/LatencyChart'
 import { ServerCard } from './components/ServerCard'
@@ -325,39 +325,26 @@ export function App() {
     }
 
     let cancelled = false
-    let streamStarted = false
-    let stopLatencyStream: (() => void) | null = null
     const cacheKey = `${route.nodeId}:${nodeLatencyRange}`
     const cached = nodeLatencyCacheRef.current.get(cacheKey)
-    const startLatencyStream = () => {
-      if (cancelled || streamStarted) return
-      streamStarted = true
-      stopLatencyStream = subscribeNodeLatency(
-        route.nodeId,
-        nodeLatencyRange,
-        (data) => {
-          nodeLatencyCacheRef.current.set(cacheKey, data)
-          if (!cancelled) setLatencyState({ kind: 'ready', data })
-        },
-        (error) => {
-          if (!cancelled) setLatencyState((current) => (current.kind === 'ready' ? current : { kind: 'error', message: error.message }))
-        },
-      )
-    }
     if (cached) {
       setLatencyState({ kind: 'ready', data: cached })
-      startLatencyStream()
     } else {
       setLatencyState((current) => (current.kind === 'ready' && current.data.nodeId === route.nodeId ? current : { kind: 'loading' }))
-      fetchNodeLatency(route.nodeId, nodeLatencyRange)
-        .then((data) => {
-          nodeLatencyCacheRef.current.set(cacheKey, data)
-          if (!cancelled) setLatencyState({ kind: 'ready', data })
-        })
-        .catch((error: unknown) => {
-          if (!cancelled) setLatencyState((current) => (current.kind === 'ready' ? current : { kind: 'error', message: error instanceof Error ? error.message : 'unknown error' }))
-        })
-        .finally(startLatencyStream)
+    }
+    const stopLatencyStream = subscribeNodeLatency(
+      route.nodeId,
+      nodeLatencyRange,
+      (data) => {
+        nodeLatencyCacheRef.current.set(cacheKey, data)
+        if (!cancelled) setLatencyState({ kind: 'ready', data })
+      },
+      (error) => {
+        if (!cancelled) setLatencyState((current) => (current.kind === 'ready' ? current : { kind: 'error', message: error.message }))
+      },
+    )
+    if (!stopLatencyStream && !cached) {
+      setLatencyState({ kind: 'error', message: 'live websocket unavailable' })
     }
     return () => {
       cancelled = true
@@ -379,19 +366,6 @@ export function App() {
     } else {
       setStateHistoryState({ kind: 'loading' })
     }
-    if (stateRange !== '1h') {
-      fetchNodeState(route.nodeId, stateRange)
-        .then((data) => {
-          nodeStateCacheRef.current.set(cacheKey, data)
-          if (!cancelled) setStateHistoryState({ kind: 'ready', data })
-        })
-        .catch((error: unknown) => {
-          if (!cancelled) setStateHistoryState({ kind: 'error', message: error instanceof Error ? error.message : 'unknown error' })
-        })
-      return () => {
-        cancelled = true
-      }
-    }
     const stopStateStream = subscribeNodeState(
       route.nodeId,
       stateRange,
@@ -403,15 +377,8 @@ export function App() {
         if (!cancelled) setStateHistoryState({ kind: 'error', message: error.message })
       },
     )
-    if (!stopStateStream) {
-      fetchNodeState(route.nodeId, stateRange)
-        .then((data) => {
-          nodeStateCacheRef.current.set(cacheKey, data)
-          if (!cancelled) setStateHistoryState({ kind: 'ready', data })
-        })
-        .catch((error: unknown) => {
-          if (!cancelled) setStateHistoryState({ kind: 'error', message: error instanceof Error ? error.message : 'unknown error' })
-        })
+    if (!stopStateStream && !cached) {
+      setStateHistoryState({ kind: 'error', message: 'live websocket unavailable' })
     }
     return () => {
       cancelled = true
@@ -426,31 +393,20 @@ export function App() {
     }
 
     let cancelled = false
-    let streamStarted = false
-    let stopServiceLatencyStream: (() => void) | null = null
-    const startServiceLatencyStream = () => {
-      if (cancelled || streamStarted) return
-      streamStarted = true
-      stopServiceLatencyStream = subscribeServiceLatency(
-        route.targetId,
-        serviceLatencyRange,
-        (data) => {
-          if (!cancelled) setServiceLatencyState({ kind: 'ready', data })
-        },
-        (error) => {
-          if (!cancelled) setServiceLatencyState((current) => (current.kind === 'ready' ? current : { kind: 'error', message: error.message }))
-        },
-      )
-    }
     setServiceLatencyState({ kind: 'loading' })
-    fetchServiceLatency(route.targetId, serviceLatencyRange)
-      .then((data) => {
+    const stopServiceLatencyStream = subscribeServiceLatency(
+      route.targetId,
+      serviceLatencyRange,
+      (data) => {
         if (!cancelled) setServiceLatencyState({ kind: 'ready', data })
-      })
-      .catch((error: unknown) => {
-        if (!cancelled) setServiceLatencyState({ kind: 'error', message: error instanceof Error ? error.message : 'unknown error' })
-      })
-      .finally(startServiceLatencyStream)
+      },
+      (error) => {
+        if (!cancelled) setServiceLatencyState((current) => (current.kind === 'ready' ? current : { kind: 'error', message: error.message }))
+      },
+    )
+    if (!stopServiceLatencyStream) {
+      setServiceLatencyState({ kind: 'error', message: 'live websocket unavailable' })
+    }
     return () => {
       cancelled = true
       stopServiceLatencyStream?.()
