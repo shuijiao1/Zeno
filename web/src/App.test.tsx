@@ -1,7 +1,7 @@
 import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it } from 'vitest'
-import { AdminDashboard, HomeTopPanel, documentBrandingForSettings, shellStyleForSettings, validateAdminSettingsInput } from './App'
-import type { AdminAlertRule, AdminNode, AdminNotificationChannel, AdminProbeTarget, AdminSettings } from './types'
+import { AdminDashboard, HomeTopPanel, documentBrandingForSettings, orderHomeNodes, shellStyleForSettings, validateAdminSettingsInput } from './App'
+import type { AdminAlertRule, AdminNode, AdminNotificationChannel, AdminProbeTarget, AdminSettings, HomeCardNode } from './types'
 
 const overviewProps = {
   totalCount: 11,
@@ -195,6 +195,17 @@ function renderAdmin(section: 'nodes' | 'targets' | 'notifications' | 'account' 
 }
 
 describe('HomeTopPanel', () => {
+  it('keeps configured order inside online/offline groups but moves offline homepage cards last', () => {
+    const nodes = [
+      { id: 'offline-first', status: 'offline' },
+      { id: 'online-middle', status: 'online' },
+      { id: 'warning-last', status: 'warning' },
+    ] as HomeCardNode[]
+
+    expect(orderHomeNodes(nodes).map((node) => node.id)).toEqual(['online-middle', 'offline-first', 'warning-last'])
+    expect(nodes.map((node) => node.id)).toEqual(['offline-first', 'online-middle', 'warning-last'])
+  })
+
   it('uses the configured logo as the browser favicon source', () => {
     expect(documentBrandingForSettings(settings)).toEqual({
       title: '水饺监控',

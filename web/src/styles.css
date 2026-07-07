@@ -1683,24 +1683,6 @@ svg { display: block; }
 .kulin-node-card.is-offline .node-usage {
   opacity: .74;
 }
-.node-offline-watermark {
-  position: absolute;
-  inset: 0;
-  z-index: 2;
-  pointer-events: none;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  transform: rotate(-24deg);
-  color: color-mix(in srgb, var(--red) 24%, transparent);
-  font-size: 52px;
-  font-weight: 500;
-  letter-spacing: .18em;
-  text-indent: .18em;
-  line-height: 1;
-  text-shadow: 0 1px 0 color-mix(in srgb, #fff 18%, transparent);
-}
-
 .node-head {
   position: relative;
   min-height: 32px;

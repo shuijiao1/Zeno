@@ -214,6 +214,17 @@ export function documentBrandingForSettings(settings: AdminSettings) {
   return { title: siteTitle, iconHref: logoUrl }
 }
 
+export function orderHomeNodes(nodes: HomeCardNode[]): HomeCardNode[] {
+  return nodes.map((node, index) => ({ node, index }))
+    .sort((left, right) => {
+      const leftOffline = left.node.status === 'online' ? 0 : 1
+      const rightOffline = right.node.status === 'online' ? 0 : 1
+      if (leftOffline !== rightOffline) return leftOffline - rightOffline
+      return left.index - right.index
+    })
+    .map((entry) => entry.node)
+}
+
 export function applyDocumentBranding(settings: AdminSettings) {
   if (typeof document === 'undefined') return
   const branding = documentBrandingForSettings(settings)
@@ -750,6 +761,7 @@ export function App() {
 
   const effectiveSettings = settingsForChrome(settings, themeOverride, backgroundEnabled)
   const nodes = state.kind === 'ready' ? state.data.nodes : []
+  const homeNodes = orderHomeNodes(nodes)
   const services = state.kind === 'ready' ? state.data.services : []
   const selectedNode = route.kind === 'node' ? nodes.find((node) => node.id === route.nodeId) : undefined
   const selectedNodeLatencyPoints = latencyState.kind === 'ready' ? latencyState.data.points : summaryLatencyPoints(selectedNode)
@@ -856,7 +868,7 @@ export function App() {
           />
 
           <section className="server-card-list" aria-label="server cards">
-            {nodes.map((node) => <ServerCard key={node.id} node={node} onOpen={navigateNode} />)}
+            {homeNodes.map((node) => <ServerCard key={node.id} node={node} onOpen={navigateNode} />)}
           </section>
         </div>
       )}

@@ -29,7 +29,7 @@ const baseNode: HomeCardNode = {
 }
 
 describe('ServerCard', () => {
-  it('renders non-online nodes as frozen metric cards with a diagonal watermark', () => {
+  it('renders non-online nodes as frozen metric cards without an offline text watermark', () => {
     const html = renderToStaticMarkup(
       <ServerCard node={{ ...baseNode, status: 'warning' }} onOpen={vi.fn()} />,
     )
@@ -40,8 +40,8 @@ describe('ServerCard', () => {
     expect(html).toContain('node-usage')
     expect(html).toContain('<p>Hytron</p>')
     expect(html).toContain('node-dot status-offline')
-    expect(html).toContain('node-offline-watermark')
-    expect(html).toContain('离线')
+    expect(html).not.toContain('node-offline-watermark')
+    expect(html).not.toContain('离线')
     expect(html).not.toContain('node-offline-state')
   })
 

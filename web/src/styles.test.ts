@@ -190,7 +190,7 @@ describe('state history layout', () => {
 
   it('keeps offline cards frozen without grayscale filtering', () => {
     expect(styles).toContain('.kulin-node-card.is-offline')
-    expect(styles).toContain('.node-offline-watermark')
+    expect(styles).not.toContain('.node-offline-watermark')
     expect(styles).not.toContain('filter: grayscale')
   })
 

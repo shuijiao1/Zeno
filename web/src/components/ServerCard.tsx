@@ -145,7 +145,6 @@ export function ServerCard({ node, onOpen }: ServerCardProps) {
           </section>
         </div>
       </section>
-      {isOfflineCard && <span className="node-offline-watermark" aria-label="离线水印">离线</span>}
     </article>
   )
 }
