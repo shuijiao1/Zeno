@@ -129,12 +129,19 @@ func (h *handler) handleSummaryWebSocket(w http.ResponseWriter, r *http.Request)
 		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
 		return
 	}
-	initial, err := h.summaryJSON(r.Context())
-	if err != nil {
-		writeStoreError(w, err)
-		return
+	initial, cached := h.cachedSummaryJSON(0)
+	if !cached {
+		var err error
+		initial, err = h.summaryJSON(r.Context())
+		if err != nil {
+			writeStoreError(w, err)
+			return
+		}
 	}
 	updates, unsubscribe := h.liveHub.subscribe(summaryLiveTopic)
+	if cached {
+		h.scheduleSummaryPublishAfter(summaryCacheBackgroundDelay)
+	}
 	h.handleLiveJSONWebSocket(w, r, initial, updates, unsubscribe)
 }
 
@@ -306,6 +313,60 @@ func (h *handler) publishSummaryNow(ctx context.Context) {
 		return
 	}
 	h.liveHub.publish(summaryLiveTopic, payload)
+}
+
+func (h *handler) publishSummaryState(nodeID string, state AgentStateRequest) {
+	if h.liveHub == nil || !h.liveHub.hasClients(summaryLiveTopic) {
+		return
+	}
+	payload, ok := h.cachedSummaryJSON(5 * time.Minute)
+	if !ok {
+		h.publishSummary(context.Background())
+		return
+	}
+	var summary SummaryResponse
+	if err := json.Unmarshal(payload, &summary); err != nil {
+		h.publishSummary(context.Background())
+		return
+	}
+	updated := false
+	for index := range summary.Nodes {
+		if summary.Nodes[index].ID != nodeID {
+			continue
+		}
+		node := &summary.Nodes[index]
+		node.Status = "online"
+		node.CPUPercent = liveFloatPtr(state.CPUPercent)
+		node.MemoryUsedBytes = liveFloatPtr(float64(state.MemoryUsedBytes))
+		node.MemoryTotalBytes = liveFloatPtr(float64(state.MemoryTotalBytes))
+		node.DiskUsedBytes = liveFloatPtr(float64(state.DiskUsedBytes))
+		node.DiskTotalBytes = liveFloatPtr(float64(state.DiskTotalBytes))
+		node.NetInTotalBytes = liveFloatPtr(float64(state.NetInTotalBytes))
+		node.NetOutTotalBytes = liveFloatPtr(float64(state.NetOutTotalBytes))
+		node.NetInSpeedBps = liveFloatPtr(state.NetInSpeedBps)
+		node.NetOutSpeedBps = liveFloatPtr(state.NetOutSpeedBps)
+		node.Load1 = state.Load1
+		node.Load5 = state.Load5
+		node.Load15 = state.Load15
+		node.UptimeSeconds = liveFloatPtr(float64(state.UptimeSeconds))
+		updated = true
+		break
+	}
+	if !updated {
+		h.publishSummary(context.Background())
+		return
+	}
+	updatedPayload, err := json.Marshal(summary)
+	if err != nil {
+		return
+	}
+	h.rememberSummaryJSON(updatedPayload)
+	h.liveHub.publish(summaryLiveTopic, updatedPayload)
+}
+
+func liveFloatPtr(value float64) *float64 {
+	v := value
+	return &v
 }
 
 func (h *handler) cachedSummaryJSON(maxAge time.Duration) ([]byte, bool) {

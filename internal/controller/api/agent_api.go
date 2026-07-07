@@ -274,10 +274,10 @@ func (h *handler) handleAgentState(w http.ResponseWriter, r *http.Request) {
 	}
 	h.dispatchRenewalNotifications(store)
 	// State samples carry the live speed/resource numbers shown on the public
-	// homepage. Schedule a coalesced summary refresh so agent POSTs do not block on
-	// rebuilding the full public summary; node detail streams are still published
-	// separately below.
-	h.publishSummary(r.Context())
+	// homepage. Patch the cached summary with this node's latest values so live
+	// homepage cards update without rebuilding the full latency/service summary on
+	// every 2s agent POST; node detail streams are still published separately below.
+	h.publishSummaryState(nodeID, request)
 	h.publishNodeState(r.Context(), nodeID)
 	writeJSON(w, http.StatusAccepted, map[string]any{"ok": true})
 }

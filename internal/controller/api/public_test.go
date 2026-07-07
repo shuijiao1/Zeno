@@ -247,7 +247,7 @@ func TestSummaryWebSocketPublishesAgentHeartbeatAndHostUpdates(t *testing.T) {
 	}
 }
 
-func TestSummaryWebSocketInitialFrameBypassesStaleCache(t *testing.T) {
+func TestSummaryWebSocketInitialFrameCanUseCachedPayload(t *testing.T) {
 	store, err := OpenSQLiteStore(filepath.Join(t.TempDir(), "zeno.db"))
 	if err != nil {
 		t.Fatalf("open sqlite store: %v", err)
@@ -265,9 +265,7 @@ func TestSummaryWebSocketInitialFrameBypassesStaleCache(t *testing.T) {
 	if _, err := handler.summaryJSON(ctx); err != nil {
 		t.Fatalf("prime stale summary cache: %v", err)
 	}
-	if _, err := store.db.ExecContext(ctx, `UPDATE nodes SET status = 'online', last_seen_at = ? WHERE id = 'hytron'`, time.Now().UTC().Unix()); err != nil {
-		t.Fatalf("make node online: %v", err)
-	}
+
 	mux := http.NewServeMux()
 	mux.HandleFunc("/api/public/v1/summary/ws", handler.handleSummaryWebSocket)
 	server := httptest.NewServer(mux)
@@ -284,8 +282,8 @@ func TestSummaryWebSocketInitialFrameBypassesStaleCache(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read initial summary: %v", err)
 	}
-	if !strings.Contains(string(initial), `"status":"online"`) {
-		t.Fatalf("initial websocket summary = %s, want fresh online payload", string(initial))
+	if !strings.Contains(string(initial), `"status":"offline"`) {
+		t.Fatalf("initial websocket summary = %s, want cached offline payload", string(initial))
 	}
 }
 
