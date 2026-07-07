@@ -143,6 +143,60 @@ func TestSummaryWebSocketPublishesAgentStateUpdates(t *testing.T) {
 	}
 }
 
+func TestAgentHeartbeatInvalidatesCachedOfflineSummary(t *testing.T) {
+	store, err := OpenSQLiteStore(filepath.Join(t.TempDir(), "zeno.db"))
+	if err != nil {
+		t.Fatalf("open sqlite store: %v", err)
+	}
+	defer store.Close()
+	ctx := context.Background()
+	if err := store.SeedPreviewData(ctx, PreviewSeedOptions{NodeID: "hytron", DisplayName: "Hytron", CountryCode: "HK", AgentToken: "test-agent-token"}); err != nil {
+		t.Fatalf("seed preview data: %v", err)
+	}
+	staleSeen := time.Now().UTC().Add(-nodeHeartbeatOfflineAfter - time.Minute).Unix()
+	if _, err := store.db.ExecContext(ctx, `UPDATE nodes SET status = 'online', last_seen_at = ? WHERE id = 'hytron'`, staleSeen); err != nil {
+		t.Fatalf("make node stale: %v", err)
+	}
+	handler := NewHandler(HandlerOptions{Store: store})
+
+	firstRecorder := httptest.NewRecorder()
+	handler.ServeHTTP(firstRecorder, httptest.NewRequest(http.MethodGet, "/api/public/v1/summary", nil))
+	if firstRecorder.Code != http.StatusOK {
+		t.Fatalf("initial summary status = %d, want 200; body=%s", firstRecorder.Code, firstRecorder.Body.String())
+	}
+	var firstSummary SummaryResponse
+	if err := json.NewDecoder(firstRecorder.Body).Decode(&firstSummary); err != nil {
+		t.Fatalf("decode initial summary: %v", err)
+	}
+	if len(firstSummary.Nodes) != 1 || firstSummary.Nodes[0].Status != "offline" {
+		t.Fatalf("initial node status = %+v, want cached offline summary", firstSummary.Nodes)
+	}
+
+	heartbeat := []byte(`{"ts":` + strconv.FormatInt(time.Now().UTC().Unix(), 10) + `,"status":"online","agent_version":"agent-test"}`)
+	heartbeatRecorder := httptest.NewRecorder()
+	heartbeatRequest := httptest.NewRequest(http.MethodPost, "/api/agent/v1/heartbeat", bytes.NewReader(heartbeat))
+	heartbeatRequest.Header.Set("X-Node-ID", "hytron")
+	heartbeatRequest.Header.Set("Authorization", "Bearer test-agent-token")
+	heartbeatRequest.Header.Set("Content-Type", "application/json")
+	handler.ServeHTTP(heartbeatRecorder, heartbeatRequest)
+	if heartbeatRecorder.Code != http.StatusAccepted {
+		t.Fatalf("heartbeat status = %d, want 202; body=%s", heartbeatRecorder.Code, heartbeatRecorder.Body.String())
+	}
+
+	secondRecorder := httptest.NewRecorder()
+	handler.ServeHTTP(secondRecorder, httptest.NewRequest(http.MethodGet, "/api/public/v1/summary", nil))
+	if secondRecorder.Code != http.StatusOK {
+		t.Fatalf("refreshed summary status = %d, want 200; body=%s", secondRecorder.Code, secondRecorder.Body.String())
+	}
+	var secondSummary SummaryResponse
+	if err := json.NewDecoder(secondRecorder.Body).Decode(&secondSummary); err != nil {
+		t.Fatalf("decode refreshed summary: %v", err)
+	}
+	if len(secondSummary.Nodes) != 1 || secondSummary.Nodes[0].Status != "online" {
+		t.Fatalf("refreshed node = %+v, want immediate online status", secondSummary.Nodes)
+	}
+}
+
 func TestNodeStateWebSocketPublishesAgentStateUpdates(t *testing.T) {
 	store, err := OpenSQLiteStore(filepath.Join(t.TempDir(), "zeno.db"))
 	if err != nil {
