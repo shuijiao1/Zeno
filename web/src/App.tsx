@@ -1593,13 +1593,29 @@ function installCommandReady(result: AdminNodeInstallCommand): InstallCommandSta
   }
 }
 
-function revealInstallPlatformPicker() {
-  if (typeof window === 'undefined') return
-  window.setTimeout(() => {
-    window.requestAnimationFrame(() => {
-      document.querySelector('.admin-modal .admin-install-platforms')?.scrollIntoView({ block: 'center', inline: 'nearest' })
-    })
-  }, 0)
+function installPlatformMenuPosition(trigger: HTMLButtonElement | null): CSSProperties {
+  if (typeof window === 'undefined' || !trigger) return {}
+  const rect = trigger.getBoundingClientRect()
+  const gap = 8
+  const margin = 12
+  const width = 184
+  const height = 124
+  const left = Math.min(Math.max(rect.left, margin), Math.max(margin, window.innerWidth - width - margin))
+  const hasRoomBelow = rect.bottom + gap + height <= window.innerHeight - margin
+  const top = hasRoomBelow ? rect.bottom + gap : Math.max(margin, rect.top - gap - height)
+  return { left, top }
+}
+
+function AdminInstallPlatformPopover({ state, style, onSelect }: { state: InstallCommandState; style: CSSProperties; onSelect: (platform: AgentInstallPlatform) => void }) {
+  if (state.kind !== 'ready') return null
+  const popover = (
+    <div className="admin-install-platforms" style={style} role="group" aria-label="选择 Agent 安装系统">
+      {agentInstallPlatforms.map((platform) => (
+        <button key={platform.value} type="button" data-active={state.platform === platform.value} onClick={() => onSelect(platform.value)}>{platform.label}</button>
+      ))}
+    </div>
+  )
+  return typeof document === 'undefined' ? popover : createPortal(popover, document.body)
 }
 
 function AdminNodeCreateModal({ onCreate, onInstallCommand, onClose }: { onCreate: (input: AdminNodeCreateInput) => Promise<AdminNode | void>; onInstallCommand: (nodeId: string) => Promise<AdminNodeInstallCommand>; onClose: () => void }) {
@@ -1609,6 +1625,8 @@ function AdminNodeCreateModal({ onCreate, onInstallCommand, onClose }: { onCreat
   const [installCommandState, setInstallCommandState] = useState<InstallCommandState>({ kind: 'idle' })
   const [installCopyState, setInstallCopyState] = useState<InstallNoticeState>({ kind: 'idle' })
   const [installPlatformPickerOpen, setInstallPlatformPickerOpen] = useState(false)
+  const [installPlatformMenuStyle, setInstallPlatformMenuStyle] = useState<CSSProperties>({})
+  const installCopyButtonRef = useRef<HTMLButtonElement>(null)
 
   const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
@@ -1645,8 +1663,8 @@ function AdminNodeCreateModal({ onCreate, onInstallCommand, onClose }: { onCreat
         setInstallCommandState(installCommandReady(result))
         if (openPickerAfterGenerate) {
           setInstallPlatformPickerOpen(true)
+          setInstallPlatformMenuStyle(installPlatformMenuPosition(installCopyButtonRef.current))
           setInstallCopyState({ kind: 'ready', message: '安装命令已准备好，选择系统后复制。' })
-          revealInstallPlatformPicker()
         }
       })
       .catch((error: unknown) => setInstallCommandState({ kind: 'error', message: error instanceof Error ? error.message : 'unknown error' }))
@@ -1659,8 +1677,8 @@ function AdminNodeCreateModal({ onCreate, onInstallCommand, onClose }: { onCreat
       return
     }
     setInstallPlatformPickerOpen(true)
+    setInstallPlatformMenuStyle(installPlatformMenuPosition(installCopyButtonRef.current))
     setInstallCopyState({ kind: 'idle' })
-    revealInstallPlatformPicker()
   }
 
   const handleCopyInstallPlatform = (platform: AgentInstallPlatform) => {
@@ -1710,12 +1728,8 @@ function AdminNodeCreateModal({ onCreate, onInstallCommand, onClose }: { onCreat
           {createdNode && <p className="admin-help-note">已添加：{createdNode.displayName}</p>}
           <div className="admin-inline-actions">
             <div className="admin-install-copy-menu">
-              <button className="admin-primary-action admin-install-copy-button" type="button" onClick={handleCopyInstallCommand} disabled={!createdNode || installCommandState.kind === 'loading'}>{installCommandState.kind === 'loading' ? '生成中…' : '复制安装命令'}</button>
-              {installCommandState.kind === 'ready' && installPlatformPickerOpen && <div className="admin-install-platforms" role="group" aria-label="选择 Agent 安装系统">
-                {agentInstallPlatforms.map((platform) => (
-                  <button key={platform.value} type="button" data-active={installCommandState.platform === platform.value} onClick={() => handleCopyInstallPlatform(platform.value)}>{platform.label}</button>
-                ))}
-              </div>}
+              <button ref={installCopyButtonRef} className="admin-primary-action admin-install-copy-button" type="button" onClick={handleCopyInstallCommand} disabled={!createdNode || installCommandState.kind === 'loading'}>{installCommandState.kind === 'loading' ? '生成中…' : '复制安装命令'}</button>
+              {installPlatformPickerOpen && <AdminInstallPlatformPopover state={installCommandState} style={installPlatformMenuStyle} onSelect={handleCopyInstallPlatform} />}
             </div>
           </div>
           {installCommandState.kind === 'loading' && <div className="admin-install-error is-warning">正在准备安装命令…</div>}
@@ -1735,6 +1749,8 @@ function AdminNodeEditModal({ node, targets, onUpdate, onTargetUpdate, onInstall
   const [installCommandState, setInstallCommandState] = useState<InstallCommandState>({ kind: 'idle' })
   const [installCopyState, setInstallCopyState] = useState<InstallNoticeState>({ kind: 'idle' })
   const [installPlatformPickerOpen, setInstallPlatformPickerOpen] = useState(false)
+  const [installPlatformMenuStyle, setInstallPlatformMenuStyle] = useState<CSSProperties>({})
+  const installCopyButtonRef = useRef<HTMLButtonElement>(null)
   const sortedTargets = sortAdminProbeTargets(targets)
   const initialSelectedTargetIds = sortedTargets.filter((target) => target.assignments.some((assignment) => assignment.nodeId === node.id && assignment.enabled)).map((target) => target.id)
   const [selectedTargetIds, setSelectedTargetIds] = useState<string[]>(initialSelectedTargetIds)
@@ -1779,8 +1795,8 @@ function AdminNodeEditModal({ node, targets, onUpdate, onTargetUpdate, onInstall
         setInstallCommandState(installCommandReady(result))
         if (openPickerAfterGenerate) {
           setInstallPlatformPickerOpen(true)
+          setInstallPlatformMenuStyle(installPlatformMenuPosition(installCopyButtonRef.current))
           setInstallCopyState({ kind: 'ready', message: '安装命令已准备好，选择系统后复制。' })
-          revealInstallPlatformPicker()
         }
       })
       .catch((error: unknown) => setInstallCommandState({ kind: 'error', message: error instanceof Error ? error.message : 'unknown error' }))
@@ -1793,8 +1809,8 @@ function AdminNodeEditModal({ node, targets, onUpdate, onTargetUpdate, onInstall
       return
     }
     setInstallPlatformPickerOpen(true)
+    setInstallPlatformMenuStyle(installPlatformMenuPosition(installCopyButtonRef.current))
     setInstallCopyState({ kind: 'idle' })
-    revealInstallPlatformPicker()
   }
 
   const handleCopyInstallPlatform = (platform: AgentInstallPlatform) => {
@@ -1870,12 +1886,8 @@ function AdminNodeEditModal({ node, targets, onUpdate, onTargetUpdate, onInstall
           <p className="admin-help-note">当前 Agent 版本：{node.agentVersion || '暂无上报'}</p>
           <div className="admin-inline-actions">
             <div className="admin-install-copy-menu">
-              <button className="admin-primary-action admin-install-copy-button" type="button" onClick={handleCopyInstallCommand} disabled={installCommandState.kind === 'loading'}>{installCommandState.kind === 'loading' ? '生成中…' : '复制安装命令'}</button>
-              {installCommandState.kind === 'ready' && installPlatformPickerOpen && <div className="admin-install-platforms" role="group" aria-label="选择 Agent 安装系统">
-                {agentInstallPlatforms.map((platform) => (
-                  <button key={platform.value} type="button" data-active={installCommandState.platform === platform.value} onClick={() => handleCopyInstallPlatform(platform.value)}>{platform.label}</button>
-                ))}
-              </div>}
+              <button ref={installCopyButtonRef} className="admin-primary-action admin-install-copy-button" type="button" onClick={handleCopyInstallCommand} disabled={installCommandState.kind === 'loading'}>{installCommandState.kind === 'loading' ? '生成中…' : '复制安装命令'}</button>
+              {installPlatformPickerOpen && <AdminInstallPlatformPopover state={installCommandState} style={installPlatformMenuStyle} onSelect={handleCopyInstallPlatform} />}
             </div>
           </div>
           {installCommandState.kind === 'loading' && <div className="admin-install-error is-warning">正在准备安装命令…</div>}
