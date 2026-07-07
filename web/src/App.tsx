@@ -1579,12 +1579,6 @@ const agentInstallPlatforms: Array<{ value: AgentInstallPlatform; label: string 
   { value: 'windows', label: 'Windows' },
 ]
 
-function installCommandText(state: InstallCommandState): string {
-  if (state.kind !== 'ready') return ''
-  if (!state.platform) return ''
-  return state.commands[state.platform] || state.command
-}
-
 function installCommandForPlatform(state: InstallCommandState, platform: AgentInstallPlatform): string {
   if (state.kind !== 'ready') return ''
   return state.commands[platform] || state.command
@@ -1714,21 +1708,16 @@ function AdminNodeCreateModal({ onCreate, onInstallCommand, onClose }: { onCreat
         </AdminFormSection>
         <AdminFormSection title="Agent 接入">
           {createdNode && <p className="admin-help-note">已添加：{createdNode.displayName}</p>}
-          {installCommandState.kind === 'ready' && installPlatformPickerOpen && <div className="admin-install-platforms" role="group" aria-label="选择 Agent 安装系统">
-            {agentInstallPlatforms.map((platform) => (
-              <button key={platform.value} type="button" data-active={installCommandState.platform === platform.value} onClick={() => handleCopyInstallPlatform(platform.value)}>{platform.label}</button>
-            ))}
-          </div>}
           <div className="admin-inline-actions">
-            <button type="button" onClick={handleCopyInstallCommand} disabled={!createdNode || installCommandState.kind === 'loading'}>{installCommandState.kind === 'loading' ? '生成中…' : '复制安装命令'}</button>
+            <div className="admin-install-copy-menu">
+              <button className="admin-primary-action admin-install-copy-button" type="button" onClick={handleCopyInstallCommand} disabled={!createdNode || installCommandState.kind === 'loading'}>{installCommandState.kind === 'loading' ? '生成中…' : '复制安装命令'}</button>
+              {installCommandState.kind === 'ready' && installPlatformPickerOpen && <div className="admin-install-platforms" role="group" aria-label="选择 Agent 安装系统">
+                {agentInstallPlatforms.map((platform) => (
+                  <button key={platform.value} type="button" data-active={installCommandState.platform === platform.value} onClick={() => handleCopyInstallPlatform(platform.value)}>{platform.label}</button>
+                ))}
+              </div>}
+            </div>
           </div>
-          {installCommandState.kind === 'ready' && (
-            <>
-              {installCommandState.platform === 'windows' && <p className="admin-help-note">Windows 请使用管理员 PowerShell 运行。</p>}
-              {installCommandState.platform === 'macos' && <p className="admin-help-note">macOS 请使用具备 sudo 权限的终端运行。</p>}
-              {installCommandState.platform && <textarea className="admin-install-command" aria-label="新服务器 Agent 安装命令" readOnly value={installCommandText(installCommandState)} />}
-            </>
-          )}
           {installCommandState.kind === 'loading' && <div className="admin-install-error is-warning">正在准备安装命令…</div>}
           {installCopyState.kind !== 'idle' && <div className={`admin-install-error${installCopyState.kind === 'ready' ? ' is-success' : installCopyState.kind === 'warning' ? ' is-warning' : ''}`}>{installCopyState.message}</div>}
           {installCommandState.kind === 'error' && <div className="admin-install-error">安装命令生成失败：{installCommandState.message}</div>}
@@ -1879,21 +1868,16 @@ function AdminNodeEditModal({ node, targets, onUpdate, onTargetUpdate, onInstall
         </AdminFormSection>
         <AdminFormSection title="Agent 接入">
           <p className="admin-help-note">当前 Agent 版本：{node.agentVersion || '暂无上报'}</p>
-          {installCommandState.kind === 'ready' && installPlatformPickerOpen && <div className="admin-install-platforms" role="group" aria-label="选择 Agent 安装系统">
-            {agentInstallPlatforms.map((platform) => (
-              <button key={platform.value} type="button" data-active={installCommandState.platform === platform.value} onClick={() => handleCopyInstallPlatform(platform.value)}>{platform.label}</button>
-            ))}
-          </div>}
           <div className="admin-inline-actions">
-            <button type="button" onClick={handleCopyInstallCommand} disabled={installCommandState.kind === 'loading'}>{installCommandState.kind === 'loading' ? '生成中…' : '复制安装命令'}</button>
+            <div className="admin-install-copy-menu">
+              <button className="admin-primary-action admin-install-copy-button" type="button" onClick={handleCopyInstallCommand} disabled={installCommandState.kind === 'loading'}>{installCommandState.kind === 'loading' ? '生成中…' : '复制安装命令'}</button>
+              {installCommandState.kind === 'ready' && installPlatformPickerOpen && <div className="admin-install-platforms" role="group" aria-label="选择 Agent 安装系统">
+                {agentInstallPlatforms.map((platform) => (
+                  <button key={platform.value} type="button" data-active={installCommandState.platform === platform.value} onClick={() => handleCopyInstallPlatform(platform.value)}>{platform.label}</button>
+                ))}
+              </div>}
+            </div>
           </div>
-          {installCommandState.kind === 'ready' && (
-            <>
-              {installCommandState.platform === 'windows' && <p className="admin-help-note">Windows 请使用管理员 PowerShell 运行。</p>}
-              {installCommandState.platform === 'macos' && <p className="admin-help-note">macOS 请使用具备 sudo 权限的终端运行。</p>}
-              {installCommandState.platform && <textarea className="admin-install-command" aria-label={`${node.displayName} Agent 安装命令`} readOnly value={installCommandText(installCommandState)} />}
-            </>
-          )}
           {installCommandState.kind === 'loading' && <div className="admin-install-error is-warning">正在准备安装命令…</div>}
           {installCopyState.kind !== 'idle' && <div className={`admin-install-error${installCopyState.kind === 'ready' ? ' is-success' : installCopyState.kind === 'warning' ? ' is-warning' : ''}`}>{installCopyState.message}</div>}
           {installCommandState.kind === 'error' && <div className="admin-install-error">安装命令生成失败：{installCommandState.message}</div>}

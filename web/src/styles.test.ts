@@ -150,6 +150,10 @@ describe('homepage and admin shell layout', () => {
     expect(styles).toContain('.admin-modal-body')
     expect(styles).toContain('clip-path: inset(0 round var(--radius-panel))')
     expect(styles).toContain('.admin-notification-list .admin-node-status')
+    expect(styles).toContain('.admin-install-copy-menu')
+    expect(styles).toContain('.admin-install-copy-button')
+    expect(styles).toContain('top: calc(100% + 8px)')
+    expect(styles).not.toContain('.admin-install-command')
   })
 })
 

@@ -1393,46 +1393,56 @@ svg { display: block; }
 .admin-node-edit-form button { align-self: end; }
 .admin-segmented-options button { align-self: stretch; }
 .admin-settings-form > button[type="submit"] { margin-top: 16px; }
-.admin-install-platforms {
-  display: inline-grid;
-  grid-template-columns: repeat(3, minmax(78px, 1fr));
-  gap: 6px;
-  margin-top: 12px;
-  scroll-margin: 96px 0;
-  padding: 4px;
-  border: 1px solid var(--border-soft);
-  border-radius: 999px;
-  background: var(--field-bg);
+.admin-install-copy-menu {
   position: relative;
-  z-index: 4;
+  display: inline-flex;
+}
+.admin-install-copy-button {
+  min-width: 136px;
+  justify-content: center;
+}
+.admin-install-platforms {
+  position: absolute;
+  top: calc(100% + 8px);
+  left: 0;
+  z-index: 80;
+  width: 184px;
+  display: grid;
+  gap: 4px;
+  padding: 6px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-card);
+  background: var(--surface-strong);
+  box-shadow: 0 18px 40px -26px rgba(15, 23, 42, .36), 0 4px 12px -8px rgba(15, 23, 42, .16);
+  backdrop-filter: blur(18px);
+  scroll-margin: 96px 0;
 }
 .admin-install-platforms button {
-  min-height: 32px;
-  padding: 0 12px;
-  border: 0;
-  border-radius: 999px;
+  min-width: 0;
+  min-height: 34px;
+  display: flex;
+  align-items: center;
+  padding: 0 10px;
+  border: 1px solid transparent;
+  border-radius: var(--radius-field);
   background: transparent;
-  color: var(--muted);
+  color: var(--foreground);
+  text-align: left;
   font-size: 13px;
   font-weight: 500;
-  cursor: pointer;
+  transition: background-color 150ms ease, border-color 150ms ease, color 150ms ease, transform 150ms ease, box-shadow 150ms ease;
+}
+.admin-install-platforms button:hover {
+  border-color: color-mix(in srgb, var(--blue) 34%, var(--border));
+  background: color-mix(in srgb, var(--surface-soft) 88%, var(--blue) 10%);
+  color: var(--blue);
+  transform: translateY(-1px);
 }
 .admin-install-platforms button[data-active='true'] {
-  background: var(--foreground);
-  color: var(--background);
-  box-shadow: 0 8px 20px -16px var(--foreground);
-}
-.admin-install-command {
-  width: 100%;
-  min-height: 120px;
-  margin-top: 12px;
-  padding: 10px;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-field);
-  background: var(--field-bg);
-  color: var(--foreground);
-  font: 12px/1.5 ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
-  resize: vertical;
+  border-color: var(--blue);
+  background: var(--blue);
+  color: #fff;
+  box-shadow: 0 8px 18px -14px var(--blue);
 }
 .admin-install-error { margin-top: 10px; color: var(--red); font-size: 13px; font-weight: 500; }
 .admin-install-error.is-success { color: var(--green); }
