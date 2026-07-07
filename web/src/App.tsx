@@ -19,7 +19,7 @@ const summaryCacheKey = 'zeno_summary_cache_v1'
 const adminTokenStorageKey = 'zeno_admin_token'
 const adminTokenStoredAtKey = 'zeno_admin_token_saved_at'
 const adminTokenMaxAgeMs = 7 * 24 * 60 * 60 * 1000
-const renewalDayOptions = Array.from({ length: 31 }, (_, index) => index)
+const renewalDayOptions = [0, 1, 3, 7, 15, 30]
 
 function loadStoredAdminToken(): string {
   if (typeof window === 'undefined') return ''
@@ -2332,14 +2332,12 @@ function AdminAlertRuleEditModal({ rule, nodes, onUpdate, onClose }: { rule: Adm
               <span>启用通知类型</span>
             </label>
             {isRenewalRule && (
-              <label>
-                <span>提前提醒</span>
-                <select name="rule-renewal-days" defaultValue={String(Math.max(0, Math.min(30, Math.round(rule.threshold))))}>
-                  {renewalDayOptions.map((days) => (
-                    <option value={days} key={days}>{formatRenewalDayOption(days)}</option>
-                  ))}
-                </select>
-              </label>
+              <AdminSegmentedField
+                name="rule-renewal-days"
+                label="提前提醒"
+                defaultValue={String(normalizeRenewalThreshold(rule.threshold))}
+                options={renewalDayOptions.map((days) => ({ value: String(days), label: formatRenewalDayOption(days) }))}
+              />
             )}
           </div>
         </AdminFormSection>
@@ -2991,20 +2989,27 @@ function formatAlertRuleScope(rule: AdminAlertRule, nodes: AdminNode[]): string 
 
 function formatAlertRuleNote(rule: AdminAlertRule): string {
   if (rule.metric === 'expiry_days') {
-    return `${formatRenewalDayOption(Math.max(0, Math.min(30, Math.round(rule.threshold))))}，每天最多一次`
+    return `${formatRenewalDayOption(normalizeRenewalThreshold(rule.threshold))}，每天最多一次`
   }
   return rule.description
 }
 
 function formatRenewalDayOption(days: number): string {
   if (days === 0) return '当天提醒'
-  return `提前 ${days} 天`
+  if (days === 15) return '提前半个月'
+  if (days === 30) return '提前1个月'
+  return `提前${days}天`
 }
 
 function parseRenewalThreshold(value: string): number | null {
   const parsed = parseNonNegativeInt(value)
-  if (parsed === null || parsed > 30) return null
+  if (parsed === null || !renewalDayOptions.includes(parsed)) return null
   return parsed
+}
+
+function normalizeRenewalThreshold(value: number): number {
+  const normalized = Math.max(0, Math.min(30, Math.round(value)))
+  return renewalDayOptions.includes(normalized) ? normalized : 3
 }
 
 function parsePositiveInt(value: string): number | null {

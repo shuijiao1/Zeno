@@ -74,6 +74,8 @@ var retiredAdminAlertRuleIDs = []string{"probe_latency_high", "probe_loss_high",
 
 var retiredAdminNotificationEventTypes = []string{"node_online"}
 
+var allowedRenewalNoticeDays = map[int]bool{0: true, 1: true, 3: true, 7: true, 15: true, 30: true}
+
 func (s *SQLiteStore) ensureDefaultAlertRules(ctx context.Context) error {
 	now := time.Now().UTC().Unix()
 	for sortOrder, rule := range defaultAdminAlertRules {
@@ -172,7 +174,8 @@ func (s *SQLiteStore) UpdateAdminAlertRule(ctx context.Context, ruleID string, u
 	}
 	if update.Threshold != nil && metric == "expiry_days" {
 		threshold := *update.Threshold
-		if threshold < 0 || threshold > 30 || threshold != float64(int(threshold)) {
+		thresholdDays := int(threshold)
+		if threshold != float64(thresholdDays) || !allowedRenewalNoticeDays[thresholdDays] {
 			return AdminAlertRule{}, errInvalidAdminAlertRuleUpdate
 		}
 	}
