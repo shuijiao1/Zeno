@@ -127,8 +127,8 @@ function compactBytes(value: number): string {
     size /= 1024
     unit += 1
   }
-  const digits = unit === 0 ? 0 : 2
-  return `${size.toFixed(digits)} ${units[unit]}`
+  const amount = unit === 0 ? size.toFixed(0) : size.toFixed(2).replace(/\.00$/, '').replace(/(\.\d)0$/, '$1')
+  return `${amount} ${units[unit]}`
 }
 
 function compactRate(value: number): string {
@@ -466,13 +466,32 @@ export function App() {
     let loadedOnce = false
     const loadAdminNodes = () => {
       if (!loadedOnce) setAdminState({ kind: 'loading' })
-      Promise.all([fetchAdminSettings(adminToken), fetchAdminAccount(adminToken), fetchAdminNodes(adminToken), fetchAdminProbeTargets(adminToken), fetchAdminNotificationChannels(adminToken), fetchAdminAlertRules(adminToken)])
-        .then(([settingsData, accountData, nodesData, targetsData, channelsData, alertRulesData]) => {
+      fetchAdminNodes(adminToken)
+        .then((nodesData) => {
           loadedOnce = true
           if (!cancelled) {
-            setSettings(settingsData)
-            setAdminState({ kind: 'ready', account: accountData, nodes: nodesData.nodes, targets: targetsData.targets, notificationChannels: channelsData.channels, alertRules: alertRulesData.rules })
+            setAdminState((current) => ({
+              kind: 'ready',
+              account: current.kind === 'ready' ? current.account : { username: 'admin' },
+              nodes: nodesData.nodes,
+              targets: current.kind === 'ready' ? current.targets : [],
+              notificationChannels: current.kind === 'ready' ? current.notificationChannels : [],
+              alertRules: current.kind === 'ready' ? current.alertRules : [],
+            }))
           }
+          return Promise.allSettled([fetchAdminSettings(adminToken), fetchAdminAccount(adminToken), fetchAdminProbeTargets(adminToken), fetchAdminNotificationChannels(adminToken), fetchAdminAlertRules(adminToken)])
+        })
+        .then((results) => {
+          if (!results || cancelled) return
+          const [settingsResult, accountResult, targetsResult, channelsResult, alertRulesResult] = results
+          if (settingsResult.status === 'fulfilled') setSettings(settingsResult.value)
+          setAdminState((current) => current.kind === 'ready' ? {
+            ...current,
+            account: accountResult.status === 'fulfilled' ? accountResult.value : current.account,
+            targets: targetsResult.status === 'fulfilled' ? targetsResult.value.targets : current.targets,
+            notificationChannels: channelsResult.status === 'fulfilled' ? channelsResult.value.channels : current.notificationChannels,
+            alertRules: alertRulesResult.status === 'fulfilled' ? alertRulesResult.value.rules : current.alertRules,
+          } : current)
         })
         .catch((error: unknown) => {
           loadedOnce = true
@@ -3003,10 +3022,7 @@ function formatAlertRuleScope(rule: AdminAlertRule, nodes: AdminNode[]): string 
 }
 
 function formatAlertRuleNote(rule: AdminAlertRule): string {
-  if (rule.metric === 'expiry_days') {
-    return `${formatRenewalDayOption(normalizeRenewalThreshold(rule.threshold))}，每天最多一次`
-  }
-  return rule.description
+  return rule.metric === 'expiry_days' ? '' : rule.description
 }
 
 function formatRenewalDayOption(days: number): string {
