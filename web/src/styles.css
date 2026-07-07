@@ -377,8 +377,9 @@ svg { display: block; }
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.home-summary__metric--rate dd { width: 13.5ch; min-width: 13.5ch; justify-self: start; justify-content: flex-start; font-weight: 600; }
-.home-summary__rate-value { width: 11.5ch; min-width: 11.5ch; display: inline-block; text-align: left; font-variant-numeric: tabular-nums; }
+.home-summary__metric--rate dd { width: 13.5ch; min-width: 13.5ch; justify-self: end; justify-content: flex-end; font-weight: 500; }
+.home-summary__rate-value { width: 11.5ch; min-width: 11.5ch; display: grid; grid-template-columns: minmax(0, 1fr) 4.5ch; align-items: baseline; column-gap: 3px; text-align: right; font-variant-numeric: tabular-nums; }
+.home-summary__rate-unit { color: color-mix(in srgb, var(--summary-accent) 74%, var(--muted)); text-align: right; font-size: .92em; }
 .home-summary__metrics svg { width: 12px; height: 12px; fill: currentColor; }
 
 .server-card-list {
@@ -706,11 +707,9 @@ svg { display: block; }
 }
 .admin-notification-list .admin-list-head,
 .admin-notification-list .admin-list-row {
-  grid-template-columns: minmax(130px, 1fr) minmax(74px, .45fr) minmax(78px, .5fr) minmax(96px, .62fr) minmax(190px, 1.08fr);
+  grid-template-columns: minmax(180px, 1fr) minmax(86px, .42fr) minmax(180px, auto);
 }
 .admin-notification-list .admin-list-head > span:nth-child(2),
-.admin-notification-list .admin-list-head > span:nth-child(3),
-.admin-notification-list .admin-list-head > span:nth-child(4),
 .admin-alert-rule-list .admin-list-head > span:nth-child(2) { justify-self: start; text-align: left; }
 .admin-notification-list .admin-node-status,
 .admin-alert-rule-list .admin-node-status {

@@ -135,6 +135,11 @@ function compactRate(value: number): string {
   return `${compactBytes(value)}/s`
 }
 
+function compactRateParts(value: number): { value: string; unit: string } {
+  const [amount, unit = 'B'] = compactBytes(value).split(' ')
+  return { value: amount, unit: `${unit}/s` }
+}
+
 function summaryLatencyPoints(node: HomeCardNode | undefined): LatencyPoint[] {
   return (node?.latencySummaries ?? [])
     .filter((summary) => summary.updatedAt)
@@ -239,6 +244,7 @@ export function App() {
   const [adminToken, setAdminToken] = useState(loadStoredAdminToken)
   const [adminAuthState, setAdminAuthState] = useState<AdminAuthState>({ kind: 'idle' })
   const [adminState, setAdminState] = useState<AdminLoadState>({ kind: 'idle' })
+  const [showAdminLoading, setShowAdminLoading] = useState(false)
   const [settings, setSettings] = useState<AdminSettings>(defaultSettings)
   const [themeOverride, setThemeOverride] = useState<AdminTheme | null>(() => storedThemeOverride())
   const [backgroundEnabled, setBackgroundEnabled] = useState(() => storedBackgroundEnabled())
@@ -439,6 +445,15 @@ export function App() {
       stopServiceLatencyStream?.()
     }
   }, [route, serviceLatencyRange])
+
+  useEffect(() => {
+    if (adminState.kind !== 'loading') {
+      setShowAdminLoading(false)
+      return
+    }
+    const timer = window.setTimeout(() => setShowAdminLoading(true), 450)
+    return () => window.clearTimeout(timer)
+  }, [adminState.kind])
 
   useEffect(() => {
     if (route.kind !== 'admin') return
@@ -738,6 +753,7 @@ export function App() {
           hasAdminToken={adminToken !== ''}
           authState={adminAuthState}
           adminState={adminState}
+          showAdminLoading={showAdminLoading}
           onAdminLogin={submitAdminLogin}
           onAdminTokenClear={clearAdminToken}
           onAdminAccountUpdate={updateAdminAccountDetails}
@@ -1047,6 +1063,7 @@ interface AdminDashboardProps {
   hasAdminToken?: boolean
   authState?: AdminAuthState
   adminState?: AdminLoadState
+  showAdminLoading?: boolean
   initialSection?: AdminSection
   onAdminLogin?: (username: string, password: string) => void
   onAdminTokenClear?: () => void
@@ -1076,6 +1093,7 @@ export function AdminDashboard({
   hasAdminToken = false,
   authState = { kind: 'idle' },
   adminState = { kind: 'idle' },
+  showAdminLoading = false,
   initialSection = 'nodes',
   onAdminLogin = () => {},
   onAdminTokenClear = () => {},
@@ -1149,7 +1167,7 @@ export function AdminDashboard({
               />
             </div>
 
-            {adminState.kind === 'loading' && <div className="admin-state-card">正在读取 Admin API…</div>}
+            {adminState.kind === 'loading' && showAdminLoading && <div className="admin-state-card">加载中…</div>}
             {adminState.kind === 'error' && <div className="admin-state-card is-error">Admin API 读取失败：{adminState.message}</div>}
 
             {adminState.kind === 'ready' && activeSection === 'nodes' && (
@@ -1265,7 +1283,6 @@ function AdminAccountSection({ account, onUpdate }: { account: AdminAccountData;
     <section className="admin-account-section admin-workspace-panel" aria-label="账户设置">
       <header className="admin-section-heading">
         <div>
-          <p className="eyebrow">账号密码</p>
           <h3>账户</h3>
         </div>
       </header>
@@ -1282,7 +1299,7 @@ function AdminAccountSection({ account, onUpdate }: { account: AdminAccountData;
             </label>
           </div>
         </AdminFormSection>
-        <AdminFormSection title="修改密码" description="不改密码时，新密码和确认新密码可以留空。">
+        <AdminFormSection title="修改密码">
           <div className="admin-form-grid">
             <label>
               <span>新密码</span>
@@ -1336,7 +1353,6 @@ function AdminSettingsSection({ settings, onUpdate }: { settings: AdminSettings;
     <section className="admin-settings-section admin-workspace-panel" aria-label="admin settings">
       <header className="admin-section-heading">
         <div>
-          <p className="eyebrow">外观</p>
           <h3>站点设置</h3>
         </div>
       </header>
@@ -1433,7 +1449,6 @@ function AdminNodeSection({ nodes, targets, onCreate, onUpdate, onDelete, onTarg
     <section className="admin-node-section admin-workspace-panel" aria-label="admin node list">
       <header className="admin-section-heading">
         <div>
-          <p className="eyebrow">Servers</p>
           <h3>服务器列表</h3>
         </div>
         <div className="admin-section-actions">
@@ -1566,13 +1581,11 @@ function AdminNodeSortModal({ nodes, onSave, onClose }: { nodes: AdminNode[]; on
       <div className="admin-modal" role="dialog" aria-modal="true" aria-label="服务器排序">
         <header className="admin-modal-header">
           <div>
-            <p className="eyebrow">Servers</p>
-            <h3>服务器排序</h3>
+              <h3>服务器排序</h3>
           </div>
           <button className="admin-modal-close" type="button" aria-label="关闭" onClick={onClose}>×</button>
         </header>
         <div className="admin-modal-body">
-          <p className="admin-help-note">按住服务器拖动调整顺序；保存后这里的顺序就是前台显示顺序。</p>
           <div className="admin-server-sort-list" role="list" aria-label="拖动排序服务器">
             {orderedNodes.map((node, index) => (
               <article
@@ -1753,7 +1766,7 @@ function AdminNodeCreateModal({ onCreate, onInstallCommand, onClose }: { onCreat
   }
 
   return (
-    <AdminModal title="添加服务器" eyebrow="Servers" onClose={onClose}>
+    <AdminModal title="添加服务器" onClose={onClose}>
       <form ref={formRef} className="admin-node-create-form admin-node-edit-form is-sectioned" aria-label="添加服务器" onSubmit={handleSubmit}>
         <AdminFormSection title="服务器名称">
           <div className="admin-form-grid">
@@ -1886,7 +1899,7 @@ function AdminNodeEditModal({ node, targets, onUpdate, onTargetUpdate, onInstall
   }
 
   return (
-    <AdminModal title={`编辑服务器 · ${node.displayName}`} eyebrow={node.agentVersion ? `Agent ${node.agentVersion}` : 'Agent 版本未知'} onClose={onClose}>
+    <AdminModal title={`编辑服务器 · ${node.displayName}`} onClose={onClose}>
       <form className="admin-node-edit-form is-sectioned" aria-label={`${node.displayName} 节点编辑`} onSubmit={handleSubmit}>
         <AdminFormSection title="服务器名称">
           <div className="admin-form-grid">
@@ -1943,7 +1956,6 @@ function AdminNodeEditModal({ node, targets, onUpdate, onTargetUpdate, onInstall
           </div>
         </AdminFormSection>
         <AdminFormSection title="Agent 接入">
-          <p className="admin-help-note">当前 Agent 版本：{node.agentVersion || '暂无上报'}</p>
           <div className="admin-inline-actions admin-install-copy-row">
             <div className="admin-install-copy-menu">
               <button ref={installCopyButtonRef} className="admin-primary-action admin-install-copy-button" type="button" onClick={handleCopyInstallCommand} disabled={installCommandState.kind === 'loading'}>{installCommandState.kind === 'loading' ? '生成中…' : '复制安装命令'}</button>
@@ -1971,7 +1983,6 @@ function AdminTargetSection({ targets, nodes, onCreate, onUpdate, onDelete }: { 
     <section className="admin-target-section admin-workspace-panel" aria-label="admin probe target list">
       <header className="admin-section-heading">
         <div>
-          <p className="eyebrow">Latency</p>
           <h3>延迟监控</h3>
         </div>
         <div className="admin-section-actions">
@@ -2065,7 +2076,7 @@ function AdminTargetCreateModal({ nodes, onCreate, onClose }: { nodes: AdminNode
   }
 
   return (
-    <AdminModal title="添加延迟监控目标" eyebrow="Latency" onClose={onClose}>
+    <AdminModal title="添加延迟监控目标" onClose={onClose}>
       <form className="admin-target-create-form admin-node-edit-form is-sectioned" aria-label="添加探针目标" onSubmit={handleSubmit}>
         <AdminFormSection title="目标信息">
           <div className="admin-form-grid">
@@ -2152,7 +2163,7 @@ function AdminTargetEditModal({ target, nodes, onUpdate, onClose }: { target: Ad
   }
 
   return (
-    <AdminModal title={`编辑延迟监控 · ${target.name}`} eyebrow={target.id} onClose={onClose}>
+    <AdminModal title={`编辑延迟监控 · ${target.name}`} onClose={onClose}>
       <form className="admin-target-edit-form admin-node-edit-form is-sectioned" aria-label={`${target.name} 探针目标编辑`} onSubmit={handleSubmit}>
         <AdminFormSection title="目标信息">
           <div className="admin-form-grid">
@@ -2286,7 +2297,7 @@ function AdminAlertRuleList({ rules, nodes, onEdit, onUpdate }: { rules: AdminAl
 
 function AdminAlertRuleAddModal({ rules, nodes, onAdd, onClose }: { rules: AdminAlertRule[]; nodes: AdminNode[]; onAdd: (ruleId: string) => void; onClose: () => void }) {
   return (
-    <AdminModal title="添加通知类型" eyebrow="Notify" onClose={onClose}>
+    <AdminModal title="添加通知类型" onClose={onClose}>
       <div className="admin-alert-rule-add-form admin-node-edit-form is-sectioned" aria-label="添加通知类型">
         <AdminFormSection title="通知类型">
           <div className="admin-rule-picker" role="list" aria-label="可添加通知类型">
@@ -2323,7 +2334,7 @@ function AdminAlertRuleEditModal({ rule, nodes, onUpdate, onClose }: { rule: Adm
   }
 
   return (
-    <AdminModal title={`编辑通知类型 · ${rule.name}`} eyebrow={rule.id} onClose={onClose}>
+    <AdminModal title={`编辑通知类型 · ${rule.name}`} onClose={onClose}>
       <form className="admin-alert-rule-edit-form admin-node-edit-form is-sectioned" aria-label={`${rule.name} 通知类型编辑`} onSubmit={handleSubmit}>
         <AdminFormSection title="通知设置">
           <div className="admin-form-grid">
@@ -2369,7 +2380,6 @@ function AdminNotificationsSection({ channels, rules, nodes, onChannelCreate, on
     <section className="admin-notification-section admin-workspace-panel" aria-label="admin notification settings">
       <header className="admin-section-heading">
         <div>
-          <p className="eyebrow">Notify</p>
           <h3>通知</h3>
         </div>
         <button className="admin-primary-action" type="button" onClick={() => setCreatingChannel(true)}>添加通知渠道</button>
@@ -2417,8 +2427,6 @@ function AdminNotificationChannelList({ channels, onUpdate, onDelete, onTest, on
       <div className="admin-list-head" aria-hidden="true">
         <span>渠道</span>
         <span>状态</span>
-          <span>接收人</span>
-        <span>Bot Token</span>
         <span>操作</span>
       </div>
       {channels.map((channel) => (
@@ -2427,8 +2435,6 @@ function AdminNotificationChannelList({ channels, onUpdate, onDelete, onTest, on
             <strong>{channel.name}</strong>
           </div>
           <AdminStatusBadge label={channel.enabled ? '启用中' : '已停用'} status={channel.enabled ? 'online' : 'disabled'} dataLabel="状态" />
-          <span data-label="接收人" className="admin-notification-destination">{channel.destination ? '已设置' : '未设置'}</span>
-          <span data-label="Bot Token">{channel.credentialSet ? '凭据已设置' : '未设置凭据'}</span>
           <div className="admin-row-actions admin-icon-actions">
             <button className="admin-row-action" type="button" onClick={() => onTest(channel.id)}>测试发送</button>
             <button className="admin-row-action is-icon" type="button" aria-label={`编辑通知渠道 ${channel.name}`} title="编辑渠道" onClick={() => onEdit(channel)}><EditActionIcon /><span className="sr-only">编辑渠道</span></button>
@@ -2464,7 +2470,7 @@ function AdminNotificationChannelEditModal({ channel, onUpdate, onClose }: { cha
   }
 
   return (
-    <AdminModal title="编辑通知渠道" eyebrow="Notify" onClose={onClose}>
+    <AdminModal title="编辑通知渠道" onClose={onClose}>
       <form className="admin-notification-edit-form admin-node-edit-form is-sectioned" aria-label="编辑通知渠道" onSubmit={handleSubmit}>
         <AdminFormSection title="渠道配置">
           <div className="admin-form-grid">
@@ -2511,7 +2517,7 @@ function AdminNotificationChannelCreateModal({ onCreate, onClose }: { onCreate: 
   }
 
   return (
-    <AdminModal title="添加通知渠道" eyebrow="Notify" onClose={onClose}>
+    <AdminModal title="添加通知渠道" onClose={onClose}>
       <form className="admin-notification-create-form admin-node-edit-form is-sectioned" aria-label="添加通知渠道" onSubmit={handleSubmit}>
         <AdminFormSection title="渠道配置">
           <div className="admin-form-grid">
@@ -2546,14 +2552,13 @@ function AdminModalLayer({ children }: { children: ReactNode }) {
   return createPortal(children, document.body)
 }
 
-function AdminModal({ title, eyebrow, onClose, children }: { title: string; eyebrow: string; onClose: () => void; children: ReactNode }) {
+function AdminModal({ title, onClose, children }: { title: string; onClose: () => void; children: ReactNode }) {
   return (
     <AdminModalLayer>
     <div className="admin-modal-backdrop" role="presentation">
       <section className="admin-modal" role="dialog" aria-modal="true" aria-label={title}>
         <header className="admin-modal-header">
           <div>
-            <p className="eyebrow">{eyebrow}</p>
             <h3>{title}</h3>
           </div>
           <button className="admin-modal-close" type="button" onClick={onClose} aria-label="关闭弹窗">×</button>
@@ -2565,11 +2570,10 @@ function AdminModal({ title, eyebrow, onClose, children }: { title: string; eyeb
   )
 }
 
-function AdminFormSection({ title, description, children }: { title: string; description?: string; children: ReactNode }) {
+function AdminFormSection({ title, children }: { title: string; children: ReactNode }) {
   return (
     <section className="admin-form-section" aria-label={title}>
       <h4 className="admin-form-section-title">{title}</h4>
-      {description && <p className="admin-form-section-note">{description}</p>}
       {children}
     </section>
   )
@@ -3088,6 +3092,8 @@ function formatAdminDate(value?: string): string {
 }
 
 export function HomeOverviewPanel({ totalCount, onlineCount, offlineCount: _offlineCount, totalUp, totalDown, upSpeed, downSpeed }: HomeOverviewPanelProps) {
+  const uploadRate = compactRateParts(upSpeed)
+  const downloadRate = compactRateParts(downSpeed)
   return (
     <section className="home-summary" aria-label="server overview">
       <div className="home-summary__status-line" aria-label="服务器在线摘要">
@@ -3105,11 +3111,11 @@ export function HomeOverviewPanel({ totalCount, onlineCount, offlineCount: _offl
         </div>
         <div className="home-summary__metric home-summary__metric--upload-rate home-summary__metric--rate">
           <dt>上传</dt>
-          <dd><CircleArrowIcon direction="up" /><span className="home-summary__rate-value">{compactRate(upSpeed)}</span></dd>
+          <dd><CircleArrowIcon direction="up" /><span className="home-summary__rate-value"><span>{uploadRate.value}</span><span className="home-summary__rate-unit">{uploadRate.unit}</span></span></dd>
         </div>
         <div className="home-summary__metric home-summary__metric--download-rate home-summary__metric--rate">
           <dt>下载</dt>
-          <dd><CircleArrowIcon direction="down" /><span className="home-summary__rate-value">{compactRate(downSpeed)}</span></dd>
+          <dd><CircleArrowIcon direction="down" /><span className="home-summary__rate-value"><span>{downloadRate.value}</span><span className="home-summary__rate-unit">{downloadRate.unit}</span></span></dd>
         </div>
       </dl>
     </section>
