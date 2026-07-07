@@ -878,6 +878,10 @@ svg { display: block; }
 .admin-inline-note.is-success { border-color: color-mix(in srgb, var(--green) 28%, var(--border)); background: color-mix(in srgb, var(--green) 9%, var(--surface-soft)); color: var(--green); }
 .admin-inline-note.is-warning { border-color: color-mix(in srgb, var(--orange) 30%, var(--border)); background: color-mix(in srgb, var(--orange) 9%, var(--surface-soft)); color: var(--orange); }
 .admin-inline-note.is-error { border-color: color-mix(in srgb, var(--red) 28%, var(--border)); background: color-mix(in srgb, var(--red) 8%, var(--surface-soft)); color: var(--red); }
+.admin-modal-action-note {
+  justify-content: flex-start;
+  margin-right: auto;
+}
 .admin-node-create-form,
 .admin-target-create-form {
   margin: 0 0 14px;

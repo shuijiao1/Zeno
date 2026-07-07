@@ -1753,8 +1753,8 @@ function AdminNodeCreateModal({ onCreate, onInstallCommand, onClose }: { onCreat
             {installCommandState.kind === 'error' && <div className="admin-install-error">安装命令生成失败：{installCommandState.message}</div>}
           </AdminFormSection>
         )}
-        {formError && <div className="admin-install-error">{formError}</div>}
         <div className="admin-modal-actions">
+          {formError && <span className="admin-inline-note admin-modal-action-note is-error">{formError}</span>}
           <button type="submit" disabled={submitting || Boolean(createdNode)}>{submitting ? '添加中…' : createdNode ? '服务器已添加' : '添加服务器'}</button>
         </div>
       </form>
