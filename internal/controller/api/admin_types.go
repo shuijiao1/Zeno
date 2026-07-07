@@ -287,6 +287,7 @@ type AdminNodeCreateRequest struct {
 	CountryCode       string             `json:"country_code,omitempty"`
 	Region            string             `json:"region,omitempty"`
 	ExpiryDate        string             `json:"expiry_date,omitempty"`
+	ExpiryPermanent   bool               `json:"expiry_permanent,omitempty"`
 	BillingCycle      string             `json:"billing_cycle,omitempty"`
 	BillingMode       string             `json:"billing_mode,omitempty"`
 	MonthlyResetDay   *int               `json:"monthly_reset_day,omitempty"`
@@ -772,6 +773,7 @@ type AdminNodeUpdateRequest struct {
 	Region            *string            `json:"region,omitempty"`
 	HomeProbeTargetID *string            `json:"home_probe_target_id,omitempty"`
 	ExpiryDate        *string            `json:"expiry_date,omitempty"`
+	ExpiryPermanent   *bool              `json:"expiry_permanent,omitempty"`
 	BillingCycle      *string            `json:"billing_cycle,omitempty"`
 	BillingMode       *string            `json:"billing_mode,omitempty"`
 	MonthlyResetDay   *int               `json:"monthly_reset_day,omitempty"`
@@ -817,6 +819,9 @@ func (request *AdminNodeUpdateRequest) normalize() error {
 			return errInvalidAdminNodeUpdate
 		}
 		request.ExpiryDate = &trimmed
+	}
+	if request.ExpiryPermanent != nil {
+		changed = true
 	}
 	if request.BillingCycle != nil {
 		changed = true
@@ -915,6 +920,7 @@ type AdminNode struct {
 	BillingMode       string  `json:"billing_mode"`
 	MonthlyResetDay   int     `json:"monthly_reset_day"`
 	ExpiryDate        string  `json:"expiry_date,omitempty"`
+	ExpiryPermanent   bool    `json:"expiry_permanent"`
 	BillingCycle      string  `json:"billing_cycle,omitempty"`
 	DisplayOrder      int     `json:"display_order"`
 	PublicIPv4        string  `json:"public_ipv4,omitempty"`

@@ -142,6 +142,7 @@ interface ApiAdminNode {
   billing_mode: string
   monthly_reset_day: number
   expiry_date?: string
+  expiry_permanent?: boolean
   billing_cycle?: string
   display_order?: number
   public_ipv4?: string
@@ -390,6 +391,7 @@ export interface AdminNodeUpdateInput {
   region?: string
   homeProbeTargetId?: string
   expiryDate?: string
+  expiryPermanent?: boolean
   billingCycle?: string
   billingMode?: string
   monthlyResetDay?: number
@@ -406,6 +408,7 @@ export interface AdminNodeCreateInput {
   countryCode?: string
   region?: string
   expiryDate?: string
+  expiryPermanent?: boolean
   billingCycle?: string
   billingMode?: string
   monthlyResetDay?: number
@@ -1015,6 +1018,7 @@ function serializeAdminNodeUpdate(input: AdminNodeUpdateInput) {
     ...(input.region !== undefined ? { region: input.region } : {}),
     ...(input.homeProbeTargetId !== undefined ? { home_probe_target_id: input.homeProbeTargetId } : {}),
     ...(input.expiryDate !== undefined ? { expiry_date: input.expiryDate } : {}),
+    ...(input.expiryPermanent !== undefined ? { expiry_permanent: input.expiryPermanent } : {}),
     ...(input.billingCycle !== undefined ? { billing_cycle: input.billingCycle } : {}),
     ...(input.billingMode !== undefined ? { billing_mode: input.billingMode } : {}),
     ...(input.monthlyResetDay !== undefined ? { monthly_reset_day: input.monthlyResetDay } : {}),
@@ -1033,6 +1037,7 @@ function serializeAdminNodeCreate(input: AdminNodeCreateInput) {
     ...(input.countryCode !== undefined ? { country_code: input.countryCode } : {}),
     ...(input.region !== undefined ? { region: input.region } : {}),
     ...(input.expiryDate !== undefined ? { expiry_date: input.expiryDate } : {}),
+    ...(input.expiryPermanent !== undefined ? { expiry_permanent: input.expiryPermanent } : {}),
     ...(input.billingCycle !== undefined ? { billing_cycle: input.billingCycle } : {}),
     ...(input.billingMode !== undefined ? { billing_mode: input.billingMode } : {}),
     ...(input.monthlyResetDay !== undefined ? { monthly_reset_day: input.monthlyResetDay } : {}),
@@ -1285,6 +1290,7 @@ function normalizeAdminNode(node: ApiAdminNode): AdminNode {
     billingMode: node.billing_mode,
     monthlyResetDay: node.monthly_reset_day ?? 1,
     expiryDate: node.expiry_date,
+    expiryPermanent: Boolean(node.expiry_permanent),
     billingCycle: node.billing_cycle,
     displayOrder: node.display_order ?? 0,
     publicIPv4: node.public_ipv4,

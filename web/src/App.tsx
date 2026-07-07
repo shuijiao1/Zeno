@@ -1678,6 +1678,7 @@ function AdminNodeCreateModal({ onCreate, onInstallCommand, onClose }: { onCreat
     return {
       displayName,
       expiryDate: String(formData.get('new-expiry-date') ?? '').trim(),
+      expiryPermanent: formData.get('new-expiry-permanent') === '1',
       billingCycle: String(formData.get('new-billing-cycle') ?? '').trim(),
       billingMode: String(formData.get('new-billing-mode') ?? 'both'),
       monthlyResetDay: parseMonthlyResetDay(String(formData.get('new-monthly-reset-day') ?? '')) ?? 1,
@@ -1831,6 +1832,7 @@ function AdminNodeEditModal({ node, targets, onUpdate, onTargetUpdate, onInstall
       displayName: displayName || node.displayName,
       homeProbeTargetId: selectedTargets.has(homeTargetId) ? homeTargetId : '',
       expiryDate: String(formData.get('expiry-date') ?? '').trim(),
+      expiryPermanent: formData.get('expiry-permanent') === '1',
       billingCycle: String(formData.get('billing-cycle') ?? '').trim(),
       billingMode: String(formData.get('billing-mode') ?? node.billingMode),
       monthlyResetDay: parseMonthlyResetDay(String(formData.get('monthly-reset-day') ?? '')) ?? node.monthlyResetDay,
@@ -1923,7 +1925,7 @@ function AdminNodeEditModal({ node, targets, onUpdate, onTargetUpdate, onInstall
         <AdminFormSection title="账单与流量">
           <div className="admin-billing-grid">
             <div className="admin-billing-row admin-billing-row--cycle">
-              <AdminDateField className="admin-billing-control admin-billing-control--expiry" name="expiry-date" label="到期日" defaultValue={node.expiryDate ?? ''} permanentLabel="设为永久" />
+              <AdminDateField className="admin-billing-control admin-billing-control--expiry" name="expiry-date" label="到期日" defaultValue={node.expiryDate ?? ''} defaultPermanent={node.expiryPermanent} permanentLabel="设为永久" />
               <label className="admin-billing-control admin-billing-control--reset">
                 <span>月流量重置日</span>
                 <input name="monthly-reset-day" type="number" min="1" max="31" step="1" defaultValue={node.monthlyResetDay || 1} />
@@ -2262,7 +2264,6 @@ function AdminAlertRuleList({ rules, nodes, onEdit, onUpdate }: { rules: AdminAl
     <div className="admin-list admin-alert-rule-list" role="list" aria-label="通知类型列表">
       <div className="admin-list-head" aria-hidden="true">
         <span>通知类型</span>
-        <span>范围</span>
         <span>状态</span>
         <span>操作</span>
       </div>
@@ -2272,7 +2273,6 @@ function AdminAlertRuleList({ rules, nodes, onEdit, onUpdate }: { rules: AdminAl
             <strong>{rule.name}</strong>
             {formatAlertRuleNote(rule) && <small>{formatAlertRuleNote(rule)}</small>}
           </div>
-          <span data-label="范围">{formatAlertRuleScope(rule, nodes)}</span>
           <AdminStatusBadge label={rule.enabled ? '启用中' : '已停用'} status={rule.enabled ? 'online' : 'disabled'} dataLabel="状态" />
           <div className="admin-row-actions admin-icon-actions">
             <button className="admin-row-action is-icon" type="button" aria-label={`编辑通知类型 ${rule.name}`} title="编辑通知类型" onClick={() => onEdit(rule)}><EditActionIcon /><span className="sr-only">编辑通知类型</span></button>
@@ -2575,8 +2575,9 @@ function AdminFormSection({ title, description, children }: { title: string; des
   )
 }
 
-function AdminDateField({ name, label, defaultValue = '', disabled = false, permanentLabel, className = '' }: { name: string; label: string; defaultValue?: string | null; disabled?: boolean; permanentLabel?: string; className?: string }) {
+function AdminDateField({ name, label, defaultValue = '', defaultPermanent = false, disabled = false, permanentLabel, className = '' }: { name: string; label: string; defaultValue?: string | null; defaultPermanent?: boolean; disabled?: boolean; permanentLabel?: string; className?: string }) {
   const [value, setValue] = useState(defaultValue ?? '')
+  const [permanent, setPermanent] = useState(defaultPermanent)
   const [month, setMonth] = useState(() => adminDateMonthStart(defaultValue))
   const [open, setOpen] = useState(false)
   const [openPanel, setOpenPanel] = useState<'year' | 'month' | null>(null)
@@ -2596,6 +2597,7 @@ function AdminDateField({ name, label, defaultValue = '', disabled = false, perm
   ]
   const pickDate = (date: Date) => {
     setValue(formatAdminDateValue(date))
+    setPermanent(false)
     setMonth(new Date(date.getFullYear(), date.getMonth(), 1))
     setOpen(false)
     setOpenPanel(null)
@@ -2614,16 +2616,24 @@ function AdminDateField({ name, label, defaultValue = '', disabled = false, perm
   }
   const clearDate = () => {
     setValue('')
+    setPermanent(false)
+    setOpen(false)
+    setOpenPanel(null)
+  }
+  const togglePermanent = () => {
+    setValue('')
+    setPermanent((current) => !current)
     setOpen(false)
     setOpenPanel(null)
   }
 
   useEffect(() => {
     setValue(defaultValue ?? '')
+    setPermanent(defaultPermanent)
     setMonth(adminDateMonthStart(defaultValue))
     setOpen(false)
     setOpenPanel(null)
-  }, [defaultValue])
+  }, [defaultValue, defaultPermanent])
 
   useLayoutEffect(() => {
     if (!open || disabled) return undefined
@@ -2713,15 +2723,16 @@ function AdminDateField({ name, label, defaultValue = '', disabled = false, perm
     <div className={['admin-form-control admin-date-field', className].filter(Boolean).join(' ')}>
       <span>{label}</span>
       <input type="hidden" name={name} value={value} disabled={disabled} />
+      {permanentLabel && <input type="hidden" name={`${name.replace(/-date$/, '')}-permanent`} value={permanent ? '1' : '0'} disabled={disabled} />}
       <div className="admin-date-picker">
         <button ref={triggerRef} className="admin-date-trigger" type="button" aria-expanded={open} disabled={disabled} onClick={() => setOpen((current) => {
           if (current) setOpenPanel(null)
           return !current
         })}>
-          <span className={value ? '' : 'is-placeholder'}>{value || (permanentLabel ? '永久' : 'YYYY-MM-DD')}</span>
+          <span className={value ? '' : 'is-placeholder'}>{value || 'YYYY-MM-DD'}</span>
           <CalendarIcon />
         </button>
-        {permanentLabel && <button className={`admin-date-permanent${value === '' ? ' is-active' : ''}`} type="button" disabled={disabled} onClick={clearDate}>{value === '' ? '已永久' : permanentLabel}</button>}
+        {permanentLabel && <button className={`admin-date-permanent${permanent ? ' is-active' : ''}`} type="button" aria-pressed={permanent} disabled={disabled} onClick={togglePermanent}>{permanentLabel}</button>}
         {calendar && (typeof document === 'undefined' ? calendar : createPortal(calendar, document.body))}
       </div>
     </div>

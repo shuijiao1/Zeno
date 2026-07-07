@@ -400,9 +400,8 @@ describe('AdminDashboard', () => {
 
     expect(html).toContain('通知类型')
     expect(html).toContain('CPU 使用率')
-    expect(html).toContain('全部服务器')
-    expect(html).toContain('Backup')
-    expect(html).not.toContain('Backup (backup)')
+    expect(html).not.toContain('data-label="范围"')
+    expect(html).not.toContain('全部服务器')
     expect(html).toContain('离线通知')
     expect(html).not.toContain('node_offline')
     expect(html).toContain('添加通知类型')

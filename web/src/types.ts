@@ -117,6 +117,7 @@ export interface AdminNode {
   billingMode: string
   monthlyResetDay: number
   expiryDate?: string
+  expiryPermanent?: boolean
   billingCycle?: string
   displayOrder: number
   publicIPv4?: string

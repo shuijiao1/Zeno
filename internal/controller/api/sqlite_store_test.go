@@ -326,6 +326,12 @@ func TestSQLiteBackedSummaryUsesConfiguredHomeLatencyTarget(t *testing.T) {
 	}
 	if _, err := store.db.ExecContext(ctx, `
 		INSERT INTO probe_rounds (node_id, target_id, ts, type, sent, received, loss_percent, min_ms, avg_ms, median_ms, max_ms, stddev_ms)
+		VALUES ('hytron', 'cloudflare', ?, 'ping', 3, 2, 33.3333333333333, 1.4, 1.5, 1.6, 1.7, 0.1);
+	`, now.Add(-2*time.Minute).Unix()); err != nil {
+		t.Fatalf("insert lossy cloudflare round: %v", err)
+	}
+	if _, err := store.db.ExecContext(ctx, `
+		INSERT INTO probe_rounds (node_id, target_id, ts, type, sent, received, loss_percent, min_ms, avg_ms, median_ms, max_ms, stddev_ms)
 		VALUES ('hytron', 'google', ?, 'ping', 3, 3, 0, 8.0, 8.5, 8.8, 9.0, 0.2);
 	`, now.Unix()); err != nil {
 		t.Fatalf("insert google round: %v", err)
@@ -341,6 +347,9 @@ func TestSQLiteBackedSummaryUsesConfiguredHomeLatencyTarget(t *testing.T) {
 	latency := summary.Nodes[0].LatencySummary
 	if latency.TargetID != "cloudflare" || latency.TargetName != "Cloudflare" || latency.MedianMS == nil || *latency.MedianMS != 1.2 {
 		t.Fatalf("latency summary = %+v, want configured home target cloudflare", latency)
+	}
+	if latency.LossPercent == nil || *latency.LossPercent <= 16.6 || *latency.LossPercent >= 16.7 {
+		t.Fatalf("latency summary loss = %+v, want 1d average loss around 16.67", latency.LossPercent)
 	}
 }
 

@@ -659,7 +659,7 @@ svg { display: block; }
 .admin-list-head > span:last-child { justify-self: end; text-align: right; }
 .admin-alert-rule-list .admin-list-head,
 .admin-alert-rule-list .admin-list-row {
-  grid-template-columns: minmax(180px, 1.2fr) minmax(130px, .9fr) minmax(84px, .55fr) auto;
+  grid-template-columns: minmax(180px, 1.2fr) minmax(84px, .55fr) auto;
 }
 .admin-list-head {
   position: sticky;
@@ -711,7 +711,7 @@ svg { display: block; }
 .admin-notification-list .admin-list-head > span:nth-child(2),
 .admin-notification-list .admin-list-head > span:nth-child(3),
 .admin-notification-list .admin-list-head > span:nth-child(4),
-.admin-alert-rule-list .admin-list-head > span:nth-child(3) { justify-self: start; text-align: left; }
+.admin-alert-rule-list .admin-list-head > span:nth-child(2) { justify-self: start; text-align: left; }
 .admin-notification-list .admin-node-status,
 .admin-alert-rule-list .admin-node-status {
   justify-self: start;

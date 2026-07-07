@@ -53,6 +53,7 @@ func (s *SQLiteStore) ensureSchema(ctx context.Context) error {
 			region TEXT,
 			home_probe_target_id TEXT,
 			expiry_date TEXT,
+			expiry_permanent INTEGER NOT NULL DEFAULT 0,
 			billing_cycle TEXT,
 			display_order INTEGER NOT NULL DEFAULT 0,
 			public_ipv4 TEXT,
@@ -261,6 +262,7 @@ func (s *SQLiteStore) ensureSchema(ctx context.Context) error {
 		"install_token":        "TEXT",
 		"home_probe_target_id": "TEXT",
 		"expiry_date":          "TEXT",
+		"expiry_permanent":     "INTEGER NOT NULL DEFAULT 0",
 		"billing_cycle":        "TEXT",
 		"display_order":        "INTEGER NOT NULL DEFAULT 0",
 		"public_ipv4":          "TEXT",
@@ -474,7 +476,7 @@ func (s *SQLiteStore) NodeState(ctx context.Context, nodeID string, window laten
 func (s *SQLiteStore) AdminNodes(ctx context.Context) ([]AdminNode, error) {
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT n.id, n.display_name, n.status, n.country_code, n.region, n.disabled,
-		       n.home_probe_target_id, n.billing_mode, n.monthly_reset_day, n.expiry_date, n.billing_cycle, n.display_order, n.public_ipv4, n.public_ipv6,
+		       n.home_probe_target_id, n.billing_mode, n.monthly_reset_day, n.expiry_date, n.expiry_permanent, n.billing_cycle, n.display_order, n.public_ipv4, n.public_ipv6,
 		       n.monthly_quota_bytes, n.last_seen_at, n.created_at, n.updated_at,
 		       h.hostname, h.os_name, h.os_version, h.kernel, h.arch, h.virtualization,
 		       h.cpu_model, h.cpu_cores, h.memory_total_bytes, h.disk_total_bytes,
@@ -495,6 +497,7 @@ func (s *SQLiteStore) AdminNodes(ctx context.Context) ([]AdminNode, error) {
 		var status string
 		var countryCode, region, homeProbeTargetID, billingMode, expiryDate, billingCycle, publicIPv4, publicIPv6 sql.NullString
 		var disabled int
+		var expiryPermanent int
 		var monthlyResetDay int
 		var displayOrder int
 		var quota, lastSeenAt, createdAt, updatedAt sql.NullInt64
@@ -502,7 +505,7 @@ func (s *SQLiteStore) AdminNodes(ctx context.Context) ([]AdminNode, error) {
 		var cpuCores, memoryTotal, diskTotal, bootTime sql.NullInt64
 		if err := rows.Scan(
 			&node.ID, &node.DisplayName, &status, &countryCode, &region, &disabled,
-			&homeProbeTargetID, &billingMode, &monthlyResetDay, &expiryDate, &billingCycle, &displayOrder, &publicIPv4, &publicIPv6,
+			&homeProbeTargetID, &billingMode, &monthlyResetDay, &expiryDate, &expiryPermanent, &billingCycle, &displayOrder, &publicIPv4, &publicIPv6,
 			&quota, &lastSeenAt, &createdAt, &updatedAt,
 			&hostname, &osName, &osVersion, &kernel, &arch, &virtualization,
 			&cpuModel, &cpuCores, &memoryTotal, &diskTotal,
@@ -524,6 +527,7 @@ func (s *SQLiteStore) AdminNodes(ctx context.Context) ([]AdminNode, error) {
 		}
 		node.MonthlyResetDay = monthlyResetDay
 		node.ExpiryDate = nullStringOr(expiryDate, "")
+		node.ExpiryPermanent = expiryPermanent != 0
 		node.BillingCycle = nullStringOr(billingCycle, "")
 		node.DisplayOrder = displayOrder
 		node.PublicIPv4 = nullStringOr(publicIPv4, "")
@@ -908,6 +912,10 @@ func (s *SQLiteStore) UpdateAdminNode(ctx context.Context, nodeID string, update
 		sets = append(sets, "expiry_date = ?")
 		args = append(args, nullIfEmpty(*update.ExpiryDate))
 	}
+	if update.ExpiryPermanent != nil {
+		sets = append(sets, "expiry_permanent = ?")
+		args = append(args, sqliteBoolInt(*update.ExpiryPermanent))
+	}
 	if update.BillingCycle != nil {
 		sets = append(sets, "billing_cycle = ?")
 		args = append(args, nullIfEmpty(*update.BillingCycle))
@@ -970,7 +978,7 @@ func (s *SQLiteStore) UpdateAdminNode(ctx context.Context, nodeID string, update
 
 func (s *SQLiteStore) nodes(ctx context.Context) ([]Node, error) {
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT n.id, n.display_name, n.status, n.country_code, n.expiry_date, n.billing_mode, n.monthly_reset_day, n.last_seen_at,
+		SELECT n.id, n.display_name, n.status, n.country_code, n.expiry_date, n.expiry_permanent, n.billing_mode, n.monthly_reset_day, n.last_seen_at,
 		       h.os_name, h.os_version, h.kernel, h.arch, h.virtualization, h.cpu_model, h.cpu_cores, h.memory_total_bytes, h.disk_total_bytes, h.boot_time,
 		       ss.cpu_percent, ss.load1, ss.load5, ss.load15, ss.uptime_seconds, ss.memory_used_bytes, ss.disk_used_bytes,
 		       ss.net_in_speed_bps, ss.net_out_speed_bps, ss.net_in_total_bytes, ss.net_out_total_bytes,
@@ -1002,10 +1010,11 @@ func (s *SQLiteStore) nodes(ctx context.Context) ([]Node, error) {
 	for rows.Next() {
 		var id, displayName, status string
 		var countryCode, expiryDate, billingMode, osName, osVersion, kernel, arch, virtualization, cpuModel sql.NullString
+		var expiryPermanent int
 		var monthlyResetDay, cpuCores, memoryTotal, diskTotal, bootTime, lastSeenAt, uptimeSeconds sql.NullInt64
 		var cpuPercent, load1, load5, load15, netInSpeed, netOutSpeed sql.NullFloat64
 		var memoryUsed, diskUsed, netInTotal, netOutTotal, billable, quota sql.NullInt64
-		if err := rows.Scan(&id, &displayName, &status, &countryCode, &expiryDate, &billingMode, &monthlyResetDay, &lastSeenAt, &osName, &osVersion, &kernel, &arch, &virtualization, &cpuModel, &cpuCores, &memoryTotal, &diskTotal, &bootTime, &cpuPercent, &load1, &load5, &load15, &uptimeSeconds, &memoryUsed, &diskUsed, &netInSpeed, &netOutSpeed, &netInTotal, &netOutTotal, &billable, &quota); err != nil {
+		if err := rows.Scan(&id, &displayName, &status, &countryCode, &expiryDate, &expiryPermanent, &billingMode, &monthlyResetDay, &lastSeenAt, &osName, &osVersion, &kernel, &arch, &virtualization, &cpuModel, &cpuCores, &memoryTotal, &diskTotal, &bootTime, &cpuPercent, &load1, &load5, &load15, &uptimeSeconds, &memoryUsed, &diskUsed, &netInSpeed, &netOutSpeed, &netInTotal, &netOutTotal, &billable, &quota); err != nil {
 			return nil, err
 		}
 		resetDay := 1
@@ -1024,7 +1033,7 @@ func (s *SQLiteStore) nodes(ctx context.Context) ([]Node, error) {
 			Virtualization:       nullStringOr(virtualization, ""),
 			CPUModel:             nullStringOr(cpuModel, ""),
 			CountryCode:          nullStringOr(countryCode, ""),
-			ExpiryLabel:          nullStringOr(expiryDate, ""),
+			ExpiryLabel:          expiryLabelValue(expiryDate, expiryPermanent != 0),
 			CPUCores:             intPtr(cpuCores),
 			CPUPercent:           floatPtr(cpuPercent),
 			MemoryUsedBytes:      intPtr(memoryUsed),
@@ -1078,42 +1087,70 @@ func (s *SQLiteStore) latestLatencySummary(ctx context.Context, nodeID string) (
 }
 
 func (s *SQLiteStore) latestLatencySummaryForTarget(ctx context.Context, nodeID, preferredTargetID string) (*LatencySummary, error) {
-	var summaryTargetID, targetName string
-	var median, avg sql.NullFloat64
-	var loss float64
-	var ts int64
-	query := `
+	rows, err := s.db.QueryContext(ctx, `
 		SELECT pr.target_id, pt.name, pr.median_ms, pr.avg_ms, pr.loss_percent, pr.ts
 		FROM probe_rounds pr
 		JOIN probe_targets pt ON pt.id = pr.target_id
 		LEFT JOIN node_probe_targets npt ON npt.node_id = pr.node_id AND npt.target_id = pr.target_id
-		WHERE pr.node_id = ? AND pt.enabled = 1 AND COALESCE(npt.enabled, 0) = 1
-	`
-	args := []any{nodeID}
-	if strings.TrimSpace(preferredTargetID) != "" {
-		query += ` AND pr.target_id = ?`
-		args = append(args, strings.TrimSpace(preferredTargetID))
-	}
-	query += `
+		WHERE pr.node_id = ?
+		  AND pr.target_id = ?
+		  AND pt.enabled = 1
+		  AND COALESCE(npt.enabled, 0) = 1
+		  AND pr.ts >= ?
 		ORDER BY pr.ts DESC, pr.id DESC
-		LIMIT 1
-	`
-	err := s.db.QueryRowContext(ctx, query, args...).Scan(&summaryTargetID, &targetName, &median, &avg, &loss, &ts)
+	`, nodeID, strings.TrimSpace(preferredTargetID), time.Now().UTC().Add(-24*time.Hour).Unix())
 	if err != nil {
-		if err == sql.ErrNoRows {
-			return nil, nil
-		}
 		return nil, err
 	}
-	lossPtr := loss
+	defer rows.Close()
+
+	var summaryTargetID, targetName string
+	var latestMedian, latestAvg *float64
+	var latestTS int64
+	var lossTotal float64
+	var lossCount int
+	for rows.Next() {
+		var rowTargetID, rowTargetName string
+		var median, avg sql.NullFloat64
+		var loss float64
+		var ts int64
+		if err := rows.Scan(&rowTargetID, &rowTargetName, &median, &avg, &loss, &ts); err != nil {
+			return nil, err
+		}
+		if summaryTargetID == "" {
+			summaryTargetID = rowTargetID
+			targetName = rowTargetName
+			latestTS = ts
+		}
+		if latestAvg == nil && (avg.Valid || median.Valid) {
+			latestAvg = floatPtr(avg)
+			latestMedian = floatPtr(median)
+			if latestAvg == nil {
+				latestAvg = latestMedian
+			}
+		}
+		lossTotal += loss
+		lossCount++
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	if summaryTargetID == "" {
+		return nil, nil
+	}
+	loss := 0.0
+	if lossCount > 0 {
+		loss = lossTotal / float64(lossCount)
+	}
 	return &LatencySummary{
 		TargetID:    summaryTargetID,
 		TargetName:  targetName,
-		MedianMS:    floatPtr(median),
-		AvgMS:       floatPtr(avg),
-		LossPercent: &lossPtr,
-		UpdatedAt:   time.Unix(ts, 0).UTC().Format(time.RFC3339),
+		MedianMS:    latestMedian,
+		AvgMS:       latestAvg,
+		LossPercent: &loss,
+		UpdatedAt:   time.Unix(latestTS, 0).UTC().Format(time.RFC3339),
 	}, nil
+
 }
 
 func (s *SQLiteStore) latestLatencySummaries(ctx context.Context, nodeID string) ([]LatencySummary, error) {
@@ -1699,6 +1736,20 @@ func nullStringOr(value sql.NullString, fallback string) string {
 		return value.String
 	}
 	return fallback
+}
+
+func expiryLabelValue(expiryDate sql.NullString, permanent bool) string {
+	if permanent {
+		return "永久"
+	}
+	return nullStringOr(expiryDate, "")
+}
+
+func sqliteBoolInt(value bool) int {
+	if value {
+		return 1
+	}
+	return 0
 }
 
 func intPtr(value sql.NullInt64) *float64 {

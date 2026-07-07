@@ -61,9 +61,10 @@ describe('ServerCard', () => {
     expect(html).not.toContain('node-offline-state')
   })
 
-  it('shows permanent expiry for nodes without an expiry date', () => {
+  it('hides the expiry badge when a node has no date and is not marked permanent', () => {
     const html = renderToStaticMarkup(<ServerCard node={{ ...baseNode, expiryLabel: '' }} onOpen={vi.fn()} />)
 
-    expect(html).toContain('永久')
+    expect(html).not.toContain('node-expiry')
+    expect(html).not.toContain('永久')
   })
 })

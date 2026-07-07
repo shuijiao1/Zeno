@@ -77,7 +77,7 @@ function formatTrafficLabel(): string {
 
 function expiryBadge(expiryLabel: string | null | undefined): { text: string; tone: 'safe' | 'soon' | 'urgent' | 'expired' } | null {
   const trimmed = (expiryLabel ?? '').trim()
-  if (trimmed === '') return { text: '永久', tone: 'safe' }
+  if (trimmed === '') return null
   const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(trimmed)
   if (!match) return trimmed === '永 久' || trimmed === '永久' ? { text: '永久', tone: 'safe' } : { text: trimmed, tone: 'safe' }
   const expiry = Date.UTC(Number(match[1]), Number(match[2]) - 1, Number(match[3]))
