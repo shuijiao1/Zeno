@@ -768,6 +768,54 @@ func TestAgentHeartbeatNotificationFailureDoesNotRejectHeartbeat(t *testing.T) {
 	}
 }
 
+func TestAgentHeartbeatDispatchesRenewalDueNotificationOncePerDay(t *testing.T) {
+	store, err := OpenSQLiteStore(filepath.Join(t.TempDir(), "zeno.db"))
+	if err != nil {
+		t.Fatalf("open sqlite store: %v", err)
+	}
+	defer store.Close()
+	ctx := context.Background()
+	if err := store.SeedPreviewData(ctx, PreviewSeedOptions{NodeID: "hytron", DisplayName: "Hytron", CountryCode: "HK", AgentToken: "test-agent-token"}); err != nil {
+		t.Fatalf("seed preview data: %v", err)
+	}
+	expiryDate := time.Now().UTC().Add(7 * 24 * time.Hour).Format("2006-01-02")
+	if _, err := store.UpdateAdminNode(ctx, "hytron", AdminNodeUpdateRequest{ExpiryDate: &expiryDate}); err != nil {
+		t.Fatalf("set expiry date: %v", err)
+	}
+	enabled := true
+	if _, err := store.CreateAdminNotificationChannel(ctx, AdminNotificationChannelCreateRequest{ID: "ops-telegram", Name: "Ops Telegram", Destination: "7579942307", Credential: "telegram-bot-credential-value", Enabled: &enabled}); err != nil {
+		t.Fatalf("create notification channel: %v", err)
+	}
+	if _, err := store.UpdateAdminNotificationType(ctx, "renewal_due", AdminNotificationTypeUpdateRequest{Enabled: &enabled}); err != nil {
+		t.Fatalf("enable renewal_due notification type: %v", err)
+	}
+	if _, err := store.UpdateAdminAlertRule(ctx, "renewal_due", AdminAlertRuleUpdateRequest{Enabled: &enabled}); err != nil {
+		t.Fatalf("enable renewal_due alert rule: %v", err)
+	}
+
+	telegram := newTelegramTestCapture(t)
+	handler := NewHandler(telegram.handlerOptions(store))
+	now := time.Now().UTC().Truncate(time.Second)
+	postAgentHeartbeat(t, handler, now.Unix(), "online")
+	paths, forms, errors := telegram.waitForCalls(t, 1)
+	if len(errors) != 0 {
+		t.Fatalf("telegram handler errors = %+v", errors)
+	}
+	if len(paths) != 1 || len(forms) != 1 || !strings.Contains(forms[0], "%E9%9C%80%E8%A6%81%E7%BB%AD%E8%B4%B9") || !strings.Contains(forms[0], expiryDate) {
+		t.Fatalf("telegram request paths=%+v forms=%+v, want one renewal due notification", paths, forms)
+	}
+	assertTelegramFormsDoNotLeakCredential(t, forms, "telegram-bot-credential-value")
+
+	postAgentHeartbeat(t, handler, now.Add(time.Minute).Unix(), "online")
+	paths, forms, errors = telegram.waitForCalls(t, 1)
+	if len(errors) != 0 {
+		t.Fatalf("telegram handler errors after duplicate heartbeat = %+v", errors)
+	}
+	if len(paths) != 1 || len(forms) != 1 {
+		t.Fatalf("telegram calls after duplicate heartbeat paths=%+v forms=%+v, want still one renewal notification", paths, forms)
+	}
+}
+
 func postAgentHeartbeat(t *testing.T, handler http.Handler, ts int64, status string) *httptest.ResponseRecorder {
 	t.Helper()
 	payload := []byte(`{"ts":` + strconv.FormatInt(ts, 10) + `,"status":"` + status + `","agent_version":"agent-test"}`)

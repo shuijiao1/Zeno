@@ -2269,6 +2269,7 @@ function AdminAlertRuleList({ rules, nodes, onEdit, onUpdate }: { rules: AdminAl
         <article className="admin-list-row" role="listitem" key={rule.id}>
           <div className="admin-list-main">
             <strong>{rule.name}</strong>
+            {rule.description && <small>{rule.description}</small>}
           </div>
           <span data-label="范围">{formatAlertRuleScope(rule, nodes)}</span>
           <AdminStatusBadge label={rule.enabled ? '启用中' : '已停用'} status={rule.enabled ? 'online' : 'disabled'} dataLabel="状态" />
@@ -2293,7 +2294,7 @@ function AdminAlertRuleAddModal({ rules, nodes, onAdd, onClose }: { rules: Admin
               <article className="admin-rule-picker-row" role="listitem" key={rule.id}>
                 <div className="admin-list-main">
                   <strong>{rule.name}</strong>
-                  <small>{formatAlertRuleScope(rule, nodes)}</small>
+                  <small>{rule.description || formatAlertRuleScope(rule, nodes)}</small>
                 </div>
                 <button className="admin-primary-action" type="button" onClick={() => onAdd(rule.id)}>添加</button>
               </article>

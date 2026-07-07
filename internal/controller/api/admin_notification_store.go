@@ -10,6 +10,7 @@ import (
 var adminNotificationTypeCatalog = []AdminNotificationType{
 	{EventType: "node_offline", Label: "离线"},
 	{EventType: "probe_unhealthy", Label: "异常"},
+	{EventType: "renewal_due", Label: "续费"},
 }
 
 func (s *SQLiteStore) AdminNotificationChannels(ctx context.Context) ([]AdminNotificationChannel, error) {

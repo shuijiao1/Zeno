@@ -196,6 +196,7 @@ func (h *handler) handleAgentHeartbeat(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	h.dispatchAgentStatusNotification(store, transition, heartbeatTS)
+	h.dispatchRenewalNotifications(store)
 	h.publishSummary(r.Context())
 	writeJSON(w, http.StatusAccepted, map[string]any{"ok": true})
 }
@@ -225,6 +226,7 @@ func (h *handler) handleAgentHost(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "internal error")
 		return
 	}
+	h.dispatchRenewalNotifications(store)
 	h.publishSummary(r.Context())
 	writeJSON(w, http.StatusAccepted, map[string]any{"ok": true})
 }
@@ -263,6 +265,7 @@ func (h *handler) handleAgentState(w http.ResponseWriter, r *http.Request) {
 		}
 		h.dispatchAgentStatusNotification(store, transition, stateTS)
 	}
+	h.dispatchRenewalNotifications(store)
 	h.publishSummary(r.Context())
 	h.publishNodeState(r.Context(), nodeID)
 	writeJSON(w, http.StatusAccepted, map[string]any{"ok": true})

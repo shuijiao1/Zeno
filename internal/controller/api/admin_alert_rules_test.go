@@ -47,8 +47,8 @@ func TestAdminAlertRulesListAndPatchWithoutSensitiveLeak(t *testing.T) {
 	if err := json.NewDecoder(bytes.NewBufferString(listRecorder.Body.String())).Decode(&listResponse); err != nil {
 		t.Fatalf("decode alert rules: %v", err)
 	}
-	if len(listResponse.Rules) != 4 {
-		t.Fatalf("default rules len = %d, want CPU/memory/disk/offline rules", len(listResponse.Rules))
+	if len(listResponse.Rules) != 5 {
+		t.Fatalf("default rules len = %d, want CPU/memory/disk/offline/renewal rules", len(listResponse.Rules))
 	}
 	rulesByID := map[string]struct {
 		ID                    string   `json:"id"`
@@ -77,6 +77,10 @@ func TestAdminAlertRulesListAndPatchWithoutSensitiveLeak(t *testing.T) {
 	}
 	if rulesByID["node_offline"].Name != "离线通知" || rulesByID["node_offline"].NotificationEventType != "node_offline" {
 		t.Fatalf("offline rule should be the only liveness notification: %+v", rulesByID["node_offline"])
+	}
+	renewalRule := rulesByID["renewal_due"]
+	if renewalRule.Name != "续费提醒" || renewalRule.Category != "billing" || renewalRule.Metric != "expiry_days" || renewalRule.Comparator != "<=" || renewalRule.Threshold != 7 || renewalRule.ThresholdUnit != "d" || renewalRule.Enabled || renewalRule.NotificationEventType != "renewal_due" || renewalRule.NotificationLabel != "续费" {
+		t.Fatalf("renewal_due rule = %+v, want disabled billing renewal rule", renewalRule)
 	}
 	for _, retiredRuleID := range []string{"probe_latency_high", "probe_loss_high", "node_recovered"} {
 		if _, ok := rulesByID[retiredRuleID]; ok {

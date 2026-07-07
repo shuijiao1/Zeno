@@ -56,6 +56,18 @@ var defaultAdminAlertRules = []AdminAlertRule{
 		Enabled:               true,
 		NotificationEventType: "node_offline",
 	},
+	{
+		ID:                    "renewal_due",
+		Name:                  "续费提醒",
+		Category:              "billing",
+		Metric:                "expiry_days",
+		Comparator:            "<=",
+		Threshold:             7,
+		ThresholdUnit:         "d",
+		DurationSec:           0,
+		Enabled:               false,
+		NotificationEventType: "renewal_due",
+	},
 }
 
 var retiredAdminAlertRuleIDs = []string{"probe_latency_high", "probe_loss_high", "node_recovered"}

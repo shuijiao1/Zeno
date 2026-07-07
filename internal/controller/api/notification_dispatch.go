@@ -21,6 +21,11 @@ type notificationEventStore interface {
 	EnabledNotificationChannelsForEvent(ctx context.Context, eventType, nodeID string) (string, []notificationDispatchChannel, error)
 }
 
+type renewalNotificationStore interface {
+	PendingRenewalNotifications(ctx context.Context, now time.Time) ([]notificationEvent, error)
+	MarkRenewalNotification(ctx context.Context, event notificationEvent, now time.Time) error
+}
+
 type notificationNodeSnapshot struct {
 	ID          string
 	DisplayName string
@@ -48,6 +53,7 @@ type notificationEvent struct {
 	Status         string `json:"status"`
 	PreviousStatus string `json:"previous_status"`
 	TS             string `json:"ts"`
+	Detail         string `json:"detail,omitempty"`
 }
 
 type notificationSender interface {
@@ -117,8 +123,58 @@ func (event notificationEvent) messageText() string {
 		return fmt.Sprintf("Zeno：%s 已离线", nodeName)
 	case "probe_unhealthy":
 		return fmt.Sprintf("Zeno：%s 状态异常", nodeName)
+	case "renewal_due":
+		detail := strings.TrimSpace(event.Detail)
+		if detail != "" {
+			return fmt.Sprintf("Zeno：%s 需要续费（%s）", nodeName, detail)
+		}
+		return fmt.Sprintf("Zeno：%s 需要续费", nodeName)
 	default:
 		return fmt.Sprintf("Zeno：%s %s", nodeName, event.Label)
+	}
+}
+
+func (h *handler) dispatchNotificationEvent(store agentStore, event notificationEvent) bool {
+	if strings.TrimSpace(event.EventType) == "" || h.notificationSender == nil {
+		return false
+	}
+	notificationStore, ok := store.(notificationEventStore)
+	if !ok {
+		return false
+	}
+	label, channels, err := notificationStore.EnabledNotificationChannelsForEvent(context.Background(), event.EventType, event.NodeID)
+	if err != nil || len(channels) == 0 {
+		return false
+	}
+	if event.Label == "" {
+		event.Label = label
+	}
+	for _, channel := range channels {
+		channel := channel
+		event := event
+		go func() {
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			_ = h.notificationSender.Send(ctx, channel, event)
+		}()
+	}
+	return true
+}
+
+func (h *handler) dispatchRenewalNotifications(store agentStore) {
+	renewalStore, ok := store.(renewalNotificationStore)
+	if !ok || h.notificationSender == nil {
+		return
+	}
+	now := time.Now().UTC()
+	events, err := renewalStore.PendingRenewalNotifications(context.Background(), now)
+	if err != nil {
+		return
+	}
+	for _, event := range events {
+		if h.dispatchNotificationEvent(store, event) {
+			_ = renewalStore.MarkRenewalNotification(context.Background(), event, now)
+		}
 	}
 }
 
@@ -127,35 +183,19 @@ func (h *handler) dispatchAgentStatusNotification(store agentStore, transition n
 	if !ok || h.notificationSender == nil {
 		return
 	}
-	notificationStore, ok := store.(notificationEventStore)
-	if !ok {
-		return
-	}
 	node := transition.Current
 	if node.ID == "" {
 		node = transition.Previous
 	}
-	label, channels, err := notificationStore.EnabledNotificationChannelsForEvent(context.Background(), eventType, node.ID)
-	if err != nil || len(channels) == 0 {
-		return
-	}
 	event := notificationEvent{
 		EventType:      eventType,
-		Label:          label,
 		NodeID:         node.ID,
 		NodeName:       node.DisplayName,
 		Status:         transition.Current.Status,
 		PreviousStatus: transition.Previous.Status,
 		TS:             ts.UTC().Format(time.RFC3339),
 	}
-	for _, channel := range channels {
-		channel := channel
-		go func() {
-			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-			defer cancel()
-			_ = h.notificationSender.Send(ctx, channel, event)
-		}()
-	}
+	h.dispatchNotificationEvent(store, event)
 }
 
 func sanitizeNotificationDeliveryError(err error) string {

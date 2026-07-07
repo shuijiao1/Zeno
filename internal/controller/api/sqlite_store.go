@@ -212,6 +212,14 @@ func (s *SQLiteStore) ensureSchema(ctx context.Context) error {
 			PRIMARY KEY (node_id, rule_id)
 		);`,
 		`CREATE INDEX IF NOT EXISTS idx_alert_rule_states_node_active ON alert_rule_states(node_id, active);`,
+		`CREATE TABLE IF NOT EXISTS notification_event_marks (
+			event_type TEXT NOT NULL,
+			node_id TEXT NOT NULL REFERENCES nodes(id) ON DELETE CASCADE,
+			mark TEXT NOT NULL,
+			created_at INTEGER NOT NULL,
+			PRIMARY KEY (event_type, node_id, mark)
+		);`,
+		`CREATE INDEX IF NOT EXISTS idx_notification_event_marks_event_node ON notification_event_marks(event_type, node_id);`,
 		`CREATE TABLE IF NOT EXISTS settings (
 			key TEXT PRIMARY KEY,
 			value TEXT NOT NULL,
@@ -250,7 +258,7 @@ func (s *SQLiteStore) ensureSchema(ctx context.Context) error {
 		}
 	}
 	nodeColumns := map[string]string{
-		"install_token":         "TEXT",
+		"install_token":        "TEXT",
 		"home_probe_target_id": "TEXT",
 		"expiry_date":          "TEXT",
 		"billing_cycle":        "TEXT",
