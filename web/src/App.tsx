@@ -114,8 +114,20 @@ function blurActiveElement() {
   if (activeElement instanceof HTMLElement || activeElement instanceof SVGElement) activeElement.blur()
 }
 
+type HomeRateSnapshot = {
+  upSpeed: number
+  downSpeed: number
+}
+
 function sum(values: Array<number | null | undefined>): number {
   return values.reduce<number>((total, value) => total + (value ?? 0), 0)
+}
+
+function homeRateSnapshotForNodes(nodes: HomeCardNode[]): HomeRateSnapshot {
+  return {
+    upSpeed: sum(nodes.map((node) => node.netOutSpeedBps)),
+    downSpeed: sum(nodes.map((node) => node.netInSpeedBps)),
+  }
 }
 
 function compactBytes(value: number): string {
@@ -252,6 +264,9 @@ export function App() {
   const [serviceLatencyState, setServiceLatencyState] = useState<ServiceLatencyLoadState>({ kind: 'idle' })
   const nodeLatencyCacheRef = useRef(new Map<string, NodeLatencyData>())
   const nodeStateCacheRef = useRef(new Map<string, NodeStateData>())
+  const latestSummaryRef = useRef<SummaryData | null>(state.kind === 'ready' ? state.data : null)
+  const rateSnapshotInitializedRef = useRef(state.kind === 'ready')
+  const [homeRateSnapshot, setHomeRateSnapshot] = useState<HomeRateSnapshot | null>(() => state.kind === 'ready' ? homeRateSnapshotForNodes(state.data.nodes) : null)
   const [adminToken, setAdminToken] = useState(loadStoredAdminToken)
   const [adminAuthState, setAdminAuthState] = useState<AdminAuthState>({ kind: 'idle' })
   const [adminState, setAdminState] = useState<AdminLoadState>({ kind: 'idle' })
@@ -280,7 +295,12 @@ export function App() {
     let cancelled = false
     const stopSummaryStream = subscribeSummary(
       (data) => {
+        latestSummaryRef.current = data
         rememberSummary(data)
+        if (!rateSnapshotInitializedRef.current) {
+          rateSnapshotInitializedRef.current = true
+          setHomeRateSnapshot(homeRateSnapshotForNodes(data.nodes))
+        }
         if (!cancelled) setState({ kind: 'ready', data })
       },
       (error) => {
@@ -290,7 +310,12 @@ export function App() {
     if (!stopSummaryStream) {
       fetchSummary()
         .then((data) => {
+          latestSummaryRef.current = data
           rememberSummary(data)
+          if (!rateSnapshotInitializedRef.current) {
+            rateSnapshotInitializedRef.current = true
+            setHomeRateSnapshot(homeRateSnapshotForNodes(data.nodes))
+          }
           if (!cancelled) setState({ kind: 'ready', data })
         })
         .catch((error: unknown) => {
@@ -301,6 +326,14 @@ export function App() {
       cancelled = true
       stopSummaryStream?.()
     }
+  }, [])
+
+  useEffect(() => {
+    const timer = window.setInterval(() => {
+      const latest = latestSummaryRef.current
+      if (latest) setHomeRateSnapshot(homeRateSnapshotForNodes(latest.nodes))
+    }, 2000)
+    return () => window.clearInterval(timer)
   }, [])
 
   useEffect(() => {
@@ -727,8 +760,9 @@ export function App() {
   const offlineCount = nodes.filter((node) => node.status === 'offline').length
   const totalUp = sum(nodes.map((node) => node.netOutTotalBytes))
   const totalDown = sum(nodes.map((node) => node.netInTotalBytes))
-  const upSpeed = sum(nodes.map((node) => node.netOutSpeedBps))
-  const downSpeed = sum(nodes.map((node) => node.netInSpeedBps))
+  const currentRateSnapshot = homeRateSnapshot ?? homeRateSnapshotForNodes(nodes)
+  const upSpeed = currentRateSnapshot.upSpeed
+  const downSpeed = currentRateSnapshot.downSpeed
 
   return (
     <main className="kulin-shell" data-theme={effectiveSettings.theme} style={shellStyleForSettings(effectiveSettings)}>
