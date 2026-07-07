@@ -200,7 +200,7 @@ func (h *handler) handleAgentHeartbeat(w http.ResponseWriter, r *http.Request) {
 	if transition.Previous.Status != transition.Current.Status {
 		h.invalidateSummaryCache()
 	}
-	go h.publishSummaryNow(context.Background())
+	h.publishSummary(r.Context())
 	writeJSON(w, http.StatusAccepted, map[string]any{"ok": true})
 }
 
@@ -229,9 +229,8 @@ func (h *handler) handleAgentHost(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "internal error")
 		return
 	}
-	h.dispatchRenewalNotifications(store)
 	h.invalidateSummaryCache()
-	go h.publishSummaryNow(context.Background())
+	h.publishSummary(r.Context())
 	writeJSON(w, http.StatusAccepted, map[string]any{"ok": true})
 }
 
