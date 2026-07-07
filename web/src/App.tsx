@@ -1830,12 +1830,12 @@ function AdminNodeCreateModal({ onCreate, onInstallCommand, agentControllerUrl, 
           </div>
         </AdminFormSection>
         <AdminFormSection title="Agent 接入">
-          {createdNode && <p className="admin-help-note">已添加：{createdNode.displayName}</p>}
           <div className="admin-inline-actions admin-install-copy-row">
             <div className="admin-install-copy-menu">
               <button ref={installCopyButtonRef} className="admin-primary-action admin-install-copy-button" type="button" onClick={handleCopyInstallCommand} disabled={submitting || installCommandState.kind === 'loading'}>复制安装命令</button>
               {installPlatformPickerOpen && <AdminInstallPlatformPopover state={installCommandState} style={installPlatformMenuStyle} onSelect={handleCopyInstallPlatform} />}
             </div>
+            {createdNode && installCopyState.kind === 'idle' && <span className="admin-inline-note is-success">已添加：{createdNode.displayName}</span>}
             {installCopyState.kind !== 'idle' && <span className={`admin-inline-note${installCopyState.kind === 'ready' ? ' is-success' : installCopyState.kind === 'warning' ? ' is-warning' : ' is-error'}`}>{installCopyState.message}</span>}
           </div>
           {installCommandState.kind === 'error' && <div className="admin-install-error">安装命令生成失败：{installCommandState.message}</div>}
