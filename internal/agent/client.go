@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 )
@@ -40,11 +41,19 @@ func (c *Client) PostState(ctx context.Context, state StateSample) error {
 }
 
 func (c *Client) FetchProbeTargets(ctx context.Context) ([]ProbeTarget, error) {
-	var response ProbeTargetsResponse
-	if err := c.doJSON(ctx, http.MethodGet, "/api/agent/v1/probe-targets", nil, &response); err != nil {
+	response, err := c.FetchProbeConfig(ctx)
+	if err != nil {
 		return nil, err
 	}
 	return response.Targets, nil
+}
+
+func (c *Client) FetchProbeConfig(ctx context.Context) (ProbeTargetsResponse, error) {
+	var response ProbeTargetsResponse
+	if err := c.doJSON(ctx, http.MethodGet, "/api/agent/v1/probe-targets", nil, &response); err != nil {
+		return ProbeTargetsResponse{}, err
+	}
+	return response, nil
 }
 
 func (c *Client) PostProbeResults(ctx context.Context, rounds []ProbeRound) error {
@@ -58,6 +67,31 @@ func (c *Client) PostProbeResults(ctx context.Context, rounds []ProbeRound) erro
 		})
 	}
 	return c.doJSON(ctx, http.MethodPost, "/api/agent/v1/probe-results", payload, nil)
+}
+
+func (c *Client) PresenceWebSocketURL() (string, error) {
+	parsed, err := url.Parse(c.baseURL)
+	if err != nil {
+		return "", err
+	}
+	switch parsed.Scheme {
+	case "http":
+		parsed.Scheme = "ws"
+	case "https":
+		parsed.Scheme = "wss"
+	case "ws", "wss":
+	default:
+		return "", fmt.Errorf("unsupported controller url scheme %q", parsed.Scheme)
+	}
+	parsed.Path = "/api/agent/v1/presence/ws"
+	parsed.RawQuery = ""
+	parsed.Fragment = ""
+	return parsed.String(), nil
+}
+
+func (c *Client) setAuthHeaders(header http.Header) {
+	header.Set("X-Node-ID", c.nodeID)
+	header.Set("Authorization", "Bearer "+c.token)
 }
 
 func (c *Client) doJSON(ctx context.Context, method, path string, requestValue any, responseValue any) error {
@@ -76,8 +110,7 @@ func (c *Client) doJSON(ctx context.Context, method, path string, requestValue a
 	if err != nil {
 		return err
 	}
-	req.Header.Set("X-Node-ID", c.nodeID)
-	req.Header.Set("Authorization", "Bearer "+c.token)
+	c.setAuthHeaders(req.Header)
 	if requestValue != nil {
 		req.Header.Set("Content-Type", "application/json")
 	}

@@ -2,6 +2,7 @@ package api
 
 type AgentProbeTargetsResponse struct {
 	Targets []AgentProbeTarget `json:"targets"`
+	Version int64              `json:"version"`
 }
 
 type AgentProbeTarget struct {

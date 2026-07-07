@@ -136,7 +136,7 @@ type CachedNetworkIdentityDiscoverer struct {
 
 func NewCachedNetworkIdentityDiscoverer(inner *NetworkIdentityDiscoverer, ttl time.Duration) *CachedNetworkIdentityDiscoverer {
 	if ttl <= 0 {
-		ttl = 6 * time.Hour
+		ttl = 12 * time.Hour
 	}
 	return &CachedNetworkIdentityDiscoverer{Inner: inner, TTL: ttl, Now: time.Now}
 }

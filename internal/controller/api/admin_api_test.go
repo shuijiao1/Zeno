@@ -203,7 +203,7 @@ func TestAdminNodesListsEnabledAndDisabledNodesWithoutTokenHashes(t *testing.T) 
 	if response.Nodes[0].ID != "disabled-node" || !response.Nodes[0].Disabled {
 		t.Fatalf("first admin node = %+v, want disabled-node visible with disabled=true", response.Nodes[0])
 	}
-	if response.Nodes[1].ID != "hytron" || response.Nodes[1].DisplayName != "Hytron" || response.Nodes[1].Status != "online" || response.Nodes[1].CountryCode != "HK" || response.Nodes[1].LastSeenAt == nil || response.Nodes[1].AgentVersion != "agent-test" {
+	if response.Nodes[1].ID != "hytron" || response.Nodes[1].DisplayName != "Hytron" || response.Nodes[1].Status != "offline" || response.Nodes[1].CountryCode != "HK" || response.Nodes[1].LastSeenAt == nil || response.Nodes[1].AgentVersion != "agent-test" {
 		t.Fatalf("hytron admin node = %+v, want persisted management fields", response.Nodes[1])
 	}
 }
@@ -622,8 +622,8 @@ func TestAdminNodeCreateAddsEditableNodeWithoutReturningSecrets(t *testing.T) {
 	if err := json.NewDecoder(bytes.NewBufferString(raw)).Decode(&response); err != nil {
 		t.Fatalf("decode created admin node: %v", err)
 	}
-	if response.Node.ID == "" || response.Node.DisplayName != "New Server" || response.Node.Status != "no_data" || response.Node.CountryCode != "US" || response.Node.Region != "Los Angeles" || response.Node.Disabled || response.Node.BillingMode != "out" || response.Node.MonthlyResetDay != 20 || response.Node.MonthlyQuotaBytes != 1099511627776 {
-		t.Fatalf("created admin node = %+v, want trimmed editable no_data node", response.Node)
+	if response.Node.ID == "" || response.Node.DisplayName != "New Server" || response.Node.Status != "offline" || response.Node.CountryCode != "US" || response.Node.Region != "Los Angeles" || response.Node.Disabled || response.Node.BillingMode != "out" || response.Node.MonthlyResetDay != 20 || response.Node.MonthlyQuotaBytes != 1099511627776 {
+		t.Fatalf("created admin node = %+v, want trimmed editable offline node", response.Node)
 	}
 
 	targets, err := store.EnabledProbeTargets(ctx, response.Node.ID)

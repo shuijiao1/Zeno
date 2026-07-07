@@ -18,7 +18,11 @@ Options:
   --node-id <id>              Required
   --token <token>             Write token to <data-dir>/agent-token
   --token-file <path>         Existing/written token file path
-  --interval <duration>       Default: 2s
+  --state-interval <duration> Default: 3s
+  --heartbeat-interval <duration> Default: 15s
+  --host-interval <duration>  Default: 30m
+  --identity-refresh-interval <duration> Default: 12h
+  --interval <duration>       Deprecated alias for --state-interval
   --version <version>         Default: REVISION next to agent binary, or unknown
   --network-interfaces <list> Comma-separated interface allowlist; default excludes virtual/container interfaces
   --disk-mounts <list>        Comma-separated disk path allowlist; default sums real filesystems
@@ -37,7 +41,10 @@ controller_url=""
 node_id=""
 token=""
 token_file=""
-interval="2s"
+state_interval="3s"
+heartbeat_interval="15s"
+host_interval="30m"
+identity_refresh_interval="12h"
 version=""
 network_interfaces=""
 disk_mounts=""
@@ -54,7 +61,11 @@ while [ "$#" -gt 0 ]; do
     --node-id) node_id="${2:-}"; shift 2 ;;
     --token) token="${2:-}"; shift 2 ;;
     --token-file) token_file="${2:-}"; shift 2 ;;
-    --interval) interval="${2:-}"; shift 2 ;;
+    --state-interval) state_interval="${2:-}"; shift 2 ;;
+    --heartbeat-interval) heartbeat_interval="${2:-}"; shift 2 ;;
+    --host-interval) host_interval="${2:-}"; shift 2 ;;
+    --identity-refresh-interval) identity_refresh_interval="${2:-}"; shift 2 ;;
+    --interval) state_interval="${2:-}"; shift 2 ;;
     --version) version="${2:-}"; shift 2 ;;
     --network-interfaces) network_interfaces="${2:-}"; shift 2 ;;
     --disk-mounts) disk_mounts="${2:-}"; shift 2 ;;
@@ -113,7 +124,10 @@ sed \
   -e "s/{{AGENT_REQUIRES_CONTROLLER}}//g" \
   -e "s/{{CONTROLLER_URL}}/$(sed_escape "$controller_url")/g" \
   -e "s/{{NODE_ID}}/$(sed_escape "$node_id")/g" \
-  -e "s/{{AGENT_INTERVAL}}/$(sed_escape "$interval")/g" \
+  -e "s/{{AGENT_STATE_INTERVAL}}/$(sed_escape "$state_interval")/g" \
+  -e "s/{{AGENT_HEARTBEAT_INTERVAL}}/$(sed_escape "$heartbeat_interval")/g" \
+  -e "s/{{AGENT_HOST_INTERVAL}}/$(sed_escape "$host_interval")/g" \
+  -e "s/{{AGENT_IDENTITY_REFRESH_INTERVAL}}/$(sed_escape "$identity_refresh_interval")/g" \
   -e "s/{{AGENT_TOKEN_FILE}}/$(sed_escape "$token_file")/g" \
   -e "s/{{AGENT_VERSION}}/$(sed_escape "$version")/g" \
   -e "s/{{AGENT_EXTRA_ARGS}}/$(sed_escape "$systemd_extra_args")/g" \

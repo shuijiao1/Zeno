@@ -17,7 +17,11 @@ Options:
   --controller-addr <addr>      Default: 0.0.0.0:18980
   --controller-url <url>        Default: http://127.0.0.1:18980
   --node-id <id>                Default: hytron
-  --agent-interval <duration>   Default: 2s
+  --agent-state-interval <duration> Default: 3s
+  --agent-heartbeat-interval <duration> Default: 15s
+  --agent-host-interval <duration> Default: 30m
+  --agent-identity-refresh-interval <duration> Default: 12h
+  --agent-interval <duration>   Deprecated alias for --agent-state-interval
   --agent-version <version>     Default: release REVISION
   --agent-token-file <path>     Default: <data-dir>/agent-token
   --admin-token-file <path>     Default: <data-dir>/admin-token
@@ -37,7 +41,10 @@ run_user="root"
 controller_addr="0.0.0.0:18980"
 controller_url="http://127.0.0.1:18980"
 node_id="hytron"
-agent_interval="2s"
+agent_state_interval="3s"
+agent_heartbeat_interval="15s"
+agent_host_interval="30m"
+agent_identity_refresh_interval="12h"
 agent_version=""
 agent_token_file=""
 admin_token_file=""
@@ -56,7 +63,11 @@ while [ "$#" -gt 0 ]; do
     --controller-addr) controller_addr="${2:-}"; shift 2 ;;
     --controller-url) controller_url="${2:-}"; shift 2 ;;
     --node-id) node_id="${2:-}"; shift 2 ;;
-    --agent-interval) agent_interval="${2:-}"; shift 2 ;;
+    --agent-state-interval) agent_state_interval="${2:-}"; shift 2 ;;
+    --agent-heartbeat-interval) agent_heartbeat_interval="${2:-}"; shift 2 ;;
+    --agent-host-interval) agent_host_interval="${2:-}"; shift 2 ;;
+    --agent-identity-refresh-interval) agent_identity_refresh_interval="${2:-}"; shift 2 ;;
+    --agent-interval) agent_state_interval="${2:-}"; shift 2 ;;
     --agent-version) agent_version="${2:-}"; shift 2 ;;
     --agent-token-file) agent_token_file="${2:-}"; shift 2 ;;
     --admin-token-file) admin_token_file="${2:-}"; shift 2 ;;
@@ -131,7 +142,11 @@ render_template() {
     -e "s/{{CONTROLLER_ADDR}}/$(sed_escape "$controller_addr")/g" \
     -e "s/{{CONTROLLER_URL}}/$(sed_escape "$controller_url")/g" \
     -e "s/{{NODE_ID}}/$(sed_escape "$node_id")/g" \
-    -e "s/{{AGENT_INTERVAL}}/$(sed_escape "$agent_interval")/g" \
+    -e "s/{{AGENT_STATE_INTERVAL}}/$(sed_escape "$agent_state_interval")/g" \
+    -e "s/{{AGENT_HEARTBEAT_INTERVAL}}/$(sed_escape "$agent_heartbeat_interval")/g" \
+    -e "s/{{AGENT_HOST_INTERVAL}}/$(sed_escape "$agent_host_interval")/g" \
+    -e "s/{{AGENT_IDENTITY_REFRESH_INTERVAL}}/$(sed_escape "$agent_identity_refresh_interval")/g" \
+    -e "s/{{AGENT_EXTRA_ARGS}}//g" \
     -e "s/{{AGENT_VERSION}}/$(sed_escape "$reported_agent_version")/g" \
     -e "s/{{AGENT_TOKEN_FILE}}/$(sed_escape "$agent_token_file")/g" \
     -e "s/{{ADMIN_TOKEN_FILE}}/$(sed_escape "$admin_token_file")/g" \

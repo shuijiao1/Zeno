@@ -1,0 +1,240 @@
+package api
+
+import (
+	"context"
+	"encoding/json"
+	"net/http"
+	"sync"
+	"time"
+)
+
+type agentPresenceSession struct {
+	nodeID string
+	id     uint64
+	send   chan []byte
+	done   chan struct{}
+}
+
+type agentPresenceManager struct {
+	mu       sync.Mutex
+	nextID   uint64
+	sessions map[string]*agentPresenceSession
+}
+
+func newAgentPresenceManager() *agentPresenceManager {
+	return &agentPresenceManager{sessions: map[string]*agentPresenceSession{}}
+}
+
+func (m *agentPresenceManager) connect(nodeID string) *agentPresenceSession {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.nextID++
+	session := &agentPresenceSession{nodeID: nodeID, id: m.nextID, send: make(chan []byte, 8), done: make(chan struct{})}
+	if previous := m.sessions[nodeID]; previous != nil {
+		close(previous.done)
+	}
+	m.sessions[nodeID] = session
+	return session
+}
+
+func (m *agentPresenceManager) disconnect(session *agentPresenceSession) bool {
+	if session == nil {
+		return false
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	current := m.sessions[session.nodeID]
+	if current == nil || current.id != session.id {
+		return false
+	}
+	delete(m.sessions, session.nodeID)
+	return true
+}
+
+func (m *agentPresenceManager) isOnline(nodeID string) bool {
+	if m == nil {
+		return false
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.sessions[nodeID] != nil
+}
+
+func (m *agentPresenceManager) notifyConfigChanged(nodeID string, version int64) bool {
+	if m == nil {
+		return false
+	}
+	payload, err := json.Marshal(agentPresenceServerMessage{Type: "config_changed", Version: version})
+	if err != nil {
+		return false
+	}
+	m.mu.Lock()
+	session := m.sessions[nodeID]
+	m.mu.Unlock()
+	if session == nil {
+		return false
+	}
+	select {
+	case session.send <- payload:
+	default:
+		select {
+		case <-session.send:
+		default:
+		}
+		select {
+		case session.send <- payload:
+		default:
+		}
+	}
+	return true
+}
+
+func (m *agentPresenceManager) notifyAllConfigChanged(version int64) int {
+	if m == nil {
+		return 0
+	}
+	m.mu.Lock()
+	nodeIDs := make([]string, 0, len(m.sessions))
+	for nodeID := range m.sessions {
+		nodeIDs = append(nodeIDs, nodeID)
+	}
+	m.mu.Unlock()
+	count := 0
+	for _, nodeID := range nodeIDs {
+		if m.notifyConfigChanged(nodeID, version) {
+			count++
+		}
+	}
+	return count
+}
+
+type agentPresenceServerMessage struct {
+	Type    string `json:"type"`
+	Version int64  `json:"version,omitempty"`
+}
+
+type agentPresenceClientMessage struct {
+	Type    string `json:"type"`
+	Version int64  `json:"version,omitempty"`
+}
+
+func (h *handler) handleAgentPresenceWebSocket(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+	store, nodeID, ok := h.authorizeAgentRequest(w, r)
+	if !ok {
+		return
+	}
+	_ = store
+	conn, err := summaryWebSocketUpgrader.Upgrade(w, r, nil)
+	if err != nil {
+		return
+	}
+	defer conn.Close()
+	conn.EnableWriteCompression(true)
+
+	session := h.presence.connect(nodeID)
+	h.invalidateSummaryCache()
+	h.publishSummaryNow(r.Context())
+	defer func() {
+		if h.presence.disconnect(session) {
+			h.invalidateSummaryCache()
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			h.publishSummaryNow(ctx)
+		}
+	}()
+
+	readDone := make(chan struct{})
+	go func() {
+		defer close(readDone)
+		conn.SetReadLimit(4 << 10)
+		for {
+			_, reader, err := conn.NextReader()
+			if err != nil {
+				return
+			}
+			var message agentPresenceClientMessage
+			if err := json.NewDecoder(reader).Decode(&message); err != nil {
+				continue
+			}
+			// config_applied is intentionally accepted as an acknowledgement only.
+			// The authoritative probe configuration still lives behind the HTTP API.
+		}
+	}()
+
+	ping := time.NewTicker(25 * time.Second)
+	defer ping.Stop()
+	for {
+		select {
+		case <-r.Context().Done():
+			return
+		case <-session.done:
+			_ = conn.WriteControl(websocketCloseMessage, []byte{}, time.Now().Add(2*time.Second))
+			return
+		case <-readDone:
+			return
+		case payload := <-session.send:
+			if err := conn.WriteMessage(websocketTextMessage, payload); err != nil {
+				return
+			}
+		case <-ping.C:
+			if err := conn.WriteControl(websocketPingMessage, []byte{}, time.Now().Add(5*time.Second)); err != nil {
+				return
+			}
+		}
+	}
+}
+
+const (
+	websocketTextMessage  = 1
+	websocketCloseMessage = 8
+	websocketPingMessage  = 9
+)
+
+func (h *handler) applyPresenceToSummary(summary *SummaryResponse) {
+	if h == nil || h.presence == nil || summary == nil {
+		return
+	}
+	for index := range summary.Nodes {
+		if h.presence.isOnline(summary.Nodes[index].ID) {
+			summary.Nodes[index].Status = "online"
+		} else {
+			summary.Nodes[index].Status = "offline"
+		}
+	}
+}
+
+func (h *handler) applyPresenceToAdminNodes(nodes []AdminNode) {
+	if h == nil || h.presence == nil {
+		return
+	}
+	for index := range nodes {
+		h.applyPresenceToAdminNode(&nodes[index])
+	}
+}
+
+func (h *handler) applyPresenceToAdminNode(node *AdminNode) {
+	if h == nil || h.presence == nil || node == nil || node.Disabled {
+		return
+	}
+	if h.presence.isOnline(node.ID) {
+		node.Status = "online"
+	} else {
+		node.Status = "offline"
+	}
+}
+
+func (h *handler) bumpProbeConfigAndNotify(ctx context.Context) {
+	store, ok := h.store.(probeConfigVersionStore)
+	if !ok {
+		return
+	}
+	version, err := store.BumpProbeConfigVersion(ctx)
+	if err != nil {
+		return
+	}
+	h.presence.notifyAllConfigChanged(version)
+}

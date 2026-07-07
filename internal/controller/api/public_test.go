@@ -163,8 +163,8 @@ func TestAgentHeartbeatInvalidatesCachedSummary(t *testing.T) {
 	}
 	initial := readAllString(t, initialResponse.Body)
 	initialResponse.Body.Close()
-	if !strings.Contains(initial, `"status":"no_data"`) {
-		t.Fatalf("initial summary = %s, want cached no_data node", initial)
+	if !strings.Contains(initial, `"status":"offline"`) {
+		t.Fatalf("initial summary = %s, want cached offline node", initial)
 	}
 
 	payload := []byte(`{"ts":` + strconv.FormatInt(time.Now().UTC().Unix(), 10) + `,"status":"online","agent_version":"agent-test"}`)
@@ -190,8 +190,55 @@ func TestAgentHeartbeatInvalidatesCachedSummary(t *testing.T) {
 	}
 	updated := readAllString(t, updatedResponse.Body)
 	updatedResponse.Body.Close()
-	if !strings.Contains(updated, `"status":"online"`) || strings.Contains(updated, `"status":"no_data"`) {
-		t.Fatalf("updated summary = %s, want fresh online heartbeat", updated)
+	if !strings.Contains(updated, `"status":"offline"`) || strings.Contains(updated, `"status":"online"`) {
+		t.Fatalf("updated summary = %s, want heartbeat to refresh cache but keep presence offline", updated)
+	}
+}
+
+func TestAgentPresenceWebSocketControlsSummaryOnlineStatus(t *testing.T) {
+	store, err := OpenSQLiteStore(filepath.Join(t.TempDir(), "zeno.db"))
+	if err != nil {
+		t.Fatalf("open sqlite store: %v", err)
+	}
+	defer store.Close()
+	ctx := context.Background()
+	if err := store.SeedPreviewData(ctx, PreviewSeedOptions{NodeID: "hytron", DisplayName: "Hytron", CountryCode: "HK", AgentToken: "test-agent-token"}); err != nil {
+		t.Fatalf("seed preview data: %v", err)
+	}
+	server := httptest.NewServer(NewHandler(HandlerOptions{Store: store}))
+	defer server.Close()
+
+	wsURL := "ws" + strings.TrimPrefix(server.URL, "http") + "/api/agent/v1/presence/ws"
+	header := http.Header{}
+	header.Set("X-Node-ID", "hytron")
+	header.Set("Authorization", "Bearer test-agent-token")
+	conn, _, err := websocket.DefaultDialer.Dial(wsURL, header)
+	if err != nil {
+		t.Fatalf("dial presence websocket: %v", err)
+	}
+
+	assertSummaryStatusEventually(t, server.URL, "online")
+	conn.Close()
+	assertSummaryStatusEventually(t, server.URL, "offline")
+}
+
+func assertSummaryStatusEventually(t *testing.T, baseURL, want string) {
+	t.Helper()
+	deadline := time.Now().Add(2 * time.Second)
+	for {
+		response, err := http.Get(baseURL + "/api/public/v1/summary")
+		if err != nil {
+			t.Fatalf("get summary: %v", err)
+		}
+		body := readAllString(t, response.Body)
+		response.Body.Close()
+		if strings.Contains(body, `"status":"`+want+`"`) {
+			return
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("summary = %s, want status %s", body, want)
+		}
+		time.Sleep(25 * time.Millisecond)
 	}
 }
 

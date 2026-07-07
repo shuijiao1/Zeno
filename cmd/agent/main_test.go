@@ -11,12 +11,18 @@ import (
 	"github.com/shuijiao1/zeno/internal/agent"
 )
 
-func TestDefaultReportIntervalIsRealtimeFriendly(t *testing.T) {
-	if defaultReportInterval != 2*time.Second {
-		t.Fatalf("default report interval = %s, want 2s", defaultReportInterval)
+func TestDefaultReportIntervalsAreSplitByPurpose(t *testing.T) {
+	if defaultStateInterval != 3*time.Second {
+		t.Fatalf("default state interval = %s, want 3s", defaultStateInterval)
 	}
-	if defaultFullReportInterval != 15*time.Second {
-		t.Fatalf("default full report interval = %s, want 15s", defaultFullReportInterval)
+	if defaultHeartbeatInterval != 15*time.Second {
+		t.Fatalf("default heartbeat interval = %s, want 15s", defaultHeartbeatInterval)
+	}
+	if defaultHostInterval != 30*time.Minute {
+		t.Fatalf("default host interval = %s, want 30m", defaultHostInterval)
+	}
+	if defaultIdentityRefreshInterval != 12*time.Hour {
+		t.Fatalf("default identity refresh interval = %s, want 12h", defaultIdentityRefreshInterval)
 	}
 }
 

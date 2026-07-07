@@ -8,22 +8,31 @@ import (
 	"net"
 	"net/url"
 	"os"
+	"os/signal"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/shuijiao1/zeno/internal/agent"
 )
 
 const defaultVersion = "zeno-agent-dev"
-const defaultReportInterval = 2 * time.Second
-const defaultFullReportInterval = 15 * time.Second
+const defaultStateInterval = 3 * time.Second
+const defaultHeartbeatInterval = 15 * time.Second
+const defaultHostInterval = 30 * time.Minute
+const defaultIdentityRefreshInterval = 12 * time.Hour
+
+const defaultReportInterval = defaultStateInterval
+const defaultFullReportInterval = defaultHeartbeatInterval
 
 type config struct {
 	ControllerURL           string
 	NodeID                  string
 	Token                   string
 	TokenFile               string
-	Interval                time.Duration
+	StateInterval           time.Duration
+	HeartbeatInterval       time.Duration
+	HostInterval            time.Duration
 	Once                    bool
 	Version                 string
 	IdentityRefreshInterval time.Duration
@@ -34,26 +43,50 @@ type config struct {
 
 func main() {
 	cfg := config{}
+	legacyInterval := time.Duration(0)
 	flag.StringVar(&cfg.ControllerURL, "controller-url", "http://127.0.0.1:18980", "Zeno controller base URL")
 	flag.StringVar(&cfg.NodeID, "node-id", "hytron", "agent node id")
 	flag.StringVar(&cfg.Token, "token", "", "agent bearer token; prefer -token-file")
 	flag.StringVar(&cfg.TokenFile, "token-file", "", "file containing the agent bearer token")
-	flag.DurationVar(&cfg.Interval, "interval", defaultReportInterval, "state refresh interval; host heartbeat and probe target refresh run every 15s")
+	flag.DurationVar(&legacyInterval, "interval", 0, "deprecated alias for -state-interval")
+	flag.DurationVar(&cfg.StateInterval, "state-interval", defaultStateInterval, "state metrics report interval")
+	flag.DurationVar(&cfg.HeartbeatInterval, "heartbeat-interval", defaultHeartbeatInterval, "heartbeat report interval")
+	flag.DurationVar(&cfg.HostInterval, "host-interval", defaultHostInterval, "static host information report interval")
 	flag.BoolVar(&cfg.Once, "once", false, "collect and report once, then exit")
 	flag.StringVar(&cfg.Version, "version", defaultVersion, "agent version string reported to controller")
-	flag.DurationVar(&cfg.IdentityRefreshInterval, "identity-refresh-interval", 6*time.Hour, "public IPv4/IPv6 and GeoIP refresh interval; best-effort and cached")
+	flag.DurationVar(&cfg.IdentityRefreshInterval, "identity-refresh-interval", defaultIdentityRefreshInterval, "public IPv4/IPv6 and GeoIP refresh interval; best-effort and cached")
 	flag.BoolVar(&cfg.AllowInsecureHTTP, "allow-insecure-http", false, "allow bearer-token reporting to a non-local plain HTTP controller URL")
 	flag.StringVar(&cfg.NetworkInterfaces, "network-interfaces", "", "comma-separated network interface allowlist; default excludes virtual/container interfaces")
 	flag.StringVar(&cfg.DiskMounts, "disk-mounts", "", "comma-separated disk mount/path allowlist; default sums real filesystems")
 	flag.Parse()
+	if legacyInterval > 0 {
+		cfg.StateInterval = legacyInterval
+	}
 
 	token, err := readToken(cfg.Token, cfg.TokenFile)
 	if err != nil {
 		log.Fatal(err)
 	}
 	cfg.Token = token
-	if err := run(context.Background(), cfg); err != nil {
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
+	defer stop()
+	if err := run(ctx, cfg); err != nil {
 		log.Fatal(err)
+	}
+}
+
+func normalizeConfigIntervals(cfg *config) {
+	if cfg.StateInterval <= 0 {
+		cfg.StateInterval = defaultStateInterval
+	}
+	if cfg.HeartbeatInterval <= 0 {
+		cfg.HeartbeatInterval = defaultHeartbeatInterval
+	}
+	if cfg.HostInterval <= 0 {
+		cfg.HostInterval = defaultHostInterval
+	}
+	if cfg.IdentityRefreshInterval <= 0 {
+		cfg.IdentityRefreshInterval = defaultIdentityRefreshInterval
 	}
 }
 
@@ -61,40 +94,75 @@ func run(ctx context.Context, cfg config) error {
 	if err := validateControllerURL(cfg.ControllerURL, cfg.AllowInsecureHTTP); err != nil {
 		return err
 	}
+	normalizeConfigIntervals(&cfg)
 	client := agent.NewClient(cfg.ControllerURL, cfg.NodeID, cfg.Token)
 	collector := agent.NewMetricsCollector(agent.MetricsOptions{NetworkInterfaceAllowlist: splitCommaList(cfg.NetworkInterfaces), DiskMountAllowlist: splitCommaList(cfg.DiskMounts)})
-	scheduler := agent.NewProbeScheduler()
+	probeManager := newProbeTargetManager()
 	identityDiscoverer := agent.NewCachedNetworkIdentityDiscoverer(agent.NewNetworkIdentityDiscoverer(), cfg.IdentityRefreshInterval)
-	if err := reportOnce(ctx, client, collector, cfg.Version, true, scheduler, identityDiscoverer); err != nil {
-		return err
+
+	refreshProbeConfig := func(ctx context.Context, requestedVersion int64) (int64, error) {
+		return refreshProbeTargets(ctx, client, probeManager, requestedVersion)
+	}
+
+	if _, err := refreshProbeConfig(ctx, 0); err != nil {
+		log.Printf("initial probe config fetch failed: %v", err)
+	}
+	if err := reportHeartbeat(ctx, client, cfg.Version); err != nil {
+		log.Printf("initial heartbeat failed: %v", err)
+	}
+	if err := reportHost(ctx, client, collector, cfg.Version, identityDiscoverer); err != nil {
+		log.Printf("initial host report failed: %v", err)
+	}
+	if err := reportState(ctx, client, collector); err != nil {
+		log.Printf("initial state report failed: %v", err)
+	}
+	if err := runDueProbes(ctx, client, probeManager); err != nil {
+		log.Printf("initial probe report failed: %v", err)
 	}
 	if cfg.Once {
 		return nil
 	}
-	if cfg.Interval <= 0 {
-		cfg.Interval = defaultReportInterval
-	}
-	ticker := time.NewTicker(cfg.Interval)
+
+	go client.RunPresence(ctx, refreshProbeConfig)
+	go runPeriodic(ctx, cfg.StateInterval, func(ctx context.Context) error { return reportState(ctx, client, collector) }, "state report")
+	go runPeriodic(ctx, cfg.HeartbeatInterval, func(ctx context.Context) error { return reportHeartbeat(ctx, client, cfg.Version) }, "heartbeat report")
+	go runPeriodic(ctx, cfg.HostInterval, func(ctx context.Context) error {
+		return reportHost(ctx, client, collector, cfg.Version, identityDiscoverer)
+	}, "host report")
+	go runPeriodic(ctx, time.Second, func(ctx context.Context) error { return runDueProbes(ctx, client, probeManager) }, "probe report")
+
+	<-ctx.Done()
+	return ctx.Err()
+}
+
+func runPeriodic(ctx context.Context, interval time.Duration, fn func(context.Context) error, label string) {
+	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
-	lastFullReport := time.Now().UTC()
 	for {
 		select {
 		case <-ctx.Done():
-			return ctx.Err()
-		case tick := <-ticker.C:
-			if !tick.UTC().Before(lastFullReport.Add(defaultFullReportInterval)) {
-				if err := reportOnce(ctx, client, collector, cfg.Version, true, scheduler, identityDiscoverer); err != nil {
-					log.Printf("report failed: %v", err)
-				} else {
-					lastFullReport = tick.UTC()
-				}
-				continue
+			return
+		case <-ticker.C:
+			callCtx, cancel := context.WithTimeout(ctx, perCallTimeout(interval))
+			if err := fn(callCtx); err != nil {
+				log.Printf("%s failed: %v", label, err)
 			}
-			if err := reportStateOnly(ctx, client, collector); err != nil {
-				log.Printf("report failed: %v", err)
-			}
+			cancel()
 		}
 	}
+}
+
+func perCallTimeout(interval time.Duration) time.Duration {
+	if interval <= 0 {
+		return 20 * time.Second
+	}
+	if interval < 10*time.Second {
+		return 10 * time.Second
+	}
+	if interval < 30*time.Second {
+		return interval
+	}
+	return 30 * time.Second
 }
 
 func validateControllerURL(rawURL string, allowInsecure bool) error {
@@ -126,30 +194,44 @@ type networkIdentityDiscoverer interface {
 	Discover(context.Context) agent.NetworkIdentity
 }
 
-func reportOnce(ctx context.Context, client *agent.Client, collector *agent.MetricsCollector, version string, includeHost bool, scheduler *agent.ProbeScheduler, identityDiscoverer networkIdentityDiscoverer) error {
+func reportHeartbeat(ctx context.Context, client *agent.Client, version string) error {
 	now := time.Now().UTC()
-	if err := client.PostHeartbeat(ctx, "online", version, now); err != nil {
+	return client.PostHeartbeat(ctx, "online", version, now)
+}
+
+func reportHost(ctx context.Context, client *agent.Client, collector *agent.MetricsCollector, version string, identityDiscoverer networkIdentityDiscoverer) error {
+	host := collector.CollectHost(version)
+	if identityDiscoverer != nil {
+		identity := identityDiscoverer.Discover(ctx)
+		host.PublicIPv4 = identity.PublicIPv4
+		host.PublicIPv6 = identity.PublicIPv6
+		host.CountryCode = identity.CountryCode
+	}
+	return client.PostHost(ctx, host)
+}
+
+func reportState(ctx context.Context, client *agent.Client, collector *agent.MetricsCollector) error {
+	now := time.Now().UTC()
+	return client.PostState(ctx, collector.CollectState(now))
+}
+
+func reportOnce(ctx context.Context, client *agent.Client, collector *agent.MetricsCollector, version string, includeHost bool, scheduler *agent.ProbeScheduler, identityDiscoverer networkIdentityDiscoverer) error {
+	if err := reportHeartbeat(ctx, client, version); err != nil {
 		return err
 	}
 	if includeHost {
-		host := collector.CollectHost(version)
-		if identityDiscoverer != nil {
-			identity := identityDiscoverer.Discover(ctx)
-			host.PublicIPv4 = identity.PublicIPv4
-			host.PublicIPv6 = identity.PublicIPv6
-			host.CountryCode = identity.CountryCode
-		}
-		if err := client.PostHost(ctx, host); err != nil {
+		if err := reportHost(ctx, client, collector, version, identityDiscoverer); err != nil {
 			return err
 		}
 	}
-	if err := client.PostState(ctx, collector.CollectState(now)); err != nil {
+	if err := reportState(ctx, client, collector); err != nil {
 		return err
 	}
 	targets, err := client.FetchProbeTargets(ctx)
 	if err != nil {
 		return err
 	}
+	now := time.Now().UTC()
 	dueTargets := targets
 	if scheduler != nil {
 		dueTargets = scheduler.Due(targets, now)
@@ -168,8 +250,67 @@ func reportOnce(ctx context.Context, client *agent.Client, collector *agent.Metr
 }
 
 func reportStateOnly(ctx context.Context, client *agent.Client, collector *agent.MetricsCollector) error {
+	return reportState(ctx, client, collector)
+}
+
+type probeTargetManager struct {
+	mu        sync.Mutex
+	targets   []agent.ProbeTarget
+	version   int64
+	scheduler *agent.ProbeScheduler
+}
+
+func newProbeTargetManager() *probeTargetManager {
+	return &probeTargetManager{scheduler: agent.NewProbeScheduler()}
+}
+
+func (m *probeTargetManager) update(targets []agent.ProbeTarget, version int64) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.targets = append(m.targets[:0], targets...)
+	if version != 0 && version != m.version {
+		m.scheduler = agent.NewProbeScheduler()
+		m.version = version
+	}
+}
+
+func (m *probeTargetManager) due(now time.Time) []agent.ProbeTarget {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if len(m.targets) == 0 {
+		return nil
+	}
+	due := m.scheduler.Due(m.targets, now)
+	return append([]agent.ProbeTarget(nil), due...)
+}
+
+func (m *probeTargetManager) markCompleted(targets []agent.ProbeTarget, now time.Time) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.scheduler.MarkCompleted(targets, now)
+}
+
+func refreshProbeTargets(ctx context.Context, client *agent.Client, manager *probeTargetManager, _ int64) (int64, error) {
+	response, err := client.FetchProbeConfig(ctx)
+	if err != nil {
+		return 0, err
+	}
+	manager.update(response.Targets, response.Version)
+	return response.Version, nil
+}
+
+func runDueProbes(ctx context.Context, client *agent.Client, manager *probeTargetManager) error {
 	now := time.Now().UTC()
-	return client.PostState(ctx, collector.CollectState(now))
+	dueTargets := manager.due(now)
+	if len(dueTargets) == 0 {
+		return nil
+	}
+	rounds := agent.ProbeTargets(ctx, dueTargets, now)
+	if err := client.PostProbeResults(ctx, rounds); err != nil {
+		return err
+	}
+	manager.markCompleted(dueTargets, now)
+	return nil
 }
 
 func splitCommaList(value string) []string {

@@ -30,6 +30,7 @@ type handler struct {
 	notificationSender   notificationSender
 	loginLimiter         *adminLoginLimiter
 	liveHub              *liveUpdateHub
+	presence             *agentPresenceManager
 	summaryPublishMu     sync.Mutex
 	summaryPublishTimer  *time.Timer
 	summaryLastPublished time.Time
@@ -129,6 +130,7 @@ func NewHandler(options ...HandlerOptions) http.Handler {
 		notificationSender: newHTTPNotificationSender(opts.NotificationClient, opts.TelegramAPIBaseURL),
 		loginLimiter:       newAdminLoginLimiter(),
 		liveHub:            newLiveUpdateHub(),
+		presence:           newAgentPresenceManager(),
 	}
 
 	mux := http.NewServeMux()
@@ -153,6 +155,7 @@ func NewHandler(options ...HandlerOptions) http.Handler {
 	mux.HandleFunc("/api/admin/v1/nodes", h.handleAdminNodes)
 	mux.HandleFunc("/api/admin/v1/nodes/", h.handleAdminNodeResource)
 	mux.HandleFunc("/api/agent/v1/probe-targets", h.handleAgentProbeTargets)
+	mux.HandleFunc("/api/agent/v1/presence/ws", h.handleAgentPresenceWebSocket)
 	mux.HandleFunc("/api/agent/v1/probe-results", h.handleAgentProbeResults)
 	mux.HandleFunc("/api/agent/v1/heartbeat", h.handleAgentHeartbeat)
 	mux.HandleFunc("/api/agent/v1/host", h.handleAgentHost)
@@ -267,17 +270,11 @@ func (h *handler) handleSummary(w http.ResponseWriter, r *http.Request) {
 		}
 		return
 	}
-	summary, err := h.store.Summary(r.Context())
+	payload, err := h.summaryJSON(r.Context())
 	if err != nil {
 		writeStoreError(w, err)
 		return
 	}
-	payload, err := json.Marshal(summary)
-	if err != nil {
-		writeStoreError(w, err)
-		return
-	}
-	h.rememberSummaryJSON(payload)
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	w.WriteHeader(http.StatusOK)
 	_, _ = w.Write(payload)

@@ -50,6 +50,7 @@ type StateSample struct {
 
 type ProbeTargetsResponse struct {
 	Targets []ProbeTarget `json:"targets"`
+	Version int64         `json:"version"`
 }
 
 type ProbeTarget struct {

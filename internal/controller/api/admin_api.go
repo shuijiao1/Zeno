@@ -184,6 +184,8 @@ func (h *handler) handleAdminProbeTargets(w http.ResponseWriter, r *http.Request
 			writeAdminError(w, err)
 			return
 		}
+		h.bumpProbeConfigAndNotify(r.Context())
+		h.publishSummaryNow(r.Context())
 		writeJSON(w, http.StatusCreated, AdminProbeTargetResponse{Target: target})
 	default:
 		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
@@ -210,6 +212,8 @@ func (h *handler) handleAdminProbeTargetResource(w http.ResponseWriter, r *http.
 			writeAdminError(w, err)
 			return
 		}
+		h.bumpProbeConfigAndNotify(r.Context())
+		h.publishSummaryNow(r.Context())
 		w.WriteHeader(http.StatusNoContent)
 		return
 	}
@@ -222,6 +226,8 @@ func (h *handler) handleAdminProbeTargetResource(w http.ResponseWriter, r *http.
 		writeAdminError(w, err)
 		return
 	}
+	h.bumpProbeConfigAndNotify(r.Context())
+	h.publishSummaryNow(r.Context())
 	writeJSON(w, http.StatusOK, AdminProbeTargetResponse{Target: target})
 }
 
@@ -237,6 +243,7 @@ func (h *handler) handleAdminNodes(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusInternalServerError, "internal error")
 			return
 		}
+		h.applyPresenceToAdminNodes(nodes)
 		writeJSON(w, http.StatusOK, AdminNodesResponse{Nodes: nodes})
 	case http.MethodPost:
 		var create AdminNodeCreateRequest
@@ -248,6 +255,7 @@ func (h *handler) handleAdminNodes(w http.ResponseWriter, r *http.Request) {
 			writeAdminError(w, err)
 			return
 		}
+		h.applyPresenceToAdminNode(&node)
 		h.publishSummaryNow(r.Context())
 		writeJSON(w, http.StatusCreated, AdminNodeResponse{Node: node})
 	default:
@@ -293,6 +301,7 @@ func (h *handler) handleAdminNodeResource(w http.ResponseWriter, r *http.Request
 		writeAdminError(w, err)
 		return
 	}
+	h.applyPresenceToAdminNode(&node)
 	h.publishSummaryNow(r.Context())
 	writeJSON(w, http.StatusOK, AdminNodeResponse{Node: node})
 }

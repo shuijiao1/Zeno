@@ -43,7 +43,11 @@ func (h *handler) handleAgentProbeTargets(w http.ResponseWriter, r *http.Request
 		writeError(w, http.StatusInternalServerError, "internal error")
 		return
 	}
-	response := AgentProbeTargetsResponse{Targets: make([]AgentProbeTarget, 0, len(targets))}
+	var version int64
+	if versionStore, ok := h.store.(probeConfigVersionStore); ok {
+		version, _ = versionStore.ProbeConfigVersion(r.Context())
+	}
+	response := AgentProbeTargetsResponse{Targets: make([]AgentProbeTarget, 0, len(targets)), Version: version}
 	for _, target := range targets {
 		response.Targets = append(response.Targets, AgentProbeTarget{
 			ID:          target.ID,

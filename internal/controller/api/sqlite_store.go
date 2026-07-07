@@ -137,6 +137,12 @@ func (s *SQLiteStore) ensureSchema(ctx context.Context) error {
 			enabled INTEGER NOT NULL DEFAULT 1,
 			PRIMARY KEY (node_id, target_id)
 		);`,
+		`CREATE TABLE IF NOT EXISTS probe_config_meta (
+			id INTEGER PRIMARY KEY CHECK (id = 1),
+			version INTEGER NOT NULL DEFAULT 1,
+			updated_at INTEGER NOT NULL
+		);`,
+		`INSERT OR IGNORE INTO probe_config_meta (id, version, updated_at) VALUES (1, 1, strftime('%s', 'now'));`,
 		`CREATE TABLE IF NOT EXISTS probe_rounds (
 			id INTEGER PRIMARY KEY AUTOINCREMENT,
 			node_id TEXT NOT NULL REFERENCES nodes(id),
