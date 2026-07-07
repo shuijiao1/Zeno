@@ -29,7 +29,7 @@
   --radius-card: 16px;
   --radius-panel: 20px;
   --zeno-card-highlight: #ffffff;
-  --zeno-card-shadow: 0 12px 34px -28px rgba(15, 23, 42, 0.28), 0 1px 2px rgba(15, 23, 42, 0.04);
+  --zeno-card-shadow: 0 10px 26px -24px rgba(15, 23, 42, 0.22), 0 1px 2px rgba(15, 23, 42, 0.035);
   --zeno-content-width: 1024px;
 }
 
@@ -109,7 +109,7 @@ svg { display: block; }
   --shadow-stone: rgba(15, 23, 42, 0.08);
   --metric-shadow: rgba(37, 99, 235, 0.12);
   --zeno-card-highlight: #ffffff;
-  --zeno-card-shadow: 0 12px 34px -28px rgba(15, 23, 42, 0.28), 0 1px 2px rgba(15, 23, 42, 0.04);
+  --zeno-card-shadow: 0 10px 26px -24px rgba(15, 23, 42, 0.22), 0 1px 2px rgba(15, 23, 42, 0.035);
 }
 
 .kulin-shell[data-theme="dark"] {
@@ -255,8 +255,8 @@ svg { display: block; }
   background: var(--surface-strong);
   color: var(--foreground);
   box-shadow:
-    0 22px 54px -44px rgba(15, 23, 42, 0.42),
-    0 8px 20px -18px rgba(37, 99, 235, 0.24),
+    0 10px 28px -24px rgba(15, 23, 42, 0.26),
+    0 1px 2px rgba(15, 23, 42, 0.035),
     inset 0 1px 0 var(--zeno-card-highlight);
 }
 .home-top-card::after {
@@ -522,12 +522,12 @@ svg { display: block; }
 }
 .admin-section-nav button {
   --admin-nav-accent: var(--blue);
-  min-width: 82px;
+  min-width: 72px;
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 6px;
-  padding: 9px 13px;
+  gap: 0;
+  padding: 9px 12px;
   border: 0;
   border-radius: var(--radius-field);
   background: transparent;
@@ -545,19 +545,6 @@ svg { display: block; }
   color: #fff;
   box-shadow: 0 8px 20px -16px var(--admin-nav-accent);
 }
-.admin-section-nav button:not([data-active='true']) .admin-section-icon { color: var(--admin-nav-accent); background: transparent; }
-.admin-section-icon {
-  width: auto;
-  height: auto;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: 0;
-  background: transparent;
-  font-size: 13px;
-  line-height: 1;
-}
-.admin-section-nav button[data-active='true'] .admin-section-icon { background: transparent; color: #fff; }
 .admin-section-nav span { font-size: 15px; font-weight: 500; }
 .admin-help-note {
   margin: 12px 2px 0;
@@ -1725,7 +1712,7 @@ svg { display: block; }
 }
 .node-os { position: absolute; left: 0; top: 0; width: 24px; height: 24px; object-fit: contain; }
 .server-flag { display: inline-flex; align-items: center; justify-content: center; line-height: 1; }
-.server-flag .fi { width: 1.333em; line-height: 1em; border-radius: 2px; box-shadow: 0 0 0 1px color-mix(in srgb, var(--foreground) 12%, transparent); }
+.server-flag .fi { width: 1.333em; line-height: 1em; border-radius: 2px; overflow: hidden; clip-path: inset(0 round 2px); }
 .node-title-line { min-width: 0; display: flex; align-items: center; justify-content: center; gap: 8px; }
 .node-title-line p { min-width: 0; margin: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--foreground); font-size: 13px; font-weight: 600; letter-spacing: -0.02em; }
 .node-dot { width: 8px; height: 8px; flex: none; border-radius: var(--radius-pill); background: var(--green); }
@@ -1824,15 +1811,22 @@ svg { display: block; }
   gap: 24px;
 }
 
+.detail-top-card {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+.detail-top-card .kulin-nav {
+  padding-bottom: 14px;
+}
 .detail-hero {
   display: flex;
   flex-direction: column;
   gap: 12px;
-  padding: 16px;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-panel);
-  background: var(--surface-strong);
-  box-shadow: var(--zeno-card-shadow);
+  padding: 14px 2px 0;
+  border-top: 1px solid color-mix(in srgb, var(--border) 82%, transparent);
+  background: transparent;
+  box-shadow: none;
 }
 .detail-hero__main {
   display: flex;
@@ -1924,12 +1918,12 @@ svg { display: block; }
   flex-direction: column;
   justify-content: center;
   gap: 2px;
-  padding: 6px 6px;
+  padding: 8px 10px;
   border: 1px solid color-mix(in srgb, var(--border) 62%, transparent);
   border-radius: var(--radius-field);
   background: var(--control-bg);
 }
-.detail-fact.is-wide { grid-column: span 3; padding: 7px 8px; }
+.detail-fact.is-wide { grid-column: span 3; padding: 9px 12px; }
 .detail-fact p { margin: 0; color: var(--muted); font-size: 9.5px; font-weight: 500; }
 .detail-fact strong { min-width: 0; overflow-wrap: anywhere; color: var(--foreground); font-size: 11px; line-height: 1.18; font-weight: 500; }
 .detail-fact:not(.is-wide) { min-height: 38px; }
@@ -2347,14 +2341,13 @@ svg { display: block; }
   .admin-section-nav {
     width: 100%;
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(96px, 1fr));
-    gap: 5px;
-    padding: 5px;
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+    gap: 4px;
+    padding: 4px;
     border-radius: var(--radius-card);
-    overflow: visible;
+    overflow: hidden;
   }
-  .admin-section-nav button { min-width: 0; min-height: 40px; padding: 0 8px; border-radius: var(--radius-field); }
-  .admin-section-icon { width: auto; height: auto; font-size: 13px; }
+  .admin-section-nav button { min-width: 0; min-height: 38px; padding: 0 5px; border-radius: var(--radius-field); }
   .admin-section-nav span { font-size: 12px; }
   .admin-section-heading { align-items: center; gap: 8px; flex-wrap: nowrap; }
   .admin-section-heading > div { min-width: 0; }
@@ -2471,7 +2464,7 @@ svg { display: block; }
   .admin-section-heading h3 { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 21px; }
   .kulin-node-card { max-width: none; min-height: 394px; }
   .detail-container { gap: 16px; }
-  .detail-hero { padding: 12px; border-radius: var(--radius-panel); gap: 12px; }
+  .detail-hero { padding: 12px 0 0; border-radius: 0; gap: 12px; }
   .detail-hero__main { align-items: center; flex-direction: row; gap: 10px; }
   .detail-hero__badges { flex: none; justify-content: flex-end; margin-left: auto; }
   .detail-hero-badge { min-height: 22px; padding: 0 8px; font-size: 11px; white-space: normal; }
@@ -2483,9 +2476,9 @@ svg { display: block; }
     align-items: flex-start;
     gap: 2px;
     min-height: 48px;
-    padding: 7px 6px;
+    padding: 8px 10px;
   }
-  .detail-fact.is-wide { grid-column: 1 / -1; min-height: 54px; padding: 8px 9px; }
+  .detail-fact.is-wide { grid-column: 1 / -1; min-height: 54px; padding: 9px 11px; }
   .detail-fact p { flex: none; font-size: 10px; }
   .detail-fact strong { min-width: 0; font-size: 11.5px; line-height: 1.22; }
   .detail-fact:not(.is-wide) strong { overflow: visible; text-overflow: clip; white-space: normal; overflow-wrap: anywhere; }

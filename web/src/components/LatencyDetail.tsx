@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useMemo, useState, type ReactNode } from 'react'
 import type { HomeCardNode, LatencyPoint, StatePoint } from '../types'
 import { formatLatency } from '../lib/format'
 import { summarizeLatencyTargets } from '../lib/latencyTargets'
@@ -19,6 +19,7 @@ interface LatencyDetailProps {
   onBack: () => void
   onRangeChange: (range: string) => void
   onStateRangeChange?: (range: string) => void
+  topHeader?: ReactNode
 }
 
 const rangeOptions = [
@@ -40,6 +41,7 @@ export function LatencyDetail({
   onBack,
   onRangeChange,
   onStateRangeChange = () => {},
+  topHeader,
 }: LatencyDetailProps) {
   const targetSummaries = useMemo(() => summarizeLatencyTargets(points), [points])
   const [activeTargetIds, setActiveTargetIds] = useState<string[]>([])
@@ -71,8 +73,10 @@ export function LatencyDetail({
 
   return (
     <div className="kulin-container detail-container">
-      <section className="detail-hero" aria-label={`${node.displayName} server overview`}>
-        <div className="detail-hero__main">
+      <section className="home-top-card detail-top-card" aria-label={`${node.displayName} server overview`}>
+        {topHeader}
+        <section className="detail-hero">
+          <div className="detail-hero__main">
           <button className="detail-title-button" type="button" onClick={onBack}>
             <BackIcon />
             <ServerFlag countryCode={node.countryCode} className="detail-title-flag" />
@@ -82,15 +86,16 @@ export function LatencyDetail({
             <span className={`detail-status-pill status-${visualStatus}`}>{formatStatusLabel(node.status)}</span>
           </div>
         </div>
-        <section className="detail-fact-strip" aria-label={`${node.displayName} server facts`}>
-          <InfoFact label="系统" value={formatSystemSpec(node)} wide />
-          <InfoFact label="CPU" value={formatCpuSpec(node)} wide />
-          <InfoFact label="内存" value={formatBinaryBytes(node.memoryTotalBytes)} />
-          <InfoFact label="磁盘" value={formatBinaryBytes(node.diskTotalBytes)} />
-          <InfoFact label="开机时间" value={formatBootTime(node.bootTime)} />
-          <InfoFact label="运行时间" value={uptimeValue ?? '--'} pending={!uptimeValue} />
-          <InfoFact label="负载" value={loadValue} pending={loadValue === '-- / -- / --'} />
-          <InfoFact label="累计流量" value={`↑${formatBinaryBytes(node.netOutTotalBytes)} ↓${formatBinaryBytes(node.netInTotalBytes)}`} />
+          <section className="detail-fact-strip" aria-label={`${node.displayName} server facts`}>
+            <InfoFact label="系统" value={formatSystemSpec(node)} wide />
+            <InfoFact label="CPU" value={formatCpuSpec(node)} wide />
+            <InfoFact label="内存" value={formatBinaryBytes(node.memoryTotalBytes)} />
+            <InfoFact label="磁盘" value={formatBinaryBytes(node.diskTotalBytes)} />
+            <InfoFact label="开机时间" value={formatBootTime(node.bootTime)} />
+            <InfoFact label="运行时间" value={uptimeValue ?? '--'} pending={!uptimeValue} />
+            <InfoFact label="负载" value={loadValue} pending={loadValue === '-- / -- / --'} />
+            <InfoFact label="累计流量" value={`↑${formatBinaryBytes(node.netOutTotalBytes)} ↓${formatBinaryBytes(node.netInTotalBytes)}`} />
+          </section>
         </section>
       </section>
 

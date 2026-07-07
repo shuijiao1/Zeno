@@ -16,6 +16,45 @@ type LoadState =
   | { kind: 'error'; message: string }
 
 const summaryCacheKey = 'zeno_summary_cache_v1'
+const adminTokenStorageKey = 'zeno_admin_token'
+const adminTokenStoredAtKey = 'zeno_admin_token_saved_at'
+const adminTokenMaxAgeMs = 7 * 24 * 60 * 60 * 1000
+
+function loadStoredAdminToken(): string {
+  if (typeof window === 'undefined') return ''
+  try {
+    const token = window.localStorage.getItem(adminTokenStorageKey) ?? ''
+    if (token === '') return ''
+    const storedAt = Number(window.localStorage.getItem(adminTokenStoredAtKey) ?? '')
+    if (Number.isFinite(storedAt) && storedAt > 0) {
+      if (Date.now() - storedAt > adminTokenMaxAgeMs) {
+        clearStoredAdminToken()
+        return ''
+      }
+      return token
+    }
+    window.localStorage.setItem(adminTokenStoredAtKey, String(Date.now()))
+    return token
+  } catch {
+    return ''
+  }
+}
+
+function rememberAdminToken(token: string) {
+  if (typeof window === 'undefined') return
+  try {
+    window.localStorage.setItem(adminTokenStorageKey, token)
+    window.localStorage.setItem(adminTokenStoredAtKey, String(Date.now()))
+  } catch {}
+}
+
+function clearStoredAdminToken() {
+  if (typeof window === 'undefined') return
+  try {
+    window.localStorage.removeItem(adminTokenStorageKey)
+    window.localStorage.removeItem(adminTokenStoredAtKey)
+  } catch {}
+}
 
 function loadStoredSummary(): SummaryData | null {
   if (typeof window === 'undefined') return null
@@ -196,7 +235,7 @@ export function App() {
   const [serviceLatencyState, setServiceLatencyState] = useState<ServiceLatencyLoadState>({ kind: 'idle' })
   const nodeLatencyCacheRef = useRef(new Map<string, NodeLatencyData>())
   const nodeStateCacheRef = useRef(new Map<string, NodeStateData>())
-  const [adminToken, setAdminToken] = useState(() => window.sessionStorage.getItem('zeno_admin_token') ?? '')
+  const [adminToken, setAdminToken] = useState(loadStoredAdminToken)
   const [adminAuthState, setAdminAuthState] = useState<AdminAuthState>({ kind: 'idle' })
   const [adminState, setAdminState] = useState<AdminLoadState>({ kind: 'idle' })
   const [settings, setSettings] = useState<AdminSettings>(defaultSettings)
@@ -440,7 +479,7 @@ export function App() {
     setAdminAuthState({ kind: 'loading' })
     loginAdmin(trimmedUsername, trimmedPassword)
       .then((session) => {
-        window.sessionStorage.setItem('zeno_admin_token', session.token)
+        rememberAdminToken(session.token)
         setAdminToken(session.token)
         setAdminAuthState({ kind: 'idle' })
       })
@@ -453,7 +492,7 @@ export function App() {
     if (adminToken !== '') {
       logoutAdmin(adminToken).catch(() => {})
     }
-    window.sessionStorage.removeItem('zeno_admin_token')
+    clearStoredAdminToken()
     setAdminToken('')
     setAdminAuthState({ kind: 'idle' })
     setAdminState({ kind: 'idle' })
@@ -462,7 +501,7 @@ export function App() {
   const updateAdminAccountDetails = (username: string, currentPassword: string, newPassword: string): Promise<void> => {
     if (adminToken === '') return Promise.reject(new Error('missing admin token'))
     return updateAdminAccount(adminToken, username, currentPassword, newPassword).then((session) => {
-      window.sessionStorage.setItem('zeno_admin_token', session.token)
+      rememberAdminToken(session.token)
       setAdminToken(session.token)
       setAdminState((current) => current.kind === 'ready' ? { ...current, account: { username: session.username } } : current)
     })
@@ -690,8 +729,6 @@ export function App() {
 
   return (
     <main className="kulin-shell" data-theme={effectiveSettings.theme} style={shellStyleForSettings(effectiveSettings)}>
-      {(route.kind === 'node' || route.kind === 'service') && <DashboardHeader settings={effectiveSettings} onHome={navigateHome} onAdmin={navigateAdmin} onThemeChange={setThemeMode} onBackgroundToggle={toggleBackground} backgroundEnabled={backgroundEnabled} />}
-
       {route.kind === 'admin' && (
         <AdminDashboard
           onHome={navigateHome}
@@ -739,6 +776,7 @@ export function App() {
           onBack={navigateHome}
           onRangeChange={setNodeLatencyRange}
           onStateRangeChange={setStateRange}
+          topHeader={<DashboardHeader settings={effectiveSettings} onHome={navigateHome} onAdmin={navigateAdmin} onThemeChange={setThemeMode} onBackgroundToggle={toggleBackground} backgroundEnabled={backgroundEnabled} />}
         />
       )}
 
@@ -755,6 +793,7 @@ export function App() {
           error={serviceLatencyState.kind === 'error' ? serviceLatencyState.message : undefined}
           onBack={navigateHome}
           onRangeChange={setServiceLatencyRange}
+          topHeader={<DashboardHeader settings={effectiveSettings} onHome={navigateHome} onAdmin={navigateAdmin} onThemeChange={setThemeMode} onBackgroundToggle={toggleBackground} backgroundEnabled={backgroundEnabled} />}
         />
       )}
 
@@ -828,25 +867,28 @@ export function HomeTopPanel({ settings = defaultSettings, onHome, onAdmin, onTh
   )
 }
 
-function ServiceDetail({ target, points, range, loading, error, onBack, onRangeChange }: { target: ServiceTarget; points: LatencyPoint[]; range: string; loading?: boolean; error?: string; onBack: () => void; onRangeChange: (range: string) => void }) {
+function ServiceDetail({ target, points, range, loading, error, onBack, onRangeChange, topHeader }: { target: ServiceTarget; points: LatencyPoint[]; range: string; loading?: boolean; error?: string; onBack: () => void; onRangeChange: (range: string) => void; topHeader?: ReactNode }) {
   const [peakCut, setPeakCut] = useState(false)
   const rangeLabel = serviceRangeOptions.find((option) => option.value === range)?.label ?? range
   return (
     <div className="kulin-container detail-container">
-      <section className="detail-hero" aria-label={`${target.name} service overview`}>
-        <div className="detail-hero__main">
+      <section className="home-top-card detail-top-card" aria-label={`${target.name} service overview`}>
+        {topHeader}
+        <section className="detail-hero">
+          <div className="detail-hero__main">
           <button className="detail-title-button" type="button" onClick={onBack}>
             <span aria-hidden="true">‹</span>
             <span>{target.name}</span>
           </button>
           <span className={`detail-status-pill status-${serviceTone(target)}`}>{target.reportingNodeCount} / {target.assignedNodeCount} 节点上报</span>
         </div>
-        <section className="detail-fact-strip" aria-label={`${target.name} service facts`}>
-          <ServiceInfoFact label="类型" value={target.type} />
-          <ServiceInfoFact label="地址" value={formatServiceEndpoint(target)} wide />
-          <ServiceInfoFact label="最新延迟" value={formatServiceLatency(target.avgMs ?? target.medianMs)} />
-          <ServiceInfoFact label="丢包" value={formatServiceLoss(target.lossPercent)} />
-          <ServiceInfoFact label="更新时间" value={target.updatedAt ? formatAdminDate(target.updatedAt) : '--'} />
+          <section className="detail-fact-strip" aria-label={`${target.name} service facts`}>
+            <ServiceInfoFact label="类型" value={target.type} />
+            <ServiceInfoFact label="地址" value={formatServiceEndpoint(target)} wide />
+            <ServiceInfoFact label="最新延迟" value={formatServiceLatency(target.avgMs ?? target.medianMs)} />
+            <ServiceInfoFact label="丢包" value={formatServiceLoss(target.lossPercent)} />
+            <ServiceInfoFact label="更新时间" value={target.updatedAt ? formatAdminDate(target.updatedAt) : '--'} />
+          </section>
         </section>
       </section>
 
@@ -1159,12 +1201,12 @@ export function AdminDashboard({
 }
 
 function AdminSectionNav({ activeSection, onSectionChange }: { activeSection: AdminSection; onSectionChange: (section: AdminSection) => void }) {
-  const sections: Array<{ id: AdminSection; label: string; icon: string }> = [
-    { id: 'nodes', label: '服务器', icon: '▦' },
-    { id: 'targets', label: '延迟监控', icon: '⌁' },
-    { id: 'notifications', label: '通知', icon: '✦' },
-    { id: 'account', label: '账户', icon: '◎' },
-    { id: 'settings', label: '设置', icon: '⚙' },
+  const sections: Array<{ id: AdminSection; label: string }> = [
+    { id: 'nodes', label: '服务器' },
+    { id: 'targets', label: '延迟监控' },
+    { id: 'notifications', label: '通知' },
+    { id: 'account', label: '账户' },
+    { id: 'settings', label: '设置' },
   ]
 
   return (
@@ -1176,7 +1218,6 @@ function AdminSectionNav({ activeSection, onSectionChange }: { activeSection: Ad
           data-active={activeSection === section.id}
           onClick={() => onSectionChange(section.id)}
         >
-          <span className="admin-section-icon" aria-hidden="true">{section.icon}</span>
           <span>{section.label}</span>
         </button>
       ))}
