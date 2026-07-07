@@ -24,9 +24,13 @@ func (s *SQLiteStore) CreateAdminNode(ctx context.Context, create AdminNodeCreat
 		}
 		nodeID = generated
 	}
-	credential, err := randomAdminCredential()
-	if err != nil {
-		return AdminNode{}, err
+	credential := strings.TrimSpace(create.InstallToken)
+	if credential == "" {
+		generatedCredential, err := randomAdminCredential()
+		if err != nil {
+			return AdminNode{}, err
+		}
+		credential = generatedCredential
 	}
 	now := time.Now().UTC().Unix()
 	disabled := 0
