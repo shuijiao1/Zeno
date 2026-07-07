@@ -1627,51 +1627,78 @@ function AdminNodeCreateModal({ onCreate, onInstallCommand, onClose }: { onCreat
   const [installPlatformPickerOpen, setInstallPlatformPickerOpen] = useState(false)
   const [installPlatformMenuStyle, setInstallPlatformMenuStyle] = useState<CSSProperties>({})
   const installCopyButtonRef = useRef<HTMLButtonElement>(null)
+  const formRef = useRef<HTMLFormElement>(null)
 
-  const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault()
-    const formData = new FormData(event.currentTarget)
+  const nodeInputFromForm = (form: HTMLFormElement): AdminNodeCreateInput | null => {
+    const formData = new FormData(form)
     const displayName = String(formData.get('new-display-name') ?? '').trim()
-    if (displayName === '') {
-      setFormError('请先填写服务器名称。')
-      return
-    }
-    setSubmitting(true)
-    setFormError(null)
-    onCreate({
+    if (displayName === '') return null
+    return {
       displayName,
       expiryDate: String(formData.get('new-expiry-date') ?? '').trim(),
       billingCycle: String(formData.get('new-billing-cycle') ?? '').trim(),
       billingMode: String(formData.get('new-billing-mode') ?? 'both'),
       monthlyResetDay: parseMonthlyResetDay(String(formData.get('new-monthly-reset-day') ?? '')) ?? 1,
       monthlyQuotaBytes: parseQuota(String(formData.get('new-monthly-quota') ?? ''), String(formData.get('new-monthly-quota-unit') ?? 'GB')),
-    })
+    }
+  }
+
+  const createNodeFromForm = (form: HTMLFormElement, missingNameTarget: 'form' | 'copy' = 'form'): Promise<AdminNode | null> => {
+    const input = nodeInputFromForm(form)
+    if (!input) {
+      if (missingNameTarget === 'copy') {
+        setInstallCopyState({ kind: 'error', message: '请先填写服务器名称。' })
+      } else {
+        setFormError('请先填写服务器名称。')
+      }
+      return Promise.resolve(null)
+    }
+    setSubmitting(true)
+    setFormError(null)
+    setInstallCopyState({ kind: 'idle' })
+    return onCreate(input)
       .then((node) => {
         if (node) setCreatedNode(node)
+        return node ?? null
       })
-      .catch((error: unknown) => setFormError(error instanceof Error ? error.message : '添加服务器失败'))
+      .catch((error: unknown) => {
+        setFormError(error instanceof Error ? error.message : '添加服务器失败')
+        return null
+      })
       .finally(() => setSubmitting(false))
   }
 
-  const requestInstallCommand = (openPickerAfterGenerate = false) => {
-    if (!createdNode) return
+  const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    createNodeFromForm(event.currentTarget)
+  }
+
+  const requestInstallCommand = (openPickerAfterGenerate = false, node = createdNode) => {
+    if (!node) return
     setInstallCommandState({ kind: 'loading' })
     setInstallCopyState({ kind: 'idle' })
     setInstallPlatformPickerOpen(false)
-    onInstallCommand(createdNode.id)
+    onInstallCommand(node.id)
       .then((result) => {
         setInstallCommandState(installCommandReady(result))
         if (openPickerAfterGenerate) {
           setInstallPlatformPickerOpen(true)
           setInstallPlatformMenuStyle(installPlatformMenuPosition(installCopyButtonRef.current))
-          setInstallCopyState({ kind: 'ready', message: '安装命令已准备好，选择系统后复制。' })
         }
       })
       .catch((error: unknown) => setInstallCommandState({ kind: 'error', message: error instanceof Error ? error.message : 'unknown error' }))
   }
 
   const handleCopyInstallCommand = () => {
-    if (installCommandState.kind === 'loading') return
+    if (installCommandState.kind === 'loading' || submitting) return
+    if (!createdNode) {
+      const form = formRef.current
+      if (!form) return
+      createNodeFromForm(form, 'copy').then((node) => {
+        if (node) requestInstallCommand(true, node)
+      })
+      return
+    }
     if (installCommandState.kind !== 'ready') {
       requestInstallCommand(true)
       return
@@ -1695,7 +1722,7 @@ function AdminNodeCreateModal({ onCreate, onInstallCommand, onClose }: { onCreat
 
   return (
     <AdminModal title="添加服务器" eyebrow="Servers" onClose={onClose}>
-      <form className="admin-node-create-form admin-node-edit-form is-sectioned" aria-label="添加服务器" onSubmit={handleSubmit}>
+      <form ref={formRef} className="admin-node-create-form admin-node-edit-form is-sectioned" aria-label="添加服务器" onSubmit={handleSubmit}>
         <AdminFormSection title="服务器名称">
           <div className="admin-form-grid">
             <label>
@@ -1728,11 +1755,9 @@ function AdminNodeCreateModal({ onCreate, onInstallCommand, onClose }: { onCreat
           {createdNode && <p className="admin-help-note">已添加：{createdNode.displayName}</p>}
           <div className="admin-inline-actions admin-install-copy-row">
             <div className="admin-install-copy-menu">
-              <button ref={installCopyButtonRef} className="admin-primary-action admin-install-copy-button" type="button" onClick={handleCopyInstallCommand} disabled={!createdNode || installCommandState.kind === 'loading'}>{installCommandState.kind === 'loading' ? '生成中…' : '复制安装命令'}</button>
+              <button ref={installCopyButtonRef} className="admin-primary-action admin-install-copy-button" type="button" onClick={handleCopyInstallCommand} disabled={submitting || installCommandState.kind === 'loading'}>{submitting || installCommandState.kind === 'loading' ? '生成中…' : '复制安装命令'}</button>
               {installPlatformPickerOpen && <AdminInstallPlatformPopover state={installCommandState} style={installPlatformMenuStyle} onSelect={handleCopyInstallPlatform} />}
             </div>
-            {!createdNode && <span className="admin-inline-note">先填写服务器名称并添加服务器，才能复制对应安装命令。</span>}
-            {installCommandState.kind === 'loading' && <span className="admin-inline-note is-warning">正在准备安装命令…</span>}
             {installCopyState.kind !== 'idle' && <span className={`admin-inline-note${installCopyState.kind === 'ready' ? ' is-success' : installCopyState.kind === 'warning' ? ' is-warning' : ' is-error'}`}>{installCopyState.message}</span>}
           </div>
           {installCommandState.kind === 'error' && <div className="admin-install-error">安装命令生成失败：{installCommandState.message}</div>}
@@ -1797,7 +1822,6 @@ function AdminNodeEditModal({ node, targets, onUpdate, onTargetUpdate, onInstall
         if (openPickerAfterGenerate) {
           setInstallPlatformPickerOpen(true)
           setInstallPlatformMenuStyle(installPlatformMenuPosition(installCopyButtonRef.current))
-          setInstallCopyState({ kind: 'ready', message: '安装命令已准备好，选择系统后复制。' })
         }
       })
       .catch((error: unknown) => setInstallCommandState({ kind: 'error', message: error instanceof Error ? error.message : 'unknown error' }))
@@ -1890,7 +1914,6 @@ function AdminNodeEditModal({ node, targets, onUpdate, onTargetUpdate, onInstall
               <button ref={installCopyButtonRef} className="admin-primary-action admin-install-copy-button" type="button" onClick={handleCopyInstallCommand} disabled={installCommandState.kind === 'loading'}>{installCommandState.kind === 'loading' ? '生成中…' : '复制安装命令'}</button>
               {installPlatformPickerOpen && <AdminInstallPlatformPopover state={installCommandState} style={installPlatformMenuStyle} onSelect={handleCopyInstallPlatform} />}
             </div>
-            {installCommandState.kind === 'loading' && <span className="admin-inline-note is-warning">正在准备安装命令…</span>}
             {installCopyState.kind !== 'idle' && <span className={`admin-inline-note${installCopyState.kind === 'ready' ? ' is-success' : installCopyState.kind === 'warning' ? ' is-warning' : ' is-error'}`}>{installCopyState.message}</span>}
           </div>
           {installCommandState.kind === 'error' && <div className="admin-install-error">安装命令生成失败：{installCommandState.message}</div>}
