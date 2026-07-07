@@ -36,8 +36,6 @@ type handler struct {
 	summaryCacheMu       sync.RWMutex
 	summaryCache         []byte
 	summaryCacheUpdated  time.Time
-	statePersistMu       sync.Mutex
-	statePersistedAt     map[string]int64
 }
 
 const (
@@ -131,7 +129,6 @@ func NewHandler(options ...HandlerOptions) http.Handler {
 		notificationSender: newHTTPNotificationSender(opts.NotificationClient, opts.TelegramAPIBaseURL),
 		loginLimiter:       newAdminLoginLimiter(),
 		liveHub:            newLiveUpdateHub(),
-		statePersistedAt:   map[string]int64{},
 	}
 
 	mux := http.NewServeMux()

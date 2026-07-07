@@ -197,9 +197,6 @@ func (h *handler) handleAgentHeartbeat(w http.ResponseWriter, r *http.Request) {
 	}
 	h.dispatchAgentStatusNotification(store, transition, heartbeatTS)
 	h.dispatchRenewalNotifications(store)
-	if transition.Previous.Status != transition.Current.Status {
-		h.invalidateSummaryCache()
-	}
 	h.publishSummary(r.Context())
 	writeJSON(w, http.StatusAccepted, map[string]any{"ok": true})
 }
@@ -229,7 +226,7 @@ func (h *handler) handleAgentHost(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "internal error")
 		return
 	}
-	h.invalidateSummaryCache()
+	h.dispatchRenewalNotifications(store)
 	h.publishSummary(r.Context())
 	writeJSON(w, http.StatusAccepted, map[string]any{"ok": true})
 }
@@ -255,50 +252,23 @@ func (h *handler) handleAgentState(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid state values")
 		return
 	}
+	if err := store.InsertAgentState(r.Context(), nodeID, request); err != nil {
+		writeError(w, http.StatusInternalServerError, "internal error")
+		return
+	}
 	stateTS := time.Unix(request.TS, 0).UTC()
-	persistState := h.shouldPersistAgentState(nodeID, request.TS)
-	if persistState {
-		if err := store.InsertAgentState(r.Context(), nodeID, request); err != nil {
+	if transitionStore, ok := store.(stateAlertRuleTransitionStore); ok {
+		transition, err := transitionStore.RecordAgentStateAlertRuleTransition(r.Context(), nodeID, stateTS, request)
+		if err != nil {
 			writeError(w, http.StatusInternalServerError, "internal error")
 			return
 		}
-		if transitionStore, ok := store.(stateAlertRuleTransitionStore); ok {
-			transition, err := transitionStore.RecordAgentStateAlertRuleTransition(r.Context(), nodeID, stateTS, request)
-			if err != nil {
-				writeError(w, http.StatusInternalServerError, "internal error")
-				return
-			}
-			h.dispatchAgentStatusNotification(store, transition, stateTS)
-			if transition.Previous.Status != transition.Current.Status {
-				h.invalidateSummaryCache()
-			}
-		}
+		h.dispatchAgentStatusNotification(store, transition, stateTS)
 	}
-	// State samples carry the live speed/resource numbers shown on the public
-	// homepage. Patch the cached summary with this node's latest values so live
-	// homepage cards update without rebuilding the full latency/service summary on
-	// every 2s agent POST; node detail streams are still published separately below
-	// on persisted samples.
-	h.publishSummaryState(nodeID, request)
-	if persistState {
-		h.publishNodeState(r.Context(), nodeID)
-	}
+	h.dispatchRenewalNotifications(store)
+	h.publishSummary(r.Context())
+	h.publishNodeState(r.Context(), nodeID)
 	writeJSON(w, http.StatusAccepted, map[string]any{"ok": true})
-}
-
-func (h *handler) shouldPersistAgentState(nodeID string, ts int64) bool {
-	const minPersistInterval = int64(10)
-	h.statePersistMu.Lock()
-	defer h.statePersistMu.Unlock()
-	if h.statePersistedAt == nil {
-		h.statePersistedAt = map[string]int64{}
-	}
-	last := h.statePersistedAt[nodeID]
-	if ts <= 0 || last == 0 || ts-last >= minPersistInterval {
-		h.statePersistedAt[nodeID] = ts
-		return true
-	}
-	return false
 }
 
 func validAgentStatus(status string) bool {

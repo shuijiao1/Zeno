@@ -315,60 +315,6 @@ func (h *handler) publishSummaryNow(ctx context.Context) {
 	h.liveHub.publish(summaryLiveTopic, payload)
 }
 
-func (h *handler) publishSummaryState(nodeID string, state AgentStateRequest) {
-	if h.liveHub == nil || !h.liveHub.hasClients(summaryLiveTopic) {
-		return
-	}
-	payload, ok := h.cachedSummaryJSON(5 * time.Minute)
-	if !ok {
-		h.publishSummary(context.Background())
-		return
-	}
-	var summary SummaryResponse
-	if err := json.Unmarshal(payload, &summary); err != nil {
-		h.publishSummary(context.Background())
-		return
-	}
-	updated := false
-	for index := range summary.Nodes {
-		if summary.Nodes[index].ID != nodeID {
-			continue
-		}
-		node := &summary.Nodes[index]
-		node.Status = "online"
-		node.CPUPercent = liveFloatPtr(state.CPUPercent)
-		node.MemoryUsedBytes = liveFloatPtr(float64(state.MemoryUsedBytes))
-		node.MemoryTotalBytes = liveFloatPtr(float64(state.MemoryTotalBytes))
-		node.DiskUsedBytes = liveFloatPtr(float64(state.DiskUsedBytes))
-		node.DiskTotalBytes = liveFloatPtr(float64(state.DiskTotalBytes))
-		node.NetInTotalBytes = liveFloatPtr(float64(state.NetInTotalBytes))
-		node.NetOutTotalBytes = liveFloatPtr(float64(state.NetOutTotalBytes))
-		node.NetInSpeedBps = liveFloatPtr(state.NetInSpeedBps)
-		node.NetOutSpeedBps = liveFloatPtr(state.NetOutSpeedBps)
-		node.Load1 = state.Load1
-		node.Load5 = state.Load5
-		node.Load15 = state.Load15
-		node.UptimeSeconds = liveFloatPtr(float64(state.UptimeSeconds))
-		updated = true
-		break
-	}
-	if !updated {
-		h.publishSummary(context.Background())
-		return
-	}
-	updatedPayload, err := json.Marshal(summary)
-	if err != nil {
-		return
-	}
-	h.rememberSummaryJSON(updatedPayload)
-	h.scheduleCachedSummaryPublish()
-}
-
-func liveFloatPtr(value float64) *float64 {
-	v := value
-	return &v
-}
-
 func (h *handler) cachedSummaryJSON(maxAge time.Duration) ([]byte, bool) {
 	h.summaryCacheMu.RLock()
 	defer h.summaryCacheMu.RUnlock()
@@ -385,13 +331,6 @@ func (h *handler) rememberSummaryJSON(payload []byte) {
 	h.summaryCacheMu.Lock()
 	h.summaryCache = append(h.summaryCache[:0], payload...)
 	h.summaryCacheUpdated = time.Now()
-	h.summaryCacheMu.Unlock()
-}
-
-func (h *handler) invalidateSummaryCache() {
-	h.summaryCacheMu.Lock()
-	h.summaryCache = nil
-	h.summaryCacheUpdated = time.Time{}
 	h.summaryCacheMu.Unlock()
 }
 
@@ -421,43 +360,6 @@ func (h *handler) scheduleSummaryPublishAfter(delay time.Duration) {
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
 		h.publishSummaryNow(ctx)
-	})
-	h.summaryPublishTimer = timer
-	h.summaryPublishMu.Unlock()
-}
-
-func (h *handler) scheduleCachedSummaryPublish() {
-	h.summaryPublishMu.Lock()
-	if h.summaryPublishTimer != nil {
-		h.summaryPublishMu.Unlock()
-		return
-	}
-	now := time.Now()
-	wait := summaryPublishCoalesceDelay
-	if !h.summaryLastPublished.IsZero() {
-		minWait := h.summaryLastPublished.Add(summaryPublishMinInterval).Sub(now)
-		if minWait > wait {
-			wait = minWait
-		}
-	}
-	var timer *time.Timer
-	timer = time.AfterFunc(wait, func() {
-		h.summaryPublishMu.Lock()
-		if h.summaryPublishTimer != timer {
-			h.summaryPublishMu.Unlock()
-			return
-		}
-		h.summaryPublishTimer = nil
-		h.summaryLastPublished = time.Now()
-		h.summaryPublishMu.Unlock()
-		if h.liveHub == nil || !h.liveHub.hasClients(summaryLiveTopic) {
-			return
-		}
-		payload, ok := h.cachedSummaryJSON(5 * time.Minute)
-		if !ok {
-			return
-		}
-		h.liveHub.publish(summaryLiveTopic, payload)
 	})
 	h.summaryPublishTimer = timer
 	h.summaryPublishMu.Unlock()
