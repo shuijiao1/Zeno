@@ -341,7 +341,7 @@ svg { display: block; }
   gap: 8px;
   padding: 0 9px;
   border: 1px solid color-mix(in srgb, var(--summary-accent) 14%, var(--border));
-  border-left-width: 2px;
+  border-left-width: 1px;
   border-radius: var(--radius-field);
   background: color-mix(in srgb, var(--control-bg) 96%, var(--summary-accent) 4%);
   box-shadow: none;
@@ -377,8 +377,8 @@ svg { display: block; }
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.home-summary__metric--rate dd { width: 13.5ch; min-width: 13.5ch; justify-self: end; justify-content: flex-end; font-weight: 500; }
-.home-summary__rate-value { width: 11.5ch; min-width: 11.5ch; display: grid; grid-template-columns: 6.2ch 4.5ch; align-items: baseline; justify-content: end; column-gap: 3px; text-align: right; font-variant-numeric: tabular-nums; }
+.home-summary__metric--rate dd { justify-self: end; justify-content: flex-end; gap: 5px; font-weight: 500; }
+.home-summary__rate-value { display: inline-flex; align-items: baseline; justify-content: flex-end; gap: 0; text-align: right; font-variant-numeric: tabular-nums; }
 .home-summary__rate-value > span:first-child { text-align: right; }
 .home-summary__rate-unit { color: color-mix(in srgb, var(--summary-accent) 74%, var(--muted)); text-align: right; font-size: .92em; }
 .home-summary__metrics svg { width: 12px; height: 12px; fill: currentColor; }

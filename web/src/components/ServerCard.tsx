@@ -8,7 +8,7 @@ interface ServerCardProps {
   onOpen?: (nodeId: string) => void
 }
 
-const osAsset: Record<HomeCardNode['os'], string> = {
+const osAsset: Record<string, string> = {
   debian: '/assets/logo/os-debian.svg',
   ubuntu: '/assets/logo/os-ubuntu.svg',
   windows: '/assets/logo/os-windows.svg',
@@ -16,6 +16,17 @@ const osAsset: Record<HomeCardNode['os'], string> = {
   alpine: '/assets/logo/linux.svg',
   linux: '/assets/logo/linux.svg',
   unknown: '/assets/logo/linux.svg',
+}
+
+function osAssetFor(os: string | undefined): string {
+  const value = os?.trim().toLowerCase() ?? ''
+  if (value.includes('windows')) return osAsset.windows
+  if (value.includes('debian')) return osAsset.debian
+  if (value.includes('ubuntu')) return osAsset.ubuntu
+  if (value.includes('centos')) return osAsset.centos
+  if (value.includes('alpine')) return osAsset.alpine
+  if (value.includes('linux')) return osAsset.linux
+  return osAsset.unknown
 }
 
 function ratio(used: number | null | undefined, total: number | null | undefined): number | null {
@@ -116,7 +127,7 @@ export function ServerCard({ node, onOpen }: ServerCardProps) {
       }}
     >
       <section className="node-head">
-        <img alt={node.os} className="node-os" loading="lazy" src={osAsset[node.os]} />
+        <img alt={node.os || 'linux'} className="node-os" loading="lazy" src={osAssetFor(node.os)} />
         <div className="node-title-line">
           <span className={`node-dot status-${visualStatus}`} />
           <ServerFlag countryCode={node.countryCode} className="node-flag" />

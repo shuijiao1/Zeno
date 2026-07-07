@@ -25,7 +25,7 @@ interface ApiNode {
   id: string
   display_name: string
   status: HomeCardNode['status']
-  os: HomeCardNode['os']
+  os: string
   os_version?: string
   kernel?: string
   arch?: string
