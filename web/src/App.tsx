@@ -1651,14 +1651,12 @@ function AdminNodeCreateModal({ onCreate, onInstallCommand, onClose }: { onCreat
         setInstallCommandState(installCommandReady(result))
         if (openPickerAfterGenerate) {
           setInstallPlatformPickerOpen(true)
-          setInstallCopyState({ kind: 'ready', message: '安装命令已生成，选择系统后复制。' })
+          setInstallCopyState({ kind: 'ready', message: '安装命令已准备好，选择系统后复制。' })
           revealInstallPlatformPicker()
         }
       })
       .catch((error: unknown) => setInstallCommandState({ kind: 'error', message: error instanceof Error ? error.message : 'unknown error' }))
   }
-
-  const handleInstallCommand = () => requestInstallCommand(true)
 
   const handleCopyInstallCommand = () => {
     if (installCommandState.kind === 'loading') return
@@ -1722,8 +1720,7 @@ function AdminNodeCreateModal({ onCreate, onInstallCommand, onClose }: { onCreat
             ))}
           </div>}
           <div className="admin-inline-actions">
-            <button type="button" onClick={handleInstallCommand} disabled={!createdNode || installCommandState.kind === 'loading'}>{installCommandState.kind === 'loading' ? '生成中…' : '生成安装命令'}</button>
-            <button type="button" onClick={handleCopyInstallCommand} disabled={!createdNode || installCommandState.kind === 'loading'}>复制安装命令</button>
+            <button type="button" onClick={handleCopyInstallCommand} disabled={!createdNode || installCommandState.kind === 'loading'}>{installCommandState.kind === 'loading' ? '生成中…' : '复制安装命令'}</button>
           </div>
           {installCommandState.kind === 'ready' && (
             <>
@@ -1732,7 +1729,7 @@ function AdminNodeCreateModal({ onCreate, onInstallCommand, onClose }: { onCreat
               {installCommandState.platform && <textarea className="admin-install-command" aria-label="新服务器 Agent 安装命令" readOnly value={installCommandText(installCommandState)} />}
             </>
           )}
-          {installCommandState.kind === 'loading' && <div className="admin-install-error is-warning">正在生成安装命令…</div>}
+          {installCommandState.kind === 'loading' && <div className="admin-install-error is-warning">正在准备安装命令…</div>}
           {installCopyState.kind !== 'idle' && <div className={`admin-install-error${installCopyState.kind === 'ready' ? ' is-success' : installCopyState.kind === 'warning' ? ' is-warning' : ''}`}>{installCopyState.message}</div>}
           {installCommandState.kind === 'error' && <div className="admin-install-error">安装命令生成失败：{installCommandState.message}</div>}
         </AdminFormSection>
@@ -1749,7 +1746,6 @@ function AdminNodeEditModal({ node, targets, onUpdate, onTargetUpdate, onInstall
   const [installCommandState, setInstallCommandState] = useState<InstallCommandState>({ kind: 'idle' })
   const [installCopyState, setInstallCopyState] = useState<InstallNoticeState>({ kind: 'idle' })
   const [installPlatformPickerOpen, setInstallPlatformPickerOpen] = useState(false)
-  const [pendingInstallRequest, setPendingInstallRequest] = useState<{ openPickerAfterGenerate: boolean } | null>(null)
   const sortedTargets = sortAdminProbeTargets(targets)
   const initialSelectedTargetIds = sortedTargets.filter((target) => target.assignments.some((assignment) => assignment.nodeId === node.id && assignment.enabled)).map((target) => target.id)
   const [selectedTargetIds, setSelectedTargetIds] = useState<string[]>(initialSelectedTargetIds)
@@ -1785,15 +1781,7 @@ function AdminNodeEditModal({ node, targets, onUpdate, onTargetUpdate, onInstall
     })
   }
 
-  const requestInstallCommand = (openPickerAfterGenerate = false, confirmedRotation = false) => {
-    const shouldConfirmRotation = !node.disabled && node.status !== 'no_data'
-    if (shouldConfirmRotation && !confirmedRotation) {
-      setPendingInstallRequest({ openPickerAfterGenerate })
-      setInstallPlatformPickerOpen(false)
-      setInstallCopyState({ kind: 'warning', message: '生成安装命令会更新 Agent Token，当前 Agent 需要用新命令重装后才会继续上报。' })
-      return
-    }
-    setPendingInstallRequest(null)
+  const requestInstallCommand = (openPickerAfterGenerate = false) => {
     setInstallCommandState({ kind: 'loading' })
     setInstallCopyState({ kind: 'idle' })
     setInstallPlatformPickerOpen(false)
@@ -1802,24 +1790,11 @@ function AdminNodeEditModal({ node, targets, onUpdate, onTargetUpdate, onInstall
         setInstallCommandState(installCommandReady(result))
         if (openPickerAfterGenerate) {
           setInstallPlatformPickerOpen(true)
-          setInstallCopyState({ kind: 'ready', message: '安装命令已生成，选择系统后复制。' })
+          setInstallCopyState({ kind: 'ready', message: '安装命令已准备好，选择系统后复制。' })
           revealInstallPlatformPicker()
         }
       })
       .catch((error: unknown) => setInstallCommandState({ kind: 'error', message: error instanceof Error ? error.message : 'unknown error' }))
-  }
-
-  const handleInstallCommand = () => requestInstallCommand(true)
-
-  const handleConfirmInstallRequest = () => {
-    const next = pendingInstallRequest
-    if (!next) return
-    requestInstallCommand(next.openPickerAfterGenerate, true)
-  }
-
-  const handleCancelInstallRequest = () => {
-    setPendingInstallRequest(null)
-    setInstallCopyState({ kind: 'idle' })
   }
 
   const handleCopyInstallCommand = () => {
@@ -1904,21 +1879,13 @@ function AdminNodeEditModal({ node, targets, onUpdate, onTargetUpdate, onInstall
         </AdminFormSection>
         <AdminFormSection title="Agent 接入">
           <p className="admin-help-note">当前 Agent 版本：{node.agentVersion || '暂无上报'}</p>
-          {pendingInstallRequest && <div className="admin-install-confirm" role="group" aria-label="确认生成安装命令">
-            <p>生成安装命令会更新 Agent Token，当前 Agent 需要用新命令重装后才会继续上报。</p>
-            <div className="admin-inline-actions">
-              <button type="button" onClick={handleConfirmInstallRequest}>继续生成</button>
-              <button type="button" onClick={handleCancelInstallRequest}>取消</button>
-            </div>
-          </div>}
           {installCommandState.kind === 'ready' && installPlatformPickerOpen && <div className="admin-install-platforms" role="group" aria-label="选择 Agent 安装系统">
             {agentInstallPlatforms.map((platform) => (
               <button key={platform.value} type="button" data-active={installCommandState.platform === platform.value} onClick={() => handleCopyInstallPlatform(platform.value)}>{platform.label}</button>
             ))}
           </div>}
           <div className="admin-inline-actions">
-            <button type="button" onClick={handleInstallCommand} disabled={installCommandState.kind === 'loading'}>{installCommandState.kind === 'loading' ? '生成中…' : '重新生成安装命令'}</button>
-            <button type="button" onClick={handleCopyInstallCommand} disabled={installCommandState.kind === 'loading'}>复制安装命令</button>
+            <button type="button" onClick={handleCopyInstallCommand} disabled={installCommandState.kind === 'loading'}>{installCommandState.kind === 'loading' ? '生成中…' : '复制安装命令'}</button>
           </div>
           {installCommandState.kind === 'ready' && (
             <>
@@ -1927,7 +1894,7 @@ function AdminNodeEditModal({ node, targets, onUpdate, onTargetUpdate, onInstall
               {installCommandState.platform && <textarea className="admin-install-command" aria-label={`${node.displayName} Agent 安装命令`} readOnly value={installCommandText(installCommandState)} />}
             </>
           )}
-          {installCommandState.kind === 'loading' && <div className="admin-install-error is-warning">正在生成安装命令…</div>}
+          {installCommandState.kind === 'loading' && <div className="admin-install-error is-warning">正在准备安装命令…</div>}
           {installCopyState.kind !== 'idle' && <div className={`admin-install-error${installCopyState.kind === 'ready' ? ' is-success' : installCopyState.kind === 'warning' ? ' is-warning' : ''}`}>{installCopyState.message}</div>}
           {installCommandState.kind === 'error' && <div className="admin-install-error">安装命令生成失败：{installCommandState.message}</div>}
         </AdminFormSection>

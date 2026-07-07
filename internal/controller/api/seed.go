@@ -50,16 +50,21 @@ func (s *SQLiteStore) SeedPreviewData(ctx context.Context, options PreviewSeedOp
 	}
 	defer rollbackUnlessCommitted(tx)
 
+	installToken := sql.NullString{}
+	if options.AgentToken != "" {
+		installToken = sql.NullString{String: options.AgentToken, Valid: true}
+	}
 	if _, err := tx.ExecContext(ctx, `
-		INSERT INTO nodes (id, display_name, token_hash, status, country_code, billing_mode, monthly_quota_bytes, monthly_reset_day, disabled, created_at, updated_at, last_seen_at)
-		VALUES (?, ?, ?, 'no_data', ?, 'both', ?, 1, 0, ?, ?, NULL)
+		INSERT INTO nodes (id, display_name, token_hash, install_token, status, country_code, billing_mode, monthly_quota_bytes, monthly_reset_day, disabled, created_at, updated_at, last_seen_at)
+		VALUES (?, ?, ?, ?, 'no_data', ?, 'both', ?, 1, 0, ?, ?, NULL)
 		ON CONFLICT(id) DO UPDATE SET
 			display_name = excluded.display_name,
 			token_hash = excluded.token_hash,
+			install_token = excluded.install_token,
 			country_code = excluded.country_code,
 			monthly_quota_bytes = excluded.monthly_quota_bytes,
 			updated_at = excluded.updated_at
-	`, nodeID, displayName, tokenHash, countryCode, int64(10*1024*1024*1024*1024), now, now); err != nil {
+	`, nodeID, displayName, tokenHash, installToken, countryCode, int64(10*1024*1024*1024*1024), now, now); err != nil {
 		return err
 	}
 

@@ -94,7 +94,6 @@ curl -fsSL https://raw.githubusercontent.com/shuijiao1/Zeno-Agent/main/install.s
   ZENO_CONTROLLER_URL=https://zeno.example.com \
   ZENO_NODE_ID=<node-id> \
   ZENO_AGENT_TOKEN=<agent-token> \
-  ZENO_AGENT_VERSION=v0.1.0 \
   bash
 ```
 

@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"crypto/rand"
+	"database/sql"
 	"encoding/base64"
 	"encoding/hex"
 	"fmt"
@@ -48,9 +49,9 @@ func (s *SQLiteStore) CreateAdminNode(ctx context.Context, create AdminNodeCreat
 	defer rollbackUnlessCommitted(tx)
 
 	result, err := tx.ExecContext(ctx, `
-		INSERT OR IGNORE INTO nodes (id, display_name, token_hash, status, country_code, region, expiry_date, billing_cycle, display_order, public_ipv4, public_ipv6, billing_mode, monthly_quota_bytes, monthly_reset_day, disabled, created_at, updated_at, last_seen_at)
-		VALUES (?, ?, ?, 'no_data', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)
-	`, nodeID, create.DisplayName, hashAgentToken(credential), nullIfEmpty(create.CountryCode), nullIfEmpty(create.Region), nullIfEmpty(create.ExpiryDate), nullIfEmpty(create.BillingCycle), create.DisplayOrder, nullIfEmpty(create.PublicIPv4), nullIfEmpty(create.PublicIPv6), create.BillingMode, quota, monthlyResetDay, disabled, now, now)
+		INSERT OR IGNORE INTO nodes (id, display_name, token_hash, install_token, status, country_code, region, expiry_date, billing_cycle, display_order, public_ipv4, public_ipv6, billing_mode, monthly_quota_bytes, monthly_reset_day, disabled, created_at, updated_at, last_seen_at)
+		VALUES (?, ?, ?, ?, 'no_data', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)
+	`, nodeID, create.DisplayName, hashAgentToken(credential), credential, nullIfEmpty(create.CountryCode), nullIfEmpty(create.Region), nullIfEmpty(create.ExpiryDate), nullIfEmpty(create.BillingCycle), create.DisplayOrder, nullIfEmpty(create.PublicIPv4), nullIfEmpty(create.PublicIPv6), create.BillingMode, quota, monthlyResetDay, disabled, now, now)
 	if err != nil {
 		return AdminNode{}, err
 	}
@@ -93,25 +94,29 @@ func (s *SQLiteStore) AdminNodeInstallCommand(ctx context.Context, nodeID, contr
 	if nodeID == "" || strings.Contains(nodeID, "/") {
 		return AgentInstallCommands{}, errNodeNotFound
 	}
-	var exists int
-	if err := s.db.QueryRowContext(ctx, `SELECT 1 FROM nodes WHERE id = ?`, nodeID).Scan(&exists); err != nil {
+	var installToken sql.NullString
+	if err := s.db.QueryRowContext(ctx, `SELECT install_token FROM nodes WHERE id = ?`, nodeID).Scan(&installToken); err != nil {
 		return AgentInstallCommands{}, errNodeNotFound
 	}
-	credential, err := randomAdminCredential()
-	if err != nil {
-		return AgentInstallCommands{}, err
-	}
-	now := time.Now().UTC().Unix()
-	result, err := s.db.ExecContext(ctx, `UPDATE nodes SET token_hash = ?, updated_at = ? WHERE id = ?`, hashAgentToken(credential), now, nodeID)
-	if err != nil {
-		return AgentInstallCommands{}, err
-	}
-	affected, err := result.RowsAffected()
-	if err != nil {
-		return AgentInstallCommands{}, err
-	}
-	if affected == 0 {
-		return AgentInstallCommands{}, errNodeNotFound
+	credential := strings.TrimSpace(installToken.String)
+	if credential == "" {
+		generated, err := randomAdminCredential()
+		if err != nil {
+			return AgentInstallCommands{}, err
+		}
+		credential = generated
+		now := time.Now().UTC().Unix()
+		result, err := s.db.ExecContext(ctx, `UPDATE nodes SET token_hash = ?, install_token = ?, updated_at = ? WHERE id = ?`, hashAgentToken(credential), credential, now, nodeID)
+		if err != nil {
+			return AgentInstallCommands{}, err
+		}
+		affected, err := result.RowsAffected()
+		if err != nil {
+			return AgentInstallCommands{}, err
+		}
+		if affected == 0 {
+			return AgentInstallCommands{}, errNodeNotFound
+		}
 	}
 	return buildAgentInstallCommands(controllerURL, nodeID, credential, agentVersion), nil
 }

@@ -47,6 +47,7 @@ func (s *SQLiteStore) ensureSchema(ctx context.Context) error {
 			id TEXT PRIMARY KEY,
 			display_name TEXT NOT NULL,
 			token_hash TEXT NOT NULL,
+			install_token TEXT,
 			status TEXT NOT NULL DEFAULT 'no_data',
 			country_code TEXT,
 			region TEXT,
@@ -249,6 +250,7 @@ func (s *SQLiteStore) ensureSchema(ctx context.Context) error {
 		}
 	}
 	nodeColumns := map[string]string{
+		"install_token":         "TEXT",
 		"home_probe_target_id": "TEXT",
 		"expiry_date":          "TEXT",
 		"billing_cycle":        "TEXT",

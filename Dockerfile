@@ -35,4 +35,4 @@ COPY --from=web-builder /src/web/dist /opt/zeno/web
 ENV TZ=Asia/Shanghai
 EXPOSE 18980
 ENTRYPOINT ["/usr/local/bin/zeno-controller"]
-CMD ["-addr", "0.0.0.0:18980", "-web-dir", "/opt/zeno/web", "-db", "/data/zeno.db", "-admin-token-file", "/run/secrets/zeno_admin_token", "-agent-token-file", "/run/secrets/zeno_agent_token", "-agent-version", "v0.1.0"]
+CMD ["-addr", "0.0.0.0:18980", "-web-dir", "/opt/zeno/web", "-db", "/data/zeno.db", "-admin-token-file", "/run/secrets/zeno_admin_token", "-agent-token-file", "/run/secrets/zeno_agent_token"]

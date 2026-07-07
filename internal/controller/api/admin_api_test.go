@@ -590,7 +590,7 @@ func TestAdminNodeCreateAddsEditableNodeWithoutReturningSecrets(t *testing.T) {
 	}
 }
 
-func TestAdminNodeInstallCommandRotatesAgentCredentialAndUsesRequestHost(t *testing.T) {
+func TestAdminNodeInstallCommandReusesStoredCredentialAndUsesRequestHost(t *testing.T) {
 	store, err := OpenSQLiteStore(filepath.Join(t.TempDir(), "zeno.db"))
 	if err != nil {
 		t.Fatalf("open sqlite store: %v", err)
@@ -632,9 +632,29 @@ func TestAdminNodeInstallCommandRotatesAgentCredentialAndUsesRequestHost(t *test
 		t.Fatalf("install command should use Zeno agent names and paths: %s", response.Command)
 	}
 	credential := extractQuotedInstallCredential(t, response.Command)
-	if credential == "old-agent-token" {
-		t.Fatalf("install command reused old agent credential")
+	if credential != "old-agent-token" {
+		t.Fatalf("install command credential = %q, want stored credential", credential)
 	}
+
+	secondRecorder := httptest.NewRecorder()
+	secondRequest := httptest.NewRequest(http.MethodPost, "/api/admin/v1/nodes/hytron/install-command", nil)
+	secondRequest.Host = "probe.example.com"
+	secondRequest.Header.Set("X-Forwarded-Proto", "https")
+	secondRequest.Header.Set("X-Admin-Token", "admin-pass")
+	NewHandler(HandlerOptions{Store: store, AdminTokenHash: HashAdminToken("admin-pass"), AgentVersion: "testsha"}).ServeHTTP(secondRecorder, secondRequest)
+	if secondRecorder.Code != http.StatusOK {
+		t.Fatalf("second status = %d, want 200; body=%s", secondRecorder.Code, secondRecorder.Body.String())
+	}
+	var secondResponse struct {
+		Command string `json:"command"`
+	}
+	if err := json.NewDecoder(bytes.NewBufferString(secondRecorder.Body.String())).Decode(&secondResponse); err != nil {
+		t.Fatalf("decode second install command: %v", err)
+	}
+	if secondCredential := extractQuotedInstallCredential(t, secondResponse.Command); secondCredential != credential {
+		t.Fatalf("second install credential = %q, want %q", secondCredential, credential)
+	}
+
 	allowed, err := store.AuthorizeAgent(ctx, "hytron", credential)
 	if err != nil {
 		t.Fatalf("authorize generated credential: %v", err)
