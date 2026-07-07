@@ -361,7 +361,7 @@ func (h *handler) publishSummaryState(nodeID string, state AgentStateRequest) {
 		return
 	}
 	h.rememberSummaryJSON(updatedPayload)
-	h.liveHub.publish(summaryLiveTopic, updatedPayload)
+	h.scheduleCachedSummaryPublish()
 }
 
 func liveFloatPtr(value float64) *float64 {
@@ -421,6 +421,43 @@ func (h *handler) scheduleSummaryPublishAfter(delay time.Duration) {
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
 		h.publishSummaryNow(ctx)
+	})
+	h.summaryPublishTimer = timer
+	h.summaryPublishMu.Unlock()
+}
+
+func (h *handler) scheduleCachedSummaryPublish() {
+	h.summaryPublishMu.Lock()
+	if h.summaryPublishTimer != nil {
+		h.summaryPublishMu.Unlock()
+		return
+	}
+	now := time.Now()
+	wait := summaryPublishCoalesceDelay
+	if !h.summaryLastPublished.IsZero() {
+		minWait := h.summaryLastPublished.Add(summaryPublishMinInterval).Sub(now)
+		if minWait > wait {
+			wait = minWait
+		}
+	}
+	var timer *time.Timer
+	timer = time.AfterFunc(wait, func() {
+		h.summaryPublishMu.Lock()
+		if h.summaryPublishTimer != timer {
+			h.summaryPublishMu.Unlock()
+			return
+		}
+		h.summaryPublishTimer = nil
+		h.summaryLastPublished = time.Now()
+		h.summaryPublishMu.Unlock()
+		if h.liveHub == nil || !h.liveHub.hasClients(summaryLiveTopic) {
+			return
+		}
+		payload, ok := h.cachedSummaryJSON(5 * time.Minute)
+		if !ok {
+			return
+		}
+		h.liveHub.publish(summaryLiveTopic, payload)
 	})
 	h.summaryPublishTimer = timer
 	h.summaryPublishMu.Unlock()
