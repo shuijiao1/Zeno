@@ -132,7 +132,7 @@ func (h *handler) handleAgentProbeResults(w http.ResponseWriter, r *http.Request
 			return
 		}
 	}
-	h.publishSummaryNow(r.Context())
+	h.publishSummary(r.Context())
 	h.publishNodeLatency(r.Context(), nodeID)
 	seenTargetIDs := map[string]struct{}{}
 	for _, round := range prepared {
@@ -200,7 +200,7 @@ func (h *handler) handleAgentHeartbeat(w http.ResponseWriter, r *http.Request) {
 	if transition.Previous.Status != transition.Current.Status {
 		h.invalidateSummaryCache()
 	}
-	h.publishSummaryNow(r.Context())
+	go h.publishSummaryNow(context.Background())
 	writeJSON(w, http.StatusAccepted, map[string]any{"ok": true})
 }
 
@@ -231,7 +231,7 @@ func (h *handler) handleAgentHost(w http.ResponseWriter, r *http.Request) {
 	}
 	h.dispatchRenewalNotifications(store)
 	h.invalidateSummaryCache()
-	h.publishSummaryNow(r.Context())
+	go h.publishSummaryNow(context.Background())
 	writeJSON(w, http.StatusAccepted, map[string]any{"ok": true})
 }
 
@@ -274,10 +274,10 @@ func (h *handler) handleAgentState(w http.ResponseWriter, r *http.Request) {
 	}
 	h.dispatchRenewalNotifications(store)
 	// State samples carry the live speed/resource numbers shown on the public
-	// homepage. Publish summary immediately for connected clients instead of
-	// leaving it to the background summary cache cadence; node detail streams are
-	// still published separately below.
-	h.publishSummaryNow(r.Context())
+	// homepage. Schedule a coalesced summary refresh so agent POSTs do not block on
+	// rebuilding the full public summary; node detail streams are still published
+	// separately below.
+	h.publishSummary(r.Context())
 	h.publishNodeState(r.Context(), nodeID)
 	writeJSON(w, http.StatusAccepted, map[string]any{"ok": true})
 }
