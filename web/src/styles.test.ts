@@ -57,6 +57,7 @@ describe('homepage and admin shell layout', () => {
     expect(styles).toContain('.home-summary__metric--send')
     expect(styles).toContain('.home-summary__metric--rate dd { justify-self: end; justify-content: flex-end; gap: 5px; font-weight: 500; }')
     expect(styles).toContain('.home-summary__rate-value { display: inline-flex')
+    expect(styles).toContain('.home-summary__rate-gap')
     expect(styles).toContain('font-weight: 400')
     expect(styles).not.toContain('.home-summary__metric::after')
     expect(styles).not.toContain('.home-summary__compact')

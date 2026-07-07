@@ -264,6 +264,8 @@ describe('HomeTopPanel', () => {
     expect(html).toContain('接收')
     expect(html).toContain('上传')
     expect(html).toContain('下载')
+    expect(html).toContain('home-summary__rate-gap')
+    expect(html).not.toContain('CircleArrowIcon')
     expect(html).not.toContain('实时')
     expect(html).not.toContain('累计上传')
     expect(html).not.toContain('累计下载')

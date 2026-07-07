@@ -380,6 +380,7 @@ svg { display: block; }
 .home-summary__metric--rate dd { justify-self: end; justify-content: flex-end; gap: 5px; font-weight: 500; }
 .home-summary__rate-value { display: inline-flex; align-items: baseline; justify-content: flex-end; gap: 0; text-align: right; font-variant-numeric: tabular-nums; }
 .home-summary__rate-value > span:first-child { text-align: right; }
+.home-summary__rate-gap { display: inline-block; width: .25em; flex: none; }
 .home-summary__rate-unit { color: color-mix(in srgb, var(--summary-accent) 74%, var(--muted)); text-align: right; font-size: .92em; }
 .home-summary__metric svg { width: 12px; height: 12px; fill: currentColor; }
 

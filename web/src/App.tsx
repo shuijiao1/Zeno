@@ -3141,11 +3141,11 @@ export function HomeOverviewPanel({ totalCount, onlineCount, offlineCount: _offl
       <dl className="home-summary__tile home-summary__tile--rates" aria-label="network speeds">
         <div className="home-summary__metric home-summary__metric--upload-rate home-summary__metric--rate">
           <dt>上传</dt>
-          <dd><span className="home-summary__rate-value"><span>{uploadRate.value} </span><span className="home-summary__rate-unit">{uploadRate.unit}</span></span></dd>
+          <dd><span className="home-summary__rate-value"><span>{uploadRate.value}</span><span className="home-summary__rate-gap" aria-hidden="true">&nbsp;</span><span className="home-summary__rate-unit">{uploadRate.unit}</span></span></dd>
         </div>
         <div className="home-summary__metric home-summary__metric--download-rate home-summary__metric--rate">
           <dt>下载</dt>
-          <dd><span className="home-summary__rate-value"><span>{downloadRate.value} </span><span className="home-summary__rate-unit">{downloadRate.unit}</span></span></dd>
+          <dd><span className="home-summary__rate-value"><span>{downloadRate.value}</span><span className="home-summary__rate-gap" aria-hidden="true">&nbsp;</span><span className="home-summary__rate-unit">{downloadRate.unit}</span></span></dd>
         </div>
       </dl>
     </section>
