@@ -272,7 +272,6 @@ func (h *handler) handleAgentState(w http.ResponseWriter, r *http.Request) {
 			h.invalidateSummaryCache()
 		}
 	}
-	h.dispatchRenewalNotifications(store)
 	// State samples carry the live speed/resource numbers shown on the public
 	// homepage. Patch the cached summary with this node's latest values so live
 	// homepage cards update without rebuilding the full latency/service summary on
