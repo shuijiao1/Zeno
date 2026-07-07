@@ -368,6 +368,51 @@ func TestAdminNodeBillingIPAndDisplayOrderFieldsFlowThroughAdminAndPublicSummary
 	}
 }
 
+func TestAdminNodePatchRefreshesCachedPublicSummaryImmediately(t *testing.T) {
+	store, err := OpenSQLiteStore(filepath.Join(t.TempDir(), "zeno.db"))
+	if err != nil {
+		t.Fatalf("open sqlite store: %v", err)
+	}
+	defer store.Close()
+	if err := store.SeedPreviewData(context.Background(), PreviewSeedOptions{NodeID: "hytron", DisplayName: "Hytron", CountryCode: "HK", AgentToken: "test-agent-token"}); err != nil {
+		t.Fatalf("seed preview data: %v", err)
+	}
+	handler := NewHandler(HandlerOptions{Store: store, AdminTokenHash: HashAdminToken("admin-pass")})
+
+	initialRecorder := httptest.NewRecorder()
+	handler.ServeHTTP(initialRecorder, httptest.NewRequest(http.MethodGet, "/api/public/v1/summary", nil))
+	if initialRecorder.Code != http.StatusOK {
+		t.Fatalf("initial summary status = %d, want 200; body=%s", initialRecorder.Code, initialRecorder.Body.String())
+	}
+
+	patchRecorder := httptest.NewRecorder()
+	patchRequest := httptest.NewRequest(http.MethodPatch, "/api/admin/v1/nodes/hytron", strings.NewReader(`{"expiry_date":"2026-09-09","monthly_quota_bytes":987654321}`))
+	patchRequest.Header.Set("X-Admin-Token", "admin-pass")
+	handler.ServeHTTP(patchRecorder, patchRequest)
+	if patchRecorder.Code != http.StatusOK {
+		t.Fatalf("patch status = %d, want 200; body=%s", patchRecorder.Code, patchRecorder.Body.String())
+	}
+
+	refreshedRecorder := httptest.NewRecorder()
+	handler.ServeHTTP(refreshedRecorder, httptest.NewRequest(http.MethodGet, "/api/public/v1/summary", nil))
+	if refreshedRecorder.Code != http.StatusOK {
+		t.Fatalf("refreshed summary status = %d, want 200; body=%s", refreshedRecorder.Code, refreshedRecorder.Body.String())
+	}
+	var summary SummaryResponse
+	if err := json.NewDecoder(refreshedRecorder.Body).Decode(&summary); err != nil {
+		t.Fatalf("decode refreshed summary: %v", err)
+	}
+	if len(summary.Nodes) != 1 {
+		t.Fatalf("summary nodes len = %d, want 1", len(summary.Nodes))
+	}
+	if summary.Nodes[0].ExpiryLabel != "2026-09-09" {
+		t.Fatalf("expiry label = %q, want patched value", summary.Nodes[0].ExpiryLabel)
+	}
+	if summary.Nodes[0].MonthlyQuotaBytes == nil || *summary.Nodes[0].MonthlyQuotaBytes != 987654321 {
+		t.Fatalf("monthly quota = %v, want patched value", summary.Nodes[0].MonthlyQuotaBytes)
+	}
+}
+
 func TestAdminNodePatchRejectsUnauthorizedUnknownAndInvalidRequests(t *testing.T) {
 	store, err := OpenSQLiteStore(filepath.Join(t.TempDir(), "zeno.db"))
 	if err != nil {

@@ -248,6 +248,7 @@ func (h *handler) handleAdminNodes(w http.ResponseWriter, r *http.Request) {
 			writeAdminError(w, err)
 			return
 		}
+		h.publishSummaryNow(r.Context())
 		writeJSON(w, http.StatusCreated, AdminNodeResponse{Node: node})
 	default:
 		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
@@ -279,6 +280,7 @@ func (h *handler) handleAdminNodeResource(w http.ResponseWriter, r *http.Request
 			writeAdminError(w, err)
 			return
 		}
+		h.publishSummaryNow(r.Context())
 		w.WriteHeader(http.StatusNoContent)
 		return
 	}
@@ -291,6 +293,7 @@ func (h *handler) handleAdminNodeResource(w http.ResponseWriter, r *http.Request
 		writeAdminError(w, err)
 		return
 	}
+	h.publishSummaryNow(r.Context())
 	writeJSON(w, http.StatusOK, AdminNodeResponse{Node: node})
 }
 
