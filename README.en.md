@@ -105,20 +105,11 @@ The Agent only reports metrics and probe results. It does not modify the Control
 
 ## Update
 
-See [`docs/UPGRADE.md`](docs/UPGRADE.md) for upgrade, version pinning and rollback notes.
+See [`docs/UPGRADE.md`](docs/UPGRADE.md) for upgrade and rollback notes.
 
 For Docker Compose deployments:
 
 ```bash
-cd /opt/zeno
-docker compose pull
-docker compose up -d
-```
-
-To pin a specific version:
-
-```bash
-sed -i 's#^ZENO_IMAGE=.*#ZENO_IMAGE=ghcr.io/shuijiao1/zeno:v0.2.3#' /opt/zeno/.env
 cd /opt/zeno
 docker compose pull
 docker compose up -d

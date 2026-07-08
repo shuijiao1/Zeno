@@ -105,20 +105,11 @@ Agent 只负责上报，不会修改 Controller，也不会打开远程命令入
 
 ## 更新
 
-完整升级、固定版本和回滚说明见 [`docs/UPGRADE.md`](docs/UPGRADE.md)。
+完整升级和回滚说明见 [`docs/UPGRADE.md`](docs/UPGRADE.md)。
 
 Docker Compose 部署可以直接更新镜像：
 
 ```bash
-cd /opt/zeno
-docker compose pull
-docker compose up -d
-```
-
-也可以固定版本：
-
-```bash
-sed -i 's#^ZENO_IMAGE=.*#ZENO_IMAGE=ghcr.io/shuijiao1/zeno:v0.2.3#' /opt/zeno/.env
 cd /opt/zeno
 docker compose pull
 docker compose up -d

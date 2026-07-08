@@ -188,11 +188,4 @@ bash <(curl -fsSL https://raw.githubusercontent.com/shuijiao1/Zeno/main/install.
 - 如果已有 `.env`，未显式传入的 `ZENO_IMAGE`、`ZENO_HOST_PORT`、`ZENO_CONTAINER_NAME`、`TZ` 会沿用旧值。
 - `/health` 未通过时会打印 `docker compose ps` 和最近日志，并提示备份目录。
 
-可选固定版本：
-
-```bash
-ZENO_IMAGE=ghcr.io/shuijiao1/zeno:v0.2.3 \
-  bash <(curl -fsSL https://raw.githubusercontent.com/shuijiao1/Zeno/main/install.sh)
-```
-
 详细升级和回滚见 [`UPGRADE.md`](UPGRADE.md)。

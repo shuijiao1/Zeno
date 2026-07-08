@@ -14,14 +14,14 @@ body:
     id: controller-version
     attributes:
       label: Controller version
-      placeholder: v0.2.3 or image digest
+      placeholder: latest or image digest
     validations:
       required: true
   - type: input
     id: agent-version
     attributes:
       label: Agent version
-      placeholder: v0.1.11 / not related
+      placeholder: latest / not related
   - type: dropdown
     id: deploy
     attributes:

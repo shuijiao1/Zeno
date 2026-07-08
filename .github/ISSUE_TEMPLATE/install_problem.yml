@@ -18,7 +18,7 @@ body:
     id: version
     attributes:
       label: Version
-      placeholder: Controller v0.2.3 / Agent v0.1.11 / latest
+      placeholder: latest / image digest / release tag
     validations:
       required: true
   - type: input

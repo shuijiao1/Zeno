@@ -30,22 +30,12 @@ docker compose up -d
 curl -fsS http://127.0.0.1:18980/health
 ```
 
-## 3. 固定版本
-
-```bash
-sed -i 's#^ZENO_IMAGE=.*#ZENO_IMAGE=ghcr.io/shuijiao1/zeno:v0.2.3#' /opt/zeno/.env
-cd /opt/zeno
-docker compose pull
-docker compose up -d
-curl -fsS http://127.0.0.1:18980/health
-```
-
-## 4. 回滚
+## 3. 回滚
 
 把 `.env` 里的镜像改回旧版本，然后重新拉起：
 
 ```bash
-sed -i 's#^ZENO_IMAGE=.*#ZENO_IMAGE=ghcr.io/shuijiao1/zeno:v0.2.2#' /opt/zeno/.env
+sed -i 's#^ZENO_IMAGE=.*#ZENO_IMAGE=ghcr.io/shuijiao1/zeno:<previous-version>#' /opt/zeno/.env
 cd /opt/zeno
 docker compose pull
 docker compose up -d
@@ -66,13 +56,13 @@ docker compose up -d
 
 > 回滚数据库前请先停止 Controller，避免运行中的 SQLite 文件被覆盖。
 
-## 5. Agent 升级
+## 4. Agent 升级
 
 Controller 升级通常不需要同步升级 Agent。只有 Release notes 明确说明 Agent 有新版本或协议变更时，才需要重新运行后台复制的 Agent 安装命令。
 
-Agent 安装脚本默认使用 Zeno-Agent 最新 Release；如需固定版本，可设置 `ZENO_AGENT_VERSION=v0.1.11`。
+Agent 安装脚本默认使用 Zeno-Agent 最新 Release；公开安装命令一般不需要设置 `ZENO_AGENT_VERSION`。
 
-## 6. 验证
+## 5. 验证
 
 ```bash
 docker inspect zeno --format 'image={{.Config.Image}} health={{.State.Health.Status}} version={{index .Config.Labels "org.opencontainers.image.version"}} revision={{index .Config.Labels "org.opencontainers.image.revision"}}'
