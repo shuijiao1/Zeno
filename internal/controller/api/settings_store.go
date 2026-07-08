@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"database/sql"
+	"strconv"
 	"time"
 )
 
@@ -15,6 +16,14 @@ const (
 	settingKeyBackgroundURL        = "background_url"
 	settingKeyDesktopBackgroundURL = "desktop_background_url"
 	settingKeyMobileBackgroundURL  = "mobile_background_url"
+	settingKeyAppearancePreset     = "appearance_preset"
+	settingKeyCardOpacity          = "card_opacity"
+	settingKeyCardBlur             = "card_blur"
+	settingKeyCardRadius           = "card_radius"
+	settingKeyBorderStrength       = "border_strength"
+	settingKeyShadowStrength       = "shadow_strength"
+	settingKeyBackgroundOverlay    = "background_overlay"
+	settingKeyThemeColor           = "theme_color"
 	settingKeyCustomCode           = "custom_code"
 )
 
@@ -62,6 +71,30 @@ func (s *SQLiteStore) UpdateAdminSettings(ctx context.Context, update AdminSetti
 	if update.MobileBackgroundURL != nil {
 		settings.MobileBackgroundURL = *update.MobileBackgroundURL
 	}
+	if update.AppearancePreset != nil {
+		settings.AppearancePreset = *update.AppearancePreset
+	}
+	if update.CardOpacity != nil {
+		settings.CardOpacity = *update.CardOpacity
+	}
+	if update.CardBlur != nil {
+		settings.CardBlur = *update.CardBlur
+	}
+	if update.CardRadius != nil {
+		settings.CardRadius = *update.CardRadius
+	}
+	if update.BorderStrength != nil {
+		settings.BorderStrength = *update.BorderStrength
+	}
+	if update.ShadowStrength != nil {
+		settings.ShadowStrength = *update.ShadowStrength
+	}
+	if update.BackgroundOverlay != nil {
+		settings.BackgroundOverlay = *update.BackgroundOverlay
+	}
+	if update.ThemeColor != nil {
+		settings.ThemeColor = *update.ThemeColor
+	}
 	if update.CustomCode != nil {
 		settings.CustomCode = *update.CustomCode
 	}
@@ -81,6 +114,14 @@ func (s *SQLiteStore) UpdateAdminSettings(ctx context.Context, update AdminSetti
 		settingKeyBackgroundURL:        settings.BackgroundURL,
 		settingKeyDesktopBackgroundURL: settings.DesktopBackgroundURL,
 		settingKeyMobileBackgroundURL:  settings.MobileBackgroundURL,
+		settingKeyAppearancePreset:     settings.AppearancePreset,
+		settingKeyCardOpacity:          formatSettingsFloat(settings.CardOpacity),
+		settingKeyCardBlur:             formatSettingsFloat(settings.CardBlur),
+		settingKeyCardRadius:           formatSettingsFloat(settings.CardRadius),
+		settingKeyBorderStrength:       formatSettingsFloat(settings.BorderStrength),
+		settingKeyShadowStrength:       formatSettingsFloat(settings.ShadowStrength),
+		settingKeyBackgroundOverlay:    formatSettingsFloat(settings.BackgroundOverlay),
+		settingKeyThemeColor:           settings.ThemeColor,
 		settingKeyCustomCode:           settings.CustomCode,
 	}
 	for key, value := range values {
@@ -105,8 +146,8 @@ func (s *SQLiteStore) siteSettings(ctx context.Context) (SiteSettings, error) {
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT key, value, updated_at
 		FROM settings
-		WHERE key IN (?, ?, ?, ?, ?, ?, ?, ?, ?)
-	`, settingKeySiteTitle, settingKeySiteSubtitle, settingKeyLogoURL, settingKeyTheme, settingKeyAgentControllerURL, settingKeyBackgroundURL, settingKeyDesktopBackgroundURL, settingKeyMobileBackgroundURL, settingKeyCustomCode)
+		WHERE key IN (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+	`, settingKeySiteTitle, settingKeySiteSubtitle, settingKeyLogoURL, settingKeyTheme, settingKeyAgentControllerURL, settingKeyBackgroundURL, settingKeyDesktopBackgroundURL, settingKeyMobileBackgroundURL, settingKeyAppearancePreset, settingKeyCardOpacity, settingKeyCardBlur, settingKeyCardRadius, settingKeyBorderStrength, settingKeyShadowStrength, settingKeyBackgroundOverlay, settingKeyThemeColor, settingKeyCustomCode)
 	if err != nil {
 		return SiteSettings{}, err
 	}
@@ -135,6 +176,26 @@ func (s *SQLiteStore) siteSettings(ctx context.Context) (SiteSettings, error) {
 			settings.DesktopBackgroundURL = value
 		case settingKeyMobileBackgroundURL:
 			settings.MobileBackgroundURL = value
+		case settingKeyAppearancePreset:
+			if validAppearancePreset(value) {
+				settings.AppearancePreset = value
+			}
+		case settingKeyCardOpacity:
+			settings.CardOpacity = parseSettingsFloat(value, settings.CardOpacity)
+		case settingKeyCardBlur:
+			settings.CardBlur = parseSettingsFloat(value, settings.CardBlur)
+		case settingKeyCardRadius:
+			settings.CardRadius = parseSettingsFloat(value, settings.CardRadius)
+		case settingKeyBorderStrength:
+			settings.BorderStrength = parseSettingsFloat(value, settings.BorderStrength)
+		case settingKeyShadowStrength:
+			settings.ShadowStrength = parseSettingsFloat(value, settings.ShadowStrength)
+		case settingKeyBackgroundOverlay:
+			settings.BackgroundOverlay = parseSettingsFloat(value, settings.BackgroundOverlay)
+		case settingKeyThemeColor:
+			if settingsThemeColorPattern.MatchString(value) {
+				settings.ThemeColor = value
+			}
 		case settingKeyCustomCode:
 			settings.CustomCode = value
 		}
@@ -155,4 +216,16 @@ func (s *SQLiteStore) siteSettings(ctx context.Context) (SiteSettings, error) {
 		settings.UpdatedAt = time.Unix(latest.Int64, 0).UTC().Format(time.RFC3339)
 	}
 	return settings, nil
+}
+
+func formatSettingsFloat(value float64) string {
+	return strconv.FormatFloat(value, 'f', -1, 64)
+}
+
+func parseSettingsFloat(value string, fallback float64) float64 {
+	parsed, err := strconv.ParseFloat(value, 64)
+	if err != nil {
+		return fallback
+	}
+	return parsed
 }

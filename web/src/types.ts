@@ -1,6 +1,7 @@
 export type NodeStatus = 'online' | 'warning' | 'offline' | 'no_data'
 export type ProbeType = 'ping' | 'tcping' | 'http_get'
 export type AdminTheme = 'system' | 'dark' | 'light'
+export type AppearancePreset = 'default' | 'gaussian_blur'
 
 export interface AdminSettings {
   siteTitle: string
@@ -11,6 +12,14 @@ export interface AdminSettings {
   backgroundUrl: string
   desktopBackgroundUrl: string
   mobileBackgroundUrl: string
+  appearancePreset: AppearancePreset
+  cardOpacity: number
+  cardBlur: number
+  cardRadius: number
+  borderStrength: number
+  shadowStrength: number
+  backgroundOverlay: number
+  themeColor: string
   customCode: string
   updatedAt?: string
 }

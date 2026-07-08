@@ -28,6 +28,8 @@
   --radius-field: 12px;
   --radius-card: 16px;
   --radius-panel: 20px;
+  --zeno-card-blur: 0px;
+  --zeno-background-overlay-color: rgba(255, 255, 255, 0);
   --zeno-card-highlight: #ffffff;
   --zeno-card-shadow: 0 10px 26px -24px rgba(15, 23, 42, 0.22), 0 1px 2px rgba(15, 23, 42, 0.035);
   --zeno-content-width: 1024px;
@@ -78,6 +80,7 @@ svg { display: block; }
 }
 
 .kulin-shell {
+  position: relative;
   min-height: 100vh;
   padding: 32px 40px 40px;
   display: flex;
@@ -90,6 +93,15 @@ svg { display: block; }
   background-repeat: no-repeat;
   background-attachment: fixed;
 }
+.kulin-shell[data-background='on']::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  background: var(--zeno-background-overlay-color);
+}
+.kulin-shell > * { position: relative; z-index: 1; }
 
 .kulin-shell[data-theme="light"] {
   --background: #ffffff;
@@ -258,6 +270,8 @@ svg { display: block; }
     0 10px 28px -24px rgba(15, 23, 42, 0.26),
     0 1px 2px rgba(15, 23, 42, 0.035),
     inset 0 1px 0 var(--zeno-card-highlight);
+  -webkit-backdrop-filter: blur(var(--zeno-card-blur));
+  backdrop-filter: blur(var(--zeno-card-blur));
 }
 .home-top-card::after {
   content: "";
@@ -267,6 +281,17 @@ svg { display: block; }
   pointer-events: none;
 }
 .home-top-card > * { position: relative; z-index: 1; }
+.kulin-node-card,
+.detail-hero,
+.latency-panel,
+.admin-login-card,
+.admin-list,
+.admin-form-section,
+.admin-state-card,
+.admin-modal {
+  -webkit-backdrop-filter: blur(var(--zeno-card-blur));
+  backdrop-filter: blur(var(--zeno-card-blur));
+}
 .home-top-card .kulin-nav {
   max-width: none;
   height: auto;
@@ -393,24 +418,6 @@ svg { display: block; }
 }
 
 .admin-container { display: flex; flex-direction: column; gap: 24px; }
-.kulin-shell[data-background='on'] .admin-container {
-  --secondary: rgba(255, 255, 255, 0.42);
-  --surface: rgba(255, 255, 255, 0.62);
-  --surface-strong: rgba(255, 255, 255, 0.72);
-  --surface-soft: rgba(255, 255, 255, 0.38);
-  --field-bg: rgba(255, 255, 255, 0.58);
-  --control-bg: rgba(255, 255, 255, 0.62);
-  --zeno-card-highlight: rgba(255, 255, 255, 0.58);
-}
-.kulin-shell[data-theme="dark"][data-background='on'] .admin-container {
-  --secondary: rgba(15, 23, 42, 0.34);
-  --surface: rgba(15, 23, 42, 0.42);
-  --surface-strong: rgba(15, 23, 42, 0.52);
-  --surface-soft: rgba(15, 23, 42, 0.26);
-  --field-bg: rgba(15, 23, 42, 0.34);
-  --control-bg: rgba(15, 23, 42, 0.38);
-  --zeno-card-highlight: rgba(255, 255, 255, 0.12);
-}
 .admin-panel { min-height: 360px; }
 .admin-container,
 .admin-container .home-top-card.admin-panel { width: 100%; }
@@ -828,6 +835,39 @@ svg { display: block; }
   gap: 10px;
 }
 .admin-form-span-2 { grid-column: 1 / -1; }
+.admin-appearance-grid { align-items: end; }
+.admin-style-grid {
+  margin-top: 10px;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+.admin-style-range {
+  min-width: 0;
+  display: grid;
+  gap: 8px;
+  padding: 10px 12px;
+  border: 1px solid color-mix(in srgb, var(--border) 72%, transparent);
+  border-radius: var(--radius-field);
+  background: color-mix(in srgb, var(--field-bg) 86%, transparent);
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 500;
+}
+.admin-style-range__head { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.admin-style-range__head strong { color: var(--foreground); font-size: 12px; font-weight: 500; font-variant-numeric: tabular-nums; }
+.admin-style-range input[type="range"] {
+  width: 100%;
+  accent-color: var(--blue);
+}
+.admin-color-field input[type="color"] {
+  width: 100%;
+  height: 40px;
+  padding: 4px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-field);
+  background: var(--field-bg);
+}
 .admin-channel-enabled-toggle { align-self: end; min-height: 42px; margin-top: 19px; }
 .admin-alert-rule-settings-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); align-items: end; }
 .admin-alert-rule-enabled-toggle { min-height: 36px; }
@@ -2447,7 +2487,8 @@ svg { display: block; }
   .admin-modal-summary { grid-template-columns: 1fr; gap: 8px; }
   .admin-modal-summary div { padding: 10px; }
   .admin-node-edit-form,
-  .admin-form-grid { grid-template-columns: 1fr; }
+  .admin-form-grid,
+  .admin-style-grid { grid-template-columns: 1fr; }
   .admin-billing-row--cycle,
   .admin-billing-row--traffic { grid-template-columns: 1fr; }
   .admin-modal-actions {

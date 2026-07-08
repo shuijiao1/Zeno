@@ -160,6 +160,14 @@ const settings: AdminSettings = {
   backgroundUrl: 'https://example.com/desktop-bg.webp',
   desktopBackgroundUrl: 'https://example.com/desktop-bg.webp',
   mobileBackgroundUrl: 'https://example.com/mobile-bg.webp',
+  appearancePreset: 'gaussian_blur',
+  cardOpacity: 0.58,
+  cardBlur: 18,
+  cardRadius: 24,
+  borderStrength: 0.34,
+  shadowStrength: 0.34,
+  backgroundOverlay: 0.08,
+  themeColor: '#6366f1',
   customCode: '<style>.home-top-card { border-color: #2563eb; }</style><script>window.ZenoCustomLoaded = true;</script>',
   updatedAt: '2026-07-04T12:00:00Z',
 }
@@ -226,10 +234,31 @@ describe('HomeTopPanel', () => {
     expect(shellStyleForSettings(settings)).toEqual({
       '--zeno-desktop-background-image': 'url("https://example.com/desktop-bg.webp")',
       '--zeno-mobile-background-image': 'url("https://example.com/mobile-bg.webp")',
+      '--blue': '#6366f1',
+      '--border': 'rgba(99, 102, 241, 0.340)',
+      '--metric-shadow': 'rgba(99, 102, 241, 0.075)',
+      '--surface-strong': 'rgba(15, 23, 42, 0.580)',
+      '--surface': 'rgba(15, 23, 42, 0.480)',
+      '--surface-soft': 'rgba(15, 23, 42, 0.240)',
+      '--secondary': 'rgba(15, 23, 42, 0.320)',
+      '--metric-bg': 'rgba(15, 23, 42, 0.380)',
+      '--field-bg': 'rgba(15, 23, 42, 0.440)',
+      '--control-bg': 'rgba(15, 23, 42, 0.480)',
+      '--radius-panel': '24px',
+      '--radius-card': '20px',
+      '--radius-field': '16px',
+      '--zeno-card-blur': '18px',
+      '--zeno-card-highlight': 'rgba(255, 255, 255, 0.081)',
+      '--zeno-card-shadow': '0 10px 26px -24px rgba(0, 0, 0, 0.190), 0 1px 2px rgba(0, 0, 0, 0.037)',
+      '--zeno-background-overlay-color': 'rgba(0, 0, 0, 0.080)',
+      '--zeno-theme-rgb': '99, 102, 241',
       backgroundSize: 'cover',
       backgroundAttachment: 'fixed',
     })
-    expect(shellStyleForSettings({ ...settings, backgroundUrl: '', desktopBackgroundUrl: '', mobileBackgroundUrl: '' })).toBeUndefined()
+    expect(shellStyleForSettings({ ...settings, backgroundUrl: '', desktopBackgroundUrl: '', mobileBackgroundUrl: '' })).toMatchObject({
+      '--zeno-desktop-background-image': 'none',
+      '--zeno-card-blur': '18px',
+    })
   })
 
   it('keeps the homepage top controls inside one card with a simple custom overview', () => {
@@ -370,6 +399,22 @@ describe('AdminDashboard', () => {
     expect(html).toContain('https://example.com/desktop-bg.webp')
     expect(html).toContain('name="mobile-background-url"')
     expect(html).toContain('https://example.com/mobile-bg.webp')
+    expect(html).toContain('外观样式')
+    expect(html).toContain('name="appearance-preset"')
+    expect(html).toContain('高斯模糊主题')
+    expect(html).toContain('name="card-opacity"')
+    expect(html).toContain('卡片透明度')
+    expect(html).toContain('name="card-blur"')
+    expect(html).toContain('卡片模糊度')
+    expect(html).toContain('name="card-radius"')
+    expect(html).toContain('卡片圆角')
+    expect(html).toContain('name="border-strength"')
+    expect(html).toContain('边框强度')
+    expect(html).toContain('name="shadow-strength"')
+    expect(html).toContain('阴影强度')
+    expect(html).toContain('name="background-overlay"')
+    expect(html).toContain('背景遮罩')
+    expect(html).toContain('name="theme-color"')
     expect(html).toContain('自定义代码')
     expect(html).toContain('name="custom-code"')
     expect(html).toContain('&lt;style&gt;.home-top-card { border-color: #2563eb; }&lt;/style&gt;')
@@ -390,6 +435,14 @@ describe('AdminDashboard', () => {
       backgroundUrl: 'https://example.com/desktop.webp',
       desktopBackgroundUrl: 'https://example.com/desktop.webp',
       mobileBackgroundUrl: '',
+      appearancePreset: 'default' as const,
+      cardOpacity: 0.72,
+      cardBlur: 0,
+      cardRadius: 20,
+      borderStrength: 0.26,
+      shadowStrength: 0.22,
+      backgroundOverlay: 0,
+      themeColor: '#2563eb',
       customCode: '',
     }
 
@@ -400,6 +453,14 @@ describe('AdminDashboard', () => {
     expect(validateAdminSettingsInput({ ...baseInput, agentControllerUrl: 'https://user:pass@example.com' })).toContain('Agent 接入 URL')
     expect(validateAdminSettingsInput({ ...baseInput, agentControllerUrl: 'https://zeno.example.com/?token=1' })).toContain('Agent 接入 URL')
     expect(validateAdminSettingsInput({ ...baseInput, agentControllerUrl: 'https://zeno.example.com/' })).toBeNull()
+    expect(validateAdminSettingsInput({ ...baseInput, appearancePreset: 'other' as never })).toContain('外观模板')
+    expect(validateAdminSettingsInput({ ...baseInput, cardOpacity: 0.1 })).toContain('卡片透明度')
+    expect(validateAdminSettingsInput({ ...baseInput, cardBlur: 41 })).toContain('卡片模糊度')
+    expect(validateAdminSettingsInput({ ...baseInput, cardRadius: 7 })).toContain('卡片圆角')
+    expect(validateAdminSettingsInput({ ...baseInput, borderStrength: 1.1 })).toContain('边框强度')
+    expect(validateAdminSettingsInput({ ...baseInput, shadowStrength: 1.1 })).toContain('阴影强度')
+    expect(validateAdminSettingsInput({ ...baseInput, backgroundOverlay: 0.9 })).toContain('背景遮罩')
+    expect(validateAdminSettingsInput({ ...baseInput, themeColor: 'blue' })).toContain('主题色')
     expect(validateAdminSettingsInput({ ...baseInput, customCode: 'a'.repeat(60001) })).toContain('自定义代码')
   })
 

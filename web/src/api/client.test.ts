@@ -589,6 +589,14 @@ describe('normalizeSettings', () => {
       theme: 'dark',
       agent_controller_url: 'https://zeno.example.com',
       background_url: 'https://example.com/bg.webp',
+      appearance_preset: 'gaussian_blur',
+      card_opacity: 0.58,
+      card_blur: 18,
+      card_radius: 24,
+      border_strength: 0.34,
+      shadow_strength: 0.34,
+      background_overlay: 0.08,
+      theme_color: '#6366f1',
       custom_code: '<style>.home-top-card { border-color: #2563eb; }</style><script>window.ZenoCustomLoaded = true;</script>',
       updated_at: '2026-07-04T12:00:00Z',
     })
@@ -599,6 +607,14 @@ describe('normalizeSettings', () => {
     expect(settings.theme).toBe('dark')
     expect(settings.agentControllerUrl).toBe('https://zeno.example.com')
     expect(settings.backgroundUrl).toBe('https://example.com/bg.webp')
+    expect(settings.appearancePreset).toBe('gaussian_blur')
+    expect(settings.cardOpacity).toBe(0.58)
+    expect(settings.cardBlur).toBe(18)
+    expect(settings.cardRadius).toBe(24)
+    expect(settings.borderStrength).toBe(0.34)
+    expect(settings.shadowStrength).toBe(0.34)
+    expect(settings.backgroundOverlay).toBe(0.08)
+    expect(settings.themeColor).toBe('#6366f1')
     expect(settings.customCode).toBe('<style>.home-top-card { border-color: #2563eb; }</style><script>window.ZenoCustomLoaded = true;</script>')
     expect(settings.updatedAt).toBe('2026-07-04T12:00:00Z')
   })
@@ -711,6 +727,14 @@ describe('fetchSettings', () => {
       background_url: 'https://example.com/desktop-bg.webp',
       desktop_background_url: 'https://example.com/desktop-bg.webp',
       mobile_background_url: 'https://example.com/mobile-bg.webp',
+      appearance_preset: 'gaussian_blur',
+      card_opacity: 0.58,
+      card_blur: 18,
+      card_radius: 24,
+      border_strength: 0.34,
+      shadow_strength: 0.34,
+      background_overlay: 0.08,
+      theme_color: '#6366f1',
       custom_code: '<style>.home-top-card { border-color: #2563eb; }</style><script>window.ZenoCustomLoaded = true;</script>',
       updated_at: '2026-07-04T12:00:00Z',
     }), { status: 200, headers: { 'Content-Type': 'application/json' } }))
@@ -723,6 +747,9 @@ describe('fetchSettings', () => {
     expect(settings).not.toHaveProperty('avatarUrl')
     expect(settings.desktopBackgroundUrl).toBe('https://example.com/desktop-bg.webp')
     expect(settings.mobileBackgroundUrl).toBe('https://example.com/mobile-bg.webp')
+    expect(settings.appearancePreset).toBe('gaussian_blur')
+    expect(settings.cardBlur).toBe(18)
+    expect(settings.themeColor).toBe('#6366f1')
     expect(settings.customCode).toBe('<style>.home-top-card { border-color: #2563eb; }</style><script>window.ZenoCustomLoaded = true;</script>')
     expect(fetchMock).toHaveBeenCalledWith('/api/public/v1/settings', {
       headers: { Accept: 'application/json' },
@@ -740,6 +767,14 @@ describe('fetchSettings', () => {
         background_url: 'https://example.com/desktop-bg.webp',
         desktop_background_url: 'https://example.com/desktop-bg.webp',
         mobile_background_url: 'https://example.com/mobile-bg.webp',
+        appearance_preset: 'gaussian_blur',
+        card_opacity: 0.58,
+        card_blur: 18,
+        card_radius: 24,
+        border_strength: 0.34,
+        shadow_strength: 0.34,
+        background_overlay: 0.08,
+        theme_color: '#6366f1',
         custom_code: '<style>.home-top-card { border-color: #2563eb; }</style><script>window.ZenoCustomLoaded = true;</script>',
         updated_at: '2026-07-04T12:00:00Z',
       },
@@ -756,6 +791,14 @@ describe('fetchSettings', () => {
       backgroundUrl: 'https://example.com/desktop-bg.webp',
       desktopBackgroundUrl: 'https://example.com/desktop-bg.webp',
       mobileBackgroundUrl: 'https://example.com/mobile-bg.webp',
+      appearancePreset: 'gaussian_blur',
+      cardOpacity: 0.58,
+      cardBlur: 18,
+      cardRadius: 24,
+      borderStrength: 0.34,
+      shadowStrength: 0.34,
+      backgroundOverlay: 0.08,
+      themeColor: '#6366f1',
       customCode: '<style>.home-top-card { border-color: #2563eb; }</style><script>window.ZenoCustomLoaded = true;</script>',
     })
 
@@ -765,6 +808,14 @@ describe('fetchSettings', () => {
     expect(settings).not.toHaveProperty('avatarUrl')
     expect(settings.desktopBackgroundUrl).toBe('https://example.com/desktop-bg.webp')
     expect(settings.mobileBackgroundUrl).toBe('https://example.com/mobile-bg.webp')
+    expect(settings.appearancePreset).toBe('gaussian_blur')
+    expect(settings.cardOpacity).toBe(0.58)
+    expect(settings.cardBlur).toBe(18)
+    expect(settings.cardRadius).toBe(24)
+    expect(settings.borderStrength).toBe(0.34)
+    expect(settings.shadowStrength).toBe(0.34)
+    expect(settings.backgroundOverlay).toBe(0.08)
+    expect(settings.themeColor).toBe('#6366f1')
     expect(settings.customCode).toBe('<style>.home-top-card { border-color: #2563eb; }</style><script>window.ZenoCustomLoaded = true;</script>')
     expect(fetchMock).toHaveBeenNthCalledWith(1, '/api/admin/v1/settings', {
       headers: {
@@ -788,6 +839,14 @@ describe('fetchSettings', () => {
         background_url: 'https://example.com/desktop-bg.webp',
         desktop_background_url: 'https://example.com/desktop-bg.webp',
         mobile_background_url: 'https://example.com/mobile-bg.webp',
+        appearance_preset: 'gaussian_blur',
+        card_opacity: 0.58,
+        card_blur: 18,
+        card_radius: 24,
+        border_strength: 0.34,
+        shadow_strength: 0.34,
+        background_overlay: 0.08,
+        theme_color: '#6366f1',
         custom_code: '<style>.home-top-card { border-color: #2563eb; }</style><script>window.ZenoCustomLoaded = true;</script>',
       }),
     })

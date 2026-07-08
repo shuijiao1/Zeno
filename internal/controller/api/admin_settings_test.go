@@ -28,7 +28,7 @@ func TestPublicSettingsDefaultsAndReflectsAdminPatch(t *testing.T) {
 	if err := json.NewDecoder(bytes.NewBufferString(defaultRecorder.Body.String())).Decode(&defaults); err != nil {
 		t.Fatalf("decode default settings: %v", err)
 	}
-	if defaults.SiteTitle != "Zeno" || defaults.LogoURL != "/assets/logo/id.png" || defaults.Theme != "system" || defaults.DesktopBackgroundURL != "" || defaults.MobileBackgroundURL != "" {
+	if defaults.SiteTitle != "Zeno" || defaults.LogoURL != "/assets/logo/id.png" || defaults.Theme != "system" || defaults.DesktopBackgroundURL != "" || defaults.MobileBackgroundURL != "" || defaults.AppearancePreset != "default" || defaults.CardOpacity != 0.72 || defaults.CardBlur != 0 || defaults.ThemeColor != "#2563eb" {
 		t.Fatalf("default settings = %+v, want Zeno defaults", defaults)
 	}
 	if strings.Contains(defaultRecorder.Body.String(), `"avatar_url"`) {
@@ -46,6 +46,14 @@ func TestPublicSettingsDefaultsAndReflectsAdminPatch(t *testing.T) {
 		"background_url": "https://example.com/legacy-bg.webp",
 		"desktop_background_url": "https://example.com/desktop-bg.webp",
 		"mobile_background_url": "https://example.com/mobile-bg.webp",
+		"appearance_preset": "gaussian_blur",
+		"card_opacity": 0.58,
+		"card_blur": 18,
+		"card_radius": 24,
+		"border_strength": 0.34,
+		"shadow_strength": 0.34,
+		"background_overlay": 0.08,
+		"theme_color": "#6366f1",
 		"custom_code": "  <style>.home-top-card { border-color: #2563eb; }</style><script>window.ZenoCustomLoaded = true;</script>  "
 	}`))
 	patchRequest.Header.Set("X-Admin-Token", "admin-pass")
@@ -60,7 +68,7 @@ func TestPublicSettingsDefaultsAndReflectsAdminPatch(t *testing.T) {
 	if err := json.NewDecoder(bytes.NewBufferString(patchRecorder.Body.String())).Decode(&patchResponse); err != nil {
 		t.Fatalf("decode patched settings: %v", err)
 	}
-	if patchResponse.Settings.SiteTitle != "水饺监控" || patchResponse.Settings.SiteSubtitle != "VPS 状态总览" || patchResponse.Settings.LogoURL != "/assets/logo/custom.png" || patchResponse.Settings.Theme != "dark" || patchResponse.Settings.AgentControllerURL != "https://zeno.example.com" || patchResponse.Settings.BackgroundURL != "https://example.com/desktop-bg.webp" || patchResponse.Settings.DesktopBackgroundURL != "https://example.com/desktop-bg.webp" || patchResponse.Settings.MobileBackgroundURL != "https://example.com/mobile-bg.webp" || patchResponse.Settings.CustomCode != "<style>.home-top-card { border-color: #2563eb; }</style><script>window.ZenoCustomLoaded = true;</script>" {
+	if patchResponse.Settings.SiteTitle != "水饺监控" || patchResponse.Settings.SiteSubtitle != "VPS 状态总览" || patchResponse.Settings.LogoURL != "/assets/logo/custom.png" || patchResponse.Settings.Theme != "dark" || patchResponse.Settings.AgentControllerURL != "https://zeno.example.com" || patchResponse.Settings.BackgroundURL != "https://example.com/desktop-bg.webp" || patchResponse.Settings.DesktopBackgroundURL != "https://example.com/desktop-bg.webp" || patchResponse.Settings.MobileBackgroundURL != "https://example.com/mobile-bg.webp" || patchResponse.Settings.AppearancePreset != "gaussian_blur" || patchResponse.Settings.CardOpacity != 0.58 || patchResponse.Settings.CardBlur != 18 || patchResponse.Settings.CardRadius != 24 || patchResponse.Settings.BorderStrength != 0.34 || patchResponse.Settings.ShadowStrength != 0.34 || patchResponse.Settings.BackgroundOverlay != 0.08 || patchResponse.Settings.ThemeColor != "#6366f1" || patchResponse.Settings.CustomCode != "<style>.home-top-card { border-color: #2563eb; }</style><script>window.ZenoCustomLoaded = true;</script>" {
 		t.Fatalf("patched settings = %+v, want trimmed persisted settings", patchResponse.Settings)
 	}
 	if strings.Contains(patchRecorder.Body.String(), `"avatar_url"`) {
@@ -72,7 +80,7 @@ func TestPublicSettingsDefaultsAndReflectsAdminPatch(t *testing.T) {
 	if publicRecorder.Code != http.StatusOK {
 		t.Fatalf("public settings after patch status = %d, want 200; body=%s", publicRecorder.Code, publicRecorder.Body.String())
 	}
-	if !strings.Contains(publicRecorder.Body.String(), `"site_title":"水饺监控"`) || !strings.Contains(publicRecorder.Body.String(), `"logo_url":"/assets/logo/custom.png"`) || !strings.Contains(publicRecorder.Body.String(), `"agent_controller_url":"https://zeno.example.com"`) || !strings.Contains(publicRecorder.Body.String(), `"desktop_background_url":"https://example.com/desktop-bg.webp"`) || !strings.Contains(publicRecorder.Body.String(), `"mobile_background_url":"https://example.com/mobile-bg.webp"`) || !strings.Contains(publicRecorder.Body.String(), `"custom_code":"\u003cstyle\u003e.home-top-card { border-color: #2563eb; }\u003c/style\u003e\u003cscript\u003ewindow.ZenoCustomLoaded = true;\u003c/script\u003e"`) {
+	if !strings.Contains(publicRecorder.Body.String(), `"site_title":"水饺监控"`) || !strings.Contains(publicRecorder.Body.String(), `"logo_url":"/assets/logo/custom.png"`) || !strings.Contains(publicRecorder.Body.String(), `"agent_controller_url":"https://zeno.example.com"`) || !strings.Contains(publicRecorder.Body.String(), `"desktop_background_url":"https://example.com/desktop-bg.webp"`) || !strings.Contains(publicRecorder.Body.String(), `"mobile_background_url":"https://example.com/mobile-bg.webp"`) || !strings.Contains(publicRecorder.Body.String(), `"appearance_preset":"gaussian_blur"`) || !strings.Contains(publicRecorder.Body.String(), `"card_blur":18`) || !strings.Contains(publicRecorder.Body.String(), `"theme_color":"#6366f1"`) || !strings.Contains(publicRecorder.Body.String(), `"custom_code":"\u003cstyle\u003e.home-top-card { border-color: #2563eb; }\u003c/style\u003e\u003cscript\u003ewindow.ZenoCustomLoaded = true;\u003c/script\u003e"`) {
 		t.Fatalf("public settings after patch did not reflect admin update: %s", publicRecorder.Body.String())
 	}
 	if strings.Contains(publicRecorder.Body.String(), `"avatar_url"`) {
@@ -109,6 +117,14 @@ func TestAdminSettingsRequiresTokenAndRejectsInvalidValues(t *testing.T) {
 		{name: "javascript background", body: `{"background_url":"data:text/html,<script>alert(1)</script>"}`},
 		{name: "javascript desktop background", body: `{"desktop_background_url":"data:text/html,<script>alert(1)</script>"}`},
 		{name: "javascript mobile background", body: `{"mobile_background_url":"//evil.example/bg.webp"}`},
+		{name: "unsupported appearance preset", body: `{"appearance_preset":"neon"}`},
+		{name: "too low opacity", body: `{"card_opacity":0.1}`},
+		{name: "too high blur", body: `{"card_blur":41}`},
+		{name: "too low radius", body: `{"card_radius":7}`},
+		{name: "too high border", body: `{"border_strength":1.1}`},
+		{name: "too high shadow", body: `{"shadow_strength":1.1}`},
+		{name: "too high overlay", body: `{"background_overlay":0.9}`},
+		{name: "invalid theme color", body: `{"theme_color":"blue"}`},
 		{name: "oversized custom code", body: `{"custom_code":"` + strings.Repeat("a", maxSettingsCustomCodeRunes+1) + `"}`},
 	}
 	for _, tc := range cases {

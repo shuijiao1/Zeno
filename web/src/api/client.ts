@@ -1,4 +1,4 @@
-import type { AdminAlertRule, AdminNode, AdminNodeInstallCommand, AdminNotificationChannel, AdminNotificationDelivery, AdminNotificationType, AdminProbeTarget, AdminSettings, AdminTheme, HomeCardNode, LatencyPoint, ProbeType, ServiceTarget, StatePoint } from '../types'
+import type { AdminAlertRule, AdminNode, AdminNodeInstallCommand, AdminNotificationChannel, AdminNotificationDelivery, AdminNotificationType, AdminProbeTarget, AdminSettings, AdminTheme, AppearancePreset, HomeCardNode, LatencyPoint, ProbeType, ServiceTarget, StatePoint } from '../types'
 
 interface ApiSettings {
   site_title: string
@@ -9,6 +9,14 @@ interface ApiSettings {
   background_url: string
   desktop_background_url?: string
   mobile_background_url?: string
+  appearance_preset?: AppearancePreset
+  card_opacity?: number
+  card_blur?: number
+  card_radius?: number
+  border_strength?: number
+  shadow_strength?: number
+  background_overlay?: number
+  theme_color?: string
   custom_code?: string
   updated_at?: string
 }
@@ -385,6 +393,14 @@ export interface AdminSettingsUpdateInput {
   backgroundUrl?: string
   desktopBackgroundUrl?: string
   mobileBackgroundUrl?: string
+  appearancePreset?: AppearancePreset
+  cardOpacity?: number
+  cardBlur?: number
+  cardRadius?: number
+  borderStrength?: number
+  shadowStrength?: number
+  backgroundOverlay?: number
+  themeColor?: string
   customCode?: string
 }
 
@@ -941,6 +957,14 @@ export function normalizeSettings(input: ApiSettings): AdminSettings {
     backgroundUrl: desktopBackgroundUrl,
     desktopBackgroundUrl,
     mobileBackgroundUrl: input.mobile_background_url ?? '',
+    appearancePreset: input.appearance_preset ?? 'default',
+    cardOpacity: input.card_opacity ?? 0.72,
+    cardBlur: input.card_blur ?? 0,
+    cardRadius: input.card_radius ?? 20,
+    borderStrength: input.border_strength ?? 0.26,
+    shadowStrength: input.shadow_strength ?? 0.22,
+    backgroundOverlay: input.background_overlay ?? 0,
+    themeColor: input.theme_color ?? '#2563eb',
     customCode: input.custom_code ?? '',
     updatedAt: input.updated_at,
   }
@@ -1012,6 +1036,14 @@ function serializeAdminSettingsUpdate(input: AdminSettingsUpdateInput) {
     ...(input.backgroundUrl !== undefined ? { background_url: input.backgroundUrl } : {}),
     ...(input.desktopBackgroundUrl !== undefined ? { desktop_background_url: input.desktopBackgroundUrl } : {}),
     ...(input.mobileBackgroundUrl !== undefined ? { mobile_background_url: input.mobileBackgroundUrl } : {}),
+    ...(input.appearancePreset !== undefined ? { appearance_preset: input.appearancePreset } : {}),
+    ...(input.cardOpacity !== undefined ? { card_opacity: input.cardOpacity } : {}),
+    ...(input.cardBlur !== undefined ? { card_blur: input.cardBlur } : {}),
+    ...(input.cardRadius !== undefined ? { card_radius: input.cardRadius } : {}),
+    ...(input.borderStrength !== undefined ? { border_strength: input.borderStrength } : {}),
+    ...(input.shadowStrength !== undefined ? { shadow_strength: input.shadowStrength } : {}),
+    ...(input.backgroundOverlay !== undefined ? { background_overlay: input.backgroundOverlay } : {}),
+    ...(input.themeColor !== undefined ? { theme_color: input.themeColor } : {}),
     ...(input.customCode !== undefined ? { custom_code: input.customCode } : {}),
   }
 }

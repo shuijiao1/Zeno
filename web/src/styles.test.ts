@@ -71,8 +71,8 @@ describe('homepage and admin shell layout', () => {
     expect(styles).toContain('.admin-workspace-panel .admin-list')
     expect(styles).toContain('--surface-strong')
     expect(styles).toContain('background: var(--surface-strong)')
-    expect(styles).toContain(".kulin-shell[data-background='on'] .admin-container")
-    expect(styles).toContain('--surface-strong: rgba(255, 255, 255, 0.72)')
+    expect(styles).toContain('--zeno-card-blur')
+    expect(styles).toContain('backdrop-filter: blur(var(--zeno-card-blur))')
     expect(styles).not.toContain('saturate(1.14)')
   })
 

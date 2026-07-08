@@ -8,7 +8,7 @@ import { ServerCard } from './components/ServerCard'
 import { ServerFlag } from './components/ServerFlag'
 import { startLiveRefresh } from './lib/liveRefresh'
 import { nodePath, parseDashboardRoute, type DashboardRoute } from './lib/route'
-import type { AdminAlertRule, AdminNode, AdminNodeInstallCommand, AdminNotificationChannel, AdminProbeTarget, AdminSettings, AdminTheme, HomeCardNode, LatencyPoint, ProbeType, ServiceTarget } from './types'
+import type { AdminAlertRule, AdminNode, AdminNodeInstallCommand, AdminNotificationChannel, AdminProbeTarget, AdminSettings, AdminTheme, AppearancePreset, HomeCardNode, LatencyPoint, ProbeType, ServiceTarget } from './types'
 
 type LoadState =
   | { kind: 'loading' }
@@ -188,8 +188,46 @@ const defaultSettings: AdminSettings = {
   backgroundUrl: '',
   desktopBackgroundUrl: '',
   mobileBackgroundUrl: '',
+  appearancePreset: 'default',
+  cardOpacity: 0.72,
+  cardBlur: 0,
+  cardRadius: 20,
+  borderStrength: 0.26,
+  shadowStrength: 0.22,
+  backgroundOverlay: 0,
+  themeColor: '#2563eb',
   customCode: '',
 }
+
+type AppearanceValues = Pick<AdminSettings, 'appearancePreset' | 'cardOpacity' | 'cardBlur' | 'cardRadius' | 'borderStrength' | 'shadowStrength' | 'backgroundOverlay' | 'themeColor'>
+
+const appearancePresets: Record<AppearancePreset, AppearanceValues> = {
+  default: {
+    appearancePreset: 'default',
+    cardOpacity: 0.72,
+    cardBlur: 0,
+    cardRadius: 20,
+    borderStrength: 0.26,
+    shadowStrength: 0.22,
+    backgroundOverlay: 0,
+    themeColor: '#2563eb',
+  },
+  gaussian_blur: {
+    appearancePreset: 'gaussian_blur',
+    cardOpacity: 0.58,
+    cardBlur: 18,
+    cardRadius: 24,
+    borderStrength: 0.34,
+    shadowStrength: 0.34,
+    backgroundOverlay: 0.08,
+    themeColor: '#6366f1',
+  },
+}
+
+const appearancePresetOptions: Array<{ value: AppearancePreset; label: string }> = [
+  { value: 'default', label: '默认主题' },
+  { value: 'gaussian_blur', label: '高斯模糊主题' },
+]
 
 const fallbackLogoUrl = 'https://cdn.jsdelivr.net/gh/shuijiao1/Fly@main/ID-128.png'
 const customCodeNodeAttribute = 'data-zeno-custom-code'
@@ -198,6 +236,39 @@ let appliedCustomCode = ''
 
 function backgroundImageValue(url: string): string {
   return `url("${url.replaceAll('"', '%22')}")`
+}
+
+function clampNumber(value: number, min: number, max: number): number {
+  return Number.isFinite(value) ? Math.min(max, Math.max(min, value)) : min
+}
+
+function appearanceValuesForSettings(settings: AdminSettings): AppearanceValues {
+  const preset = settings.appearancePreset === 'gaussian_blur' ? 'gaussian_blur' : 'default'
+  const fallback = appearancePresets[preset]
+  return {
+    appearancePreset: preset,
+    cardOpacity: clampNumber(settings.cardOpacity ?? fallback.cardOpacity, 0.2, 1),
+    cardBlur: clampNumber(settings.cardBlur ?? fallback.cardBlur, 0, 40),
+    cardRadius: clampNumber(settings.cardRadius ?? fallback.cardRadius, 8, 36),
+    borderStrength: clampNumber(settings.borderStrength ?? fallback.borderStrength, 0, 1),
+    shadowStrength: clampNumber(settings.shadowStrength ?? fallback.shadowStrength, 0, 1),
+    backgroundOverlay: clampNumber(settings.backgroundOverlay ?? fallback.backgroundOverlay, 0, 0.8),
+    themeColor: /^#[0-9a-fA-F]{6}$/.test(settings.themeColor ?? '') ? settings.themeColor : fallback.themeColor,
+  }
+}
+
+function hexToRgb(value: string): { r: number; g: number; b: number } {
+  const normalized = /^#[0-9a-fA-F]{6}$/.test(value) ? value.slice(1) : '2563eb'
+  return {
+    r: Number.parseInt(normalized.slice(0, 2), 16),
+    g: Number.parseInt(normalized.slice(2, 4), 16),
+    b: Number.parseInt(normalized.slice(4, 6), 16),
+  }
+}
+
+function rgbaFromHex(value: string, alpha: number): string {
+  const { r, g, b } = hexToRgb(value)
+  return `rgba(${r}, ${g}, ${b}, ${alpha.toFixed(3)})`
 }
 
 function storedThemeOverride(): AdminTheme | null {
@@ -229,10 +300,36 @@ function settingsForChrome(settings: AdminSettings, themeOverride: AdminTheme | 
 export function shellStyleForSettings(settings: AdminSettings): CSSProperties | undefined {
   const desktopBackgroundUrl = (settings.desktopBackgroundUrl || settings.backgroundUrl).trim()
   const mobileBackgroundUrl = settings.mobileBackgroundUrl.trim()
-  if (desktopBackgroundUrl === '' && mobileBackgroundUrl === '') return undefined
+  const appearance = appearanceValuesForSettings(settings)
+  const resolved = resolvedTheme(settings.theme)
+  const themeColor = appearance.themeColor
+  const themeRgb = hexToRgb(themeColor)
+  const cardOpacity = appearance.cardOpacity
+  const surfaceBase = resolved === 'dark' ? '15, 23, 42' : '255, 255, 255'
+  const shadowBase = resolved === 'dark' ? '0, 0, 0' : '15, 23, 42'
+  const shadowAlpha = 0.04 + appearance.shadowStrength * (resolved === 'dark' ? 0.44 : 0.22)
+  const backgroundOverlayBase = resolved === 'dark' ? '0, 0, 0' : '255, 255, 255'
   return {
     '--zeno-desktop-background-image': desktopBackgroundUrl === '' ? 'none' : backgroundImageValue(desktopBackgroundUrl),
     '--zeno-mobile-background-image': mobileBackgroundUrl === '' ? (desktopBackgroundUrl === '' ? 'none' : backgroundImageValue(desktopBackgroundUrl)) : backgroundImageValue(mobileBackgroundUrl),
+    '--blue': themeColor,
+    '--border': rgbaFromHex(themeColor, appearance.borderStrength),
+    '--metric-shadow': rgbaFromHex(themeColor, Math.max(0.06, appearance.shadowStrength * 0.22)),
+    '--surface-strong': `rgba(${surfaceBase}, ${cardOpacity.toFixed(3)})`,
+    '--surface': `rgba(${surfaceBase}, ${Math.max(0.16, cardOpacity - 0.1).toFixed(3)})`,
+    '--surface-soft': `rgba(${surfaceBase}, ${Math.max(0.12, cardOpacity - 0.34).toFixed(3)})`,
+    '--secondary': `rgba(${surfaceBase}, ${Math.max(0.16, cardOpacity - 0.26).toFixed(3)})`,
+    '--metric-bg': `rgba(${surfaceBase}, ${Math.max(0.18, cardOpacity - 0.2).toFixed(3)})`,
+    '--field-bg': `rgba(${surfaceBase}, ${Math.max(0.18, cardOpacity - 0.14).toFixed(3)})`,
+    '--control-bg': `rgba(${surfaceBase}, ${Math.max(0.18, cardOpacity - 0.1).toFixed(3)})`,
+    '--radius-panel': `${appearance.cardRadius}px`,
+    '--radius-card': `${Math.max(10, appearance.cardRadius - 4)}px`,
+    '--radius-field': `${Math.max(8, appearance.cardRadius - 8)}px`,
+    '--zeno-card-blur': `${appearance.cardBlur}px`,
+    '--zeno-card-highlight': resolved === 'dark' ? `rgba(255, 255, 255, ${Math.min(0.18, 0.04 + appearance.shadowStrength * 0.12).toFixed(3)})` : `rgba(255, 255, 255, ${Math.min(0.9, 0.28 + cardOpacity * 0.42).toFixed(3)})`,
+    '--zeno-card-shadow': `0 10px 26px -24px rgba(${shadowBase}, ${shadowAlpha.toFixed(3)}), 0 1px 2px rgba(${shadowBase}, ${(0.02 + appearance.shadowStrength * 0.05).toFixed(3)})`,
+    '--zeno-background-overlay-color': `rgba(${backgroundOverlayBase}, ${appearance.backgroundOverlay.toFixed(3)})`,
+    '--zeno-theme-rgb': `${themeRgb.r}, ${themeRgb.g}, ${themeRgb.b}`,
     backgroundSize: 'cover',
     backgroundAttachment: 'fixed',
   } as CSSProperties
@@ -1400,6 +1497,15 @@ function validAdminAccountUsername(username: string): boolean {
 
 function AdminSettingsSection({ settings, onUpdate }: { settings: AdminSettings; onUpdate: (input: AdminSettingsUpdateInput) => void }) {
   const [settingsError, setSettingsError] = useState<string | null>(null)
+  const [appearance, setAppearance] = useState<AppearanceValues>(() => appearanceValuesForSettings(settings))
+  useEffect(() => {
+    setAppearance(appearanceValuesForSettings(settings))
+  }, [settings.appearancePreset, settings.cardOpacity, settings.cardBlur, settings.cardRadius, settings.borderStrength, settings.shadowStrength, settings.backgroundOverlay, settings.themeColor])
+  const updateAppearance = (patch: Partial<AppearanceValues>) => setAppearance((current) => ({ ...current, ...patch }))
+  const updateAppearancePreset = (value: string) => {
+    const preset = value === 'gaussian_blur' ? 'gaussian_blur' : 'default'
+    setAppearance(appearancePresets[preset])
+  }
   const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
     const formData = new FormData(event.currentTarget)
@@ -1413,6 +1519,14 @@ function AdminSettingsSection({ settings, onUpdate }: { settings: AdminSettings;
       backgroundUrl: String(formData.get('desktop-background-url') ?? '').trim(),
       desktopBackgroundUrl: String(formData.get('desktop-background-url') ?? '').trim(),
       mobileBackgroundUrl: String(formData.get('mobile-background-url') ?? '').trim(),
+      appearancePreset: String(formData.get('appearance-preset') ?? appearance.appearancePreset) as AppearancePreset,
+      cardOpacity: parseSettingsNumber(formData, 'card-opacity', appearance.cardOpacity),
+      cardBlur: parseSettingsNumber(formData, 'card-blur', appearance.cardBlur),
+      cardRadius: parseSettingsNumber(formData, 'card-radius', appearance.cardRadius),
+      borderStrength: parseSettingsNumber(formData, 'border-strength', appearance.borderStrength),
+      shadowStrength: parseSettingsNumber(formData, 'shadow-strength', appearance.shadowStrength),
+      backgroundOverlay: parseSettingsNumber(formData, 'background-overlay', appearance.backgroundOverlay),
+      themeColor: String(formData.get('theme-color') ?? appearance.themeColor).trim(),
       customCode: String(formData.get('custom-code') ?? '').trim(),
     }
     const validationError = validateAdminSettingsInput(input)
@@ -1461,6 +1575,23 @@ function AdminSettingsSection({ settings, onUpdate }: { settings: AdminSettings;
             </label>
           </div>
         </AdminFormSection>
+        <AdminFormSection title="外观样式">
+          <div className="admin-form-grid admin-appearance-grid">
+            <AdminSegmentedField name="appearance-preset" label="外观模板" value={appearance.appearancePreset} onChange={updateAppearancePreset} options={appearancePresetOptions} />
+            <label className="admin-color-field">
+              <span>主题色</span>
+              <input name="theme-color" type="color" value={appearance.themeColor} onChange={(event) => updateAppearance({ themeColor: event.currentTarget.value })} />
+            </label>
+          </div>
+          <div className="admin-style-grid">
+            <AdminStyleRangeField name="card-opacity" label="卡片透明度" value={appearance.cardOpacity} min={0.2} max={1} step={0.01} onChange={(value) => updateAppearance({ cardOpacity: value })} formatValue={(value) => `${Math.round(value * 100)}%`} />
+            <AdminStyleRangeField name="card-blur" label="卡片模糊度" value={appearance.cardBlur} min={0} max={40} step={1} onChange={(value) => updateAppearance({ cardBlur: value })} formatValue={(value) => `${Math.round(value)}px`} />
+            <AdminStyleRangeField name="card-radius" label="卡片圆角" value={appearance.cardRadius} min={8} max={36} step={1} onChange={(value) => updateAppearance({ cardRadius: value })} formatValue={(value) => `${Math.round(value)}px`} />
+            <AdminStyleRangeField name="border-strength" label="边框强度" value={appearance.borderStrength} min={0} max={1} step={0.01} onChange={(value) => updateAppearance({ borderStrength: value })} formatValue={(value) => `${Math.round(value * 100)}%`} />
+            <AdminStyleRangeField name="shadow-strength" label="阴影强度" value={appearance.shadowStrength} min={0} max={1} step={0.01} onChange={(value) => updateAppearance({ shadowStrength: value })} formatValue={(value) => `${Math.round(value * 100)}%`} />
+            <AdminStyleRangeField name="background-overlay" label="背景遮罩" value={appearance.backgroundOverlay} min={0} max={0.8} step={0.01} onChange={(value) => updateAppearance({ backgroundOverlay: value })} formatValue={(value) => `${Math.round(value * 100)}%`} />
+          </div>
+        </AdminFormSection>
         <AdminFormSection title="Agent 接入">
           <div className="admin-form-grid">
             <label>
@@ -1491,8 +1622,20 @@ export function validateAdminSettingsInput(input: AdminSettingsUpdateInput): str
   if (!validSettingsImageURL(input.desktopBackgroundUrl ?? input.backgroundUrl ?? '')) return '电脑端背景图 URL 只能是 https:// 链接或 /assets/... 站内路径。'
   if (!validSettingsImageURL(input.mobileBackgroundUrl ?? '')) return '手机端背景图 URL 只能是 https:// 链接或 /assets/... 站内路径。'
   if (!validAgentControllerURL(input.agentControllerUrl ?? '')) return 'Agent 接入 URL 只能是 http:// 或 https://，且不能包含用户名密码、query 或 fragment。'
+  if (input.appearancePreset !== undefined && input.appearancePreset !== 'default' && input.appearancePreset !== 'gaussian_blur') return '外观模板无效。'
+  if (!validSettingsNumber(input.cardOpacity, 0.2, 1)) return '卡片透明度无效。'
+  if (!validSettingsNumber(input.cardBlur, 0, 40)) return '卡片模糊度无效。'
+  if (!validSettingsNumber(input.cardRadius, 8, 36)) return '卡片圆角无效。'
+  if (!validSettingsNumber(input.borderStrength, 0, 1)) return '边框强度无效。'
+  if (!validSettingsNumber(input.shadowStrength, 0, 1)) return '阴影强度无效。'
+  if (!validSettingsNumber(input.backgroundOverlay, 0, 0.8)) return '背景遮罩无效。'
+  if (input.themeColor !== undefined && !/^#[0-9a-fA-F]{6}$/.test(input.themeColor)) return '主题色无效。'
   if (customCodeLength(input.customCode ?? '') > maxSettingsCustomCodeLength) return '自定义代码不能超过 60000 字。'
   return null
+}
+
+function validSettingsNumber(value: number | undefined, min: number, max: number): boolean {
+  return value === undefined || (Number.isFinite(value) && value >= min && value <= max)
 }
 
 function customCodeLength(value: string): number {
@@ -2683,6 +2826,23 @@ function AdminFormSection({ title, children }: { title: string; children: ReactN
       {children}
     </section>
   )
+}
+
+function AdminStyleRangeField({ name, label, value, min, max, step, onChange, formatValue }: { name: string; label: string; value: number; min: number; max: number; step: number; onChange: (value: number) => void; formatValue: (value: number) => string }) {
+  return (
+    <label className="admin-style-range">
+      <span className="admin-style-range__head">
+        <span>{label}</span>
+        <strong>{formatValue(value)}</strong>
+      </span>
+      <input name={name} type="range" min={min} max={max} step={step} value={value} onChange={(event) => onChange(Number.parseFloat(event.currentTarget.value))} />
+    </label>
+  )
+}
+
+function parseSettingsNumber(formData: FormData, name: string, fallback: number): number {
+  const parsed = Number.parseFloat(String(formData.get(name) ?? ''))
+  return Number.isFinite(parsed) ? parsed : fallback
 }
 
 function AdminDateField({ name, label, defaultValue = '', defaultPermanent = false, disabled = false, permanentLabel, className = '' }: { name: string; label: string; defaultValue?: string | null; defaultPermanent?: boolean; disabled?: boolean; permanentLabel?: string; className?: string }) {
