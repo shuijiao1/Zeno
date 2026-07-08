@@ -767,6 +767,55 @@ func TestAgentHeartbeatDoesNotDispatchRecoveryAfterStaleHeartbeatOffline(t *test
 	}
 }
 
+func TestAgentStateDispatchesRecoveryAfterPersistedOffline(t *testing.T) {
+	store, err := OpenSQLiteStore(filepath.Join(t.TempDir(), "zeno.db"))
+	if err != nil {
+		t.Fatalf("open sqlite store: %v", err)
+	}
+	defer store.Close()
+	ctx := context.Background()
+	if err := store.SeedPreviewData(ctx, PreviewSeedOptions{NodeID: "hytron", DisplayName: "Hytron", CountryCode: "HK", AgentToken: "test-agent-token"}); err != nil {
+		t.Fatalf("seed preview data: %v", err)
+	}
+	staleSeen := time.Now().UTC().Add(-nodeHeartbeatOfflineAfter - time.Second).Unix()
+	if _, err := store.db.ExecContext(ctx, `UPDATE nodes SET status = 'online', last_seen_at = ? WHERE id = 'hytron'`, staleSeen); err != nil {
+		t.Fatalf("set stale heartbeat: %v", err)
+	}
+	enabled := true
+	if _, err := store.CreateAdminNotificationChannel(ctx, AdminNotificationChannelCreateRequest{ID: "ops-telegram", Name: "Ops Telegram", Destination: "7579942307", Credential: "telegr…alue", Enabled: &enabled}); err != nil {
+		t.Fatalf("create notification channel: %v", err)
+	}
+	if _, err := store.UpdateAdminNotificationType(ctx, "node_offline", AdminNotificationTypeUpdateRequest{Enabled: &enabled}); err != nil {
+		t.Fatalf("enable notification type: %v", err)
+	}
+
+	telegram := newTelegramTestCapture(t)
+	h := &handler{store: store, notificationSender: newHTTPNotificationSender(telegram.server.Client(), telegram.server.URL), liveHub: newLiveUpdateHub(), presence: newAgentPresenceManager()}
+	if transition, ok, err := store.RecordStaleAgentOfflineTransition(ctx, "hytron", time.Now().UTC()); err != nil {
+		t.Fatalf("record stale offline transition: %v", err)
+	} else if !ok {
+		t.Fatalf("stale offline transition skipped, want persisted offline")
+	} else {
+		h.dispatchAgentStatusNotification(store, transition, time.Now().UTC())
+	}
+	paths, forms, errors := telegram.waitForCalls(t, 1)
+	if len(errors) != 0 {
+		t.Fatalf("telegram handler errors after offline = %+v", errors)
+	}
+	if len(paths) != 1 || len(forms) != 1 || !strings.Contains(forms[0], "%E7%A6%BB%E7%BA%BF") {
+		t.Fatalf("telegram calls paths=%+v forms=%+v, want offline notification", paths, forms)
+	}
+
+	postAgentState(t, h.handleAgentState, time.Now().UTC().Unix(), 22.5)
+	paths, forms, errors = telegram.waitForCalls(t, 2)
+	if len(errors) != 0 {
+		t.Fatalf("telegram handler errors after recovery = %+v", errors)
+	}
+	if len(paths) != 2 || len(forms) != 2 || !strings.Contains(forms[1], "%E5%B7%B2%E6%81%A2%E5%A4%8D") {
+		t.Fatalf("telegram calls paths=%+v forms=%+v, want state-triggered recovery notification", paths, forms)
+	}
+}
+
 func TestAgentHeartbeatTransitionTreatsReceivedHeartbeatAsFreshLiveness(t *testing.T) {
 	store, err := OpenSQLiteStore(filepath.Join(t.TempDir(), "zeno.db"))
 	if err != nil {
@@ -927,6 +976,37 @@ func postAgentHeartbeat(t *testing.T, handler http.Handler, ts int64, status str
 	handler.ServeHTTP(recorder, request)
 	if recorder.Code != http.StatusAccepted {
 		t.Fatalf("heartbeat status = %d, want 202; body=%s", recorder.Code, recorder.Body.String())
+	}
+	return recorder
+}
+
+func postAgentState(t *testing.T, handle func(http.ResponseWriter, *http.Request), ts int64, cpuPercent float64) *httptest.ResponseRecorder {
+	t.Helper()
+	body := map[string]any{
+		"ts":                  ts,
+		"cpu_percent":         cpuPercent,
+		"memory_used_bytes":   int64(4 * 1024 * 1024 * 1024),
+		"memory_total_bytes":  int64(8 * 1024 * 1024 * 1024),
+		"disk_used_bytes":     int64(40 * 1024 * 1024 * 1024),
+		"disk_total_bytes":    int64(160 * 1024 * 1024 * 1024),
+		"net_in_total_bytes":  int64(1_000_000),
+		"net_out_total_bytes": int64(2_000_000),
+		"net_in_speed_bps":    2048.5,
+		"net_out_speed_bps":   1024.25,
+		"uptime_seconds":      int64(3600),
+	}
+	payload, err := json.Marshal(body)
+	if err != nil {
+		t.Fatalf("marshal state body: %v", err)
+	}
+	recorder := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodPost, "/api/agent/v1/state", bytes.NewReader(payload))
+	request.Header.Set("X-Node-ID", "hytron")
+	request.Header.Set("Authorization", "Bearer test-agent-token")
+	request.Header.Set("Content-Type", "application/json")
+	handle(recorder, request)
+	if recorder.Code != http.StatusAccepted {
+		t.Fatalf("state status = %d, want 202; body=%s", recorder.Code, recorder.Body.String())
 	}
 	return recorder
 }

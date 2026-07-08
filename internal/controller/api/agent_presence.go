@@ -297,39 +297,6 @@ const (
 	websocketPingMessage  = 9
 )
 
-func (h *handler) applyPresenceToSummary(summary *SummaryResponse) {
-	if h == nil || h.presence == nil || summary == nil {
-		return
-	}
-	for index := range summary.Nodes {
-		if h.presence.isOnline(summary.Nodes[index].ID) {
-			summary.Nodes[index].Status = "online"
-		} else if h.presence.isExpected(summary.Nodes[index].ID) {
-			summary.Nodes[index].Status = "offline"
-		}
-	}
-}
-
-func (h *handler) applyPresenceToAdminNodes(nodes []AdminNode) {
-	if h == nil || h.presence == nil {
-		return
-	}
-	for index := range nodes {
-		h.applyPresenceToAdminNode(&nodes[index])
-	}
-}
-
-func (h *handler) applyPresenceToAdminNode(node *AdminNode) {
-	if h == nil || h.presence == nil || node == nil || node.Disabled {
-		return
-	}
-	if h.presence.isOnline(node.ID) {
-		node.Status = "online"
-	} else if h.presence.isExpected(node.ID) {
-		node.Status = "offline"
-	}
-}
-
 func (h *handler) bumpProbeConfigAndNotify(ctx context.Context) {
 	store, ok := h.store.(probeConfigVersionStore)
 	if !ok {

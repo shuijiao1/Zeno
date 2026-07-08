@@ -354,7 +354,7 @@ func (s *SQLiteStore) InsertAgentState(ctx context.Context, nodeID string, state
 	}
 	if _, err := tx.ExecContext(ctx, `
 		UPDATE nodes
-		SET status = CASE WHEN status = 'warning' THEN 'warning' ELSE 'online' END, last_seen_at = ?, updated_at = ?
+		SET status = CASE WHEN status IN ('warning', 'offline') THEN status ELSE 'online' END, last_seen_at = ?, updated_at = ?
 		WHERE id = ? AND disabled = 0
 	`, now, now, nodeID); err != nil {
 		return err

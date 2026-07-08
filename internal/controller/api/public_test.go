@@ -195,7 +195,7 @@ func TestAgentHeartbeatInvalidatesCachedSummary(t *testing.T) {
 	}
 }
 
-func TestAgentPresenceWebSocketControlsSummaryOnlineStatus(t *testing.T) {
+func TestAgentPresenceWebSocketDoesNotOverrideSummaryLiveness(t *testing.T) {
 	store, err := OpenSQLiteStore(filepath.Join(t.TempDir(), "zeno.db"))
 	if err != nil {
 		t.Fatalf("open sqlite store: %v", err)
@@ -205,8 +205,12 @@ func TestAgentPresenceWebSocketControlsSummaryOnlineStatus(t *testing.T) {
 	if err := store.SeedPreviewData(ctx, PreviewSeedOptions{NodeID: "hytron", DisplayName: "Hytron", CountryCode: "HK", AgentToken: "test-agent-token"}); err != nil {
 		t.Fatalf("seed preview data: %v", err)
 	}
+	if err := store.RecordAgentHeartbeat(ctx, "hytron", time.Now().UTC(), "online", "test-agent"); err != nil {
+		t.Fatalf("record heartbeat: %v", err)
+	}
 	server := httptest.NewServer(NewHandler(HandlerOptions{Store: store}))
 	defer server.Close()
+	assertSummaryStatusEventually(t, server.URL, "online")
 
 	wsURL := "ws" + strings.TrimPrefix(server.URL, "http") + "/api/agent/v1/presence/ws"
 	header := http.Header{}
@@ -219,6 +223,36 @@ func TestAgentPresenceWebSocketControlsSummaryOnlineStatus(t *testing.T) {
 
 	assertSummaryStatusEventually(t, server.URL, "online")
 	conn.Close()
+	assertSummaryStatusEventually(t, server.URL, "online")
+}
+
+func TestAgentPresenceWebSocketDoesNotForceStaleSummaryOnline(t *testing.T) {
+	store, err := OpenSQLiteStore(filepath.Join(t.TempDir(), "zeno.db"))
+	if err != nil {
+		t.Fatalf("open sqlite store: %v", err)
+	}
+	defer store.Close()
+	ctx := context.Background()
+	if err := store.SeedPreviewData(ctx, PreviewSeedOptions{NodeID: "hytron", DisplayName: "Hytron", CountryCode: "HK", AgentToken: "test-agent-token"}); err != nil {
+		t.Fatalf("seed preview data: %v", err)
+	}
+	staleSeen := time.Now().UTC().Add(-nodeHeartbeatOfflineAfter - time.Second).Unix()
+	if _, err := store.db.ExecContext(ctx, `UPDATE nodes SET status = 'online', last_seen_at = ? WHERE id = 'hytron'`, staleSeen); err != nil {
+		t.Fatalf("set stale heartbeat: %v", err)
+	}
+	server := httptest.NewServer(NewHandler(HandlerOptions{Store: store}))
+	defer server.Close()
+	assertSummaryStatusEventually(t, server.URL, "offline")
+
+	wsURL := "ws" + strings.TrimPrefix(server.URL, "http") + "/api/agent/v1/presence/ws"
+	header := http.Header{}
+	header.Set("X-Node-ID", "hytron")
+	header.Set("Authorization", "Bearer test-agent-token")
+	conn, _, err := websocket.DefaultDialer.Dial(wsURL, header)
+	if err != nil {
+		t.Fatalf("dial presence websocket: %v", err)
+	}
+	defer conn.Close()
 	assertSummaryStatusEventually(t, server.URL, "offline")
 }
 

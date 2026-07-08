@@ -226,7 +226,6 @@ func (h *handler) summaryJSON(ctx context.Context) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	h.applyPresenceToSummary(&summary)
 	payload, err := json.Marshal(summary)
 	if err != nil {
 		return nil, err
