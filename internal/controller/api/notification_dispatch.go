@@ -124,9 +124,10 @@ func (event notificationEvent) messageText() string {
 	case "test_notification":
 		return "Zeno：通知渠道测试"
 	case "node_offline":
+		if event.Status == "online" && event.PreviousStatus == "offline" {
+			return fmt.Sprintf("Zeno：%s 已恢复", nodeName)
+		}
 		return fmt.Sprintf("Zeno：%s 已离线", nodeName)
-	case "node_online":
-		return fmt.Sprintf("Zeno：%s 已恢复", nodeName)
 	case "probe_unhealthy":
 		return fmt.Sprintf("Zeno：%s 状态异常", nodeName)
 	case "renewal_due":
@@ -201,27 +202,6 @@ func (h *handler) dispatchAgentStatusNotification(store agentStore, transition n
 		PreviousStatus: transition.Previous.Status,
 		TS:             ts.UTC().Format(time.RFC3339),
 	}
-	if eventType == "node_online" {
-		if delayStore, ok := store.(notificationDelayStore); ok {
-			if delay, found, err := delayStore.NotificationEventDelay(context.Background(), eventType, node.ID); err == nil && found && delay > 0 {
-				go h.dispatchNotificationEventAfterDelay(store, event, delay)
-				return
-			}
-		}
-	}
-	h.dispatchNotificationEvent(store, event)
-}
-
-func (h *handler) dispatchNotificationEventAfterDelay(store agentStore, event notificationEvent, delay time.Duration) {
-	timer := time.NewTimer(delay)
-	defer timer.Stop()
-	<-timer.C
-	if notificationStore, ok := store.(notificationEventStore); ok && strings.TrimSpace(event.NodeID) != "" {
-		snapshot, err := notificationStore.NotificationNode(context.Background(), event.NodeID)
-		if err != nil || snapshot.Status != event.Status {
-			return
-		}
-	}
 	h.dispatchNotificationEvent(store, event)
 }
 
@@ -257,7 +237,10 @@ func notificationEventTypeForStatusChange(previousStatus, currentStatus string) 
 	}
 	switch currentStatus {
 	case "online":
-		return "node_online", true
+		if previousStatus == "offline" {
+			return "node_offline", true
+		}
+		return "", false
 	case "offline":
 		return "node_offline", true
 	case "warning":

@@ -700,8 +700,8 @@ func TestAgentHeartbeatTransitionTreatsReceivedHeartbeatAsFreshLiveness(t *testi
 		t.Fatalf("transition = %+v, want offline -> online public statuses", transition)
 	}
 	eventType, ok := notificationEventTypeForStatusChange(transition.Previous.Status, transition.Current.Status)
-	if !ok || eventType != "node_online" {
-		t.Fatalf("event type = %q ok=%v, want node_online recovery notification", eventType, ok)
+	if !ok || eventType != "node_offline" {
+		t.Fatalf("event type = %q ok=%v, want recovery to use node_offline notification", eventType, ok)
 	}
 }
 
