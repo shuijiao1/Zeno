@@ -2355,8 +2355,16 @@ svg { display: block; }
   .kulin-shell {
     padding: 14px 10px 24px;
     gap: 12px;
+    background-image: none;
+    background-attachment: scroll;
+  }
+  .kulin-shell[data-background='on']::before {
+    background-color: var(--background);
     background-image: var(--zeno-mobile-background-image, var(--zeno-desktop-background-image, none));
-    background-size: cover;
+    background-position: center;
+    background-repeat: no-repeat;
+    background-size: var(--zeno-mobile-background-size, cover);
+    box-shadow: inset 0 0 0 100vmax var(--zeno-background-overlay-color);
   }
   .kulin-nav { align-items: center; height: auto; gap: 8px; }
   .brand { font-size: 15px; }

@@ -300,6 +300,7 @@ function settingsForChrome(settings: AdminSettings, themeOverride: AdminTheme | 
 export function shellStyleForSettings(settings: AdminSettings): CSSProperties | undefined {
   const desktopBackgroundUrl = (settings.desktopBackgroundUrl || settings.backgroundUrl).trim()
   const mobileBackgroundUrl = settings.mobileBackgroundUrl.trim()
+  const hasDedicatedMobileBackground = mobileBackgroundUrl !== ''
   const appearance = appearanceValuesForSettings(settings)
   const resolved = resolvedTheme(settings.theme)
   const themeColor = appearance.themeColor
@@ -311,7 +312,8 @@ export function shellStyleForSettings(settings: AdminSettings): CSSProperties | 
   const backgroundOverlayBase = resolved === 'dark' ? '0, 0, 0' : '255, 255, 255'
   return {
     '--zeno-desktop-background-image': desktopBackgroundUrl === '' ? 'none' : backgroundImageValue(desktopBackgroundUrl),
-    '--zeno-mobile-background-image': mobileBackgroundUrl === '' ? (desktopBackgroundUrl === '' ? 'none' : backgroundImageValue(desktopBackgroundUrl)) : backgroundImageValue(mobileBackgroundUrl),
+    '--zeno-mobile-background-image': hasDedicatedMobileBackground ? backgroundImageValue(mobileBackgroundUrl) : (desktopBackgroundUrl === '' ? 'none' : backgroundImageValue(desktopBackgroundUrl)),
+    '--zeno-mobile-background-size': hasDedicatedMobileBackground ? 'contain' : 'cover',
     '--blue': themeColor,
     '--border': rgbaFromHex(themeColor, appearance.borderStrength),
     '--metric-shadow': rgbaFromHex(themeColor, Math.max(0.06, appearance.shadowStrength * 0.22)),

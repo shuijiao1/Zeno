@@ -47,6 +47,15 @@ describe('homepage and admin shell layout', () => {
     expect(styles).toContain('.kulin-node-card { max-width: none; min-height: 394px; }')
   })
 
+  it('fits dedicated mobile backgrounds without cropping them against long page content', () => {
+    expect(styles).toContain('@media (max-width: 767px)')
+    expect(styles).toContain('.kulin-shell[data-background=\'on\']::before')
+    expect(styles).toContain('var(--zeno-mobile-background-image, var(--zeno-desktop-background-image, none))')
+    expect(styles).toContain('background-size: var(--zeno-mobile-background-size, cover)')
+    expect(styles).toContain('box-shadow: inset 0 0 0 100vmax var(--zeno-background-overlay-color)')
+    expect(styles).toContain('background-attachment: scroll')
+  })
+
   it('uses a compact homepage summary without duplicate title/online-rate tiles', () => {
     expect(styles).toContain('.home-summary__status-line')
     expect(styles).toContain('.home-summary__metric')
