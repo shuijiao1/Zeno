@@ -568,6 +568,9 @@ func (s *SQLiteStore) AdminNodes(ctx context.Context) ([]AdminNode, error) {
 	if err := rows.Err(); err != nil {
 		return nil, err
 	}
+	if nodes == nil {
+		nodes = []AdminNode{}
+	}
 	return nodes, nil
 }
 

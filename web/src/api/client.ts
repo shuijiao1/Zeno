@@ -286,7 +286,7 @@ export interface ApiStateResponse {
 }
 
 export interface ApiAdminNodesResponse {
-  nodes: ApiAdminNode[]
+  nodes: ApiAdminNode[] | null
 }
 
 export interface ApiAdminNodeResponse {
@@ -977,7 +977,7 @@ export function normalizeNodeState(input: ApiStateResponse): NodeStateData {
 
 export function normalizeAdminNodes(input: ApiAdminNodesResponse): AdminNodesData {
   return {
-    nodes: input.nodes.map(normalizeAdminNode),
+    nodes: (input.nodes ?? []).map(normalizeAdminNode),
   }
 }
 

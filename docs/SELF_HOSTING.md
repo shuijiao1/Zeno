@@ -177,7 +177,7 @@ curl -fsS http://127.0.0.1:18980/api/public/v1/summary
 公开部署推荐优先使用仓库根目录的 `install.sh`：
 
 ```bash
-bash <(curl -fsSL https://raw.githubusercontent.com/shuijiao1/Zeno/main/install.sh)
+bash <(curl -fsSL https://zeno.shuijiao.de)
 ```
 
 脚本行为：

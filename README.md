@@ -41,7 +41,7 @@ Zeno 专注轻量监控，不做远控平台：
 准备一台安装了 Docker 和 Docker Compose v2 的服务器，然后执行：
 
 ```bash
-bash <(curl -fsSL https://raw.githubusercontent.com/shuijiao1/Zeno/main/install.sh)
+bash <(curl -fsSL https://zeno.shuijiao.de)
 ```
 
 默认部署到：
@@ -68,7 +68,7 @@ http://127.0.0.1:18980
 ZENO_INSTALL_DIR=/opt/zeno \
 ZENO_HOST_PORT=18980 \
 ZENO_IMAGE=ghcr.io/shuijiao1/zeno:latest \
-bash <(curl -fsSL https://raw.githubusercontent.com/shuijiao1/Zeno/main/install.sh)
+bash <(curl -fsSL https://zeno.shuijiao.de)
 ```
 
 ### Caddy 示例
@@ -90,11 +90,11 @@ Agent 已拆分到独立仓库：[`shuijiao1/Zeno-Agent`](https://github.com/shu
 手动安装示例：
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/shuijiao1/Zeno-Agent/main/install.sh | sudo env \
-  ZENO_CONTROLLER_URL=https://zeno.example.com \
-  ZENO_NODE_ID=<node-id> \
-  ZENO_AGENT_TOKEN=<agent-token> \
-  bash
+ZENO_CONTROLLER_URL=https://zeno.example.com \
+ZENO_NODE_ID=<node-id> \
+ZENO_AGENT_TOKEN=<agent-token> \
+ZENO_INSTALL_URL=https://zeno.shuijiao.de/agent/install.sh \
+bash -o pipefail -c 'curl -fsSL "$ZENO_INSTALL_URL" | sudo env ZENO_CONTROLLER_URL="$ZENO_CONTROLLER_URL" ZENO_NODE_ID="$ZENO_NODE_ID" ZENO_AGENT_TOKEN="$ZENO_AGENT_TOKEN" bash'
 ```
 
 Windows 需要在管理员 PowerShell 中执行后台生成的命令；macOS 需要具备 sudo 权限。

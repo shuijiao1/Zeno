@@ -474,6 +474,12 @@ describe('normalizeAdminNodes', () => {
     expect(data.nodes[0].publicIPv6).toBe('2001:db8::8')
     expect(data.nodes[0].monthlyQuotaBytes).toBe(1099511627776)
   })
+
+  it('normalizes null node collections from fresh controller installs', () => {
+    const data = normalizeAdminNodes({ nodes: null })
+
+    expect(data.nodes).toEqual([])
+  })
 })
 
 describe('normalizeAdminProbeTargets', () => {
@@ -1522,11 +1528,11 @@ describe('requestAdminNodeInstallCommand', () => {
   it('requests an install command from the node edit context without putting the admin token in the URL', async () => {
     const fetchMock = vi.fn(async () => new Response(JSON.stringify({
       node_id: 'hytron',
-      command: "curl -fsSL 'https://raw.githubusercontent.com/shuijiao1/Zeno-Agent/main/install.sh' | sudo env ZENO_CONTROLLER_URL='https://probe.example.com' ZENO_NODE_ID='hytron' bash",
+      command: "ZENO_INSTALL_URL='https://zeno.shuijiao.de/agent/install.sh' ZENO_CONTROLLER_URL='https://probe.example.com' ZENO_NODE_ID='hytron' bash -o pipefail -c 'curl -fsSL \"$ZENO_INSTALL_URL\" | sudo env ZENO_CONTROLLER_URL=\"$ZENO_CONTROLLER_URL\" ZENO_NODE_ID=\"$ZENO_NODE_ID\" bash'",
       commands: {
-        linux: "curl -fsSL 'https://raw.githubusercontent.com/shuijiao1/Zeno-Agent/main/install.sh' | sudo env ZENO_CONTROLLER_URL='https://probe.example.com' ZENO_NODE_ID='hytron' bash",
-        macos: "curl -fsSL 'https://raw.githubusercontent.com/shuijiao1/Zeno-Agent/main/install.sh' | sudo env ZENO_CONTROLLER_URL='https://probe.example.com' ZENO_NODE_ID='hytron' bash",
-        windows: "powershell -NoProfile -ExecutionPolicy Bypass -Command \"$env:ZENO_CONTROLLER_URL='https://probe.example.com'; irm 'https://raw.githubusercontent.com/shuijiao1/Zeno-Agent/main/install.ps1' | iex\"",
+        linux: "ZENO_INSTALL_URL='https://zeno.shuijiao.de/agent/install.sh' ZENO_CONTROLLER_URL='https://probe.example.com' ZENO_NODE_ID='hytron' bash -o pipefail -c 'curl -fsSL \"$ZENO_INSTALL_URL\" | sudo env ZENO_CONTROLLER_URL=\"$ZENO_CONTROLLER_URL\" ZENO_NODE_ID=\"$ZENO_NODE_ID\" bash'",
+        macos: "ZENO_INSTALL_URL='https://zeno.shuijiao.de/agent/install.sh' ZENO_CONTROLLER_URL='https://probe.example.com' ZENO_NODE_ID='hytron' bash -o pipefail -c 'curl -fsSL \"$ZENO_INSTALL_URL\" | sudo env ZENO_CONTROLLER_URL=\"$ZENO_CONTROLLER_URL\" ZENO_NODE_ID=\"$ZENO_NODE_ID\" bash'",
+        windows: "powershell -NoProfile -ExecutionPolicy Bypass -Command \"$env:ZENO_CONTROLLER_URL='https://probe.example.com'; irm 'https://zeno.shuijiao.de/agent/install.ps1' | iex\"",
       },
     }), { status: 200, headers: { 'Content-Type': 'application/json' } }))
     globalThis.fetch = fetchMock as unknown as typeof fetch
@@ -1534,8 +1540,9 @@ describe('requestAdminNodeInstallCommand', () => {
     const result = await requestAdminNodeInstallCommand('admin-pass', 'hytron')
 
     expect(result.nodeId).toBe('hytron')
-    expect(result.command).toContain('Zeno-Agent/main/install.sh')
-    expect(result.commands.windows).toContain('install.ps1')
+    expect(result.command).toContain('zeno.shuijiao.de/agent/install.sh')
+    expect(result.command).toContain('bash -o pipefail')
+    expect(result.commands.windows).toContain('zeno.shuijiao.de/agent/install.ps1')
     expect(fetchMock).toHaveBeenCalledWith('/api/admin/v1/nodes/hytron/install-command', {
       method: 'POST',
       headers: {

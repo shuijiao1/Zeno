@@ -245,19 +245,19 @@ func buildAgentInstallCommands(controllerURL, nodeID, credential, agentVersion s
 	if controllerURL == "" {
 		controllerURL = "http://127.0.0.1:18980"
 	}
-	versionEnv := ""
+	versionEnv := " ZENO_AGENT_VERSION=" + shellSingleQuote(strings.TrimSpace(agentVersion))
 	windowsVersionEnv := ""
 	if strings.TrimSpace(agentVersion) != "" {
 		version := strings.TrimSpace(agentVersion)
-		versionEnv = " ZENO_AGENT_VERSION=" + shellSingleQuote(version)
 		windowsVersionEnv = "$env:ZENO_AGENT_VERSION=" + powershellSingleQuote(version) + "; "
 	}
-	installURL := "https://raw.githubusercontent.com/shuijiao1/Zeno-Agent/main/install.sh"
-	windowsInstallURL := "https://raw.githubusercontent.com/shuijiao1/Zeno-Agent/main/install.ps1"
+	installURL := "https://zeno.shuijiao.de/agent/install.sh"
+	windowsInstallURL := "https://zeno.shuijiao.de/agent/install.ps1"
+	unixRunner := `bash -o pipefail -c 'curl -fsSL "$ZENO_INSTALL_URL" | sudo env ZENO_CONTROLLER_URL="$ZENO_CONTROLLER_URL" ZENO_NODE_ID="$ZENO_NODE_ID" ZENO_AGENT_TOKEN="$ZENO_AGENT_TOKEN" ZENO_AGENT_VERSION="$ZENO_AGENT_VERSION" bash'`
 	return AgentInstallCommands{
-		Linux:   fmt.Sprintf(`curl -fsSL %s | sudo env ZENO_CONTROLLER_URL=%s ZENO_NODE_ID=%s ZENO_AGENT_TOKEN=%s%s bash`, shellSingleQuote(installURL), shellSingleQuote(controllerURL), shellSingleQuote(nodeID), shellSingleQuote(credential), versionEnv),
-		MacOS:   fmt.Sprintf(`curl -fsSL %s | sudo env ZENO_CONTROLLER_URL=%s ZENO_NODE_ID=%s ZENO_AGENT_TOKEN=%s%s bash`, shellSingleQuote(installURL), shellSingleQuote(controllerURL), shellSingleQuote(nodeID), shellSingleQuote(credential), versionEnv),
-		Windows: fmt.Sprintf(`powershell -NoProfile -ExecutionPolicy Bypass -Command "%s$env:ZENO_CONTROLLER_URL=%s; $env:ZENO_NODE_ID=%s; $env:ZENO_AGENT_TOKEN=%s; irm %s | iex"`, windowsVersionEnv, powershellSingleQuote(controllerURL), powershellSingleQuote(nodeID), powershellSingleQuote(credential), powershellSingleQuote(windowsInstallURL)),
+		Linux:   fmt.Sprintf(`ZENO_INSTALL_URL=%s ZENO_CONTROLLER_URL=%s ZENO_NODE_ID=%s ZENO_AGENT_TOKEN=%s%s %s`, shellSingleQuote(installURL), shellSingleQuote(controllerURL), shellSingleQuote(nodeID), shellSingleQuote(credential), versionEnv, unixRunner),
+		MacOS:   fmt.Sprintf(`ZENO_INSTALL_URL=%s ZENO_CONTROLLER_URL=%s ZENO_NODE_ID=%s ZENO_AGENT_TOKEN=%s%s %s`, shellSingleQuote(installURL), shellSingleQuote(controllerURL), shellSingleQuote(nodeID), shellSingleQuote(credential), versionEnv, unixRunner),
+		Windows: fmt.Sprintf(`powershell -NoProfile -ExecutionPolicy Bypass -Command "$ErrorActionPreference='Stop'; %s$env:ZENO_CONTROLLER_URL=%s; $env:ZENO_NODE_ID=%s; $env:ZENO_AGENT_TOKEN=%s; irm %s | iex"`, windowsVersionEnv, powershellSingleQuote(controllerURL), powershellSingleQuote(nodeID), powershellSingleQuote(credential), powershellSingleQuote(windowsInstallURL)),
 	}
 }
 

@@ -41,7 +41,7 @@ Zeno focuses on lightweight monitoring. It is not a remote-control platform:
 Prepare a server with Docker and Docker Compose v2, then run:
 
 ```bash
-bash <(curl -fsSL https://raw.githubusercontent.com/shuijiao1/Zeno/main/install.sh)
+bash <(curl -fsSL https://zeno.shuijiao.de)
 ```
 
 Default layout:
@@ -68,7 +68,7 @@ Optional environment variables:
 ZENO_INSTALL_DIR=/opt/zeno \
 ZENO_HOST_PORT=18980 \
 ZENO_IMAGE=ghcr.io/shuijiao1/zeno:latest \
-bash <(curl -fsSL https://raw.githubusercontent.com/shuijiao1/Zeno/main/install.sh)
+bash <(curl -fsSL https://zeno.shuijiao.de)
 ```
 
 ### Caddy example
@@ -90,11 +90,11 @@ Recommended flow: create a server in the Zeno admin dashboard, choose Linux / ma
 Manual example:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/shuijiao1/Zeno-Agent/main/install.sh | sudo env \
-  ZENO_CONTROLLER_URL=https://zeno.example.com \
-  ZENO_NODE_ID=<node-id> \
-  ZENO_AGENT_TOKEN=<agent-token> \
-  bash
+ZENO_CONTROLLER_URL=https://zeno.example.com \
+ZENO_NODE_ID=<node-id> \
+ZENO_AGENT_TOKEN=<agent-token> \
+ZENO_INSTALL_URL=https://zeno.shuijiao.de/agent/install.sh \
+bash -o pipefail -c 'curl -fsSL "$ZENO_INSTALL_URL" | sudo env ZENO_CONTROLLER_URL="$ZENO_CONTROLLER_URL" ZENO_NODE_ID="$ZENO_NODE_ID" ZENO_AGENT_TOKEN="$ZENO_AGENT_TOKEN" bash'
 ```
 
 Run the Windows command from an elevated PowerShell window. The macOS command requires sudo privileges.

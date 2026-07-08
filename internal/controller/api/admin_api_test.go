@@ -38,6 +38,34 @@ func TestAdminNodesRequiresAdminToken(t *testing.T) {
 	}
 }
 
+func TestAdminNodesEmptyStoreReturnsEmptyList(t *testing.T) {
+	store, err := OpenSQLiteStore(filepath.Join(t.TempDir(), "zeno.db"))
+	if err != nil {
+		t.Fatalf("open sqlite store: %v", err)
+	}
+	defer store.Close()
+
+	nodes, err := store.AdminNodes(context.Background())
+	if err != nil {
+		t.Fatalf("admin nodes: %v", err)
+	}
+	if nodes == nil || len(nodes) != 0 {
+		t.Fatalf("empty admin nodes = %#v, want non-nil empty slice", nodes)
+	}
+
+	handler := NewHandler(HandlerOptions{Store: store, AdminTokenHash: HashAdminToken("admin-pass")})
+	recorder := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodGet, "/api/admin/v1/nodes", nil)
+	request.Header.Set("X-Admin-Token", "admin-pass")
+	handler.ServeHTTP(recorder, request)
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200; body=%s", recorder.Code, recorder.Body.String())
+	}
+	if !strings.Contains(recorder.Body.String(), `"nodes":[]`) {
+		t.Fatalf("empty admin nodes response = %s, want nodes:[]", recorder.Body.String())
+	}
+}
+
 func TestAdminLoginCreatesSessionAndPasswordUpdateInvalidatesOldPassword(t *testing.T) {
 	store, err := OpenSQLiteStore(filepath.Join(t.TempDir(), "zeno.db"))
 	if err != nil {
@@ -670,11 +698,11 @@ func TestAdminNodeInstallCommandReusesStoredCredentialAndUsesRequestHost(t *test
 	if response.NodeID != "hytron" {
 		t.Fatalf("node_id = %q, want hytron", response.NodeID)
 	}
-	if !strings.Contains(response.Command, "https://raw.githubusercontent.com/shuijiao1/Zeno-Agent/main/install.sh") || !strings.Contains(response.Command, "ZENO_CONTROLLER_URL='https://probe.example.com'") || !strings.Contains(response.Command, "ZENO_NODE_ID='hytron'") || !strings.Contains(response.Command, "ZENO_AGENT_VERSION='testsha'") {
-		t.Fatalf("install command missing agent installer, controller URL, node id, or version: %s", response.Command)
+	if !strings.Contains(response.Command, "https://zeno.shuijiao.de/agent/install.sh") || !strings.Contains(response.Command, "bash -o pipefail") || !strings.Contains(response.Command, "ZENO_CONTROLLER_URL='https://probe.example.com'") || !strings.Contains(response.Command, "ZENO_NODE_ID='hytron'") || !strings.Contains(response.Command, "ZENO_AGENT_VERSION='testsha'") {
+		t.Fatalf("install command missing proxied installer, pipefail, controller URL, node id, or version: %s", response.Command)
 	}
-	if !strings.Contains(response.Commands["macos"], "Zeno-Agent/main/install.sh") || !strings.Contains(response.Commands["windows"], "Zeno-Agent/main/install.ps1") || !strings.Contains(response.Commands["windows"], "$env:ZENO_AGENT_VERSION='testsha'") {
-		t.Fatalf("install commands should include macOS and Windows variants: %#v", response.Commands)
+	if !strings.Contains(response.Commands["macos"], "https://zeno.shuijiao.de/agent/install.sh") || !strings.Contains(response.Commands["windows"], "https://zeno.shuijiao.de/agent/install.ps1") || !strings.Contains(response.Commands["windows"], "$env:ZENO_AGENT_VERSION='testsha'") {
+		t.Fatalf("install commands should include macOS and Windows proxied variants: %#v", response.Commands)
 	}
 	if !strings.Contains(response.Command, "ZENO_AGENT_TOKEN='") || !strings.Contains(response.Command, "sudo env") {
 		t.Fatalf("install command should use Zeno agent names and paths: %s", response.Command)
@@ -744,8 +772,8 @@ func TestAdminNodeInstallCommandPrefersConfiguredAgentControllerURL(t *testing.T
 	if err := json.NewDecoder(bytes.NewBufferString(recorder.Body.String())).Decode(&response); err != nil {
 		t.Fatalf("decode install command: %v", err)
 	}
-	if !strings.Contains(response.Command, "ZENO_CONTROLLER_URL='https://zeno.example.com'") || !strings.Contains(response.Command, "Zeno-Agent/main/install.sh") {
-		t.Fatalf("install command should use configured agent controller URL: %s", response.Command)
+	if !strings.Contains(response.Command, "ZENO_CONTROLLER_URL='https://zeno.example.com'") || !strings.Contains(response.Command, "zeno.shuijiao.de/agent/install.sh") {
+		t.Fatalf("install command should use configured agent controller URL and proxied installer: %s", response.Command)
 	}
 	if !strings.Contains(response.Commands["windows"], "$env:ZENO_CONTROLLER_URL='https://zeno.example.com'") {
 		t.Fatalf("windows install command should use configured agent controller URL: %s", response.Commands["windows"])
