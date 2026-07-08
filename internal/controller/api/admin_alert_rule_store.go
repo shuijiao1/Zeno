@@ -16,7 +16,7 @@ var defaultAdminAlertRules = []AdminAlertRule{
 		Comparator:            ">=",
 		Threshold:             90,
 		ThresholdUnit:         "%",
-		DurationSec:           60,
+		DurationSec:           300,
 		Enabled:               true,
 		NotificationEventType: "probe_unhealthy",
 	},
@@ -28,7 +28,7 @@ var defaultAdminAlertRules = []AdminAlertRule{
 		Comparator:            ">=",
 		Threshold:             90,
 		ThresholdUnit:         "%",
-		DurationSec:           60,
+		DurationSec:           300,
 		Enabled:               true,
 		NotificationEventType: "probe_unhealthy",
 	},
@@ -40,7 +40,7 @@ var defaultAdminAlertRules = []AdminAlertRule{
 		Comparator:            ">=",
 		Threshold:             90,
 		ThresholdUnit:         "%",
-		DurationSec:           60,
+		DurationSec:           300,
 		Enabled:               true,
 		NotificationEventType: "probe_unhealthy",
 	},
@@ -104,6 +104,9 @@ func (s *SQLiteStore) ensureDefaultAlertRules(ctx context.Context) error {
 	if err := s.migrateDefaultAlertRuleDurations(ctx); err != nil {
 		return err
 	}
+	if err := s.migrateResourceAlertRuleDurationToFiveMinutes(ctx); err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -159,6 +162,36 @@ func (s *SQLiteStore) migrateDefaultAlertRuleDurations(ctx context.Context) erro
 			VALUES (?, '1', ?)
 			ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at
 		`, migrationKey, now); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (s *SQLiteStore) migrateResourceAlertRuleDurationToFiveMinutes(ctx context.Context) error {
+	now := time.Now().UTC().Unix()
+	const migrationKey = "resource_alert_duration_5m_migrated"
+	var marker string
+	if err := s.db.QueryRowContext(ctx, `SELECT value FROM settings WHERE key = ?`, migrationKey).Scan(&marker); err != nil {
+		if err != sql.ErrNoRows {
+			return err
+		}
+	} else {
+		return nil
+	}
+	for _, ruleID := range []string{"cpu_high", "memory_high", "disk_high"} {
+		if _, err := s.db.ExecContext(ctx, `
+			UPDATE alert_rules
+			SET duration_sec = 300, updated_at = ?
+			WHERE id = ? AND duration_sec = 60
+		`, now, ruleID); err != nil {
+			return err
+		}
+	}
+	if _, err := s.db.ExecContext(ctx, `
+		INSERT INTO settings (key, value, updated_at)
+		VALUES (?, '1', ?)
+		ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at
+	`, migrationKey, now); err != nil {
 		return err
 	}
 	return nil

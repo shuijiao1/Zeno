@@ -123,7 +123,7 @@ const alertRules: AdminAlertRule[] = [
     comparator: '>=',
     threshold: 90,
     thresholdUnit: '%',
-    durationSec: 60,
+    durationSec: 300,
     enabled: true,
     notificationEventType: 'probe_unhealthy',
     notificationLabel: '异常',
