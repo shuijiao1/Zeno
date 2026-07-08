@@ -89,6 +89,15 @@ function formatTrafficLabel(): string {
 function expiryBadge(expiryLabel: string | null | undefined): { text: string; tone: 'safe' | 'soon' | 'urgent' | 'expired' } | null {
   const trimmed = (expiryLabel ?? '').trim()
   if (trimmed === '') return null
+  if (trimmed === '已过期') return { text: trimmed, tone: 'expired' }
+  if (trimmed === '今天到期') return { text: trimmed, tone: 'urgent' }
+  const relativeMatch = /^余\s*(\d+)\s*天$/.exec(trimmed)
+  if (relativeMatch) {
+    const days = Number(relativeMatch[1])
+    if (days <= 7) return { text: `余 ${days} 天`, tone: 'urgent' }
+    if (days <= 30) return { text: `余 ${days} 天`, tone: 'soon' }
+    return { text: `余 ${days} 天`, tone: 'safe' }
+  }
   const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(trimmed)
   if (!match) return trimmed === '永 久' || trimmed === '永久' ? { text: '永久', tone: 'safe' } : { text: trimmed, tone: 'safe' }
   const expiry = Date.UTC(Number(match[1]), Number(match[2]) - 1, Number(match[3]))

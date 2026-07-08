@@ -984,7 +984,7 @@ func (s *SQLiteStore) UpdateAdminNode(ctx context.Context, nodeID string, update
 
 func (s *SQLiteStore) nodes(ctx context.Context) ([]Node, error) {
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT n.id, n.display_name, n.status, n.country_code, n.expiry_date, n.expiry_permanent, n.billing_mode, n.monthly_reset_day, n.last_seen_at,
+		SELECT n.id, n.display_name, n.status, n.country_code, n.expiry_date, n.expiry_permanent, n.billing_cycle, n.billing_mode, n.monthly_reset_day, n.last_seen_at,
 		       h.os_name, h.os_version, h.kernel, h.arch, h.virtualization, h.cpu_model, h.cpu_cores, h.memory_total_bytes, h.disk_total_bytes, h.boot_time,
 		       ss.cpu_percent, ss.load1, ss.load5, ss.load15, ss.uptime_seconds, ss.memory_used_bytes, ss.disk_used_bytes,
 		       ss.net_in_speed_bps, ss.net_out_speed_bps, ss.net_in_total_bytes, ss.net_out_total_bytes,
@@ -1015,12 +1015,12 @@ func (s *SQLiteStore) nodes(ctx context.Context) ([]Node, error) {
 	now := time.Now().UTC()
 	for rows.Next() {
 		var id, displayName, status string
-		var countryCode, expiryDate, billingMode, osName, osVersion, kernel, arch, virtualization, cpuModel sql.NullString
+		var countryCode, expiryDate, billingCycle, billingMode, osName, osVersion, kernel, arch, virtualization, cpuModel sql.NullString
 		var expiryPermanent int
 		var monthlyResetDay, cpuCores, memoryTotal, diskTotal, bootTime, lastSeenAt, uptimeSeconds sql.NullInt64
 		var cpuPercent, load1, load5, load15, netInSpeed, netOutSpeed sql.NullFloat64
 		var memoryUsed, diskUsed, netInTotal, netOutTotal, billable, quota sql.NullInt64
-		if err := rows.Scan(&id, &displayName, &status, &countryCode, &expiryDate, &expiryPermanent, &billingMode, &monthlyResetDay, &lastSeenAt, &osName, &osVersion, &kernel, &arch, &virtualization, &cpuModel, &cpuCores, &memoryTotal, &diskTotal, &bootTime, &cpuPercent, &load1, &load5, &load15, &uptimeSeconds, &memoryUsed, &diskUsed, &netInSpeed, &netOutSpeed, &netInTotal, &netOutTotal, &billable, &quota); err != nil {
+		if err := rows.Scan(&id, &displayName, &status, &countryCode, &expiryDate, &expiryPermanent, &billingCycle, &billingMode, &monthlyResetDay, &lastSeenAt, &osName, &osVersion, &kernel, &arch, &virtualization, &cpuModel, &cpuCores, &memoryTotal, &diskTotal, &bootTime, &cpuPercent, &load1, &load5, &load15, &uptimeSeconds, &memoryUsed, &diskUsed, &netInSpeed, &netOutSpeed, &netInTotal, &netOutTotal, &billable, &quota); err != nil {
 			return nil, err
 		}
 		resetDay := 1
@@ -1039,7 +1039,7 @@ func (s *SQLiteStore) nodes(ctx context.Context) ([]Node, error) {
 			Virtualization:       nullStringOr(virtualization, ""),
 			CPUModel:             nullStringOr(cpuModel, ""),
 			CountryCode:          nullStringOr(countryCode, ""),
-			ExpiryLabel:          expiryLabelValue(expiryDate, expiryPermanent != 0),
+			ExpiryLabel:          expiryLabelValue(expiryDate, billingCycle, expiryPermanent != 0, now),
 			CPUCores:             intPtr(cpuCores),
 			CPUPercent:           floatPtr(cpuPercent),
 			MemoryUsedBytes:      intPtr(memoryUsed),
@@ -1744,11 +1744,109 @@ func nullStringOr(value sql.NullString, fallback string) string {
 	return fallback
 }
 
-func expiryLabelValue(expiryDate sql.NullString, permanent bool) string {
+func expiryLabelValue(expiryDate, billingCycle sql.NullString, permanent bool, now time.Time) string {
 	if permanent {
 		return "永久"
 	}
-	return nullStringOr(expiryDate, "")
+	rawDate := strings.TrimSpace(nullStringOr(expiryDate, ""))
+	if rawDate == "" {
+		return ""
+	}
+	cycleMonths := billingCycleMonths(billingCycle)
+	if cycleMonths <= 0 {
+		return rawDate
+	}
+	nextDate, ok := nextBillingCycleDate(rawDate, cycleMonths, now)
+	if !ok {
+		return rawDate
+	}
+	return formatExpiryDaysLabel(nextDate, now)
+}
+
+func billingCycleMonths(value sql.NullString) int {
+	if !value.Valid {
+		return 0
+	}
+	cycle := strings.TrimSpace(value.String)
+	if cycle == "" {
+		return 0
+	}
+	if strings.Contains(cycle, "五年") || strings.Contains(cycle, "5年") || strings.Contains(cycle, "5 年") {
+		return 60
+	}
+	if strings.Contains(cycle, "三年") || strings.Contains(cycle, "3年") || strings.Contains(cycle, "3 年") {
+		return 36
+	}
+	if strings.Contains(cycle, "两年") || strings.Contains(cycle, "二年") || strings.Contains(cycle, "2年") || strings.Contains(cycle, "2 年") {
+		return 24
+	}
+	if strings.Contains(cycle, "半年") || strings.Contains(cycle, "半 年") {
+		return 6
+	}
+	if strings.Contains(cycle, "季") {
+		return 3
+	}
+	if strings.Contains(cycle, "年") {
+		return 12
+	}
+	if strings.Contains(cycle, "月") {
+		return 1
+	}
+	return 0
+}
+
+func nextBillingCycleDate(rawDate string, cycleMonths int, now time.Time) (time.Time, bool) {
+	finalDate, err := time.ParseInLocation("2006-01-02", strings.TrimSpace(rawDate), time.UTC)
+	if err != nil || cycleMonths <= 0 {
+		return time.Time{}, false
+	}
+	today := dateOnlyUTC(now)
+	if finalDate.Before(today) {
+		return finalDate, true
+	}
+	nextDate := finalDate
+	for {
+		previous := addMonthsClampedUTC(nextDate, -cycleMonths)
+		if previous.Before(today) {
+			break
+		}
+		nextDate = previous
+	}
+	return nextDate, true
+}
+
+func formatExpiryDaysLabel(date, now time.Time) string {
+	today := dateOnlyUTC(now)
+	due := dateOnlyUTC(date)
+	days := int(due.Sub(today).Hours() / 24)
+	if days < 0 {
+		return "已过期"
+	}
+	if days == 0 {
+		return "今天到期"
+	}
+	return fmt.Sprintf("余 %d 天", days+1)
+}
+
+func dateOnlyUTC(value time.Time) time.Time {
+	utc := value.UTC()
+	return time.Date(utc.Year(), utc.Month(), utc.Day(), 0, 0, 0, 0, time.UTC)
+}
+
+func addMonthsClampedUTC(value time.Time, months int) time.Time {
+	value = dateOnlyUTC(value)
+	year, month, day := value.Date()
+	totalMonths := year*12 + int(month) - 1 + months
+	newYear := totalMonths / 12
+	newMonth := time.Month(totalMonths%12 + 1)
+	if totalMonths < 0 && totalMonths%12 != 0 {
+		newYear--
+		newMonth = time.Month(totalMonths%12 + 13)
+	}
+	if maxDay := daysInMonth(newYear, newMonth); day > maxDay {
+		day = maxDay
+	}
+	return time.Date(newYear, newMonth, day, 0, 0, 0, 0, time.UTC)
 }
 
 func sqliteBoolInt(value bool) int {

@@ -3,6 +3,7 @@ package api
 import (
 	"bytes"
 	"context"
+	"database/sql"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -359,8 +360,10 @@ func TestAdminNodeBillingIPAndDisplayOrderFieldsFlowThroughAdminAndPublicSummary
 	if len(summary.Nodes) != 2 || summary.Nodes[0].ID != "hytron" || summary.Nodes[1].ID != "backup" {
 		t.Fatalf("summary nodes order = %+v, want display_order order", summary.Nodes)
 	}
-	if summary.Nodes[0].ExpiryLabel != "2026-08-01" || summary.Nodes[1].ExpiryLabel != "2026-12-31" {
-		t.Fatalf("summary expiry labels = %q/%q, want explicit expiry dates", summary.Nodes[0].ExpiryLabel, summary.Nodes[1].ExpiryLabel)
+	expectedHytronExpiry := expiryLabelValue(sql.NullString{String: "2026-08-01", Valid: true}, sql.NullString{String: "月付", Valid: true}, false, time.Now().UTC())
+	expectedBackupExpiry := expiryLabelValue(sql.NullString{String: "2026-12-31", Valid: true}, sql.NullString{String: "年付", Valid: true}, false, time.Now().UTC())
+	if summary.Nodes[0].ExpiryLabel != expectedHytronExpiry || summary.Nodes[1].ExpiryLabel != expectedBackupExpiry {
+		t.Fatalf("summary expiry labels = %q/%q, want %q/%q", summary.Nodes[0].ExpiryLabel, summary.Nodes[1].ExpiryLabel, expectedHytronExpiry, expectedBackupExpiry)
 	}
 	expectedPeriod := billingPeriodFor(time.Now().UTC(), 15)
 	if summary.Nodes[0].BillingMode != "max" || summary.Nodes[0].MonthlyResetDay != 15 || summary.Nodes[0].MonthlyPeriodStart != expectedPeriod.StartDate || summary.Nodes[0].MonthlyPeriodEnd != expectedPeriod.EndDate {

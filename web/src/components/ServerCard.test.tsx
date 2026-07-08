@@ -72,4 +72,11 @@ describe('ServerCard', () => {
     expect(html).not.toContain('node-expiry')
     expect(html).not.toContain('永久')
   })
+
+  it('styles precomputed recurring expiry labels by urgency', () => {
+    const html = renderToStaticMarkup(<ServerCard node={{ ...baseNode, expiryLabel: '余 3 天' }} onOpen={vi.fn()} />)
+
+    expect(html).toContain('node-expiry is-urgent')
+    expect(html).toContain('余 3 天')
+  })
 })
