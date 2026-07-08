@@ -809,6 +809,7 @@ svg { display: block; }
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 10px;
 }
+.admin-form-span-2 { grid-column: 1 / -1; }
 .admin-channel-enabled-toggle { align-self: end; min-height: 42px; margin-top: 19px; }
 .admin-alert-rule-settings-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); align-items: end; }
 .admin-alert-rule-enabled-toggle { min-height: 36px; }
@@ -880,21 +881,36 @@ svg { display: block; }
 }
 .admin-label-without-caption { gap: 0; }
 .admin-node-edit-form input:not([type="checkbox"]):not([type="radio"]),
-.admin-node-edit-form select {
+.admin-node-edit-form select,
+.admin-node-edit-form textarea {
   width: 100%;
   min-width: 0;
-  height: 40px;
-  padding: 0 12px;
   border: 1px solid var(--border);
   border-radius: var(--radius-field);
   background: var(--field-bg);
   color: var(--foreground);
   font: inherit;
   font-size: 14px;
+}
+.admin-node-edit-form input:not([type="checkbox"]):not([type="radio"]),
+.admin-node-edit-form select {
+  height: 40px;
+  padding: 0 12px;
   appearance: none;
 }
+.admin-node-edit-form textarea {
+  min-height: 126px;
+  padding: 10px 12px;
+  resize: vertical;
+  line-height: 1.5;
+}
+.admin-code-field {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace !important;
+  font-size: 13px !important;
+}
 .admin-node-edit-form input:not([type="checkbox"]):not([type="radio"]):focus-visible,
-.admin-node-edit-form select:focus-visible {
+.admin-node-edit-form select:focus-visible,
+.admin-node-edit-form textarea:focus-visible {
   outline: none;
   border-color: color-mix(in srgb, var(--blue) 52%, var(--border));
   box-shadow: 0 0 0 3px color-mix(in srgb, var(--blue) 14%, transparent);

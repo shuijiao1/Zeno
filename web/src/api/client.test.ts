@@ -589,6 +589,7 @@ describe('normalizeSettings', () => {
       theme: 'dark',
       agent_controller_url: 'https://zeno.example.com',
       background_url: 'https://example.com/bg.webp',
+      custom_code: '<style>.home-top-card { border-color: #2563eb; }</style><script>window.ZenoCustomLoaded = true;</script>',
       updated_at: '2026-07-04T12:00:00Z',
     })
 
@@ -598,6 +599,7 @@ describe('normalizeSettings', () => {
     expect(settings.theme).toBe('dark')
     expect(settings.agentControllerUrl).toBe('https://zeno.example.com')
     expect(settings.backgroundUrl).toBe('https://example.com/bg.webp')
+    expect(settings.customCode).toBe('<style>.home-top-card { border-color: #2563eb; }</style><script>window.ZenoCustomLoaded = true;</script>')
     expect(settings.updatedAt).toBe('2026-07-04T12:00:00Z')
   })
 })
@@ -709,6 +711,7 @@ describe('fetchSettings', () => {
       background_url: 'https://example.com/desktop-bg.webp',
       desktop_background_url: 'https://example.com/desktop-bg.webp',
       mobile_background_url: 'https://example.com/mobile-bg.webp',
+      custom_code: '<style>.home-top-card { border-color: #2563eb; }</style><script>window.ZenoCustomLoaded = true;</script>',
       updated_at: '2026-07-04T12:00:00Z',
     }), { status: 200, headers: { 'Content-Type': 'application/json' } }))
     globalThis.fetch = fetchMock as unknown as typeof fetch
@@ -720,6 +723,7 @@ describe('fetchSettings', () => {
     expect(settings).not.toHaveProperty('avatarUrl')
     expect(settings.desktopBackgroundUrl).toBe('https://example.com/desktop-bg.webp')
     expect(settings.mobileBackgroundUrl).toBe('https://example.com/mobile-bg.webp')
+    expect(settings.customCode).toBe('<style>.home-top-card { border-color: #2563eb; }</style><script>window.ZenoCustomLoaded = true;</script>')
     expect(fetchMock).toHaveBeenCalledWith('/api/public/v1/settings', {
       headers: { Accept: 'application/json' },
     })
@@ -736,6 +740,7 @@ describe('fetchSettings', () => {
         background_url: 'https://example.com/desktop-bg.webp',
         desktop_background_url: 'https://example.com/desktop-bg.webp',
         mobile_background_url: 'https://example.com/mobile-bg.webp',
+        custom_code: '<style>.home-top-card { border-color: #2563eb; }</style><script>window.ZenoCustomLoaded = true;</script>',
         updated_at: '2026-07-04T12:00:00Z',
       },
     }), { status: 200, headers: { 'Content-Type': 'application/json' } }))
@@ -751,6 +756,7 @@ describe('fetchSettings', () => {
       backgroundUrl: 'https://example.com/desktop-bg.webp',
       desktopBackgroundUrl: 'https://example.com/desktop-bg.webp',
       mobileBackgroundUrl: 'https://example.com/mobile-bg.webp',
+      customCode: '<style>.home-top-card { border-color: #2563eb; }</style><script>window.ZenoCustomLoaded = true;</script>',
     })
 
     expect(settings.backgroundUrl).toBe('https://example.com/desktop-bg.webp')
@@ -759,6 +765,7 @@ describe('fetchSettings', () => {
     expect(settings).not.toHaveProperty('avatarUrl')
     expect(settings.desktopBackgroundUrl).toBe('https://example.com/desktop-bg.webp')
     expect(settings.mobileBackgroundUrl).toBe('https://example.com/mobile-bg.webp')
+    expect(settings.customCode).toBe('<style>.home-top-card { border-color: #2563eb; }</style><script>window.ZenoCustomLoaded = true;</script>')
     expect(fetchMock).toHaveBeenNthCalledWith(1, '/api/admin/v1/settings', {
       headers: {
         Accept: 'application/json',
@@ -781,6 +788,7 @@ describe('fetchSettings', () => {
         background_url: 'https://example.com/desktop-bg.webp',
         desktop_background_url: 'https://example.com/desktop-bg.webp',
         mobile_background_url: 'https://example.com/mobile-bg.webp',
+        custom_code: '<style>.home-top-card { border-color: #2563eb; }</style><script>window.ZenoCustomLoaded = true;</script>',
       }),
     })
   })

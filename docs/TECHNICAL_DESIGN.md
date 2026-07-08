@@ -184,6 +184,7 @@ Agent 使用 tokenless、可替换的轻量 HTTP provider 自动发现公网 IPv
 - `theme`
 - `desktop_background_url`
 - `mobile_background_url`
+- `custom_code`
 
 兼容字段：`background_url` 会映射到 desktop background。不要重新拆出 `avatar_url`。
 

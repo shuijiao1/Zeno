@@ -61,6 +61,7 @@ type SiteSettings struct {
 	BackgroundURL        string `json:"background_url"`
 	DesktopBackgroundURL string `json:"desktop_background_url"`
 	MobileBackgroundURL  string `json:"mobile_background_url"`
+	CustomCode           string `json:"custom_code"`
 	UpdatedAt            string `json:"updated_at,omitempty"`
 }
 
@@ -73,7 +74,10 @@ type AdminSettingsUpdateRequest struct {
 	BackgroundURL        *string `json:"background_url,omitempty"`
 	DesktopBackgroundURL *string `json:"desktop_background_url,omitempty"`
 	MobileBackgroundURL  *string `json:"mobile_background_url,omitempty"`
+	CustomCode           *string `json:"custom_code,omitempty"`
 }
+
+const maxSettingsCustomCodeRunes = 60000
 
 func defaultSiteSettings() SiteSettings {
 	return SiteSettings{
@@ -85,6 +89,7 @@ func defaultSiteSettings() SiteSettings {
 		BackgroundURL:        "",
 		DesktopBackgroundURL: "",
 		MobileBackgroundURL:  "",
+		CustomCode:           "",
 	}
 }
 
@@ -153,6 +158,14 @@ func (request *AdminSettingsUpdateRequest) normalize() error {
 			return errInvalidAdminSettingsUpdate
 		}
 		request.MobileBackgroundURL = &trimmed
+	}
+	if request.CustomCode != nil {
+		changed = true
+		trimmed := strings.TrimSpace(*request.CustomCode)
+		if len([]rune(trimmed)) > maxSettingsCustomCodeRunes {
+			return errInvalidAdminSettingsUpdate
+		}
+		request.CustomCode = &trimmed
 	}
 	if !changed {
 		return errInvalidAdminSettingsUpdate

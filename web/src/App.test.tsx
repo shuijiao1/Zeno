@@ -1,6 +1,6 @@
 import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it } from 'vitest'
-import { AdminDashboard, HomeTopPanel, documentBrandingForSettings, orderHomeNodes, shellStyleForSettings, shouldRefreshHomeRealtimeSnapshot, validateAdminSettingsInput } from './App'
+import { AdminDashboard, HomeTopPanel, applyCustomCode, documentBrandingForSettings, orderHomeNodes, shellStyleForSettings, shouldRefreshHomeRealtimeSnapshot, validateAdminSettingsInput } from './App'
 import type { AdminAlertRule, AdminNode, AdminNotificationChannel, AdminProbeTarget, AdminSettings, HomeCardNode } from './types'
 
 const overviewProps = {
@@ -160,6 +160,7 @@ const settings: AdminSettings = {
   backgroundUrl: 'https://example.com/desktop-bg.webp',
   desktopBackgroundUrl: 'https://example.com/desktop-bg.webp',
   mobileBackgroundUrl: 'https://example.com/mobile-bg.webp',
+  customCode: '<style>.home-top-card { border-color: #2563eb; }</style><script>window.ZenoCustomLoaded = true;</script>',
   updatedAt: '2026-07-04T12:00:00Z',
 }
 
@@ -369,6 +370,10 @@ describe('AdminDashboard', () => {
     expect(html).toContain('https://example.com/desktop-bg.webp')
     expect(html).toContain('name="mobile-background-url"')
     expect(html).toContain('https://example.com/mobile-bg.webp')
+    expect(html).toContain('自定义代码')
+    expect(html).toContain('name="custom-code"')
+    expect(html).toContain('&lt;style&gt;.home-top-card { border-color: #2563eb; }&lt;/style&gt;')
+    expect(html).toContain('&lt;script&gt;window.ZenoCustomLoaded = true;&lt;/script&gt;')
     expect(html).not.toContain('token')
     expect(html).not.toContain('secret')
     expect(html).not.toContain('credential')
@@ -385,6 +390,7 @@ describe('AdminDashboard', () => {
       backgroundUrl: 'https://example.com/desktop.webp',
       desktopBackgroundUrl: 'https://example.com/desktop.webp',
       mobileBackgroundUrl: '',
+      customCode: '',
     }
 
     expect(validateAdminSettingsInput(baseInput)).toBeNull()
@@ -394,6 +400,88 @@ describe('AdminDashboard', () => {
     expect(validateAdminSettingsInput({ ...baseInput, agentControllerUrl: 'https://user:pass@example.com' })).toContain('Agent 接入 URL')
     expect(validateAdminSettingsInput({ ...baseInput, agentControllerUrl: 'https://zeno.example.com/?token=1' })).toContain('Agent 接入 URL')
     expect(validateAdminSettingsInput({ ...baseInput, agentControllerUrl: 'https://zeno.example.com/' })).toBeNull()
+    expect(validateAdminSettingsInput({ ...baseInput, customCode: 'a'.repeat(60001) })).toContain('自定义代码')
+  })
+
+  it('applies custom code through managed document nodes', () => {
+    type TestElement = {
+      id: string
+      type: string
+      hidden: boolean
+      nodeName: string
+      textContent: string | null
+      attributes: Array<{ name: string; value: string }>
+      childNodes: TestElement[]
+      appendChild: (child: TestElement) => TestElement
+      setAttribute: (name: string, value: string) => void
+      remove: () => void
+    }
+    const documentStub = {
+      customNodes: [] as TestElement[],
+      head: {
+        children: [] as TestElement[],
+        appendChild(element: TestElement) {
+          this.children.push(element)
+          return element
+        },
+      },
+      body: {
+        children: [] as TestElement[],
+        appendChild(element: TestElement) {
+          this.children.push(element)
+          return element
+        },
+      },
+      createElement(tag: string): TestElement | { nodeName: string; content: { childNodes: TestElement[] }; innerHTML: string } {
+        const makeElement = (nodeName: string): TestElement => {
+          const element: TestElement = {
+            id: '',
+            type: '',
+            hidden: false,
+            nodeName,
+            textContent: null,
+            attributes: [],
+            childNodes: [],
+            appendChild(child: TestElement) {
+              this.childNodes.push(child)
+              return child
+            },
+            setAttribute(name: string, value: string) {
+              this.attributes.push({ name, value })
+              if (name === 'data-zeno-custom-code') documentStub.customNodes.push(element)
+            },
+            remove() {
+              documentStub.head.children = documentStub.head.children.filter((child) => child !== element)
+              documentStub.body.children = documentStub.body.children.filter((child) => child !== element)
+              documentStub.customNodes = documentStub.customNodes.filter((child) => child !== element)
+            },
+          }
+          return element
+        }
+        if (tag === 'template') {
+          const style = makeElement('STYLE')
+          style.textContent = '.home-top-card { border-color: #2563eb; }'
+          const script = makeElement('SCRIPT')
+          script.textContent = 'window.ZenoCustomLoaded = true;'
+          return { nodeName: 'TEMPLATE', content: { childNodes: [style, script] }, innerHTML: '' }
+        }
+        return makeElement(tag.toUpperCase())
+      },
+      querySelectorAll(selector: string) {
+        return selector === '[data-zeno-custom-code]' ? this.customNodes : []
+      },
+    }
+    const previousDocument = globalThis.document
+    try {
+      Object.defineProperty(globalThis, 'document', { value: documentStub, configurable: true })
+      applyCustomCode(settings)
+      expect(documentStub.body.children.some((child) => child.textContent === 'window.ZenoCustomLoaded = true;')).toBe(true)
+      expect(documentStub.body.children.some((child) => child.childNodes.some((nested) => nested.textContent === '.home-top-card { border-color: #2563eb; }'))).toBe(true)
+      applyCustomCode({ ...settings, customCode: '' })
+      expect(documentStub.querySelectorAll('[data-zeno-custom-code]')).toHaveLength(0)
+    } finally {
+      Object.defineProperty(globalThis, 'document', { value: previousDocument, configurable: true })
+    }
   })
 
   it('renders real notification channels and types instead of a placeholder', () => {

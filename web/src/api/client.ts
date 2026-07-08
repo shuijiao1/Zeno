@@ -9,6 +9,7 @@ interface ApiSettings {
   background_url: string
   desktop_background_url?: string
   mobile_background_url?: string
+  custom_code?: string
   updated_at?: string
 }
 
@@ -384,6 +385,7 @@ export interface AdminSettingsUpdateInput {
   backgroundUrl?: string
   desktopBackgroundUrl?: string
   mobileBackgroundUrl?: string
+  customCode?: string
 }
 
 export interface AdminNodeUpdateInput {
@@ -939,6 +941,7 @@ export function normalizeSettings(input: ApiSettings): AdminSettings {
     backgroundUrl: desktopBackgroundUrl,
     desktopBackgroundUrl,
     mobileBackgroundUrl: input.mobile_background_url ?? '',
+    customCode: input.custom_code ?? '',
     updatedAt: input.updated_at,
   }
 }
@@ -1009,6 +1012,7 @@ function serializeAdminSettingsUpdate(input: AdminSettingsUpdateInput) {
     ...(input.backgroundUrl !== undefined ? { background_url: input.backgroundUrl } : {}),
     ...(input.desktopBackgroundUrl !== undefined ? { desktop_background_url: input.desktopBackgroundUrl } : {}),
     ...(input.mobileBackgroundUrl !== undefined ? { mobile_background_url: input.mobileBackgroundUrl } : {}),
+    ...(input.customCode !== undefined ? { custom_code: input.customCode } : {}),
   }
 }
 

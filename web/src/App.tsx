@@ -188,9 +188,13 @@ const defaultSettings: AdminSettings = {
   backgroundUrl: '',
   desktopBackgroundUrl: '',
   mobileBackgroundUrl: '',
+  customCode: '',
 }
 
 const fallbackLogoUrl = 'https://cdn.jsdelivr.net/gh/shuijiao1/Fly@main/ID-128.png'
+const customCodeNodeAttribute = 'data-zeno-custom-code'
+const maxSettingsCustomCodeLength = 60000
+let appliedCustomCode = ''
 
 function backgroundImageValue(url: string): string {
   return `url("${url.replaceAll('"', '%22')}")`
@@ -264,6 +268,41 @@ export function applyDocumentBranding(settings: AdminSettings) {
   icon.href = branding.iconHref
 }
 
+export function applyCustomCode(settings: AdminSettings) {
+  if (typeof document === 'undefined') return
+  const customCode = (settings.customCode ?? '').trim()
+  const currentNodes = document.querySelectorAll(`[${customCodeNodeAttribute}]`)
+  if (customCode === '') {
+    currentNodes.forEach((node) => node.remove())
+    appliedCustomCode = ''
+    return
+  }
+  if (customCode === appliedCustomCode && currentNodes.length > 0) return
+  currentNodes.forEach((node) => node.remove())
+
+  const template = document.createElement('template')
+  template.innerHTML = customCode
+  const scriptTarget = document.body || document.head
+  const fragmentTarget = document.createElement('div')
+  fragmentTarget.hidden = true
+  fragmentTarget.setAttribute(customCodeNodeAttribute, 'fragment')
+
+  Array.from(template.content.childNodes).forEach((node) => {
+    if (node.nodeName.toLowerCase() === 'script') {
+      const sourceScript = node as HTMLScriptElement
+      const scriptElement = document.createElement('script')
+      Array.from(sourceScript.attributes).forEach((attribute) => scriptElement.setAttribute(attribute.name, attribute.value))
+      scriptElement.textContent = sourceScript.textContent
+      scriptElement.setAttribute(customCodeNodeAttribute, 'script')
+      scriptTarget.appendChild(scriptElement)
+      return
+    }
+    fragmentTarget.appendChild(node)
+  })
+  if (fragmentTarget.childNodes.length > 0) scriptTarget.appendChild(fragmentTarget)
+  appliedCustomCode = customCode
+}
+
 export function App() {
   const [state, setState] = useState<LoadState>(() => {
     const cachedSummary = loadStoredSummary()
@@ -304,6 +343,10 @@ export function App() {
   useEffect(() => {
     applyDocumentBranding(settings)
   }, [settings.siteTitle, settings.logoUrl])
+
+  useEffect(() => {
+    applyCustomCode(settings)
+  }, [settings.customCode])
 
   useEffect(() => {
     let cancelled = false
@@ -1369,6 +1412,7 @@ function AdminSettingsSection({ settings, onUpdate }: { settings: AdminSettings;
       backgroundUrl: String(formData.get('desktop-background-url') ?? '').trim(),
       desktopBackgroundUrl: String(formData.get('desktop-background-url') ?? '').trim(),
       mobileBackgroundUrl: String(formData.get('mobile-background-url') ?? '').trim(),
+      customCode: String(formData.get('custom-code') ?? '').trim(),
     }
     const validationError = validateAdminSettingsInput(input)
     if (validationError) {
@@ -1424,6 +1468,14 @@ function AdminSettingsSection({ settings, onUpdate }: { settings: AdminSettings;
             </label>
           </div>
         </AdminFormSection>
+        <AdminFormSection title="自定义代码">
+          <div className="admin-form-grid">
+            <label className="admin-form-span-2">
+              <span>自定义代码</span>
+              <textarea className="admin-code-field" name="custom-code" defaultValue={settings.customCode} spellCheck={false} placeholder={'<style>\n.home-top-card { border-color: #2563eb; }\n</style>\n<script>\nconsole.log(\'Zeno custom code\')\n</script>'} />
+            </label>
+          </div>
+        </AdminFormSection>
         {settingsError && <p className="admin-install-error">{settingsError}</p>}
         <div className="admin-modal-actions">
           <button type="submit">保存设置</button>
@@ -1438,7 +1490,12 @@ export function validateAdminSettingsInput(input: AdminSettingsUpdateInput): str
   if (!validSettingsImageURL(input.desktopBackgroundUrl ?? input.backgroundUrl ?? '')) return '电脑端背景图 URL 只能是 https:// 链接或 /assets/... 站内路径。'
   if (!validSettingsImageURL(input.mobileBackgroundUrl ?? '')) return '手机端背景图 URL 只能是 https:// 链接或 /assets/... 站内路径。'
   if (!validAgentControllerURL(input.agentControllerUrl ?? '')) return 'Agent 接入 URL 只能是 http:// 或 https://，且不能包含用户名密码、query 或 fragment。'
+  if (customCodeLength(input.customCode ?? '') > maxSettingsCustomCodeLength) return '自定义代码不能超过 60000 字。'
   return null
+}
+
+function customCodeLength(value: string): number {
+  return Array.from(value.trim()).length
 }
 
 function validSettingsImageURL(value: string): boolean {

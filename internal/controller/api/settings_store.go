@@ -15,6 +15,7 @@ const (
 	settingKeyBackgroundURL        = "background_url"
 	settingKeyDesktopBackgroundURL = "desktop_background_url"
 	settingKeyMobileBackgroundURL  = "mobile_background_url"
+	settingKeyCustomCode           = "custom_code"
 )
 
 func (s *SQLiteStore) PublicSettings(ctx context.Context) (SiteSettings, error) {
@@ -61,6 +62,9 @@ func (s *SQLiteStore) UpdateAdminSettings(ctx context.Context, update AdminSetti
 	if update.MobileBackgroundURL != nil {
 		settings.MobileBackgroundURL = *update.MobileBackgroundURL
 	}
+	if update.CustomCode != nil {
+		settings.CustomCode = *update.CustomCode
+	}
 
 	now := time.Now().UTC().Unix()
 	tx, err := s.db.BeginTx(ctx, nil)
@@ -77,6 +81,7 @@ func (s *SQLiteStore) UpdateAdminSettings(ctx context.Context, update AdminSetti
 		settingKeyBackgroundURL:        settings.BackgroundURL,
 		settingKeyDesktopBackgroundURL: settings.DesktopBackgroundURL,
 		settingKeyMobileBackgroundURL:  settings.MobileBackgroundURL,
+		settingKeyCustomCode:           settings.CustomCode,
 	}
 	for key, value := range values {
 		if _, err := tx.ExecContext(ctx, `
@@ -100,8 +105,8 @@ func (s *SQLiteStore) siteSettings(ctx context.Context) (SiteSettings, error) {
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT key, value, updated_at
 		FROM settings
-		WHERE key IN (?, ?, ?, ?, ?, ?, ?, ?)
-	`, settingKeySiteTitle, settingKeySiteSubtitle, settingKeyLogoURL, settingKeyTheme, settingKeyAgentControllerURL, settingKeyBackgroundURL, settingKeyDesktopBackgroundURL, settingKeyMobileBackgroundURL)
+		WHERE key IN (?, ?, ?, ?, ?, ?, ?, ?, ?)
+	`, settingKeySiteTitle, settingKeySiteSubtitle, settingKeyLogoURL, settingKeyTheme, settingKeyAgentControllerURL, settingKeyBackgroundURL, settingKeyDesktopBackgroundURL, settingKeyMobileBackgroundURL, settingKeyCustomCode)
 	if err != nil {
 		return SiteSettings{}, err
 	}
@@ -130,6 +135,8 @@ func (s *SQLiteStore) siteSettings(ctx context.Context) (SiteSettings, error) {
 			settings.DesktopBackgroundURL = value
 		case settingKeyMobileBackgroundURL:
 			settings.MobileBackgroundURL = value
+		case settingKeyCustomCode:
+			settings.CustomCode = value
 		}
 		if updatedAt.Valid && (!latest.Valid || updatedAt.Int64 > latest.Int64) {
 			latest = updatedAt

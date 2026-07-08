@@ -247,7 +247,7 @@ X-Admin-Token: <session-token>
 
 ### GET /api/public/v1/settings
 
-读取公开站点配置。首页启动时会先读取该接口，用于品牌标题、头像/Logo、副标题、主题、Agent 接入 URL，以及电脑端/手机端背景图。头像/Logo 只用 `logo_url` 一个字段，不再拆出额外头像字段。图片字段只保存 URL / 站内静态路径，不存图片二进制。响应只包含公开展示字段，不包含 Admin token、Agent token、token hash、通知渠道凭据、secret 或 credential 原文。
+读取公开站点配置。首页启动时会先读取该接口，用于品牌标题、头像/Logo、副标题、主题、Agent 接入 URL、电脑端/手机端背景图，以及管理员配置的自定义代码。头像/Logo 只用 `logo_url` 一个字段，不再拆出额外头像字段。图片字段只保存 URL / 站内静态路径，不存图片二进制。响应只包含公开展示字段，不包含 Admin token、Agent token、token hash、通知渠道凭据、secret 或 credential 原文。
 
 默认值：
 
@@ -260,7 +260,8 @@ X-Admin-Token: <session-token>
   "agent_controller_url": "",
   "background_url": "",
   "desktop_background_url": "",
-  "mobile_background_url": ""
+  "mobile_background_url": "",
+  "custom_code": ""
 }
 ```
 
@@ -447,6 +448,7 @@ X-Admin-Token: <admin-token>
     "background_url": "",
     "desktop_background_url": "",
     "mobile_background_url": "",
+    "custom_code": "",
     "updated_at": "2026-07-04T12:00:00Z"
   }
 }
@@ -467,7 +469,8 @@ X-Admin-Token: <admin-token>
   "agent_controller_url": "https://zeno.example.com",
   "background_url": "https://example.com/desktop-bg.webp",
   "desktop_background_url": "https://example.com/desktop-bg.webp",
-  "mobile_background_url": "https://example.com/mobile-bg.webp"
+  "mobile_background_url": "https://example.com/mobile-bg.webp",
+  "custom_code": "<style>.home-top-card { border-color: #2563eb; }</style><script>console.log('Zeno custom code')</script>"
 }
 ```
 
@@ -479,6 +482,7 @@ X-Admin-Token: <admin-token>
 - `agent_controller_url` 可为空；非空时必须是无用户名密码、无 query/fragment 的 `http://` 或 `https://` URL；为空时使用当前后台请求地址。
 - `logo_url` 必须是站内绝对路径（如 `/assets/logo/id.png`）或 `https://` URL；当前首页/后台头部头像与 Logo 都使用这一字段。
 - `background_url` 是旧兼容字段，当前等价于电脑端背景图；`background_url`、`desktop_background_url`、`mobile_background_url` 均可为空，非空时必须是站内绝对路径或 `https://` URL。手机端背景留空时前端跟随电脑端背景。
+- `custom_code` 可为空，作为自定义代码注入公开页面，支持 `<style>` 和 `<script>`；最长 60000 字符。这里是公开展示代码，不要写入 token、secret 或 credential。
 - 图片只通过 URL / 站内静态路径引用，不把外观图片写入数据库。
 - 后台保存前会先做同口径的客户端校验，减少提交后才被 API 拒绝的情况。
 - 响应仍只返回公开展示字段，不返回 Admin token、Agent token、token hash、secret、credential 或任何凭据值。

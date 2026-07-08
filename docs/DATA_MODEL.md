@@ -284,6 +284,7 @@ CREATE TABLE settings (
 - `background_url`（兼容）
 - `desktop_background_url`
 - `mobile_background_url`
+- `custom_code`
 - `admin_username`：单管理员账号名，默认 `admin`。
 - `admin_password_hash`：单管理员密码 hash。首次部署未设置时可用 bootstrap admin token 登录；修改账号或密码后以后以这些设置为准。
 

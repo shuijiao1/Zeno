@@ -11,6 +11,7 @@ export interface AdminSettings {
   backgroundUrl: string
   desktopBackgroundUrl: string
   mobileBackgroundUrl: string
+  customCode: string
   updatedAt?: string
 }
 
