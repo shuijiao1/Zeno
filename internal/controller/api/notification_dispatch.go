@@ -25,6 +25,10 @@ type notificationDelayStore interface {
 	NotificationEventDelay(ctx context.Context, eventType, nodeID string) (time.Duration, bool, error)
 }
 
+type notificationStatusMarkStore interface {
+	ClaimStatusNotification(ctx context.Context, event notificationEvent) (bool, error)
+}
+
 type renewalNotificationStore interface {
 	PendingRenewalNotifications(ctx context.Context, now time.Time) ([]notificationEvent, error)
 	MarkRenewalNotification(ctx context.Context, event notificationEvent, now time.Time) error
@@ -190,6 +194,14 @@ func (h *handler) dispatchNotificationEvent(store agentStore, event notification
 	if event.Label == "" {
 		event.Label = label
 	}
+	if shouldClaimStatusNotification(event) {
+		if markStore, ok := store.(notificationStatusMarkStore); ok {
+			claimed, err := markStore.ClaimStatusNotification(context.Background(), event)
+			if err != nil || !claimed {
+				return false
+			}
+		}
+	}
 	for _, channel := range channels {
 		channel := channel
 		event := event
@@ -239,6 +251,10 @@ func (h *handler) dispatchAgentStatusNotification(store agentStore, transition n
 		Detail:         transition.Detail,
 	}
 	h.dispatchNotificationEvent(store, event)
+}
+
+func shouldClaimStatusNotification(event notificationEvent) bool {
+	return strings.TrimSpace(event.NodeID) != "" && strings.TrimSpace(event.Status) != "" && strings.TrimSpace(event.PreviousStatus) != ""
 }
 
 func sanitizeNotificationDeliveryError(err error) string {
@@ -400,4 +416,70 @@ func (s *SQLiteStore) NotificationEventDelay(ctx context.Context, eventType, nod
 		seconds = durationSec.Int64
 	}
 	return time.Duration(seconds) * time.Second, true, nil
+}
+
+func (s *SQLiteStore) ClaimStatusNotification(ctx context.Context, event notificationEvent) (bool, error) {
+	eventType := strings.TrimSpace(event.EventType)
+	nodeID := strings.TrimSpace(event.NodeID)
+	status := strings.TrimSpace(event.Status)
+	previousStatus := strings.TrimSpace(event.PreviousStatus)
+	if eventType == "" || nodeID == "" || status == "" || previousStatus == status {
+		return false, nil
+	}
+	mark := activeStatusNotificationMark(status)
+	clearMark := recoveredStatusNotificationMark(status)
+	if status == "online" && previousStatus != "" {
+		mark = recoveredStatusNotificationMark(previousStatus)
+		clearMark = activeStatusNotificationMark(previousStatus)
+	}
+	if mark == "" {
+		return false, nil
+	}
+
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return false, err
+	}
+	defer rollbackUnlessCommitted(tx)
+
+	result, err := tx.ExecContext(ctx, `
+		INSERT OR IGNORE INTO notification_event_marks (event_type, node_id, mark, created_at)
+		VALUES (?, ?, ?, ?)
+	`, eventType, nodeID, mark, time.Now().UTC().Unix())
+	if err != nil {
+		return false, err
+	}
+	claimed, err := result.RowsAffected()
+	if err != nil {
+		return false, err
+	}
+	if claimed > 0 && clearMark != "" {
+		if _, err := tx.ExecContext(ctx, `
+			DELETE FROM notification_event_marks
+			WHERE event_type = ? AND node_id = ? AND mark = ?
+		`, eventType, nodeID, clearMark); err != nil {
+			return false, err
+		}
+	}
+	if err := tx.Commit(); err != nil {
+		return false, err
+	}
+	tx = nil
+	return claimed > 0, nil
+}
+
+func activeStatusNotificationMark(status string) string {
+	status = strings.TrimSpace(status)
+	if status == "" || status == "online" {
+		return ""
+	}
+	return "status-active:" + status
+}
+
+func recoveredStatusNotificationMark(status string) string {
+	status = strings.TrimSpace(status)
+	if status == "" || status == "online" {
+		return ""
+	}
+	return "status-recovered:" + status
 }
