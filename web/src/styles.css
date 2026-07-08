@@ -393,6 +393,34 @@ svg { display: block; }
 }
 
 .admin-container { display: flex; flex-direction: column; gap: 24px; }
+.kulin-shell[data-background='on'] .admin-container {
+  --secondary: rgba(255, 255, 255, 0.42);
+  --surface: rgba(255, 255, 255, 0.62);
+  --surface-strong: rgba(255, 255, 255, 0.72);
+  --surface-soft: rgba(255, 255, 255, 0.38);
+  --field-bg: rgba(255, 255, 255, 0.58);
+  --control-bg: rgba(255, 255, 255, 0.62);
+  --zeno-card-highlight: rgba(255, 255, 255, 0.58);
+}
+.kulin-shell[data-theme="dark"][data-background='on'] .admin-container {
+  --secondary: rgba(15, 23, 42, 0.34);
+  --surface: rgba(15, 23, 42, 0.42);
+  --surface-strong: rgba(15, 23, 42, 0.52);
+  --surface-soft: rgba(15, 23, 42, 0.26);
+  --field-bg: rgba(15, 23, 42, 0.34);
+  --control-bg: rgba(15, 23, 42, 0.38);
+  --zeno-card-highlight: rgba(255, 255, 255, 0.12);
+}
+.kulin-shell[data-background='on'] .admin-container .home-top-card.admin-panel,
+.kulin-shell[data-background='on'] .admin-container .admin-login-card,
+.kulin-shell[data-background='on'] .admin-container .admin-list,
+.kulin-shell[data-background='on'] .admin-container .admin-form-section,
+.kulin-shell[data-background='on'] .admin-container .admin-segmented-options,
+.kulin-shell[data-background='on'] .admin-container .admin-date-option-panel,
+.kulin-shell[data-background='on'] .admin-container .admin-install-platforms {
+  -webkit-backdrop-filter: blur(18px) saturate(1.14);
+  backdrop-filter: blur(18px) saturate(1.14);
+}
 .admin-panel { min-height: 360px; }
 .admin-container,
 .admin-container .home-top-card.admin-panel { width: 100%; }
