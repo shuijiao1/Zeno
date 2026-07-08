@@ -187,7 +187,8 @@ describe('state history layout', () => {
     expect(styles).toContain('.detail-fact-strip')
     expect(styles).toContain('.detail-status-pill')
     expect(styles).toContain('.detail-fact.is-wide')
-    expect(styles).toContain('border-top: 0')
+    expect(styles).toContain('border-top: 1px solid color-mix(in srgb, var(--border) 82%, transparent)')
+    expect(styles).not.toContain('.detail-hero,\n.latency-panel,')
     expect(styles).not.toContain('.detail-info-card')
   })
 

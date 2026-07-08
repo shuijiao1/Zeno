@@ -284,7 +284,6 @@ svg { display: block; }
 }
 .home-top-card > * { position: relative; z-index: 1; }
 .kulin-node-card,
-.detail-hero,
 .latency-panel,
 .resource-card,
 .admin-login-card,
@@ -1881,7 +1880,7 @@ svg { display: block; }
   flex-direction: column;
   gap: 12px;
   padding: 14px 2px 0;
-  border-top: 0;
+  border-top: 1px solid color-mix(in srgb, var(--border) 82%, transparent);
   background: transparent;
   box-shadow: none;
 }
