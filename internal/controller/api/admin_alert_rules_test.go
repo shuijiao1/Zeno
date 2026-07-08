@@ -69,8 +69,8 @@ func TestAdminAlertRulesListAndPatchWithoutSensitiveLeak(t *testing.T) {
 		rulesByID[rule.ID] = rule
 	}
 	cpuRule, ok := rulesByID["cpu_high"]
-	if !ok || cpuRule.Name != "CPU 使用率" || cpuRule.Category != "resource" || cpuRule.Metric != "cpu_percent" || cpuRule.Comparator != ">=" || cpuRule.Threshold != 90 || cpuRule.ThresholdUnit != "%" || cpuRule.DurationSec != 30 || !cpuRule.Enabled || cpuRule.NotificationEventType != "probe_unhealthy" || cpuRule.NotificationLabel != "异常" {
-		t.Fatalf("cpu_high rule = %+v, want enabled resource CPU rule mapped to probe_unhealthy notification with 30s duration", cpuRule)
+	if !ok || cpuRule.Name != "CPU 使用率" || cpuRule.Category != "resource" || cpuRule.Metric != "cpu_percent" || cpuRule.Comparator != ">=" || cpuRule.Threshold != 90 || cpuRule.ThresholdUnit != "%" || cpuRule.DurationSec != 60 || !cpuRule.Enabled || cpuRule.NotificationEventType != "probe_unhealthy" || cpuRule.NotificationLabel != "异常" {
+		t.Fatalf("cpu_high rule = %+v, want enabled resource CPU rule mapped to probe_unhealthy notification with 60s window", cpuRule)
 	}
 	if cpuRule.Description != "" {
 		t.Fatalf("cpu_high description = %q, want empty", cpuRule.Description)
@@ -78,9 +78,10 @@ func TestAdminAlertRulesListAndPatchWithoutSensitiveLeak(t *testing.T) {
 	if rulesByID["node_offline"].Name != "离线通知" || rulesByID["node_offline"].NotificationEventType != "node_offline" {
 		t.Fatalf("offline rule should be the only liveness notification: %+v", rulesByID["node_offline"])
 	}
-	for _, ruleID := range []string{"cpu_high", "memory_high", "disk_high", "node_offline"} {
-		if rulesByID[ruleID].DurationSec != 30 {
-			t.Fatalf("%s duration = %d, want default 30s", ruleID, rulesByID[ruleID].DurationSec)
+	defaultDurations := map[string]int{"cpu_high": 60, "memory_high": 60, "disk_high": 60, "node_offline": 30}
+	for ruleID, wantDuration := range defaultDurations {
+		if rulesByID[ruleID].DurationSec != wantDuration {
+			t.Fatalf("%s duration = %d, want default %ds", ruleID, rulesByID[ruleID].DurationSec, wantDuration)
 		}
 	}
 	renewalRule := rulesByID["renewal_due"]
@@ -124,6 +125,9 @@ func TestDefaultAlertRuleDurationMigration(t *testing.T) {
 	}
 	defer store.Close()
 	ctx := context.Background()
+	if _, err := store.db.ExecContext(ctx, `DELETE FROM settings WHERE key = 'alert_default_durations_v2_migrated'`); err != nil {
+		t.Fatalf("clear duration migration marker: %v", err)
+	}
 	oldDurations := map[string]int{
 		"cpu_high":     300,
 		"memory_high":  300,
@@ -138,14 +142,59 @@ func TestDefaultAlertRuleDurationMigration(t *testing.T) {
 	if err := store.ensureDefaultAlertRules(ctx); err != nil {
 		t.Fatalf("ensure default alert rules: %v", err)
 	}
+	wantDurations := map[string]int{"cpu_high": 60, "memory_high": 60, "disk_high": 60, "node_offline": 30}
 	for ruleID := range oldDurations {
 		var duration int
 		if err := store.db.QueryRowContext(ctx, `SELECT duration_sec FROM alert_rules WHERE id = ?`, ruleID).Scan(&duration); err != nil {
 			t.Fatalf("read duration for %s: %v", ruleID, err)
 		}
-		if duration != 30 {
-			t.Fatalf("%s duration = %d, want migrated default 30s", ruleID, duration)
+		if duration != wantDurations[ruleID] {
+			t.Fatalf("%s duration = %d, want migrated default %ds", ruleID, duration, wantDurations[ruleID])
 		}
+	}
+}
+
+func TestResourceAlertRulesUseDurationWindowAverage(t *testing.T) {
+	store, err := OpenSQLiteStore(filepath.Join(t.TempDir(), "zeno.db"))
+	if err != nil {
+		t.Fatalf("open sqlite store: %v", err)
+	}
+	defer store.Close()
+	ctx := context.Background()
+	if _, err := store.CreateAdminNode(ctx, AdminNodeCreateRequest{ID: "hytron", DisplayName: "Hytron", CountryCode: "HK"}); err != nil {
+		t.Fatalf("create node: %v", err)
+	}
+
+	base := time.Now().UTC().Truncate(time.Second)
+	record := func(ts time.Time, cpu float64) notificationStatusTransition {
+		t.Helper()
+		state := AgentStateRequest{
+			TS:               ts.Unix(),
+			CPUPercent:       cpu,
+			MemoryUsedBytes:  512,
+			MemoryTotalBytes: 2048,
+			DiskUsedBytes:    1024,
+			DiskTotalBytes:   4096,
+		}
+		if err := store.InsertAgentState(ctx, "hytron", state); err != nil {
+			t.Fatalf("insert state at %s: %v", ts, err)
+		}
+		transition, err := store.RecordAgentStateAlertRuleTransition(ctx, "hytron", ts, state)
+		if err != nil {
+			t.Fatalf("record alert transition at %s: %v", ts, err)
+		}
+		return transition
+	}
+
+	record(base.Add(-60*time.Second), 50)
+	currentHighButAverageLow := record(base, 100)
+	if currentHighButAverageLow.Current.Status != "online" {
+		t.Fatalf("current high status = %+v, want online while 60s CPU average is below threshold", currentHighButAverageLow.Current)
+	}
+	record(base.Add(30*time.Second), 100)
+	windowHigh := record(base.Add(60*time.Second), 100)
+	if windowHigh.Current.Status != "warning" {
+		t.Fatalf("window high status = %+v, want warning when 60s CPU average exceeds threshold", windowHigh.Current)
 	}
 }
 

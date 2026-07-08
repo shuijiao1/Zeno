@@ -123,7 +123,7 @@ const alertRules: AdminAlertRule[] = [
     comparator: '>=',
     threshold: 90,
     thresholdUnit: '%',
-    durationSec: 300,
+    durationSec: 60,
     enabled: true,
     notificationEventType: 'probe_unhealthy',
     notificationLabel: '异常',
@@ -140,7 +140,7 @@ const alertRules: AdminAlertRule[] = [
     comparator: '>=',
     threshold: 180,
     thresholdUnit: 's',
-    durationSec: 180,
+    durationSec: 30,
     enabled: true,
     notificationEventType: 'node_offline',
     notificationLabel: '离线',
@@ -410,7 +410,9 @@ describe('AdminDashboard', () => {
     expect(html).toContain('添加通知渠道')
     expect(html).toContain('aria-label="编辑通知渠道 Zeno Telegram"')
     expect(html).toContain('aria-label="删除通知渠道 Zeno Telegram"')
-    expect(html).toContain('测试发送')
+    expect(html).not.toContain('停用渠道')
+    expect(html).not.toContain('启用渠道')
+    expect(html).not.toContain('<button class="admin-row-action" type="button">测试发送</button>')
     expect(html).not.toContain('zeno-telegram')
     expect(html).not.toContain('7579942307')
     expect(html).not.toContain('telegram-bot-secret')

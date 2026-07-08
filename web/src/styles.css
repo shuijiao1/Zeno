@@ -278,9 +278,10 @@ svg { display: block; }
 .home-top-card .nav-icon-button.is-solid { background: var(--blue); color: #fff; }
 .home-top-card .home-summary {
   display: grid;
-  grid-template-columns: minmax(118px, .82fr) repeat(2, minmax(160px, 1fr));
+  grid-template-columns: minmax(116px, 136px) repeat(2, minmax(142px, 164px));
+  justify-content: center;
   align-items: center;
-  gap: 7px;
+  gap: 14px;
   padding: 14px 0 0;
   border-top: 1px solid color-mix(in srgb, var(--border) 82%, transparent);
 }
@@ -321,7 +322,7 @@ svg { display: block; }
   white-space: nowrap;
   color: var(--foreground);
   background: transparent;
-  font-size: clamp(10.5px, .94vw, 12px);
+  font-size: clamp(13px, 1.08vw, 14px);
   line-height: 1;
   font-weight: 500;
   letter-spacing: 0;
@@ -332,8 +333,8 @@ svg { display: block; }
   display: grid;
   grid-template-columns: 1fr;
   align-content: center;
-  gap: 6px;
-  padding: 7px 10px;
+  gap: 7px;
+  padding: 8px 16px;
 }
 .home-summary__tile--traffic { --summary-accent: var(--blue); }
 .home-summary__tile--rates { --summary-accent: var(--purple); }
@@ -342,10 +343,10 @@ svg { display: block; }
   min-width: 0;
   min-height: 14px;
   display: grid;
-  grid-template-columns: auto minmax(0, 1fr);
+  grid-template-columns: auto auto;
   align-items: center;
   justify-content: center;
-  gap: 10px;
+  gap: 12px;
 }
 .home-summary__metric--send,
 .home-summary__metric--upload-rate { --summary-accent: var(--blue); }
@@ -364,7 +365,7 @@ svg { display: block; }
   margin: 0;
   display: inline-flex;
   align-items: center;
-  justify-content: flex-end;
+  justify-content: flex-start;
   gap: 4px;
   min-width: 0;
   overflow: hidden;
@@ -373,13 +374,13 @@ svg { display: block; }
   font-weight: 500;
   line-height: 1;
   font-variant-numeric: tabular-nums;
-  text-align: right;
+  text-align: left;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.home-summary__metric--rate dd { justify-self: end; justify-content: flex-end; gap: 5px; font-weight: 500; }
-.home-summary__rate-value { display: inline-flex; align-items: baseline; justify-content: flex-end; gap: 0; text-align: right; font-variant-numeric: tabular-nums; }
-.home-summary__rate-value > span:first-child { text-align: right; }
+.home-summary__metric--rate dd { justify-self: start; justify-content: flex-start; gap: 5px; font-weight: 500; }
+.home-summary__rate-value { display: inline-flex; align-items: baseline; justify-content: flex-start; gap: 0; text-align: left; font-variant-numeric: tabular-nums; }
+.home-summary__rate-value > span:first-child { text-align: left; }
 .home-summary__rate-gap { display: inline-block; width: .25em; flex: none; }
 .home-summary__rate-unit { color: color-mix(in srgb, var(--summary-accent) 74%, var(--muted)); text-align: right; font-size: .92em; }
 .home-summary__metric svg { width: 12px; height: 12px; fill: currentColor; }
@@ -2309,13 +2310,13 @@ svg { display: block; }
     font-size: 12px;
   }
   .server-card-list { margin-top: 18px; gap: 14px; }
-  .home-top-card .home-summary { grid-template-columns: repeat(2, minmax(0, 1fr)); padding: 10px 0 0; gap: 6px; }
+  .home-top-card .home-summary { grid-template-columns: repeat(2, minmax(0, 1fr)); padding: 10px 0 0; gap: 8px; }
   .home-summary__status-line { grid-column: 1 / -1; width: 100%; min-height: 30px; justify-content: center; padding: 0 9px; }
   .home-summary__status-line::before { width: 8px; height: 8px; }
-  .home-summary__status-line strong { font-size: 11px; }
+  .home-summary__status-line strong { font-size: 12.5px; }
   .home-summary__tile--traffic,
   .home-summary__tile--rates { width: 100%; min-height: 82px; gap: 6px; }
-  .home-summary__metric { min-height: 30px; grid-template-columns: auto minmax(0, 1fr); gap: 8px; padding: 0 9px; border-radius: var(--radius-field); }
+  .home-summary__metric { min-height: 30px; grid-template-columns: auto auto; justify-content: center; gap: 10px; padding: 0 12px; border-radius: var(--radius-field); }
   .home-summary__metric dt { font-size: 10px; }
   .home-summary__metric dd { font-size: 11px; }
   .home-summary__metric svg { width: 11px; height: 11px; }

@@ -22,7 +22,10 @@ func (s *SQLiteStore) RecordAgentStateAlertRuleTransition(ctx context.Context, n
 	if err != nil {
 		return notificationStatusTransition{}, err
 	}
-	values := stateAlertMetricValues(state)
+	values, err := stateAlertMetricValues(ctx, tx, nodeID, state, rules)
+	if err != nil {
+		return notificationStatusTransition{}, err
+	}
 	_, hadRelevantActive, err := setAlertRuleStates(ctx, tx, nodeID, rules, values)
 	if err != nil {
 		return notificationStatusTransition{}, err
@@ -132,7 +135,7 @@ func aggregateAlertRuleStatus(ctx context.Context, tx *sql.Tx, nodeID string) (s
 		  AND ars.active = 1
 		  AND ar.enabled = 1
 		  AND ar.notification_event_type = 'probe_unhealthy'
-		  AND (ar.duration_sec <= 0 OR (ars.first_seen_at IS NOT NULL AND ars.first_seen_at <= ? - ar.duration_sec))
+		  AND (ar.category = 'resource' OR ar.duration_sec <= 0 OR (ars.first_seen_at IS NOT NULL AND ars.first_seen_at <= ? - ar.duration_sec))
 		  AND (
 		    NOT EXISTS (SELECT 1 FROM alert_rule_node_scopes scope_all WHERE scope_all.rule_id = ar.id)
 		    OR EXISTS (SELECT 1 FROM alert_rule_node_scopes scope_node WHERE scope_node.rule_id = ar.id AND scope_node.node_id = ?)
@@ -179,12 +182,59 @@ func updateNodeStatusForAlertRules(ctx context.Context, tx *sql.Tx, nodeID strin
 	return notificationStatusTransition{Previous: previous, Current: current}, nil
 }
 
-func stateAlertMetricValues(state AgentStateRequest) map[string]*float64 {
-	return map[string]*float64{
+func stateAlertMetricValues(ctx context.Context, tx *sql.Tx, nodeID string, state AgentStateRequest, rules []AdminAlertRule) (map[string]*float64, error) {
+	values := map[string]*float64{
 		"cpu_percent":    floatValuePtr(state.CPUPercent),
 		"memory_percent": percentValuePtr(state.MemoryUsedBytes, state.MemoryTotalBytes),
 		"disk_percent":   percentValuePtr(state.DiskUsedBytes, state.DiskTotalBytes),
 	}
+	for _, rule := range rules {
+		if rule.Category != "resource" || rule.DurationSec <= 0 {
+			continue
+		}
+		average, err := averageStateAlertMetricValue(ctx, tx, nodeID, state.TS, rule)
+		if err != nil {
+			return nil, err
+		}
+		values[rule.Metric] = average
+	}
+	return values, nil
+}
+
+func averageStateAlertMetricValue(ctx context.Context, tx *sql.Tx, nodeID string, sampleTS int64, rule AdminAlertRule) (*float64, error) {
+	if sampleTS <= 0 || rule.DurationSec <= 0 {
+		return nil, nil
+	}
+	cutoff := sampleTS - int64(rule.DurationSec)
+	var query string
+	switch rule.Metric {
+	case "cpu_percent":
+		query = `SELECT AVG(cpu_percent), MIN(ts), COUNT(*) FROM state_samples WHERE node_id = ? AND ts >= ? AND ts <= ? AND cpu_percent IS NOT NULL`
+	case "memory_percent":
+		query = `SELECT AVG(memory_used_bytes * 100.0 / memory_total_bytes), MIN(ts), COUNT(*) FROM state_samples WHERE node_id = ? AND ts >= ? AND ts <= ? AND memory_total_bytes > 0 AND memory_used_bytes IS NOT NULL`
+	case "disk_percent":
+		query = `SELECT AVG(disk_used_bytes * 100.0 / disk_total_bytes), MIN(ts), COUNT(*) FROM state_samples WHERE node_id = ? AND ts >= ? AND ts <= ? AND disk_total_bytes > 0 AND disk_used_bytes IS NOT NULL`
+	default:
+		return nil, nil
+	}
+	var avg sql.NullFloat64
+	var minTS sql.NullInt64
+	var count int
+	if err := tx.QueryRowContext(ctx, query, nodeID, cutoff, sampleTS).Scan(&avg, &minTS, &count); err != nil {
+		return nil, err
+	}
+	if !avg.Valid || !minTS.Valid || count == 0 {
+		return nil, nil
+	}
+	coverageSlack := int64(5)
+	if rule.DurationSec < 5 {
+		coverageSlack = 0
+	}
+	if minTS.Int64 > cutoff+coverageSlack {
+		return nil, nil
+	}
+	value := avg.Float64
+	return &value, nil
 }
 
 func compareAlertRuleValue(value float64, comparator string, threshold float64) bool {

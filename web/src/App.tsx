@@ -2351,16 +2351,19 @@ function AdminAlertRuleAddModal({ rules, nodes, onAdd, onClose }: { rules: Admin
 function AdminAlertRuleEditModal({ rule, nodes, onUpdate, onClose }: { rule: AdminAlertRule; nodes: AdminNode[]; onUpdate: (ruleId: string, input: AdminAlertRuleUpdateInput) => void; onClose: () => void }) {
   const initialScopeNodeIds = rule.scopeNodeIds.length === 0 ? nodes.map((node) => node.id) : rule.scopeNodeIds
   const isRenewalRule = rule.metric === 'expiry_days'
+  const isResourceRule = rule.category === 'resource' && rule.thresholdUnit === '%'
   const supportsDuration = !isRenewalRule
   const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
     const formData = new FormData(event.currentTarget)
     const scopeNodeIds = nodes.filter((node) => formData.get(`rule-scope-${node.id}`) === 'on').map((node) => node.id)
     const renewalThreshold = isRenewalRule ? parseRenewalThreshold(String(formData.get('rule-renewal-days') ?? '')) : null
+    const resourceThreshold = isResourceRule ? parsePercentage(String(formData.get('rule-threshold-percent') ?? '')) : null
     const durationSec = supportsDuration ? parseNonNegativeInt(String(formData.get('rule-duration-sec') ?? '')) : null
     onUpdate(rule.id, {
       enabled: formData.get('rule-enabled') === 'on',
       ...(isRenewalRule && renewalThreshold !== null ? { threshold: renewalThreshold } : {}),
+      ...(isResourceRule && resourceThreshold !== null ? { threshold: resourceThreshold } : {}),
       ...(supportsDuration && durationSec !== null ? { durationSec } : {}),
       scopeNodeIds,
     })
@@ -2385,8 +2388,14 @@ function AdminAlertRuleEditModal({ rule, nodes, onUpdate, onClose }: { rule: Adm
             )}
             {supportsDuration && (
               <label>
-                <span>持续 s</span>
+                <span>{isResourceRule ? '统计窗口 s' : '确认时间 s'}</span>
                 <input name="rule-duration-sec" type="number" min="0" defaultValue={rule.durationSec} />
+              </label>
+            )}
+            {isResourceRule && (
+              <label>
+                <span>平均超过 %</span>
+                <input name="rule-threshold-percent" type="number" min="0" max="100" step="0.1" defaultValue={rule.threshold} />
               </label>
             )}
           </div>
@@ -2427,7 +2436,7 @@ function AdminNotificationsSection({ channels, rules, nodes, onChannelCreate, on
       <section className="admin-notification-block" aria-label="通知渠道">
         <h4>通知渠道</h4>
         {channels.length === 0 && <div className="admin-state-card">还没有通知渠道。</div>}
-        {channels.length > 0 && <AdminNotificationChannelList channels={channels} onUpdate={onChannelUpdate} onDelete={onChannelDelete} onTest={onChannelTest} onEdit={setEditingChannel} />}
+        {channels.length > 0 && <AdminNotificationChannelList channels={channels} onDelete={onChannelDelete} onEdit={setEditingChannel} />}
       </section>
 
       <AdminAlertRulesSection rules={rules} nodes={nodes} onUpdate={onRuleUpdate} />
@@ -2445,6 +2454,7 @@ function AdminNotificationsSection({ channels, rules, nodes, onChannelCreate, on
         <AdminNotificationChannelEditModal
           channel={editingChannel}
           onClose={() => setEditingChannel(null)}
+          onTest={onChannelTest}
           onUpdate={(channelId, input) => {
             onChannelUpdate(channelId, input)
             setEditingChannel(null)
@@ -2455,7 +2465,7 @@ function AdminNotificationsSection({ channels, rules, nodes, onChannelCreate, on
   )
 }
 
-function AdminNotificationChannelList({ channels, onUpdate, onDelete, onTest, onEdit }: { channels: AdminNotificationChannel[]; onUpdate: (channelId: string, input: AdminNotificationChannelUpdateInput) => void; onDelete: (channelId: string) => void; onTest: (channelId: string) => void; onEdit: (channel: AdminNotificationChannel) => void }) {
+function AdminNotificationChannelList({ channels, onDelete, onEdit }: { channels: AdminNotificationChannel[]; onDelete: (channelId: string) => void; onEdit: (channel: AdminNotificationChannel) => void }) {
   const confirmDelete = (channel: AdminNotificationChannel) => {
     const ok = typeof window === 'undefined' ? true : window.confirm(`确认删除通知渠道「${channel.name}」？`)
     if (ok) onDelete(channel.id)
@@ -2475,11 +2485,7 @@ function AdminNotificationChannelList({ channels, onUpdate, onDelete, onTest, on
           </div>
           <AdminStatusBadge label={channel.enabled ? '启用中' : '已停用'} status={channel.enabled ? 'online' : 'disabled'} dataLabel="状态" />
           <div className="admin-row-actions admin-icon-actions">
-            <button className="admin-row-action" type="button" onClick={() => onTest(channel.id)}>测试发送</button>
             <button className="admin-row-action is-icon" type="button" aria-label={`编辑通知渠道 ${channel.name}`} title="编辑渠道" onClick={() => onEdit(channel)}><EditActionIcon /><span className="sr-only">编辑渠道</span></button>
-            <button className="admin-row-action" type="button" onClick={() => onUpdate(channel.id, { enabled: !channel.enabled })}>
-              {channel.enabled ? '停用渠道' : '启用渠道'}
-            </button>
             <button className="admin-row-action is-icon is-danger" type="button" aria-label={`删除通知渠道 ${channel.name}`} title="删除渠道" onClick={() => confirmDelete(channel)}><TrashActionIcon /><span className="sr-only">删除渠道</span></button>
           </div>
         </article>
@@ -2492,7 +2498,7 @@ function AdminStatusBadge({ label, status, dataLabel }: { label: string; status:
   return <span data-label={dataLabel} className={`admin-node-status admin-status-indicator status-${status}`}><i className="admin-status-dot" aria-hidden="true" />{label}</span>
 }
 
-function AdminNotificationChannelEditModal({ channel, onUpdate, onClose }: { channel: AdminNotificationChannel; onUpdate: (channelId: string, input: AdminNotificationChannelUpdateInput) => void; onClose: () => void }) {
+function AdminNotificationChannelEditModal({ channel, onUpdate, onTest, onClose }: { channel: AdminNotificationChannel; onUpdate: (channelId: string, input: AdminNotificationChannelUpdateInput) => void; onTest: (channelId: string) => void; onClose: () => void }) {
   const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
     const formData = new FormData(event.currentTarget)
@@ -2532,6 +2538,7 @@ function AdminNotificationChannelEditModal({ channel, onUpdate, onClose }: { cha
           </div>
         </AdminFormSection>
         <div className="admin-modal-actions">
+          <button type="button" onClick={() => onTest(channel.id)}>测试发送</button>
           <button type="submit">保存通知渠道</button>
         </div>
       </form>
@@ -3043,7 +3050,16 @@ function formatAlertRuleScope(rule: AdminAlertRule, nodes: AdminNode[]): string 
 
 function formatAlertRuleNote(rule: AdminAlertRule): string {
   if (rule.metric === 'expiry_days') return ''
-  return rule.durationSec <= 0 ? '立即通知' : `持续 ${formatDurationCompact(rule.durationSec)}`
+  if (rule.category === 'resource' && rule.thresholdUnit === '%') {
+    const windowLabel = rule.durationSec <= 0 ? '当前值' : `${formatDurationCompact(rule.durationSec)}平均`
+    return `${windowLabel} ≥ ${formatPercentThreshold(rule.threshold)}%`
+  }
+  return rule.durationSec <= 0 ? '立即通知' : `${formatDurationCompact(rule.durationSec)}确认`
+}
+
+function formatPercentThreshold(value: number): string {
+  if (Number.isInteger(value)) return String(value)
+  return String(Math.round(value * 10) / 10)
 }
 
 function formatDurationCompact(seconds: number): string {
@@ -3083,6 +3099,14 @@ function parseNonNegativeInt(value: string): number | null {
   if (trimmed === '') return null
   const parsed = Number(trimmed)
   if (!Number.isInteger(parsed) || parsed < 0) return null
+  return parsed
+}
+
+function parsePercentage(value: string): number | null {
+  const trimmed = value.trim()
+  if (trimmed === '') return null
+  const parsed = Number(trimmed)
+  if (!Number.isFinite(parsed) || parsed < 0 || parsed > 100) return null
   return parsed
 }
 

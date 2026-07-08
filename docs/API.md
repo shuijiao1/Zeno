@@ -676,7 +676,7 @@ HTTP GET 示例：
 
 Controller 会在 Agent 上报时实际使用这些规则：
 
-- `/api/agent/v1/state` 会按启用的资源规则评估 `cpu_percent`、内存使用率、磁盘使用率，超过阈值时把节点公共状态置为 `warning` 并进入 `probe_unhealthy` 通知链路。
+- `/api/agent/v1/state` 会按启用的资源规则评估 `cpu_percent`、内存使用率、磁盘使用率。资源规则的 `duration_sec` 表示统计窗口，默认按 60 秒平均值超过阈值时把节点公共状态置为 `warning` 并进入 `probe_unhealthy` 通知链路。
 - `/api/agent/v1/probe-results` 只写入探针历史，不再通过延迟或丢包阈值改变节点公共状态。
 - 资源规则命中状态会记录在 Controller 内部的 `alert_rule_states` 表，用来避免某一类健康上报误清另一类仍活跃的异常；`alert_rule_states` 只作为 Controller 内部命中状态存储。
 - 如果规则配置了 `scope_node_ids`，Agent 上报、规则命中和通知发送都会只对这些服务器生效；空数组表示全部服务器。离线规则的范围用于通知资格，公共在线/离线状态仍按心跳新鲜度计算，避免隐藏失联服务器。
@@ -693,7 +693,7 @@ Controller 会在 Agent 上报时实际使用这些规则：
       "comparator": ">=",
       "threshold": 90,
       "threshold_unit": "%",
-      "duration_sec": 30,
+      "duration_sec": 60,
       "enabled": true,
       "notification_event_type": "probe_unhealthy",
       "notification_label": "异常",
@@ -725,7 +725,7 @@ Controller 会在 Agent 上报时实际使用这些规则：
 
 ### PATCH /api/admin/v1/alert-rules/{rule_id}
 
-部分更新通知类型规则的安全可调字段。当前允许调整启用状态、阈值、持续时间和作用服务器范围；启用状态在 Admin 中表现为添加 / 移除通知类型。规则 id、名称、指标、比较符、通知事件类型等结构性字段由 seed/代码控制。`scope_node_ids` 省略表示保持原范围不变，空数组表示作用于全部服务器，非空数组表示只作用于这些服务器；数组里的 node id 必须存在且不能重复。
+部分更新通知类型规则的安全可调字段。当前允许调整启用状态、阈值、统计窗口/确认时间和作用服务器范围；启用状态在 Admin 中表现为添加 / 移除通知类型。规则 id、名称、指标、比较符、通知事件类型等结构性字段由 seed/代码控制。`scope_node_ids` 省略表示保持原范围不变，空数组表示作用于全部服务器，非空数组表示只作用于这些服务器；数组里的 node id 必须存在且不能重复。
 
 请求：
 
@@ -733,7 +733,7 @@ Controller 会在 Agent 上报时实际使用这些规则：
 {
   "enabled": true,
   "threshold": 85,
-  "duration_sec": 30,
+  "duration_sec": 60,
   "scope_node_ids": ["hytron", "backup"]
 }
 ```
@@ -750,11 +750,11 @@ Controller 会在 Agent 上报时实际使用这些规则：
     "comparator": ">=",
     "threshold": 85,
     "threshold_unit": "%",
-    "duration_sec": 30,
+    "duration_sec": 60,
     "enabled": true,
     "notification_event_type": "probe_unhealthy",
     "notification_label": "异常",
-    "description": "CPU 使用率连续高于阈值时标记为异常。",
+    "description": "",
     "scope_node_ids": ["hytron", "backup"],
     "created_at": "2026-07-03T00:00:00Z",
     "updated_at": "2026-07-03T00:05:00Z"

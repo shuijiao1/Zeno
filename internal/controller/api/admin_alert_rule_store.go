@@ -16,7 +16,7 @@ var defaultAdminAlertRules = []AdminAlertRule{
 		Comparator:            ">=",
 		Threshold:             90,
 		ThresholdUnit:         "%",
-		DurationSec:           30,
+		DurationSec:           60,
 		Enabled:               true,
 		NotificationEventType: "probe_unhealthy",
 	},
@@ -28,7 +28,7 @@ var defaultAdminAlertRules = []AdminAlertRule{
 		Comparator:            ">=",
 		Threshold:             90,
 		ThresholdUnit:         "%",
-		DurationSec:           30,
+		DurationSec:           60,
 		Enabled:               true,
 		NotificationEventType: "probe_unhealthy",
 	},
@@ -40,7 +40,7 @@ var defaultAdminAlertRules = []AdminAlertRule{
 		Comparator:            ">=",
 		Threshold:             90,
 		ThresholdUnit:         "%",
-		DurationSec:           30,
+		DurationSec:           60,
 		Enabled:               true,
 		NotificationEventType: "probe_unhealthy",
 	},
@@ -109,25 +109,50 @@ func (s *SQLiteStore) ensureDefaultAlertRules(ctx context.Context) error {
 
 func (s *SQLiteStore) migrateDefaultAlertRuleDurations(ctx context.Context) error {
 	now := time.Now().UTC().Unix()
+	const migrationKey = "alert_default_durations_v2_migrated"
+	var marker string
+	migrated := true
+	if err := s.db.QueryRowContext(ctx, `SELECT value FROM settings WHERE key = ?`, migrationKey).Scan(&marker); err != nil {
+		if err != sql.ErrNoRows {
+			return err
+		}
+		migrated = false
+	}
+	if migrated {
+		return nil
+	}
+	resourceOldSecs := []int{30, 300}
+	diskOldSecs := []int{30, 300, 600}
 	updates := []struct {
 		id      string
 		oldSecs []int
 	}{
-		{id: "cpu_high", oldSecs: []int{300}},
-		{id: "memory_high", oldSecs: []int{300}},
-		{id: "disk_high", oldSecs: []int{600}},
+		{id: "cpu_high", oldSecs: resourceOldSecs},
+		{id: "memory_high", oldSecs: resourceOldSecs},
+		{id: "disk_high", oldSecs: diskOldSecs},
 		{id: "node_offline", oldSecs: []int{180}},
 	}
 	for _, update := range updates {
+		newSec := 30
+		if update.id == "cpu_high" || update.id == "memory_high" || update.id == "disk_high" {
+			newSec = 60
+		}
 		for _, oldSec := range update.oldSecs {
 			if _, err := s.db.ExecContext(ctx, `
 				UPDATE alert_rules
-				SET duration_sec = 30, updated_at = ?
+				SET duration_sec = ?, updated_at = ?
 				WHERE id = ? AND duration_sec = ?
-			`, now, update.id, oldSec); err != nil {
+			`, newSec, now, update.id, oldSec); err != nil {
 				return err
 			}
 		}
+	}
+	if _, err := s.db.ExecContext(ctx, `
+			INSERT INTO settings (key, value, updated_at)
+			VALUES (?, '1', ?)
+			ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at
+		`, migrationKey, now); err != nil {
+		return err
 	}
 	return nil
 }

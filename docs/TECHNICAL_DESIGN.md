@@ -155,7 +155,7 @@ Public summary 会返回 `services`，按后台探针目标显示顺序列出已
 
 - `enabled`。
 - `threshold` / `threshold_unit`。
-- `duration_sec`。
+- `duration_sec`：资源规则表示统计窗口；离线规则表示确认时间。
 - `scope_node_ids`：为空表示全部服务器；非空时只作用于指定服务器。
 
 `alert_rule_states` 用于 Controller 内部合并不同规则命中状态，避免某一类健康上报误清另一类仍活跃状态。
