@@ -26,17 +26,17 @@ func (s *SQLiteStore) RecordAgentHeartbeatTransition(ctx context.Context, nodeID
 	var previous notificationNodeSnapshot
 	var storedStatus string
 	if err := tx.QueryRowContext(ctx, `
-		SELECT id, display_name, status
+		SELECT id, display_name, status, COALESCE(public_ipv4, '')
 		FROM nodes
 		WHERE id = ? AND disabled = 0
-	`, nodeID).Scan(&previous.ID, &previous.DisplayName, &storedStatus); err != nil {
+	`, nodeID).Scan(&previous.ID, &previous.DisplayName, &storedStatus, &previous.PublicIPv4); err != nil {
 		if err == sql.ErrNoRows {
 			return notificationStatusTransition{}, errNodeNotFound
 		}
 		return notificationStatusTransition{}, err
 	}
 	previous.Status = storedNodeStatusForNotification(storedStatus)
-	current := notificationNodeSnapshot{ID: previous.ID, DisplayName: previous.DisplayName}
+	current := notificationNodeSnapshot{ID: previous.ID, DisplayName: previous.DisplayName, PublicIPv4: previous.PublicIPv4}
 
 	nextStatus := status
 	if status == "online" && previous.Status == "warning" {
@@ -147,10 +147,10 @@ func (s *SQLiteStore) RecordStaleAgentOfflineTransition(ctx context.Context, nod
 	var storedStatus string
 	var lastSeenAt sql.NullInt64
 	if err := tx.QueryRowContext(ctx, `
-		SELECT id, display_name, status, last_seen_at
+		SELECT id, display_name, status, last_seen_at, COALESCE(public_ipv4, '')
 		FROM nodes
 		WHERE id = ? AND disabled = 0
-	`, nodeID).Scan(&previous.ID, &previous.DisplayName, &storedStatus, &lastSeenAt); err != nil {
+	`, nodeID).Scan(&previous.ID, &previous.DisplayName, &storedStatus, &lastSeenAt, &previous.PublicIPv4); err != nil {
 		if err == sql.ErrNoRows {
 			return notificationStatusTransition{}, false, errNodeNotFound
 		}
@@ -199,7 +199,7 @@ func (s *SQLiteStore) RecordStaleAgentOfflineTransition(ctx context.Context, nod
 		return notificationStatusTransition{}, false, err
 	}
 	tx = nil
-	current := notificationNodeSnapshot{ID: previous.ID, DisplayName: previous.DisplayName, Status: "offline"}
+	current := notificationNodeSnapshot{ID: previous.ID, DisplayName: previous.DisplayName, Status: "offline", PublicIPv4: previous.PublicIPv4}
 	return notificationStatusTransition{Previous: previous, Current: current}, true, nil
 }
 
@@ -215,10 +215,10 @@ func (s *SQLiteStore) recordAgentPresenceTransition(ctx context.Context, nodeID 
 	var previous notificationNodeSnapshot
 	var storedStatus string
 	if err := tx.QueryRowContext(ctx, `
-		SELECT id, display_name, status
+		SELECT id, display_name, status, COALESCE(public_ipv4, '')
 		FROM nodes
 		WHERE id = ? AND disabled = 0
-	`, nodeID).Scan(&previous.ID, &previous.DisplayName, &storedStatus); err != nil {
+	`, nodeID).Scan(&previous.ID, &previous.DisplayName, &storedStatus, &previous.PublicIPv4); err != nil {
 		if err == sql.ErrNoRows {
 			return notificationStatusTransition{}, errNodeNotFound
 		}
@@ -264,7 +264,7 @@ func (s *SQLiteStore) recordAgentPresenceTransition(ctx context.Context, nodeID 
 		return notificationStatusTransition{}, err
 	}
 	tx = nil
-	current := notificationNodeSnapshot{ID: previous.ID, DisplayName: previous.DisplayName, Status: storedNodeStatusForNotification(nextStatus)}
+	current := notificationNodeSnapshot{ID: previous.ID, DisplayName: previous.DisplayName, Status: storedNodeStatusForNotification(nextStatus), PublicIPv4: previous.PublicIPv4}
 	return notificationStatusTransition{Previous: previous, Current: current}, nil
 }
 

@@ -26,7 +26,7 @@ func (s *SQLiteStore) RecordAgentStateAlertRuleTransition(ctx context.Context, n
 	if err != nil {
 		return notificationStatusTransition{}, err
 	}
-	_, hadRelevantActive, err := setAlertRuleStates(ctx, tx, nodeID, rules, values)
+	_, hadRelevantActive, activeNames, recoveredNames, err := setAlertRuleStates(ctx, tx, nodeID, rules, values)
 	if err != nil {
 		return notificationStatusTransition{}, err
 	}
@@ -37,6 +37,11 @@ func (s *SQLiteStore) RecordAgentStateAlertRuleTransition(ctx context.Context, n
 	transition, err := updateNodeStatusForAlertRules(ctx, tx, nodeID, ts, status, !hadRelevantActive)
 	if err != nil {
 		return notificationStatusTransition{}, err
+	}
+	if transition.Current.Status == "warning" {
+		transition.Detail = resourceAlertDetail(activeNames, false)
+	} else if transition.Previous.Status == "warning" && transition.Current.Status == "online" {
+		transition.Detail = resourceAlertDetail(recoveredNames, true)
 	}
 	if err := tx.Commit(); err != nil {
 		return notificationStatusTransition{}, err
@@ -75,16 +80,18 @@ func alertRulesForMetrics(ctx context.Context, tx *sql.Tx, nodeID string, metric
 	return rules, nil
 }
 
-func setAlertRuleStates(ctx context.Context, tx *sql.Tx, nodeID string, rules []AdminAlertRule, values map[string]*float64) (bool, bool, error) {
+func setAlertRuleStates(ctx context.Context, tx *sql.Tx, nodeID string, rules []AdminAlertRule, values map[string]*float64) (bool, bool, []string, []string, error) {
 	anyActive := false
 	hadRelevantActive := false
+	activeNames := make([]string, 0)
+	recoveredNames := make([]string, 0)
 	now := time.Now().UTC().Unix()
 	seenAt := now
 	for _, rule := range rules {
 		var previousActive int
 		err := tx.QueryRowContext(ctx, `SELECT active FROM alert_rule_states WHERE node_id = ? AND rule_id = ?`, nodeID, rule.ID).Scan(&previousActive)
 		if err != nil && err != sql.ErrNoRows {
-			return false, false, err
+			return false, false, nil, nil, err
 		}
 		if previousActive != 0 {
 			hadRelevantActive = true
@@ -93,6 +100,7 @@ func setAlertRuleStates(ctx context.Context, tx *sql.Tx, nodeID string, rules []
 		active := rule.Enabled && value != nil && compareAlertRuleValue(*value, rule.Comparator, rule.Threshold)
 		if active {
 			anyActive = true
+			activeNames = append(activeNames, resourceAlertRuleLabel(rule))
 			if _, err := tx.ExecContext(ctx, `
 				INSERT INTO alert_rule_states (node_id, rule_id, active, first_seen_at, last_seen_at, last_value, updated_at)
 				VALUES (?, ?, 1, ?, ?, ?, ?)
@@ -106,9 +114,12 @@ func setAlertRuleStates(ctx context.Context, tx *sql.Tx, nodeID string, rules []
 					last_value = excluded.last_value,
 					updated_at = excluded.updated_at
 			`, nodeID, rule.ID, seenAt, seenAt, *value, now); err != nil {
-				return false, false, err
+				return false, false, nil, nil, err
 			}
 			continue
+		}
+		if previousActive != 0 {
+			recoveredNames = append(recoveredNames, resourceAlertRuleLabel(rule))
 		}
 		var lastValue any
 		if value != nil {
@@ -119,10 +130,52 @@ func setAlertRuleStates(ctx context.Context, tx *sql.Tx, nodeID string, rules []
 			SET active = 0, last_seen_at = ?, last_value = ?, updated_at = ?
 			WHERE node_id = ? AND rule_id = ?
 		`, seenAt, lastValue, now, nodeID, rule.ID); err != nil {
-			return false, false, err
+			return false, false, nil, nil, err
 		}
 	}
-	return anyActive, hadRelevantActive, nil
+	return anyActive, hadRelevantActive, activeNames, recoveredNames, nil
+}
+
+func resourceAlertRuleLabel(rule AdminAlertRule) string {
+	switch rule.Metric {
+	case "cpu_percent":
+		return "CPU"
+	case "memory_percent":
+		return "内存"
+	case "disk_percent":
+		return "硬盘"
+	default:
+		return strings.TrimSpace(rule.Name)
+	}
+}
+
+func resourceAlertDetail(names []string, recovered bool) string {
+	names = compactNonEmptyStrings(names)
+	if len(names) == 0 {
+		if recovered {
+			return "状态恢复正常"
+		}
+		return "状态异常"
+	}
+	label := strings.Join(names, "、")
+	if recovered {
+		return label + "恢复正常"
+	}
+	return label + "持续占用过高"
+}
+
+func compactNonEmptyStrings(values []string) []string {
+	result := make([]string, 0, len(values))
+	seen := map[string]bool{}
+	for _, value := range values {
+		trimmed := strings.TrimSpace(value)
+		if trimmed == "" || seen[trimmed] {
+			continue
+		}
+		seen[trimmed] = true
+		result = append(result, trimmed)
+	}
+	return result
 }
 
 func aggregateAlertRuleStatus(ctx context.Context, tx *sql.Tx, nodeID string) (string, error) {
@@ -157,10 +210,10 @@ func updateNodeStatusForAlertRules(ctx context.Context, tx *sql.Tx, nodeID strin
 	var storedStatus string
 	var lastSeenAt sql.NullInt64
 	if err := tx.QueryRowContext(ctx, `
-		SELECT id, display_name, status, last_seen_at
+		SELECT id, display_name, status, last_seen_at, COALESCE(public_ipv4, '')
 		FROM nodes
 		WHERE id = ? AND disabled = 0
-	`, nodeID).Scan(&previous.ID, &previous.DisplayName, &storedStatus, &lastSeenAt); err != nil {
+	`, nodeID).Scan(&previous.ID, &previous.DisplayName, &storedStatus, &lastSeenAt, &previous.PublicIPv4); err != nil {
 		if err == sql.ErrNoRows {
 			return notificationStatusTransition{}, errNodeNotFound
 		}
@@ -178,7 +231,7 @@ func updateNodeStatusForAlertRules(ctx context.Context, tx *sql.Tx, nodeID strin
 	`, nextStatus, seenAt, nowUnix, nodeID); err != nil {
 		return notificationStatusTransition{}, err
 	}
-	current := notificationNodeSnapshot{ID: previous.ID, DisplayName: previous.DisplayName, Status: publicNodeStatus(nextStatus, sql.NullInt64{Int64: seenAt, Valid: true}, now)}
+	current := notificationNodeSnapshot{ID: previous.ID, DisplayName: previous.DisplayName, Status: publicNodeStatus(nextStatus, sql.NullInt64{Int64: seenAt, Valid: true}, now), PublicIPv4: previous.PublicIPv4}
 	return notificationStatusTransition{Previous: previous, Current: current}, nil
 }
 

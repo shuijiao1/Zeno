@@ -1725,7 +1725,7 @@ func TestAdminNotificationChannelsAreTelegramOnlyAndDoNotExposeChannelType(t *te
 	assertNoSensitiveNotificationLeak(t, explicitTypeRecorder.Body.String())
 }
 
-func TestAdminNotificationChannelsCreateListAndPatchHideCredentials(t *testing.T) {
+func TestAdminNotificationChannelsCreateListAndPatchReturnStoredCredentials(t *testing.T) {
 	store, err := OpenSQLiteStore(filepath.Join(t.TempDir(), "zeno.db"))
 	if err != nil {
 		t.Fatalf("open sqlite store: %v", err)
@@ -1751,6 +1751,7 @@ func TestAdminNotificationChannelsCreateListAndPatchHideCredentials(t *testing.T
 			ID            string `json:"id"`
 			Name          string `json:"name"`
 			Destination   string `json:"destination"`
+			Credential    string `json:"credential"`
 			CredentialSet bool   `json:"credential_set"`
 			Enabled       bool   `json:"enabled"`
 		} `json:"channel"`
@@ -1758,11 +1759,8 @@ func TestAdminNotificationChannelsCreateListAndPatchHideCredentials(t *testing.T
 	if err := json.NewDecoder(bytes.NewBufferString(createRecorder.Body.String())).Decode(&createResponse); err != nil {
 		t.Fatalf("decode created notification channel: %v", err)
 	}
-	if strings.Contains(createRecorder.Body.String(), "telegram-bot-secret-value") {
-		t.Fatalf("created channel leaked credential: %s", createRecorder.Body.String())
-	}
-	if createResponse.Channel.ID == "" || createResponse.Channel.Name != "Telegram Home" || createResponse.Channel.Destination != "7579942307" || !createResponse.Channel.CredentialSet || !createResponse.Channel.Enabled {
-		t.Fatalf("created channel = %+v, want normalized enabled telegram channel with credential marker", createResponse.Channel)
+	if createResponse.Channel.ID == "" || createResponse.Channel.Name != "Telegram Home" || createResponse.Channel.Destination != "7579942307" || createResponse.Channel.Credential != "telegram-bot-secret-value" || !createResponse.Channel.CredentialSet || !createResponse.Channel.Enabled {
+		t.Fatalf("created channel = %+v, want normalized enabled telegram channel with credential", createResponse.Channel)
 	}
 
 	listRecorder := httptest.NewRecorder()
@@ -1777,6 +1775,7 @@ func TestAdminNotificationChannelsCreateListAndPatchHideCredentials(t *testing.T
 			ID            string `json:"id"`
 			Name          string `json:"name"`
 			Destination   string `json:"destination"`
+			Credential    string `json:"credential"`
 			CredentialSet bool   `json:"credential_set"`
 			Enabled       bool   `json:"enabled"`
 		} `json:"channels"`
@@ -1784,11 +1783,8 @@ func TestAdminNotificationChannelsCreateListAndPatchHideCredentials(t *testing.T
 	if err := json.NewDecoder(bytes.NewBufferString(listRecorder.Body.String())).Decode(&listResponse); err != nil {
 		t.Fatalf("decode notification channels: %v", err)
 	}
-	if strings.Contains(listRecorder.Body.String(), "telegram-bot-secret-value") {
-		t.Fatalf("listed channel leaked credential: %s", listRecorder.Body.String())
-	}
-	if len(listResponse.Channels) != 1 || listResponse.Channels[0].ID != createResponse.Channel.ID || !listResponse.Channels[0].CredentialSet {
-		t.Fatalf("listed channels = %+v, want one persisted channel with credential marker", listResponse.Channels)
+	if len(listResponse.Channels) != 1 || listResponse.Channels[0].ID != createResponse.Channel.ID || listResponse.Channels[0].Credential != "telegram-bot-secret-value" || !listResponse.Channels[0].CredentialSet {
+		t.Fatalf("listed channels = %+v, want one persisted channel with credential", listResponse.Channels)
 	}
 
 	patchRecorder := httptest.NewRecorder()
@@ -1805,6 +1801,7 @@ func TestAdminNotificationChannelsCreateListAndPatchHideCredentials(t *testing.T
 		Channel struct {
 			ID            string `json:"id"`
 			Name          string `json:"name"`
+			Credential    string `json:"credential"`
 			CredentialSet bool   `json:"credential_set"`
 			Enabled       bool   `json:"enabled"`
 		} `json:"channel"`
@@ -1812,11 +1809,8 @@ func TestAdminNotificationChannelsCreateListAndPatchHideCredentials(t *testing.T
 	if err := json.NewDecoder(bytes.NewBufferString(patchRecorder.Body.String())).Decode(&patchResponse); err != nil {
 		t.Fatalf("decode patched notification channel: %v", err)
 	}
-	if strings.Contains(patchRecorder.Body.String(), "telegram-bot-secret-value") {
-		t.Fatalf("patched channel leaked credential: %s", patchRecorder.Body.String())
-	}
-	if patchResponse.Channel.ID != createResponse.Channel.ID || patchResponse.Channel.Name != "Home Telegram Updated" || !patchResponse.Channel.CredentialSet || patchResponse.Channel.Enabled {
-		t.Fatalf("patched channel = %+v, want renamed disabled channel preserving credential marker", patchResponse.Channel)
+	if patchResponse.Channel.ID != createResponse.Channel.ID || patchResponse.Channel.Name != "Home Telegram Updated" || patchResponse.Channel.Credential != "telegram-bot-secret-value" || !patchResponse.Channel.CredentialSet || patchResponse.Channel.Enabled {
+		t.Fatalf("patched channel = %+v, want renamed disabled channel preserving credential", patchResponse.Channel)
 	}
 }
 

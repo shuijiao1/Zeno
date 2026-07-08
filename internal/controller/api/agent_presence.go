@@ -213,12 +213,6 @@ func (h *handler) handleAgentPresenceWebSocket(w http.ResponseWriter, r *http.Re
 	})
 
 	session := h.presence.connect(nodeID)
-	connectedAt := time.Now().UTC()
-	if transitionStore, ok := store.(agentPresenceTransitionStore); ok {
-		if transition, err := transitionStore.RecordAgentPresenceOnlineTransition(r.Context(), nodeID, connectedAt); err == nil {
-			h.dispatchAgentStatusNotification(store, transition, connectedAt)
-		}
-	}
 	h.invalidateSummaryCache()
 	h.publishSummaryNow(r.Context())
 	defer func() {

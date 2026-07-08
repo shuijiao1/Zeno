@@ -340,8 +340,8 @@ func TestAgentStateResourceRuleMarksWarningAndDispatchesProbeUnhealthy(t *testin
 	if len(errors) != 0 {
 		t.Fatalf("telegram handler errors = %+v", errors)
 	}
-	if len(paths) != 1 || len(forms) != 1 || !strings.Contains(forms[0], "%E7%8A%B6%E6%80%81%E5%BC%82%E5%B8%B8") {
-		t.Fatalf("telegram request paths=%+v forms=%+v, want one resource threshold notification", paths, forms)
+	if len(paths) != 1 || len(forms) != 1 || !strings.Contains(forms[0], "CPU%E6%8C%81%E7%BB%AD%E5%8D%A0%E7%94%A8%E8%BF%87%E9%AB%98") {
+		t.Fatalf("telegram request paths=%+v forms=%+v, want one CPU threshold notification", paths, forms)
 	}
 	assertTelegramFormsDoNotLeakCredential(t, forms, "telegram-bot-credential-value")
 }
@@ -516,7 +516,7 @@ func TestAgentHeartbeatDispatchesEnabledTelegramOnNodeOfflineTransition(t *testi
 	if len(paths) != 1 || paths[0] != "/bottelegram-bot-credential-value/sendMessage" {
 		t.Fatalf("telegram paths = %+v, want one sendMessage request", paths)
 	}
-	if len(forms) != 1 || !strings.Contains(forms[0], "chat_id=7579942307") || !strings.Contains(forms[0], "%E5%B7%B2%E7%A6%BB%E7%BA%BF") {
+	if len(forms) != 1 || !strings.Contains(forms[0], "chat_id=7579942307") || !strings.Contains(forms[0], "%E7%A6%BB%E7%BA%BF") {
 		t.Fatalf("telegram forms = %+v, want offline text", forms)
 	}
 	assertTelegramFormsDoNotLeakCredential(t, forms, "telegram-bot-credential-value")
@@ -811,7 +811,7 @@ func TestAgentStateDispatchesRecoveryAfterPersistedOffline(t *testing.T) {
 	if len(errors) != 0 {
 		t.Fatalf("telegram handler errors after recovery = %+v", errors)
 	}
-	if len(paths) != 2 || len(forms) != 2 || !strings.Contains(forms[1], "%E5%B7%B2%E6%81%A2%E5%A4%8D") {
+	if len(paths) != 2 || len(forms) != 2 || !strings.Contains(forms[1], "%E6%81%A2%E5%A4%8D") {
 		t.Fatalf("telegram calls paths=%+v forms=%+v, want state-triggered recovery notification", paths, forms)
 	}
 }

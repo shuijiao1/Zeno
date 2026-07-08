@@ -2373,11 +2373,7 @@ function AdminAlertRuleEditModal({ rule, nodes, onUpdate, onClose }: { rule: Adm
     <AdminModal title={`编辑通知类型 · ${rule.name}`} onClose={onClose}>
       <form className="admin-alert-rule-edit-form admin-node-edit-form is-sectioned" aria-label={`${rule.name} 通知类型编辑`} onSubmit={handleSubmit}>
         <AdminFormSection title="通知设置">
-          <div className="admin-form-grid">
-            <label className="admin-node-toggle">
-              <input name="rule-enabled" type="checkbox" defaultChecked={rule.enabled} />
-              <span>启用通知类型</span>
-            </label>
+          <div className="admin-form-grid admin-alert-rule-settings-grid">
             {isRenewalRule && (
               <AdminSegmentedField
                 name="rule-renewal-days"
@@ -2399,6 +2395,12 @@ function AdminAlertRuleEditModal({ rule, nodes, onUpdate, onClose }: { rule: Adm
               </label>
             )}
           </div>
+        </AdminFormSection>
+        <AdminFormSection title="通知状态">
+          <label className="admin-node-toggle admin-alert-rule-enabled-toggle">
+            <input name="rule-enabled" type="checkbox" defaultChecked={rule.enabled} />
+            <span>启用通知类型</span>
+          </label>
         </AdminFormSection>
         {nodes.length > 0 && (
           <AdminFormSection title="作用服务器">
@@ -2518,7 +2520,7 @@ function AdminNotificationChannelEditModal({ channel, onUpdate, onTest, onClose 
     <AdminModal title="编辑通知渠道" onClose={onClose}>
       <form className="admin-notification-edit-form admin-node-edit-form is-sectioned" aria-label="编辑通知渠道" onSubmit={handleSubmit}>
         <AdminFormSection title="渠道配置">
-          <div className="admin-form-grid">
+          <div className="admin-form-grid admin-channel-form-grid">
             <label>
               <span>渠道名称</span>
               <input name="channel-name" autoComplete="off" defaultValue={channel.name} />
@@ -2529,9 +2531,9 @@ function AdminNotificationChannelEditModal({ channel, onUpdate, onTest, onClose 
             </label>
             <label>
               <span>Telegram Bot Token</span>
-              <input name="channel-credential" type="password" autoComplete="new-password" placeholder="留空保留原 Bot Token" />
+              <input name="channel-credential" autoComplete="off" defaultValue={channel.credential ?? ''} />
             </label>
-            <label className="admin-node-toggle">
+            <label className="admin-node-toggle admin-channel-enabled-toggle">
               <input name="channel-enabled" type="checkbox" defaultChecked={channel.enabled} />
               <span>启用渠道</span>
             </label>
@@ -2566,7 +2568,7 @@ function AdminNotificationChannelCreateModal({ onCreate, onClose }: { onCreate: 
     <AdminModal title="添加通知渠道" onClose={onClose}>
       <form className="admin-notification-create-form admin-node-edit-form is-sectioned" aria-label="添加通知渠道" onSubmit={handleSubmit}>
         <AdminFormSection title="渠道配置">
-          <div className="admin-form-grid">
+          <div className="admin-form-grid admin-channel-form-grid">
             <label>
               <span>渠道名称</span>
               <input name="new-channel-name" autoComplete="off" placeholder="Zeno Telegram" />
@@ -2577,9 +2579,9 @@ function AdminNotificationChannelCreateModal({ onCreate, onClose }: { onCreate: 
             </label>
             <label>
               <span>Telegram Bot Token</span>
-              <input name="new-channel-credential" type="password" autoComplete="new-password" placeholder="仅写入，不回显" />
+              <input name="new-channel-credential" autoComplete="off" placeholder="请输入 Telegram Bot Token" />
             </label>
-            <label className="admin-node-toggle">
+            <label className="admin-node-toggle admin-channel-enabled-toggle">
               <input name="new-channel-enabled" type="checkbox" defaultChecked />
               <span>创建后启用渠道</span>
             </label>
@@ -3169,26 +3171,24 @@ export function HomeOverviewPanel({ totalCount, onlineCount, offlineCount: _offl
         <strong>{onlineCount} / {totalCount} 在线</strong>
       </div>
 
-      <dl className="home-summary__tile home-summary__tile--traffic" aria-label="traffic totals">
-        <div className="home-summary__metric home-summary__metric--send">
+      <dl className="home-summary__tile home-summary__metric home-summary__metric--send" aria-label="traffic sent">
           <dt>发送</dt>
           <dd>{compactBytes(totalUp)}</dd>
-        </div>
-        <div className="home-summary__metric home-summary__metric--receive">
-          <dt>接收</dt>
-          <dd>{compactBytes(totalDown)}</dd>
-        </div>
       </dl>
 
-      <dl className="home-summary__tile home-summary__tile--rates" aria-label="network speeds">
-        <div className="home-summary__metric home-summary__metric--upload-rate home-summary__metric--rate">
+      <dl className="home-summary__tile home-summary__metric home-summary__metric--receive" aria-label="traffic received">
+          <dt>接收</dt>
+          <dd>{compactBytes(totalDown)}</dd>
+      </dl>
+
+      <dl className="home-summary__tile home-summary__metric home-summary__metric--upload-rate home-summary__metric--rate" aria-label="upload speed">
           <dt>上传</dt>
           <dd><span className="home-summary__rate-value"><span>{uploadRate.value}</span><span className="home-summary__rate-gap" aria-hidden="true">&nbsp;</span><span className="home-summary__rate-unit">{uploadRate.unit}</span></span></dd>
-        </div>
-        <div className="home-summary__metric home-summary__metric--download-rate home-summary__metric--rate">
+      </dl>
+
+      <dl className="home-summary__tile home-summary__metric home-summary__metric--download-rate home-summary__metric--rate" aria-label="download speed">
           <dt>下载</dt>
           <dd><span className="home-summary__rate-value"><span>{downloadRate.value}</span><span className="home-summary__rate-gap" aria-hidden="true">&nbsp;</span><span className="home-summary__rate-unit">{downloadRate.unit}</span></span></dd>
-        </div>
       </dl>
     </section>
   )

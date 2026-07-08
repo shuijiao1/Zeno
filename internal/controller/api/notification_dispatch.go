@@ -34,11 +34,13 @@ type notificationNodeSnapshot struct {
 	ID          string
 	DisplayName string
 	Status      string
+	PublicIPv4  string
 }
 
 type notificationStatusTransition struct {
 	Previous notificationNodeSnapshot
 	Current  notificationNodeSnapshot
+	Detail   string
 }
 
 type notificationDispatchChannel struct {
@@ -54,6 +56,7 @@ type notificationEvent struct {
 	Label          string `json:"label"`
 	NodeID         string `json:"node_id"`
 	NodeName       string `json:"node_name"`
+	NodeIP         string `json:"node_ip,omitempty"`
 	Status         string `json:"status"`
 	PreviousStatus string `json:"previous_status"`
 	TS             string `json:"ts"`
@@ -116,20 +119,27 @@ func (sender httpNotificationSender) sendTelegram(ctx context.Context, channel n
 }
 
 func (event notificationEvent) messageText() string {
-	nodeName := strings.TrimSpace(event.NodeName)
-	if nodeName == "" {
-		nodeName = event.NodeID
-	}
+	nodeName := notificationNodeLabel(event)
 	switch event.EventType {
 	case "test_notification":
 		return "Zeno：通知渠道测试"
 	case "node_offline":
 		if event.Status == "online" && event.PreviousStatus == "offline" {
-			return fmt.Sprintf("Zeno：%s 已恢复", nodeName)
+			return fmt.Sprintf("🟢[恢复] %s", nodeName)
 		}
-		return fmt.Sprintf("Zeno：%s 已离线", nodeName)
+		return fmt.Sprintf("🔴[离线] %s", nodeName)
 	case "probe_unhealthy":
-		return fmt.Sprintf("Zeno：%s 状态异常", nodeName)
+		detail := strings.TrimSpace(event.Detail)
+		if event.Status == "online" && event.PreviousStatus == "warning" {
+			if detail == "" {
+				detail = "状态恢复正常"
+			}
+			return fmt.Sprintf("🟢[恢复] %s%s", nodeName, detail)
+		}
+		if detail == "" {
+			detail = "状态异常"
+		}
+		return fmt.Sprintf("⚠️[警告] %s%s", nodeName, detail)
 	case "renewal_due":
 		detail := strings.TrimSpace(event.Detail)
 		if detail != "" {
@@ -139,6 +149,30 @@ func (event notificationEvent) messageText() string {
 	default:
 		return fmt.Sprintf("Zeno：%s %s", nodeName, event.Label)
 	}
+}
+
+func notificationNodeLabel(event notificationEvent) string {
+	nodeName := strings.TrimSpace(event.NodeName)
+	if nodeName == "" {
+		nodeName = event.NodeID
+	}
+	if maskedIP := maskIPv4(event.NodeIP); maskedIP != "" {
+		return fmt.Sprintf("%s(%s)", nodeName, maskedIP)
+	}
+	return nodeName
+}
+
+func maskIPv4(value string) string {
+	parts := strings.Split(strings.TrimSpace(value), ".")
+	if len(parts) != 4 {
+		return ""
+	}
+	for _, part := range parts {
+		if part == "" {
+			return ""
+		}
+	}
+	return parts[0] + "." + parts[1] + ".***.***"
 }
 
 func (h *handler) dispatchNotificationEvent(store agentStore, event notificationEvent) bool {
@@ -198,9 +232,11 @@ func (h *handler) dispatchAgentStatusNotification(store agentStore, transition n
 		EventType:      eventType,
 		NodeID:         node.ID,
 		NodeName:       node.DisplayName,
+		NodeIP:         node.PublicIPv4,
 		Status:         transition.Current.Status,
 		PreviousStatus: transition.Previous.Status,
 		TS:             ts.UTC().Format(time.RFC3339),
+		Detail:         transition.Detail,
 	}
 	h.dispatchNotificationEvent(store, event)
 }
@@ -240,6 +276,9 @@ func notificationEventTypeForStatusChange(previousStatus, currentStatus string) 
 		if previousStatus == "offline" {
 			return "node_offline", true
 		}
+		if previousStatus == "warning" {
+			return "probe_unhealthy", true
+		}
 		return "", false
 	case "offline":
 		return "node_offline", true
@@ -256,7 +295,7 @@ func (s *SQLiteStore) NotificationNode(ctx context.Context, nodeID string) (noti
 	var lastSeenAt sql.NullInt64
 	var offlineDurationSec sql.NullInt64
 	if err := s.db.QueryRowContext(ctx, `
-		SELECT n.id, n.display_name, n.status, n.last_seen_at,
+		SELECT n.id, n.display_name, n.status, n.last_seen_at, COALESCE(n.public_ipv4, ''),
 		       COALESCE((
 		         SELECT MAX(ar.duration_sec)
 		         FROM alert_rules ar
@@ -268,7 +307,7 @@ func (s *SQLiteStore) NotificationNode(ctx context.Context, nodeID string) (noti
 		       ), ?) AS offline_duration_sec
 		FROM nodes n
 		WHERE n.id = ? AND n.disabled = 0
-	`, int64(nodeHeartbeatOfflineAfter/time.Second), nodeID).Scan(&snapshot.ID, &snapshot.DisplayName, &storedStatus, &lastSeenAt, &offlineDurationSec); err != nil {
+	`, int64(nodeHeartbeatOfflineAfter/time.Second), nodeID).Scan(&snapshot.ID, &snapshot.DisplayName, &storedStatus, &lastSeenAt, &snapshot.PublicIPv4, &offlineDurationSec); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return notificationNodeSnapshot{}, errNodeNotFound
 		}
