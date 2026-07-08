@@ -411,16 +411,6 @@ svg { display: block; }
   --control-bg: rgba(15, 23, 42, 0.38);
   --zeno-card-highlight: rgba(255, 255, 255, 0.12);
 }
-.kulin-shell[data-background='on'] .admin-container .home-top-card.admin-panel,
-.kulin-shell[data-background='on'] .admin-container .admin-login-card,
-.kulin-shell[data-background='on'] .admin-container .admin-list,
-.kulin-shell[data-background='on'] .admin-container .admin-form-section,
-.kulin-shell[data-background='on'] .admin-container .admin-segmented-options,
-.kulin-shell[data-background='on'] .admin-container .admin-date-option-panel,
-.kulin-shell[data-background='on'] .admin-container .admin-install-platforms {
-  -webkit-backdrop-filter: blur(18px) saturate(1.14);
-  backdrop-filter: blur(18px) saturate(1.14);
-}
 .admin-panel { min-height: 360px; }
 .admin-container,
 .admin-container .home-top-card.admin-panel { width: 100%; }

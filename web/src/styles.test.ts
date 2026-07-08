@@ -73,7 +73,7 @@ describe('homepage and admin shell layout', () => {
     expect(styles).toContain('background: var(--surface-strong)')
     expect(styles).toContain(".kulin-shell[data-background='on'] .admin-container")
     expect(styles).toContain('--surface-strong: rgba(255, 255, 255, 0.72)')
-    expect(styles).toContain('backdrop-filter: blur(18px) saturate(1.14)')
+    expect(styles).not.toContain('saturate(1.14)')
   })
 
   it('keeps the homepage backend entry visible on phones', () => {
