@@ -70,6 +70,88 @@ func (s *SQLiteStore) RecordAgentHeartbeatTransition(ctx context.Context, nodeID
 	return notificationStatusTransition{Previous: previous, Current: current}, nil
 }
 
+func (s *SQLiteStore) RecordAgentPresenceOnlineTransition(ctx context.Context, nodeID string, ts time.Time) (notificationStatusTransition, error) {
+	return s.recordAgentPresenceTransition(ctx, nodeID, ts, "online")
+}
+
+func (s *SQLiteStore) RecordAgentPresenceOfflineTransition(ctx context.Context, nodeID string, ts time.Time) (notificationStatusTransition, error) {
+	return s.recordAgentPresenceTransition(ctx, nodeID, ts, "offline")
+}
+
+func (s *SQLiteStore) recordAgentPresenceTransition(ctx context.Context, nodeID string, ts time.Time, status string) (notificationStatusTransition, error) {
+	now := time.Now().UTC()
+	nowUnix := now.Unix()
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return notificationStatusTransition{}, err
+	}
+	defer rollbackUnlessCommitted(tx)
+
+	var previous notificationNodeSnapshot
+	var storedStatus string
+	if err := tx.QueryRowContext(ctx, `
+		SELECT id, display_name, status
+		FROM nodes
+		WHERE id = ? AND disabled = 0
+	`, nodeID).Scan(&previous.ID, &previous.DisplayName, &storedStatus); err != nil {
+		if err == sql.ErrNoRows {
+			return notificationStatusTransition{}, errNodeNotFound
+		}
+		return notificationStatusTransition{}, err
+	}
+	previous.Status = storedNodeStatusForNotification(storedStatus)
+	nextStatus := status
+	if status == "online" && storedStatus == "warning" {
+		nextStatus = "warning"
+	}
+	if _, err := tx.ExecContext(ctx, `
+		UPDATE nodes
+		SET status = ?, last_seen_at = ?, updated_at = ?
+		WHERE id = ? AND disabled = 0
+	`, nextStatus, nowUnix, nowUnix, nodeID); err != nil {
+		return notificationStatusTransition{}, err
+	}
+	if status == "online" {
+		if _, err := tx.ExecContext(ctx, `
+			UPDATE alert_rule_states
+			SET active = 0, last_seen_at = ?, updated_at = ?
+			WHERE node_id = ? AND rule_id = 'node_offline'
+		`, nowUnix, nowUnix, nodeID); err != nil {
+			return notificationStatusTransition{}, err
+		}
+	} else if status == "offline" {
+		if _, err := tx.ExecContext(ctx, `
+			INSERT INTO alert_rule_states (node_id, rule_id, active, first_seen_at, last_seen_at, updated_at)
+			VALUES (?, 'node_offline', 1, ?, ?, ?)
+			ON CONFLICT(node_id, rule_id) DO UPDATE SET
+				active = 1,
+				first_seen_at = CASE
+					WHEN alert_rule_states.active = 1 AND alert_rule_states.first_seen_at IS NOT NULL THEN alert_rule_states.first_seen_at
+					ELSE excluded.first_seen_at
+				END,
+				last_seen_at = excluded.last_seen_at,
+				updated_at = excluded.updated_at
+		`, nodeID, nowUnix, nowUnix, nowUnix); err != nil {
+			return notificationStatusTransition{}, err
+		}
+	}
+	if err := tx.Commit(); err != nil {
+		return notificationStatusTransition{}, err
+	}
+	tx = nil
+	current := notificationNodeSnapshot{ID: previous.ID, DisplayName: previous.DisplayName, Status: storedNodeStatusForNotification(nextStatus)}
+	return notificationStatusTransition{Previous: previous, Current: current}, nil
+}
+
+func storedNodeStatusForNotification(status string) string {
+	switch strings.TrimSpace(status) {
+	case "online", "warning", "offline":
+		return strings.TrimSpace(status)
+	default:
+		return "offline"
+	}
+}
+
 func (s *SQLiteStore) UpsertAgentHost(ctx context.Context, nodeID string, host AgentHostRequest) error {
 	now := time.Now().UTC().Unix()
 	tx, err := s.db.BeginTx(ctx, nil)

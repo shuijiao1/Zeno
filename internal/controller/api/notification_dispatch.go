@@ -21,6 +21,10 @@ type notificationEventStore interface {
 	EnabledNotificationChannelsForEvent(ctx context.Context, eventType, nodeID string) (string, []notificationDispatchChannel, error)
 }
 
+type notificationDelayStore interface {
+	NotificationEventDelay(ctx context.Context, eventType, nodeID string) (time.Duration, bool, error)
+}
+
 type renewalNotificationStore interface {
 	PendingRenewalNotifications(ctx context.Context, now time.Time) ([]notificationEvent, error)
 	MarkRenewalNotification(ctx context.Context, event notificationEvent, now time.Time) error
@@ -121,6 +125,8 @@ func (event notificationEvent) messageText() string {
 		return "Zeno：通知渠道测试"
 	case "node_offline":
 		return fmt.Sprintf("Zeno：%s 已离线", nodeName)
+	case "node_online":
+		return fmt.Sprintf("Zeno：%s 已恢复", nodeName)
 	case "probe_unhealthy":
 		return fmt.Sprintf("Zeno：%s 状态异常", nodeName)
 	case "renewal_due":
@@ -195,6 +201,27 @@ func (h *handler) dispatchAgentStatusNotification(store agentStore, transition n
 		PreviousStatus: transition.Previous.Status,
 		TS:             ts.UTC().Format(time.RFC3339),
 	}
+	if eventType == "node_online" {
+		if delayStore, ok := store.(notificationDelayStore); ok {
+			if delay, found, err := delayStore.NotificationEventDelay(context.Background(), eventType, node.ID); err == nil && found && delay > 0 {
+				go h.dispatchNotificationEventAfterDelay(store, event, delay)
+				return
+			}
+		}
+	}
+	h.dispatchNotificationEvent(store, event)
+}
+
+func (h *handler) dispatchNotificationEventAfterDelay(store agentStore, event notificationEvent, delay time.Duration) {
+	timer := time.NewTimer(delay)
+	defer timer.Stop()
+	<-timer.C
+	if notificationStore, ok := store.(notificationEventStore); ok && strings.TrimSpace(event.NodeID) != "" {
+		snapshot, err := notificationStore.NotificationNode(context.Background(), event.NodeID)
+		if err != nil || snapshot.Status != event.Status {
+			return
+		}
+	}
 	h.dispatchNotificationEvent(store, event)
 }
 
@@ -230,7 +257,7 @@ func notificationEventTypeForStatusChange(previousStatus, currentStatus string) 
 	}
 	switch currentStatus {
 	case "online":
-		return "", false
+		return "node_online", true
 	case "offline":
 		return "node_offline", true
 	case "warning":
@@ -314,4 +341,31 @@ func (s *SQLiteStore) EnabledNotificationChannelsForEvent(ctx context.Context, e
 		return "", nil, err
 	}
 	return label, channels, nil
+}
+
+func (s *SQLiteStore) NotificationEventDelay(ctx context.Context, eventType, nodeID string) (time.Duration, bool, error) {
+	eventType = strings.TrimSpace(eventType)
+	nodeID = strings.TrimSpace(nodeID)
+	var durationSec sql.NullInt64
+	var matched int
+	if err := s.db.QueryRowContext(ctx, `
+		SELECT COALESCE(MAX(duration_sec), 0), COUNT(*)
+		FROM alert_rules ar
+		WHERE ar.notification_event_type = ?
+		  AND (
+		    ? = ''
+		    OR NOT EXISTS (SELECT 1 FROM alert_rule_node_scopes scope_all WHERE scope_all.rule_id = ar.id)
+		    OR EXISTS (SELECT 1 FROM alert_rule_node_scopes scope_node WHERE scope_node.rule_id = ar.id AND scope_node.node_id = ?)
+		  )
+	`, eventType, nodeID, nodeID).Scan(&durationSec, &matched); err != nil {
+		return 0, false, err
+	}
+	if matched == 0 {
+		return 0, false, nil
+	}
+	seconds := int64(0)
+	if durationSec.Valid && durationSec.Int64 > 0 {
+		seconds = durationSec.Int64
+	}
+	return time.Duration(seconds) * time.Second, true, nil
 }

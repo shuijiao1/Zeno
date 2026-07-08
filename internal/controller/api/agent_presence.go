@@ -19,10 +19,11 @@ type agentPresenceManager struct {
 	mu       sync.Mutex
 	nextID   uint64
 	sessions map[string]*agentPresenceSession
+	seen     map[string]bool
 }
 
 func newAgentPresenceManager() *agentPresenceManager {
-	return &agentPresenceManager{sessions: map[string]*agentPresenceSession{}}
+	return &agentPresenceManager{sessions: map[string]*agentPresenceSession{}, seen: map[string]bool{}}
 }
 
 func (m *agentPresenceManager) connect(nodeID string) *agentPresenceSession {
@@ -34,6 +35,7 @@ func (m *agentPresenceManager) connect(nodeID string) *agentPresenceSession {
 		close(previous.done)
 	}
 	m.sessions[nodeID] = session
+	m.seen[nodeID] = true
 	return session
 }
 
@@ -58,6 +60,15 @@ func (m *agentPresenceManager) isOnline(nodeID string) bool {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	return m.sessions[nodeID] != nil
+}
+
+func (m *agentPresenceManager) isExpected(nodeID string) bool {
+	if m == nil {
+		return false
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.seen[nodeID]
 }
 
 func (m *agentPresenceManager) notifyConfigChanged(nodeID string, version int64) bool {
@@ -118,6 +129,11 @@ type agentPresenceClientMessage struct {
 	Version int64  `json:"version,omitempty"`
 }
 
+type agentPresenceTransitionStore interface {
+	RecordAgentPresenceOnlineTransition(ctx context.Context, nodeID string, ts time.Time) (notificationStatusTransition, error)
+	RecordAgentPresenceOfflineTransition(ctx context.Context, nodeID string, ts time.Time) (notificationStatusTransition, error)
+}
+
 func (h *handler) handleAgentPresenceWebSocket(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
@@ -134,12 +150,26 @@ func (h *handler) handleAgentPresenceWebSocket(w http.ResponseWriter, r *http.Re
 	}
 	defer conn.Close()
 	conn.EnableWriteCompression(true)
+	refreshReadDeadline := func() error {
+		return conn.SetReadDeadline(time.Now().Add(75 * time.Second))
+	}
+	_ = refreshReadDeadline()
+	conn.SetPongHandler(func(string) error {
+		return refreshReadDeadline()
+	})
 
 	session := h.presence.connect(nodeID)
+	connectedAt := time.Now().UTC()
+	if transitionStore, ok := store.(agentPresenceTransitionStore); ok {
+		if transition, err := transitionStore.RecordAgentPresenceOnlineTransition(r.Context(), nodeID, connectedAt); err == nil {
+			h.dispatchAgentStatusNotification(store, transition, connectedAt)
+		}
+	}
 	h.invalidateSummaryCache()
 	h.publishSummaryNow(r.Context())
 	defer func() {
 		if h.presence.disconnect(session) {
+			h.scheduleAgentPresenceOfflineCheck(store, nodeID)
 			h.invalidateSummaryCache()
 			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 			defer cancel()
@@ -156,6 +186,7 @@ func (h *handler) handleAgentPresenceWebSocket(w http.ResponseWriter, r *http.Re
 			if err != nil {
 				return
 			}
+			_ = refreshReadDeadline()
 			var message agentPresenceClientMessage
 			if err := json.NewDecoder(reader).Decode(&message); err != nil {
 				continue
@@ -188,6 +219,39 @@ func (h *handler) handleAgentPresenceWebSocket(w http.ResponseWriter, r *http.Re
 	}
 }
 
+func (h *handler) scheduleAgentPresenceOfflineCheck(store agentStore, nodeID string) {
+	transitionStore, ok := store.(agentPresenceTransitionStore)
+	if !ok || h == nil || h.presence == nil {
+		return
+	}
+	delay := nodeHeartbeatOfflineAfter
+	if delayStore, ok := store.(notificationDelayStore); ok {
+		if configuredDelay, found, err := delayStore.NotificationEventDelay(context.Background(), "node_offline", nodeID); err == nil && found {
+			delay = configuredDelay
+		}
+	}
+	go func() {
+		if delay > 0 {
+			timer := time.NewTimer(delay)
+			defer timer.Stop()
+			<-timer.C
+		}
+		if h.presence.isOnline(nodeID) {
+			return
+		}
+		now := time.Now().UTC()
+		transition, err := transitionStore.RecordAgentPresenceOfflineTransition(context.Background(), nodeID, now)
+		if err != nil {
+			return
+		}
+		h.dispatchAgentStatusNotification(store, transition, now)
+		h.invalidateSummaryCache()
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		h.publishSummaryNow(ctx)
+	}()
+}
+
 const (
 	websocketTextMessage  = 1
 	websocketCloseMessage = 8
@@ -201,7 +265,7 @@ func (h *handler) applyPresenceToSummary(summary *SummaryResponse) {
 	for index := range summary.Nodes {
 		if h.presence.isOnline(summary.Nodes[index].ID) {
 			summary.Nodes[index].Status = "online"
-		} else {
+		} else if h.presence.isExpected(summary.Nodes[index].ID) {
 			summary.Nodes[index].Status = "offline"
 		}
 	}
@@ -222,7 +286,7 @@ func (h *handler) applyPresenceToAdminNode(node *AdminNode) {
 	}
 	if h.presence.isOnline(node.ID) {
 		node.Status = "online"
-	} else {
+	} else if h.presence.isExpected(node.ID) {
 		node.Status = "offline"
 	}
 }

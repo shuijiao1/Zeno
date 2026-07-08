@@ -23,7 +23,7 @@ func (s *SQLiteStore) RecordAgentStateAlertRuleTransition(ctx context.Context, n
 		return notificationStatusTransition{}, err
 	}
 	values := stateAlertMetricValues(state)
-	_, hadRelevantActive, err := setAlertRuleStates(ctx, tx, nodeID, ts, rules, values)
+	_, hadRelevantActive, err := setAlertRuleStates(ctx, tx, nodeID, rules, values)
 	if err != nil {
 		return notificationStatusTransition{}, err
 	}
@@ -72,11 +72,11 @@ func alertRulesForMetrics(ctx context.Context, tx *sql.Tx, nodeID string, metric
 	return rules, nil
 }
 
-func setAlertRuleStates(ctx context.Context, tx *sql.Tx, nodeID string, ts time.Time, rules []AdminAlertRule, values map[string]*float64) (bool, bool, error) {
+func setAlertRuleStates(ctx context.Context, tx *sql.Tx, nodeID string, rules []AdminAlertRule, values map[string]*float64) (bool, bool, error) {
 	anyActive := false
 	hadRelevantActive := false
-	seenAt := ts.UTC().Unix()
 	now := time.Now().UTC().Unix()
+	seenAt := now
 	for _, rule := range rules {
 		var previousActive int
 		err := tx.QueryRowContext(ctx, `SELECT active FROM alert_rule_states WHERE node_id = ? AND rule_id = ?`, nodeID, rule.ID).Scan(&previousActive)
@@ -132,11 +132,12 @@ func aggregateAlertRuleStatus(ctx context.Context, tx *sql.Tx, nodeID string) (s
 		  AND ars.active = 1
 		  AND ar.enabled = 1
 		  AND ar.notification_event_type = 'probe_unhealthy'
+		  AND (ar.duration_sec <= 0 OR (ars.first_seen_at IS NOT NULL AND ars.first_seen_at <= ? - ar.duration_sec))
 		  AND (
 		    NOT EXISTS (SELECT 1 FROM alert_rule_node_scopes scope_all WHERE scope_all.rule_id = ar.id)
 		    OR EXISTS (SELECT 1 FROM alert_rule_node_scopes scope_node WHERE scope_node.rule_id = ar.id AND scope_node.node_id = ?)
 		  )
-	`, nodeID, nodeID).Scan(&activeRules); err != nil {
+	`, nodeID, time.Now().UTC().Unix(), nodeID).Scan(&activeRules); err != nil {
 		return "", err
 	}
 	if activeRules > 0 {

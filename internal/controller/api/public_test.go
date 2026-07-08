@@ -163,8 +163,8 @@ func TestAgentHeartbeatInvalidatesCachedSummary(t *testing.T) {
 	}
 	initial := readAllString(t, initialResponse.Body)
 	initialResponse.Body.Close()
-	if !strings.Contains(initial, `"status":"offline"`) {
-		t.Fatalf("initial summary = %s, want cached offline node", initial)
+	if !strings.Contains(initial, `"status":"no_data"`) {
+		t.Fatalf("initial summary = %s, want cached no-data node", initial)
 	}
 
 	payload := []byte(`{"ts":` + strconv.FormatInt(time.Now().UTC().Unix(), 10) + `,"status":"online","agent_version":"agent-test"}`)
@@ -190,8 +190,8 @@ func TestAgentHeartbeatInvalidatesCachedSummary(t *testing.T) {
 	}
 	updated := readAllString(t, updatedResponse.Body)
 	updatedResponse.Body.Close()
-	if !strings.Contains(updated, `"status":"offline"`) || strings.Contains(updated, `"status":"online"`) {
-		t.Fatalf("updated summary = %s, want heartbeat to refresh cache but keep presence offline", updated)
+	if !strings.Contains(updated, `"status":"online"`) {
+		t.Fatalf("updated summary = %s, want heartbeat to refresh cached node status", updated)
 	}
 }
 

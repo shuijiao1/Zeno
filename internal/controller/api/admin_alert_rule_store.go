@@ -57,6 +57,18 @@ var defaultAdminAlertRules = []AdminAlertRule{
 		NotificationEventType: "node_offline",
 	},
 	{
+		ID:                    "node_recovered",
+		Name:                  "恢复通知",
+		Category:              "liveness",
+		Metric:                "heartbeat_age_sec",
+		Comparator:            "<",
+		Threshold:             180,
+		ThresholdUnit:         "s",
+		DurationSec:           0,
+		Enabled:               true,
+		NotificationEventType: "node_online",
+	},
+	{
 		ID:                    "renewal_due",
 		Name:                  "续费提醒",
 		Category:              "billing",
@@ -70,9 +82,9 @@ var defaultAdminAlertRules = []AdminAlertRule{
 	},
 }
 
-var retiredAdminAlertRuleIDs = []string{"probe_latency_high", "probe_loss_high", "node_recovered"}
+var retiredAdminAlertRuleIDs = []string{"probe_latency_high", "probe_loss_high"}
 
-var retiredAdminNotificationEventTypes = []string{"node_online"}
+var retiredAdminNotificationEventTypes = []string{}
 
 var allowedRenewalNoticeDays = map[int]bool{0: true, 1: true, 3: true, 7: true, 15: true, 30: true}
 
@@ -100,6 +112,15 @@ func (s *SQLiteStore) ensureDefaultAlertRules(ctx context.Context) error {
 		`, rule.Name, sortOrder, rule.ID); err != nil {
 			return err
 		}
+	}
+	if _, err := s.db.ExecContext(ctx, `
+		INSERT INTO notification_types (event_type, enabled, updated_at)
+		SELECT 'node_online', enabled, ?
+		FROM notification_types
+		WHERE event_type = 'node_offline'
+		ON CONFLICT(event_type) DO NOTHING
+	`, now); err != nil {
+		return err
 	}
 	return nil
 }

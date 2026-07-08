@@ -171,6 +171,10 @@ func TestAgentProbeResultsStoresLatencyWithoutProbeAlertNotification(t *testing.
 	if _, err := store.UpdateAdminNotificationType(ctx, "probe_unhealthy", AdminNotificationTypeUpdateRequest{Enabled: &enabled}); err != nil {
 		t.Fatalf("enable probe_unhealthy notification type: %v", err)
 	}
+	zeroDuration := 0
+	if _, err := store.UpdateAdminAlertRule(ctx, "cpu_high", AdminAlertRuleUpdateRequest{DurationSec: &zeroDuration}); err != nil {
+		t.Fatalf("set cpu rule duration: %v", err)
+	}
 
 	handler := NewHandler(telegram.handlerOptions(store))
 	now := time.Now().UTC().Truncate(time.Second)
@@ -289,6 +293,10 @@ func TestAgentStateResourceRuleMarksWarningAndDispatchesProbeUnhealthy(t *testin
 	}
 	if _, err := store.UpdateAdminNotificationType(ctx, "probe_unhealthy", AdminNotificationTypeUpdateRequest{Enabled: &enabled}); err != nil {
 		t.Fatalf("enable probe_unhealthy notification type: %v", err)
+	}
+	zeroDuration := 0
+	if _, err := store.UpdateAdminAlertRule(ctx, "cpu_high", AdminAlertRuleUpdateRequest{DurationSec: &zeroDuration}); err != nil {
+		t.Fatalf("set cpu rule duration: %v", err)
 	}
 
 	handler := NewHandler(telegram.handlerOptions(store))
@@ -691,8 +699,9 @@ func TestAgentHeartbeatTransitionTreatsReceivedHeartbeatAsFreshLiveness(t *testi
 	if transition.Previous.Status != "offline" || transition.Current.Status != "online" {
 		t.Fatalf("transition = %+v, want offline -> online public statuses", transition)
 	}
-	if eventType, ok := notificationEventTypeForStatusChange(transition.Previous.Status, transition.Current.Status); ok {
-		t.Fatalf("event type = %q, want no notification for recovery", eventType)
+	eventType, ok := notificationEventTypeForStatusChange(transition.Previous.Status, transition.Current.Status)
+	if !ok || eventType != "node_online" {
+		t.Fatalf("event type = %q ok=%v, want node_online recovery notification", eventType, ok)
 	}
 }
 

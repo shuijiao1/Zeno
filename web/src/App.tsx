@@ -2351,14 +2351,17 @@ function AdminAlertRuleAddModal({ rules, nodes, onAdd, onClose }: { rules: Admin
 function AdminAlertRuleEditModal({ rule, nodes, onUpdate, onClose }: { rule: AdminAlertRule; nodes: AdminNode[]; onUpdate: (ruleId: string, input: AdminAlertRuleUpdateInput) => void; onClose: () => void }) {
   const initialScopeNodeIds = rule.scopeNodeIds.length === 0 ? nodes.map((node) => node.id) : rule.scopeNodeIds
   const isRenewalRule = rule.metric === 'expiry_days'
+  const supportsDuration = !isRenewalRule
   const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
     const formData = new FormData(event.currentTarget)
     const scopeNodeIds = nodes.filter((node) => formData.get(`rule-scope-${node.id}`) === 'on').map((node) => node.id)
     const renewalThreshold = isRenewalRule ? parseRenewalThreshold(String(formData.get('rule-renewal-days') ?? '')) : null
+    const durationSec = supportsDuration ? parseNonNegativeInt(String(formData.get('rule-duration-sec') ?? '')) : null
     onUpdate(rule.id, {
       enabled: formData.get('rule-enabled') === 'on',
       ...(isRenewalRule && renewalThreshold !== null ? { threshold: renewalThreshold } : {}),
+      ...(supportsDuration && durationSec !== null ? { durationSec } : {}),
       scopeNodeIds,
     })
   }
@@ -2379,6 +2382,12 @@ function AdminAlertRuleEditModal({ rule, nodes, onUpdate, onClose }: { rule: Adm
                 defaultValue={String(normalizeRenewalThreshold(rule.threshold))}
                 options={renewalDayOptions.map((days) => ({ value: String(days), label: formatRenewalDayOption(days) }))}
               />
+            )}
+            {supportsDuration && (
+              <label>
+                <span>持续 s</span>
+                <input name="rule-duration-sec" type="number" min="0" defaultValue={rule.durationSec} />
+              </label>
             )}
           </div>
         </AdminFormSection>
@@ -3033,7 +3042,16 @@ function formatAlertRuleScope(rule: AdminAlertRule, nodes: AdminNode[]): string 
 }
 
 function formatAlertRuleNote(rule: AdminAlertRule): string {
-  return rule.metric === 'expiry_days' ? '' : rule.description
+  if (rule.metric === 'expiry_days') return ''
+  return rule.durationSec <= 0 ? '立即通知' : `持续 ${formatDurationCompact(rule.durationSec)}`
+}
+
+function formatDurationCompact(seconds: number): string {
+  const normalized = Math.max(0, Math.round(seconds))
+  if (normalized === 0) return '立即'
+  if (normalized % 3600 === 0) return `${normalized / 3600} 小时`
+  if (normalized % 60 === 0) return `${normalized / 60} 分钟`
+  return `${normalized} 秒`
 }
 
 function formatRenewalDayOption(days: number): string {
