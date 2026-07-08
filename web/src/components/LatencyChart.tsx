@@ -24,6 +24,7 @@ const desktopLayout = { width: 960, height: 320, lineStrokeWidth: 1, pad: { left
 const mobileLayout = { width: 400, height: 300, lineStrokeWidth: 1, pad: { left: 46, right: 16, top: 22, bottom: 44 } }
 const palette = ['#22c55e', '#38bdf8', '#f59e0b', '#a78bfa', '#fb7185', '#14b8a6', '#84cc16', '#f97316', '#06b6d4', '#e879f9']
 const packetLossColor = '#94a3b8'
+const maxDrawableLatencyMs = 5000
 
 export function LatencyChart({
   points,
@@ -325,17 +326,25 @@ function packetLossAreaPath(rows: KulinChartRow[], x: (createdAt: number) => num
 }
 
 function yDomainForRows(rows: KulinChartRow[], keys: string[]): { min: number; max: number } {
-  const values = rows.flatMap((row) => keys.map((key) => rowNumber(row, key)).filter((value): value is number => value !== null))
+  const values = rows
+    .flatMap((row) => keys.map((key) => rowNumber(row, key)).filter((value): value is number => value !== null))
+    .map((value) => Math.min(value, maxDrawableLatencyMs))
   if (values.length === 0) return { min: 0, max: 1 }
   const min = Math.min(...values)
   const max = Math.max(...values)
   const span = max - min
   if (span <= 0) {
     const padding = Math.max(0.5, Math.abs(max) * 0.05)
-    return { min: Math.max(0, min - padding), max: max + padding }
+    return cappedLatencyDomain(Math.max(0, min - padding), max + padding)
   }
   const padding = Math.max(span * 0.15, max * 0.002, 0.05)
-  return { min: Math.max(0, min - padding), max: max + padding }
+  return cappedLatencyDomain(Math.max(0, min - padding), max + padding)
+}
+
+function cappedLatencyDomain(min: number, max: number): { min: number; max: number } {
+  const cappedMax = Math.min(maxDrawableLatencyMs, Math.max(1, max))
+  const cappedMin = Math.max(0, Math.min(min, cappedMax - 0.5))
+  return { min: cappedMin, max: cappedMax }
 }
 
 function rowNumber(row: KulinChartRow, key: string): number | null {

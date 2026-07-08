@@ -65,6 +65,25 @@ describe('LatencyChart', () => {
     expect(yAxisLabels.some((label) => label.startsWith('186') || label.startsWith('187') || label.startsWith('188'))).toBe(true)
   })
 
+  it('caps drawn latency axis at 5000ms while still allowing values above the 1000ms timeout line', () => {
+    const highLatencyPoints = [900, 2400, 6000].map((medianMs, index) => ({
+      ts: new Date(Date.UTC(2026, 6, 5, 0, index * 30)).toISOString(),
+      targetId: 'high',
+      targetName: 'High latency',
+      medianMs,
+      lossPercent: 0,
+    }))
+
+    const html = renderToStaticMarkup(<LatencyChart points={highLatencyPoints} activeTargetNames={['High latency']} />)
+    const labels = [...html.matchAll(/class="axis-label"[^>]*>([^<]+)<\/text>/g)].map((match) => match[1])
+    const yAxisValues = labels
+      .filter((label) => label.endsWith('ms'))
+      .map((label) => Number(label.replace('ms', '')))
+
+    expect(Math.max(...yAxisValues)).toBe(5000)
+    expect(yAxisValues.some((value) => value > 1000)).toBe(true)
+  })
+
   it('connects null grid gaps like Kulin Recharts connectNulls', () => {
     const gapPoints = [
       { ts: '2026-07-02T00:00:00Z', targetId: 'alpha', targetName: 'Alpha', avgMs: 12, medianMs: 10, lossPercent: 0 },
