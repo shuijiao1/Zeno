@@ -23,6 +23,11 @@ type PresenceClientMessage struct {
 
 type PresenceConfigHandler func(ctx context.Context, requestedVersion int64) (appliedVersion int64, err error)
 
+var (
+	presenceReadTimeout  = 75 * time.Second
+	presenceWriteTimeout = 5 * time.Second
+)
+
 func (c *Client) RunPresence(ctx context.Context, handleConfig PresenceConfigHandler) {
 	backoff := time.Second
 	for ctx.Err() == nil {
@@ -65,6 +70,33 @@ func (c *Client) runPresenceOnce(ctx context.Context, handleConfig PresenceConfi
 	}
 	defer conn.Close()
 	log.Printf("presence websocket connected")
+	refreshReadDeadline := func() error {
+		return conn.SetReadDeadline(time.Now().Add(presenceReadTimeout))
+	}
+	if err := refreshReadDeadline(); err != nil {
+		return err
+	}
+	conn.SetPingHandler(func(appData string) error {
+		if err := refreshReadDeadline(); err != nil {
+			return err
+		}
+		return conn.WriteControl(websocket.PongMessage, []byte(appData), time.Now().Add(presenceWriteTimeout))
+	})
+	conn.SetPongHandler(func(appData string) error {
+		return refreshReadDeadline()
+	})
+	writeJSON := func(value any) error {
+		if err := conn.SetWriteDeadline(time.Now().Add(presenceWriteTimeout)); err != nil {
+			return err
+		}
+		return conn.WriteJSON(value)
+	}
+	writeMessage := func(messageType int, payload []byte) error {
+		if err := conn.SetWriteDeadline(time.Now().Add(presenceWriteTimeout)); err != nil {
+			return err
+		}
+		return conn.WriteMessage(messageType, payload)
+	}
 	if handleConfig != nil {
 		refreshCtx, cancel := context.WithTimeout(ctx, 20*time.Second)
 		appliedVersion, refreshErr := handleConfig(refreshCtx, 0)
@@ -72,7 +104,7 @@ func (c *Client) runPresenceOnce(ctx context.Context, handleConfig PresenceConfi
 		if refreshErr != nil {
 			log.Printf("presence startup config refresh failed: %v", refreshErr)
 		} else if appliedVersion > 0 {
-			_ = conn.WriteJSON(PresenceClientMessage{Type: "config_applied", Version: appliedVersion})
+			_ = writeJSON(PresenceClientMessage{Type: "config_applied", Version: appliedVersion})
 		}
 	}
 	for {
@@ -96,7 +128,7 @@ func (c *Client) runPresenceOnce(ctx context.Context, handleConfig PresenceConfi
 				appliedVersion = message.Version
 			}
 			payload, _ := json.Marshal(PresenceClientMessage{Type: "config_applied", Version: appliedVersion})
-			if err := conn.WriteMessage(websocket.TextMessage, payload); err != nil {
+			if err := writeMessage(websocket.TextMessage, payload); err != nil {
 				return err
 			}
 		}
