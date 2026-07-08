@@ -1578,12 +1578,18 @@ function AdminSettingsSection({ settings, onUpdate }: { settings: AdminSettings;
           </div>
         </AdminFormSection>
         <AdminFormSection title="外观样式">
-          <div className="admin-form-grid admin-appearance-grid">
-            <AdminSegmentedField name="appearance-preset" label="外观模板" value={appearance.appearancePreset} onChange={updateAppearancePreset} options={appearancePresetOptions} />
-            <label className="admin-color-field">
-              <span>主题色</span>
-              <input name="theme-color" type="color" value={appearance.themeColor} onChange={(event) => updateAppearance({ themeColor: event.currentTarget.value })} />
-            </label>
+          <div className="admin-appearance-layout">
+            <div className="admin-appearance-main">
+              <AdminAppearancePresetCards value={appearance.appearancePreset} onChange={updateAppearancePreset} />
+              <label className="admin-color-field">
+                <span>主题色</span>
+                <span className="admin-color-field__row">
+                  <input name="theme-color" type="color" value={appearance.themeColor} onChange={(event) => updateAppearance({ themeColor: event.currentTarget.value })} />
+                  <strong>{appearance.themeColor.toUpperCase()}</strong>
+                </span>
+              </label>
+            </div>
+            <AdminAppearancePreview appearance={appearance} />
           </div>
           <div className="admin-style-grid">
             <AdminStyleRangeField name="card-opacity" label="卡片透明度" value={appearance.cardOpacity} min={0.2} max={1} step={0.01} onChange={(value) => updateAppearance({ cardOpacity: value })} formatValue={(value) => `${Math.round(value * 100)}%`} />
@@ -2827,6 +2833,43 @@ function AdminFormSection({ title, children }: { title: string; children: ReactN
       <h4 className="admin-form-section-title">{title}</h4>
       {children}
     </section>
+  )
+}
+
+function AdminAppearancePresetCards({ value, onChange }: { value: AppearancePreset; onChange: (value: string) => void }) {
+  return (
+    <div className="admin-appearance-presets" role="radiogroup" aria-label="外观模板">
+      <input type="hidden" name="appearance-preset" value={value} />
+      {appearancePresetOptions.map((option) => {
+        const preset = appearancePresets[option.value]
+        const active = value === option.value
+        return (
+          <button key={option.value} type="button" role="radio" aria-checked={active} data-active={active} onClick={() => onChange(option.value)}>
+            <span>{option.label}</span>
+            <small>{Math.round(preset.cardOpacity * 100)}% · {preset.cardBlur}px</small>
+          </button>
+        )
+      })}
+    </div>
+  )
+}
+
+function AdminAppearancePreview({ appearance }: { appearance: AppearanceValues }) {
+  const previewStyle = {
+    '--appearance-preview-color': appearance.themeColor,
+    '--appearance-preview-bg': `rgba(255, 255, 255, ${appearance.cardOpacity.toFixed(3)})`,
+    '--appearance-preview-radius': `${Math.max(10, appearance.cardRadius - 4)}px`,
+    '--appearance-preview-blur': `${appearance.cardBlur}px`,
+    '--appearance-preview-shadow': `0 12px 28px -22px rgba(15, 23, 42, ${(0.08 + appearance.shadowStrength * 0.28).toFixed(3)})`,
+  } as CSSProperties
+  return (
+    <div className="admin-appearance-preview" style={previewStyle} aria-hidden="true">
+      <div className="admin-appearance-preview__card">
+        <span />
+        <strong>预览卡片</strong>
+        <em>{Math.round(appearance.cardOpacity * 100)}% · {appearance.cardBlur}px · {Math.round(appearance.borderStrength * 100)}%</em>
+      </div>
+    </div>
   )
 }
 

@@ -840,18 +840,91 @@ svg { display: block; }
   gap: 10px;
 }
 .admin-form-span-2 { grid-column: 1 / -1; }
-.admin-appearance-grid { align-items: end; }
+.admin-appearance-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1.45fr) minmax(160px, .75fr);
+  gap: 10px;
+  align-items: stretch;
+}
+.admin-appearance-main {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(122px, .52fr);
+  gap: 10px;
+  align-items: stretch;
+}
+.admin-appearance-presets {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+.admin-appearance-presets button {
+  min-width: 0;
+  height: auto;
+  min-height: 58px;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: center;
+  gap: 5px;
+  padding: 10px 11px;
+  border: 1px solid color-mix(in srgb, var(--border) 72%, transparent);
+  border-radius: var(--radius-field);
+  background: color-mix(in srgb, var(--field-bg) 88%, transparent);
+  color: var(--foreground);
+  text-align: left;
+  transition: background-color 150ms ease, border-color 150ms ease, box-shadow 150ms ease, transform 150ms ease;
+}
+.admin-appearance-presets button[data-active='true'] {
+  border-color: color-mix(in srgb, var(--blue) 58%, var(--border));
+  background: color-mix(in srgb, var(--field-bg) 76%, var(--blue) 12%);
+  box-shadow: 0 10px 22px -20px var(--blue), inset 0 0 0 1px color-mix(in srgb, var(--blue) 18%, transparent);
+}
+.admin-appearance-presets span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; font-weight: 500; }
+.admin-appearance-presets small { color: var(--muted); font-size: 11px; font-weight: 500; font-variant-numeric: tabular-nums; }
+.admin-appearance-preview {
+  min-width: 0;
+  min-height: 126px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 12px;
+  border: 1px solid color-mix(in srgb, var(--border) 68%, transparent);
+  border-radius: var(--radius-field);
+  background: color-mix(in srgb, var(--field-bg) 82%, var(--appearance-preview-color) 6%);
+}
+.admin-appearance-preview__card {
+  width: min(100%, 168px);
+  display: grid;
+  gap: 7px;
+  padding: 13px;
+  border: 1px solid color-mix(in srgb, var(--appearance-preview-color) 30%, var(--border));
+  border-radius: var(--appearance-preview-radius);
+  background: var(--appearance-preview-bg);
+  box-shadow: var(--appearance-preview-shadow);
+  -webkit-backdrop-filter: blur(var(--appearance-preview-blur));
+  backdrop-filter: blur(var(--appearance-preview-blur));
+}
+.admin-appearance-preview__card > span {
+  width: 34px;
+  height: 7px;
+  border-radius: var(--radius-pill);
+  background: var(--appearance-preview-color);
+}
+.admin-appearance-preview__card strong { color: var(--foreground); font-size: 13px; font-weight: 500; }
+.admin-appearance-preview__card em { color: var(--muted); font-size: 11px; font-style: normal; font-weight: 500; font-variant-numeric: tabular-nums; }
 .admin-style-grid {
   margin-top: 10px;
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 10px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
 }
 .admin-style-range {
   min-width: 0;
   display: grid;
-  gap: 8px;
-  padding: 10px 12px;
+  gap: 7px;
+  padding: 9px 10px;
   border: 1px solid color-mix(in srgb, var(--border) 72%, transparent);
   border-radius: var(--radius-field);
   background: color-mix(in srgb, var(--field-bg) 86%, transparent);
@@ -861,18 +934,51 @@ svg { display: block; }
 }
 .admin-style-range__head { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
 .admin-style-range__head strong { color: var(--foreground); font-size: 12px; font-weight: 500; font-variant-numeric: tabular-nums; }
-.admin-style-range input[type="range"] {
+.admin-node-edit-form label.admin-style-range input[type="range"] {
   width: 100%;
+  height: 22px;
+  padding: 0;
+  border: 0;
+  background: transparent;
   accent-color: var(--blue);
+  appearance: none;
 }
-.admin-color-field input[type="color"] {
-  width: 100%;
-  height: 40px;
-  padding: 4px;
+.admin-node-edit-form label.admin-style-range input[type="range"]::-webkit-slider-runnable-track {
+  height: 6px;
+  border-radius: var(--radius-pill);
+  background: color-mix(in srgb, var(--blue) 18%, var(--border));
+}
+.admin-node-edit-form label.admin-style-range input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 18px;
+  height: 18px;
+  margin-top: -6px;
+  border: 3px solid color-mix(in srgb, var(--field-bg) 92%, #fff 8%);
+  border-radius: var(--radius-pill);
+  background: var(--blue);
+  box-shadow: 0 6px 14px -10px var(--blue);
+}
+.admin-node-edit-form label.admin-color-field .admin-color-field__row input[type="color"] {
+  width: 46px;
+  height: 36px;
+  flex: none;
+  padding: 3px;
+  border: 0;
+  border-radius: var(--radius-field);
+  background: transparent;
+  appearance: auto;
+}
+.admin-color-field__row {
+  min-height: 40px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 2px 8px 2px 2px;
   border: 1px solid var(--border);
   border-radius: var(--radius-field);
   background: var(--field-bg);
 }
+.admin-color-field__row strong { color: var(--foreground); font-size: 12px; font-weight: 500; font-variant-numeric: tabular-nums; }
 .admin-channel-enabled-toggle { align-self: end; min-height: 42px; margin-top: 19px; }
 .admin-alert-rule-settings-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); align-items: end; }
 .admin-alert-rule-enabled-toggle { min-height: 36px; }
@@ -2501,7 +2607,11 @@ svg { display: block; }
   .admin-modal-summary div { padding: 10px; }
   .admin-node-edit-form,
   .admin-form-grid,
-  .admin-style-grid { grid-template-columns: 1fr; }
+  .admin-appearance-layout,
+  .admin-appearance-main { grid-template-columns: 1fr; }
+  .admin-appearance-preview { min-height: 92px; }
+  .admin-appearance-preview__card { width: 100%; }
+  .admin-style-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .admin-billing-row--cycle,
   .admin-billing-row--traffic { grid-template-columns: 1fr; }
   .admin-modal-actions {
