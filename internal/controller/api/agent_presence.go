@@ -134,6 +134,60 @@ type agentPresenceTransitionStore interface {
 	RecordAgentPresenceOfflineTransition(ctx context.Context, nodeID string, ts time.Time) (notificationStatusTransition, error)
 }
 
+type staleAgentOfflineStore interface {
+	agentStore
+	StaleAgentOfflineNodeIDs(ctx context.Context, now time.Time) ([]string, error)
+	RecordStaleAgentOfflineTransition(ctx context.Context, nodeID string, now time.Time) (notificationStatusTransition, bool, error)
+}
+
+func (h *handler) runStaleAgentOfflineScanner(ctx context.Context, interval time.Duration) {
+	if h == nil || interval <= 0 {
+		return
+	}
+	h.dispatchStaleAgentOfflineChecks(ctx)
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			h.dispatchStaleAgentOfflineChecks(ctx)
+		}
+	}
+}
+
+func (h *handler) dispatchStaleAgentOfflineChecks(ctx context.Context) {
+	if h == nil {
+		return
+	}
+	store, ok := h.store.(staleAgentOfflineStore)
+	if !ok {
+		return
+	}
+	now := time.Now().UTC()
+	nodeIDs, err := store.StaleAgentOfflineNodeIDs(ctx, now)
+	if err != nil || len(nodeIDs) == 0 {
+		return
+	}
+	changed := false
+	for _, nodeID := range nodeIDs {
+		transition, ok, err := store.RecordStaleAgentOfflineTransition(ctx, nodeID, now)
+		if err != nil || !ok {
+			continue
+		}
+		h.dispatchAgentStatusNotification(store, transition, now)
+		changed = true
+	}
+	if !changed {
+		return
+	}
+	h.invalidateSummaryCache()
+	publishCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	h.publishSummaryNow(publishCtx)
+}
+
 func (h *handler) handleAgentPresenceWebSocket(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
@@ -220,35 +274,20 @@ func (h *handler) handleAgentPresenceWebSocket(w http.ResponseWriter, r *http.Re
 }
 
 func (h *handler) scheduleAgentPresenceOfflineCheck(store agentStore, nodeID string) {
-	transitionStore, ok := store.(agentPresenceTransitionStore)
-	if !ok || h == nil || h.presence == nil {
+	if h == nil || h.presence == nil {
 		return
 	}
-	delay := nodeHeartbeatOfflineAfter
-	if delayStore, ok := store.(notificationDelayStore); ok {
-		if configuredDelay, found, err := delayStore.NotificationEventDelay(context.Background(), "node_offline", nodeID); err == nil && found {
-			delay = configuredDelay
-		}
+	if _, ok := store.(staleAgentOfflineStore); !ok {
+		return
 	}
 	go func() {
-		if delay > 0 {
-			timer := time.NewTimer(delay)
-			defer timer.Stop()
-			<-timer.C
-		}
+		timer := time.NewTimer(nodeHeartbeatOfflineAfter)
+		defer timer.Stop()
+		<-timer.C
 		if h.presence.isOnline(nodeID) {
 			return
 		}
-		now := time.Now().UTC()
-		transition, err := transitionStore.RecordAgentPresenceOfflineTransition(context.Background(), nodeID, now)
-		if err != nil {
-			return
-		}
-		h.dispatchAgentStatusNotification(store, transition, now)
-		h.invalidateSummaryCache()
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		defer cancel()
-		h.publishSummaryNow(ctx)
+		h.dispatchStaleAgentOfflineChecks(context.Background())
 	}()
 }
 

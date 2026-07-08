@@ -455,6 +455,45 @@ func TestSQLiteBackedSummaryMarksStaleAgentOffline(t *testing.T) {
 	}
 }
 
+func TestSQLiteBackedSummaryUsesOfflineNotificationDuration(t *testing.T) {
+	store, err := OpenSQLiteStore(filepath.Join(t.TempDir(), "zeno.db"))
+	if err != nil {
+		t.Fatalf("open sqlite store: %v", err)
+	}
+	defer store.Close()
+
+	ctx := context.Background()
+	now := time.Now().UTC().Truncate(time.Second)
+	if _, err := store.db.ExecContext(ctx, `UPDATE alert_rules SET duration_sec = 60 WHERE id = 'node_offline'`); err != nil {
+		t.Fatalf("set offline duration: %v", err)
+	}
+	seen45 := now.Add(-45 * time.Second).Unix()
+	if _, err := store.db.ExecContext(ctx, `
+		INSERT INTO nodes (id, display_name, token_hash, status, country_code, created_at, updated_at, last_seen_at)
+		VALUES ('hytron', 'Hytron', 'hash-for-test', 'online', 'HK', ?, ?, ?);
+	`, now.Unix(), now.Unix(), seen45); err != nil {
+		t.Fatalf("insert node: %v", err)
+	}
+	summary, err := store.Summary(ctx)
+	if err != nil {
+		t.Fatalf("summary: %v", err)
+	}
+	if len(summary.Nodes) != 1 || summary.Nodes[0].Status != "online" {
+		t.Fatalf("summary nodes = %+v, want node online before configured 60s offline duration", summary.Nodes)
+	}
+	seen65 := now.Add(-65 * time.Second).Unix()
+	if _, err := store.db.ExecContext(ctx, `UPDATE nodes SET last_seen_at = ? WHERE id = 'hytron'`, seen65); err != nil {
+		t.Fatalf("age node heartbeat: %v", err)
+	}
+	summary, err = store.Summary(ctx)
+	if err != nil {
+		t.Fatalf("summary after stale: %v", err)
+	}
+	if len(summary.Nodes) != 1 || summary.Nodes[0].Status != "offline" {
+		t.Fatalf("summary nodes = %+v, want node offline after configured 60s offline duration", summary.Nodes)
+	}
+}
+
 func TestSeedPreviewDataDoesNotFakeAgentOnlineStatus(t *testing.T) {
 	store, err := OpenSQLiteStore(filepath.Join(t.TempDir(), "zeno.db"))
 	if err != nil {

@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"net/http"
@@ -13,13 +14,14 @@ import (
 )
 
 type HandlerOptions struct {
-	StaticDir          string
-	Store              Store
-	AdminTokenHash     string
-	AgentBinaryPath    string
-	AgentVersion       string
-	NotificationClient *http.Client
-	TelegramAPIBaseURL string
+	StaticDir                string
+	Store                    Store
+	AdminTokenHash           string
+	AgentBinaryPath          string
+	AgentVersion             string
+	NotificationClient       *http.Client
+	TelegramAPIBaseURL       string
+	StaleOfflineScanInterval time.Duration
 }
 
 type handler struct {
@@ -131,6 +133,9 @@ func NewHandler(options ...HandlerOptions) http.Handler {
 		loginLimiter:       newAdminLoginLimiter(),
 		liveHub:            newLiveUpdateHub(),
 		presence:           newAgentPresenceManager(),
+	}
+	if opts.StaleOfflineScanInterval > 0 {
+		go h.runStaleAgentOfflineScanner(context.Background(), opts.StaleOfflineScanInterval)
 	}
 
 	mux := http.NewServeMux()

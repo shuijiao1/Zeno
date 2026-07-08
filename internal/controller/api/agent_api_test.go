@@ -643,6 +643,96 @@ func TestAgentHeartbeatNotificationDeliveryDoesNotBlockResponse(t *testing.T) {
 	}
 }
 
+func TestStaleAgentOfflineCheckDispatchesWhenPublicStatusExpires(t *testing.T) {
+	store, err := OpenSQLiteStore(filepath.Join(t.TempDir(), "zeno.db"))
+	if err != nil {
+		t.Fatalf("open sqlite store: %v", err)
+	}
+	defer store.Close()
+	ctx := context.Background()
+	if err := store.SeedPreviewData(ctx, PreviewSeedOptions{NodeID: "hytron", DisplayName: "Hytron", CountryCode: "HK", AgentToken: "test-agent-token"}); err != nil {
+		t.Fatalf("seed preview data: %v", err)
+	}
+	staleSeen := time.Now().UTC().Add(-nodeHeartbeatOfflineAfter - time.Second).Unix()
+	if _, err := store.db.ExecContext(ctx, `UPDATE nodes SET status = 'online', last_seen_at = ? WHERE id = 'hytron'`, staleSeen); err != nil {
+		t.Fatalf("set stale heartbeat: %v", err)
+	}
+	enabled := true
+	if _, err := store.CreateAdminNotificationChannel(ctx, AdminNotificationChannelCreateRequest{ID: "ops-telegram", Name: "Ops Telegram", Destination: "7579942307", Credential: "telegram-bot-credential-value", Enabled: &enabled}); err != nil {
+		t.Fatalf("create notification channel: %v", err)
+	}
+	if _, err := store.UpdateAdminNotificationType(ctx, "node_offline", AdminNotificationTypeUpdateRequest{Enabled: &enabled}); err != nil {
+		t.Fatalf("enable notification type: %v", err)
+	}
+
+	telegram := newTelegramTestCapture(t)
+	h := &handler{store: store, notificationSender: newHTTPNotificationSender(telegram.server.Client(), telegram.server.URL), liveHub: newLiveUpdateHub(), presence: newAgentPresenceManager()}
+	h.dispatchStaleAgentOfflineChecks(ctx)
+
+	paths, forms, errors := telegram.waitForCalls(t, 1)
+	if len(errors) != 0 {
+		t.Fatalf("telegram handler errors = %+v", errors)
+	}
+	if len(paths) != 1 || len(forms) != 1 || !strings.Contains(forms[0], "%E7%A6%BB%E7%BA%BF") {
+		t.Fatalf("telegram calls paths=%+v forms=%+v, want stale offline notification", paths, forms)
+	}
+	var status string
+	if err := store.db.QueryRowContext(ctx, `SELECT status FROM nodes WHERE id = 'hytron'`).Scan(&status); err != nil {
+		t.Fatalf("query node status: %v", err)
+	}
+	if status != "offline" {
+		t.Fatalf("stored status = %q, want stale check to persist offline", status)
+	}
+	var storedLastSeen int64
+	if err := store.db.QueryRowContext(ctx, `SELECT last_seen_at FROM nodes WHERE id = 'hytron'`).Scan(&storedLastSeen); err != nil {
+		t.Fatalf("query node last_seen_at: %v", err)
+	}
+	if storedLastSeen != staleSeen {
+		t.Fatalf("last_seen_at = %d, want original agent heartbeat time %d", storedLastSeen, staleSeen)
+	}
+}
+
+func TestStaleAgentOfflineCheckSkipsFreshHeartbeatRace(t *testing.T) {
+	store, err := OpenSQLiteStore(filepath.Join(t.TempDir(), "zeno.db"))
+	if err != nil {
+		t.Fatalf("open sqlite store: %v", err)
+	}
+	defer store.Close()
+	ctx := context.Background()
+	if err := store.SeedPreviewData(ctx, PreviewSeedOptions{NodeID: "hytron", DisplayName: "Hytron", CountryCode: "HK", AgentToken: "test-agent-token"}); err != nil {
+		t.Fatalf("seed preview data: %v", err)
+	}
+	staleSeen := time.Now().UTC().Add(-nodeHeartbeatOfflineAfter - time.Second).Unix()
+	if _, err := store.db.ExecContext(ctx, `UPDATE nodes SET status = 'online', last_seen_at = ? WHERE id = 'hytron'`, staleSeen); err != nil {
+		t.Fatalf("set stale heartbeat: %v", err)
+	}
+	nodeIDs, err := store.StaleAgentOfflineNodeIDs(ctx, time.Now().UTC())
+	if err != nil {
+		t.Fatalf("stale node ids: %v", err)
+	}
+	if len(nodeIDs) != 1 || nodeIDs[0] != "hytron" {
+		t.Fatalf("stale node ids = %+v, want hytron", nodeIDs)
+	}
+	freshSeen := time.Now().UTC().Unix()
+	if _, err := store.db.ExecContext(ctx, `UPDATE nodes SET status = 'online', last_seen_at = ? WHERE id = 'hytron'`, freshSeen); err != nil {
+		t.Fatalf("set fresh heartbeat: %v", err)
+	}
+	transition, ok, err := store.RecordStaleAgentOfflineTransition(ctx, "hytron", time.Now().UTC())
+	if err != nil {
+		t.Fatalf("record stale offline transition: %v", err)
+	}
+	if ok || transition.Current.Status != "" {
+		t.Fatalf("transition = %+v ok=%v, want skipped stale update after fresh heartbeat", transition, ok)
+	}
+	var status string
+	if err := store.db.QueryRowContext(ctx, `SELECT status FROM nodes WHERE id = 'hytron'`).Scan(&status); err != nil {
+		t.Fatalf("query node status: %v", err)
+	}
+	if status != "online" {
+		t.Fatalf("stored status = %q, want online after fresh heartbeat wins race", status)
+	}
+}
+
 func TestAgentHeartbeatDoesNotDispatchRecoveryAfterStaleHeartbeatOffline(t *testing.T) {
 	store, err := OpenSQLiteStore(filepath.Join(t.TempDir(), "zeno.db"))
 	if err != nil {
@@ -696,12 +786,12 @@ func TestAgentHeartbeatTransitionTreatsReceivedHeartbeatAsFreshLiveness(t *testi
 	if err != nil {
 		t.Fatalf("record heartbeat transition: %v", err)
 	}
-	if transition.Previous.Status != "offline" || transition.Current.Status != "online" {
-		t.Fatalf("transition = %+v, want offline -> online public statuses", transition)
+	if transition.Previous.Status != "online" || transition.Current.Status != "online" {
+		t.Fatalf("transition = %+v, want stored online -> online so stale public state does not send recovery-only notifications", transition)
 	}
 	eventType, ok := notificationEventTypeForStatusChange(transition.Previous.Status, transition.Current.Status)
-	if !ok || eventType != "node_offline" {
-		t.Fatalf("event type = %q ok=%v, want recovery to use node_offline notification", eventType, ok)
+	if ok || eventType != "" {
+		t.Fatalf("event type = %q ok=%v, want no recovery-only notification", eventType, ok)
 	}
 }
 

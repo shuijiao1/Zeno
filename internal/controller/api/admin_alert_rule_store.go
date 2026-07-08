@@ -50,7 +50,7 @@ var defaultAdminAlertRules = []AdminAlertRule{
 		Category:              "liveness",
 		Metric:                "heartbeat_age_sec",
 		Comparator:            ">=",
-		Threshold:             180,
+		Threshold:             30,
 		ThresholdUnit:         "s",
 		DurationSec:           30,
 		Enabled:               true,
@@ -109,6 +109,13 @@ func (s *SQLiteStore) ensureDefaultAlertRules(ctx context.Context) error {
 
 func (s *SQLiteStore) migrateDefaultAlertRuleDurations(ctx context.Context) error {
 	now := time.Now().UTC().Unix()
+	if _, err := s.db.ExecContext(ctx, `
+		UPDATE alert_rules
+		SET threshold = 30, updated_at = ?
+		WHERE id = 'node_offline' AND threshold = 180
+	`, now); err != nil {
+		return err
+	}
 	const migrationKey = "alert_default_durations_v2_migrated"
 	var marker string
 	migrated := true

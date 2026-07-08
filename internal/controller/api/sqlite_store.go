@@ -14,7 +14,7 @@ type SQLiteStore struct {
 	db *sql.DB
 }
 
-const nodeHeartbeatOfflineAfter = 3 * time.Minute
+const nodeHeartbeatOfflineAfter = 30 * time.Second
 
 func OpenSQLiteStore(path string) (*SQLiteStore, error) {
 	db, err := sql.Open("sqlite", path)
@@ -484,13 +484,22 @@ func (s *SQLiteStore) AdminNodes(ctx context.Context) ([]AdminNode, error) {
 		SELECT n.id, n.display_name, n.status, n.country_code, n.region, n.disabled,
 		       n.home_probe_target_id, n.billing_mode, n.monthly_reset_day, n.expiry_date, n.expiry_permanent, n.billing_cycle, n.display_order, n.public_ipv4, n.public_ipv6,
 		       n.monthly_quota_bytes, n.last_seen_at, n.created_at, n.updated_at,
+		       COALESCE((
+		         SELECT MAX(ar.duration_sec)
+		         FROM alert_rules ar
+		         WHERE ar.notification_event_type = 'node_offline'
+		           AND (
+		             NOT EXISTS (SELECT 1 FROM alert_rule_node_scopes scope_all WHERE scope_all.rule_id = ar.id)
+		             OR EXISTS (SELECT 1 FROM alert_rule_node_scopes scope_node WHERE scope_node.rule_id = ar.id AND scope_node.node_id = n.id)
+		           )
+		       ), ?) AS offline_duration_sec,
 		       h.hostname, h.os_name, h.os_version, h.kernel, h.arch, h.virtualization,
 		       h.cpu_model, h.cpu_cores, h.memory_total_bytes, h.disk_total_bytes,
 		       h.boot_time, h.agent_version
 		FROM nodes n
 		LEFT JOIN host_info h ON h.node_id = n.id
 		ORDER BY n.display_order ASC, n.id ASC
-	`)
+	`, int64(nodeHeartbeatOfflineAfter/time.Second))
 	if err != nil {
 		return nil, err
 	}
@@ -506,13 +515,13 @@ func (s *SQLiteStore) AdminNodes(ctx context.Context) ([]AdminNode, error) {
 		var expiryPermanent int
 		var monthlyResetDay int
 		var displayOrder int
-		var quota, lastSeenAt, createdAt, updatedAt sql.NullInt64
+		var quota, lastSeenAt, createdAt, updatedAt, offlineDurationSec sql.NullInt64
 		var hostname, osName, osVersion, kernel, arch, virtualization, cpuModel, agentVersion sql.NullString
 		var cpuCores, memoryTotal, diskTotal, bootTime sql.NullInt64
 		if err := rows.Scan(
 			&node.ID, &node.DisplayName, &status, &countryCode, &region, &disabled,
 			&homeProbeTargetID, &billingMode, &monthlyResetDay, &expiryDate, &expiryPermanent, &billingCycle, &displayOrder, &publicIPv4, &publicIPv6,
-			&quota, &lastSeenAt, &createdAt, &updatedAt,
+			&quota, &lastSeenAt, &createdAt, &updatedAt, &offlineDurationSec,
 			&hostname, &osName, &osVersion, &kernel, &arch, &virtualization,
 			&cpuModel, &cpuCores, &memoryTotal, &diskTotal,
 			&bootTime, &agentVersion,
@@ -520,7 +529,7 @@ func (s *SQLiteStore) AdminNodes(ctx context.Context) ([]AdminNode, error) {
 			return nil, err
 		}
 		node.Disabled = disabled != 0
-		node.Status = publicNodeStatus(status, lastSeenAt, now)
+		node.Status = publicNodeStatusAfter(status, lastSeenAt, now, nodeOfflineAfterFromSeconds(offlineDurationSec))
 		if node.Disabled {
 			node.Status = "disabled"
 		}
@@ -997,7 +1006,16 @@ func (s *SQLiteStore) nodes(ctx context.Context) ([]Node, error) {
 		             ELSE strftime('%Y-%m', 'now')
 		           END
 		       ) AS billable_bytes,
-		       n.monthly_quota_bytes
+		       n.monthly_quota_bytes,
+		       COALESCE((
+		         SELECT MAX(ar.duration_sec)
+		         FROM alert_rules ar
+		         WHERE ar.notification_event_type = 'node_offline'
+		           AND (
+		             NOT EXISTS (SELECT 1 FROM alert_rule_node_scopes scope_all WHERE scope_all.rule_id = ar.id)
+		             OR EXISTS (SELECT 1 FROM alert_rule_node_scopes scope_node WHERE scope_node.rule_id = ar.id AND scope_node.node_id = n.id)
+		           )
+		       ), ?) AS offline_duration_sec
 		FROM nodes n
 		LEFT JOIN host_info h ON h.node_id = n.id
 		LEFT JOIN state_samples ss ON ss.id = (
@@ -1005,7 +1023,7 @@ func (s *SQLiteStore) nodes(ctx context.Context) ([]Node, error) {
 		)
 		WHERE n.disabled = 0
 		ORDER BY n.display_order ASC, n.id ASC
-	`)
+	`, int64(nodeHeartbeatOfflineAfter/time.Second))
 	if err != nil {
 		return nil, err
 	}
@@ -1019,8 +1037,8 @@ func (s *SQLiteStore) nodes(ctx context.Context) ([]Node, error) {
 		var expiryPermanent int
 		var monthlyResetDay, cpuCores, memoryTotal, diskTotal, bootTime, lastSeenAt, uptimeSeconds sql.NullInt64
 		var cpuPercent, load1, load5, load15, netInSpeed, netOutSpeed sql.NullFloat64
-		var memoryUsed, diskUsed, netInTotal, netOutTotal, billable, quota sql.NullInt64
-		if err := rows.Scan(&id, &displayName, &status, &countryCode, &expiryDate, &expiryPermanent, &billingCycle, &billingMode, &monthlyResetDay, &lastSeenAt, &osName, &osVersion, &kernel, &arch, &virtualization, &cpuModel, &cpuCores, &memoryTotal, &diskTotal, &bootTime, &cpuPercent, &load1, &load5, &load15, &uptimeSeconds, &memoryUsed, &diskUsed, &netInSpeed, &netOutSpeed, &netInTotal, &netOutTotal, &billable, &quota); err != nil {
+		var memoryUsed, diskUsed, netInTotal, netOutTotal, billable, quota, offlineDurationSec sql.NullInt64
+		if err := rows.Scan(&id, &displayName, &status, &countryCode, &expiryDate, &expiryPermanent, &billingCycle, &billingMode, &monthlyResetDay, &lastSeenAt, &osName, &osVersion, &kernel, &arch, &virtualization, &cpuModel, &cpuCores, &memoryTotal, &diskTotal, &bootTime, &cpuPercent, &load1, &load5, &load15, &uptimeSeconds, &memoryUsed, &diskUsed, &netInSpeed, &netOutSpeed, &netInTotal, &netOutTotal, &billable, &quota, &offlineDurationSec); err != nil {
 			return nil, err
 		}
 		resetDay := 1
@@ -1031,7 +1049,7 @@ func (s *SQLiteStore) nodes(ctx context.Context) ([]Node, error) {
 		node := Node{
 			ID:                   id,
 			DisplayName:          displayName,
-			Status:               publicNodeStatus(status, lastSeenAt, now),
+			Status:               publicNodeStatusAfter(status, lastSeenAt, now, nodeOfflineAfterFromSeconds(offlineDurationSec)),
 			OS:                   nullStringOr(osName, "linux"),
 			OSVersion:            nullStringOr(osVersion, ""),
 			Kernel:               nullStringOr(kernel, ""),
@@ -1721,13 +1739,32 @@ func (s *SQLiteStore) statePoints(ctx context.Context, nodeID string, window lat
 }
 
 func publicNodeStatus(status string, lastSeenAt sql.NullInt64, now time.Time) string {
+	return publicNodeStatusAfter(status, lastSeenAt, now, nodeHeartbeatOfflineAfter)
+}
+
+func publicNodeStatusAfter(status string, lastSeenAt sql.NullInt64, now time.Time, offlineAfter time.Duration) string {
 	if status == "" {
 		status = "no_data"
 	}
-	if (status == "online" || status == "warning") && (!lastSeenAt.Valid || now.Sub(time.Unix(lastSeenAt.Int64, 0).UTC()) > nodeHeartbeatOfflineAfter) {
+	offlineAfter = normalizeNodeOfflineAfter(offlineAfter)
+	if (status == "online" || status == "warning") && (!lastSeenAt.Valid || now.Sub(time.Unix(lastSeenAt.Int64, 0).UTC()) >= offlineAfter) {
 		return "offline"
 	}
 	return status
+}
+
+func normalizeNodeOfflineAfter(offlineAfter time.Duration) time.Duration {
+	if offlineAfter <= 0 {
+		return nodeHeartbeatOfflineAfter
+	}
+	return offlineAfter
+}
+
+func nodeOfflineAfterFromSeconds(seconds sql.NullInt64) time.Duration {
+	if !seconds.Valid || seconds.Int64 <= 0 {
+		return nodeHeartbeatOfflineAfter
+	}
+	return time.Duration(seconds.Int64) * time.Second
 }
 
 func nullIfEmpty(value string) any {

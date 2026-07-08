@@ -254,17 +254,27 @@ func (s *SQLiteStore) NotificationNode(ctx context.Context, nodeID string) (noti
 	var snapshot notificationNodeSnapshot
 	var storedStatus string
 	var lastSeenAt sql.NullInt64
+	var offlineDurationSec sql.NullInt64
 	if err := s.db.QueryRowContext(ctx, `
-		SELECT id, display_name, status, last_seen_at
-		FROM nodes
-		WHERE id = ? AND disabled = 0
-	`, nodeID).Scan(&snapshot.ID, &snapshot.DisplayName, &storedStatus, &lastSeenAt); err != nil {
+		SELECT n.id, n.display_name, n.status, n.last_seen_at,
+		       COALESCE((
+		         SELECT MAX(ar.duration_sec)
+		         FROM alert_rules ar
+		         WHERE ar.notification_event_type = 'node_offline'
+		           AND (
+		             NOT EXISTS (SELECT 1 FROM alert_rule_node_scopes scope_all WHERE scope_all.rule_id = ar.id)
+		             OR EXISTS (SELECT 1 FROM alert_rule_node_scopes scope_node WHERE scope_node.rule_id = ar.id AND scope_node.node_id = n.id)
+		           )
+		       ), ?) AS offline_duration_sec
+		FROM nodes n
+		WHERE n.id = ? AND n.disabled = 0
+	`, int64(nodeHeartbeatOfflineAfter/time.Second), nodeID).Scan(&snapshot.ID, &snapshot.DisplayName, &storedStatus, &lastSeenAt, &offlineDurationSec); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return notificationNodeSnapshot{}, errNodeNotFound
 		}
 		return notificationNodeSnapshot{}, err
 	}
-	snapshot.Status = publicNodeStatus(storedStatus, lastSeenAt, time.Now().UTC())
+	snapshot.Status = publicNodeStatusAfter(storedStatus, lastSeenAt, time.Now().UTC(), nodeOfflineAfterFromSeconds(offlineDurationSec))
 	return snapshot, nil
 }
 
