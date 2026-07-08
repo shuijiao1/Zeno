@@ -693,7 +693,7 @@ Controller 会在 Agent 上报时实际使用这些规则：
       "comparator": ">=",
       "threshold": 90,
       "threshold_unit": "%",
-      "duration_sec": 300,
+      "duration_sec": 30,
       "enabled": true,
       "notification_event_type": "probe_unhealthy",
       "notification_label": "异常",
@@ -710,7 +710,7 @@ Controller 会在 Agent 上报时实际使用这些规则：
       "comparator": ">=",
       "threshold": 180,
       "threshold_unit": "s",
-      "duration_sec": 0,
+      "duration_sec": 30,
       "enabled": true,
       "notification_event_type": "node_offline",
       "notification_label": "离线",
@@ -733,7 +733,7 @@ Controller 会在 Agent 上报时实际使用这些规则：
 {
   "enabled": true,
   "threshold": 85,
-  "duration_sec": 180,
+  "duration_sec": 30,
   "scope_node_ids": ["hytron", "backup"]
 }
 ```
@@ -750,7 +750,7 @@ Controller 会在 Agent 上报时实际使用这些规则：
     "comparator": ">=",
     "threshold": 85,
     "threshold_unit": "%",
-    "duration_sec": 180,
+    "duration_sec": 30,
     "enabled": true,
     "notification_event_type": "probe_unhealthy",
     "notification_label": "异常",

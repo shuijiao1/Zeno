@@ -69,14 +69,19 @@ func TestAdminAlertRulesListAndPatchWithoutSensitiveLeak(t *testing.T) {
 		rulesByID[rule.ID] = rule
 	}
 	cpuRule, ok := rulesByID["cpu_high"]
-	if !ok || cpuRule.Name != "CPU 使用率" || cpuRule.Category != "resource" || cpuRule.Metric != "cpu_percent" || cpuRule.Comparator != ">=" || cpuRule.Threshold != 90 || cpuRule.ThresholdUnit != "%" || cpuRule.DurationSec != 300 || !cpuRule.Enabled || cpuRule.NotificationEventType != "probe_unhealthy" || cpuRule.NotificationLabel != "异常" {
-		t.Fatalf("cpu_high rule = %+v, want enabled resource CPU rule mapped to probe_unhealthy notification", cpuRule)
+	if !ok || cpuRule.Name != "CPU 使用率" || cpuRule.Category != "resource" || cpuRule.Metric != "cpu_percent" || cpuRule.Comparator != ">=" || cpuRule.Threshold != 90 || cpuRule.ThresholdUnit != "%" || cpuRule.DurationSec != 30 || !cpuRule.Enabled || cpuRule.NotificationEventType != "probe_unhealthy" || cpuRule.NotificationLabel != "异常" {
+		t.Fatalf("cpu_high rule = %+v, want enabled resource CPU rule mapped to probe_unhealthy notification with 30s duration", cpuRule)
 	}
 	if cpuRule.Description != "" {
 		t.Fatalf("cpu_high description = %q, want empty", cpuRule.Description)
 	}
 	if rulesByID["node_offline"].Name != "离线通知" || rulesByID["node_offline"].NotificationEventType != "node_offline" {
 		t.Fatalf("offline rule should be the only liveness notification: %+v", rulesByID["node_offline"])
+	}
+	for _, ruleID := range []string{"cpu_high", "memory_high", "disk_high", "node_offline"} {
+		if rulesByID[ruleID].DurationSec != 30 {
+			t.Fatalf("%s duration = %d, want default 30s", ruleID, rulesByID[ruleID].DurationSec)
+		}
 	}
 	renewalRule := rulesByID["renewal_due"]
 	if renewalRule.Name != "续费提醒" || renewalRule.Category != "billing" || renewalRule.Metric != "expiry_days" || renewalRule.Comparator != "<=" || renewalRule.Threshold != 3 || renewalRule.ThresholdUnit != "d" || renewalRule.Enabled || renewalRule.NotificationEventType != "renewal_due" || renewalRule.NotificationLabel != "续费" {
@@ -109,6 +114,38 @@ func TestAdminAlertRulesListAndPatchWithoutSensitiveLeak(t *testing.T) {
 	}
 	if patchResponse.Rule.ID != "cpu_high" || patchResponse.Rule.Enabled || patchResponse.Rule.Threshold != 95.5 || patchResponse.Rule.DurationSec != 600 {
 		t.Fatalf("patched rule = %+v, want updated enabled/threshold/duration", patchResponse.Rule)
+	}
+}
+
+func TestDefaultAlertRuleDurationMigration(t *testing.T) {
+	store, err := OpenSQLiteStore(filepath.Join(t.TempDir(), "zeno.db"))
+	if err != nil {
+		t.Fatalf("open sqlite store: %v", err)
+	}
+	defer store.Close()
+	ctx := context.Background()
+	oldDurations := map[string]int{
+		"cpu_high":     300,
+		"memory_high":  300,
+		"disk_high":    600,
+		"node_offline": 180,
+	}
+	for ruleID, duration := range oldDurations {
+		if _, err := store.db.ExecContext(ctx, `UPDATE alert_rules SET duration_sec = ? WHERE id = ?`, duration, ruleID); err != nil {
+			t.Fatalf("set old duration for %s: %v", ruleID, err)
+		}
+	}
+	if err := store.ensureDefaultAlertRules(ctx); err != nil {
+		t.Fatalf("ensure default alert rules: %v", err)
+	}
+	for ruleID := range oldDurations {
+		var duration int
+		if err := store.db.QueryRowContext(ctx, `SELECT duration_sec FROM alert_rules WHERE id = ?`, ruleID).Scan(&duration); err != nil {
+			t.Fatalf("read duration for %s: %v", ruleID, err)
+		}
+		if duration != 30 {
+			t.Fatalf("%s duration = %d, want migrated default 30s", ruleID, duration)
+		}
 	}
 }
 

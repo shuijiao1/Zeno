@@ -16,7 +16,7 @@ var defaultAdminAlertRules = []AdminAlertRule{
 		Comparator:            ">=",
 		Threshold:             90,
 		ThresholdUnit:         "%",
-		DurationSec:           300,
+		DurationSec:           30,
 		Enabled:               true,
 		NotificationEventType: "probe_unhealthy",
 	},
@@ -28,7 +28,7 @@ var defaultAdminAlertRules = []AdminAlertRule{
 		Comparator:            ">=",
 		Threshold:             90,
 		ThresholdUnit:         "%",
-		DurationSec:           300,
+		DurationSec:           30,
 		Enabled:               true,
 		NotificationEventType: "probe_unhealthy",
 	},
@@ -40,7 +40,7 @@ var defaultAdminAlertRules = []AdminAlertRule{
 		Comparator:            ">=",
 		Threshold:             90,
 		ThresholdUnit:         "%",
-		DurationSec:           600,
+		DurationSec:           30,
 		Enabled:               true,
 		NotificationEventType: "probe_unhealthy",
 	},
@@ -52,7 +52,7 @@ var defaultAdminAlertRules = []AdminAlertRule{
 		Comparator:            ">=",
 		Threshold:             180,
 		ThresholdUnit:         "s",
-		DurationSec:           180,
+		DurationSec:           30,
 		Enabled:               true,
 		NotificationEventType: "node_offline",
 	},
@@ -99,6 +99,34 @@ func (s *SQLiteStore) ensureDefaultAlertRules(ctx context.Context) error {
 			WHERE id = ?
 		`, rule.Name, sortOrder, rule.ID); err != nil {
 			return err
+		}
+	}
+	if err := s.migrateDefaultAlertRuleDurations(ctx); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (s *SQLiteStore) migrateDefaultAlertRuleDurations(ctx context.Context) error {
+	now := time.Now().UTC().Unix()
+	updates := []struct {
+		id      string
+		oldSecs []int
+	}{
+		{id: "cpu_high", oldSecs: []int{300}},
+		{id: "memory_high", oldSecs: []int{300}},
+		{id: "disk_high", oldSecs: []int{600}},
+		{id: "node_offline", oldSecs: []int{180}},
+	}
+	for _, update := range updates {
+		for _, oldSec := range update.oldSecs {
+			if _, err := s.db.ExecContext(ctx, `
+				UPDATE alert_rules
+				SET duration_sec = 30, updated_at = ?
+				WHERE id = ? AND duration_sec = ?
+			`, now, update.id, oldSec); err != nil {
+				return err
+			}
 		}
 	}
 	return nil
