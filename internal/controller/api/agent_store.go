@@ -16,7 +16,7 @@ func (s *SQLiteStore) RecordAgentHeartbeat(ctx context.Context, nodeID string, t
 func (s *SQLiteStore) RecordAgentHeartbeatTransition(ctx context.Context, nodeID string, ts time.Time, status, agentVersion string) (notificationStatusTransition, error) {
 	now := time.Now().UTC()
 	nowUnix := now.Unix()
-	seenAt := ts.UTC().Unix()
+	seenAt := nowUnix
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return notificationStatusTransition{}, err
@@ -149,7 +149,7 @@ func (s *SQLiteStore) InsertAgentState(ctx context.Context, nodeID string, state
 		UPDATE nodes
 		SET status = CASE WHEN status = 'warning' THEN 'warning' ELSE 'online' END, last_seen_at = ?, updated_at = ?
 		WHERE id = ? AND disabled = 0
-	`, state.TS, now, nodeID); err != nil {
+	`, now, now, nodeID); err != nil {
 		return err
 	}
 

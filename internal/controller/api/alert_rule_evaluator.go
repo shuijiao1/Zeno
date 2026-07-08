@@ -148,7 +148,7 @@ func aggregateAlertRuleStatus(ctx context.Context, tx *sql.Tx, nodeID string) (s
 func updateNodeStatusForAlertRules(ctx context.Context, tx *sql.Tx, nodeID string, ts time.Time, status string, preserveExistingWarning bool) (notificationStatusTransition, error) {
 	now := time.Now().UTC()
 	nowUnix := now.Unix()
-	seenAt := ts.UTC().Unix()
+	seenAt := nowUnix
 	var previous notificationNodeSnapshot
 	var storedStatus string
 	var lastSeenAt sql.NullInt64

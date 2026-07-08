@@ -441,7 +441,8 @@ func TestAgentHeartbeatUpdatesNodeStatusAndLastSeen(t *testing.T) {
 		t.Fatalf("seed preview data: %v", err)
 	}
 
-	ts := time.Now().UTC().Truncate(time.Second).Unix()
+	before := time.Now().UTC().Unix()
+	ts := time.Now().UTC().Add(-10 * time.Minute).Truncate(time.Second).Unix()
 	payload := []byte(`{"ts":` + strconv.FormatInt(ts, 10) + `,"status":"online","agent_version":"agent-test"}`)
 	recorder := httptest.NewRecorder()
 	request := httptest.NewRequest(http.MethodPost, "/api/agent/v1/heartbeat", bytes.NewReader(payload))
@@ -462,8 +463,9 @@ func TestAgentHeartbeatUpdatesNodeStatusAndLastSeen(t *testing.T) {
 	`).Scan(&status, &lastSeen, &agentVersion); err != nil {
 		t.Fatalf("query heartbeat state: %v", err)
 	}
-	if status != "online" || lastSeen != ts || agentVersion != "agent-test" {
-		t.Fatalf("heartbeat persisted status=%q last_seen=%d agent_version=%q, want online/%d/agent-test", status, lastSeen, agentVersion, ts)
+	after := time.Now().UTC().Unix()
+	if status != "online" || lastSeen < before || lastSeen > after || agentVersion != "agent-test" {
+		t.Fatalf("heartbeat persisted status=%q last_seen=%d agent_version=%q, want online/received-at %d..%d/agent-test", status, lastSeen, agentVersion, before, after)
 	}
 }
 
@@ -497,7 +499,7 @@ func TestAgentHeartbeatDispatchesEnabledTelegramOnNodeOfflineTransition(t *testi
 	if _, err := store.db.ExecContext(ctx, `UPDATE nodes SET status = 'online', last_seen_at = ? WHERE id = 'hytron'`, now.Unix()); err != nil {
 		t.Fatalf("set fresh heartbeat: %v", err)
 	}
-	postAgentHeartbeat(t, handler, now.Add(-nodeHeartbeatOfflineAfter-time.Minute).Unix(), "online")
+	postAgentHeartbeat(t, handler, now.Unix(), "offline")
 
 	paths, forms, errors := telegram.waitForCalls(t, 1)
 	if len(errors) != 0 {
@@ -562,7 +564,7 @@ func TestAgentHeartbeatDispatchesEnabledTelegramChannel(t *testing.T) {
 	if _, err := store.db.ExecContext(ctx, `UPDATE nodes SET status = 'online', last_seen_at = ? WHERE id = 'hytron'`, now.Unix()); err != nil {
 		t.Fatalf("set fresh heartbeat: %v", err)
 	}
-	postAgentHeartbeat(t, handler, now.Add(-nodeHeartbeatOfflineAfter-time.Minute).Unix(), "online")
+	postAgentHeartbeat(t, handler, now.Unix(), "offline")
 
 	waitUntil(t, time.Second, func() bool {
 		captureMu.Lock()
@@ -621,7 +623,7 @@ func TestAgentHeartbeatNotificationDeliveryDoesNotBlockResponse(t *testing.T) {
 	if _, err := store.db.ExecContext(ctx, `UPDATE nodes SET status = 'online', last_seen_at = ? WHERE id = 'hytron'`, now.Unix()); err != nil {
 		t.Fatalf("set fresh heartbeat: %v", err)
 	}
-	postAgentHeartbeat(t, NewHandler(HandlerOptions{Store: store, NotificationClient: slowTelegram.Client(), TelegramAPIBaseURL: slowTelegram.URL}), now.Add(-nodeHeartbeatOfflineAfter-time.Minute).Unix(), "online")
+	postAgentHeartbeat(t, NewHandler(HandlerOptions{Store: store, NotificationClient: slowTelegram.Client(), TelegramAPIBaseURL: slowTelegram.URL}), now.Unix(), "offline")
 	elapsed := time.Since(started)
 	if elapsed > 150*time.Millisecond {
 		t.Fatalf("heartbeat response took %s, want notification delivery to be non-blocking", elapsed)
@@ -667,7 +669,7 @@ func TestAgentHeartbeatDoesNotDispatchRecoveryAfterStaleHeartbeatOffline(t *test
 	}
 }
 
-func TestAgentHeartbeatTransitionDoesNotDispatchOnlineWhenOutOfOrderHeartbeatStaysPubliclyOffline(t *testing.T) {
+func TestAgentHeartbeatTransitionTreatsReceivedHeartbeatAsFreshLiveness(t *testing.T) {
 	store, err := OpenSQLiteStore(filepath.Join(t.TempDir(), "zeno.db"))
 	if err != nil {
 		t.Fatalf("open sqlite store: %v", err)
@@ -686,15 +688,15 @@ func TestAgentHeartbeatTransitionDoesNotDispatchOnlineWhenOutOfOrderHeartbeatSta
 	if err != nil {
 		t.Fatalf("record heartbeat transition: %v", err)
 	}
-	if transition.Previous.Status != "offline" || transition.Current.Status != "offline" {
-		t.Fatalf("transition = %+v, want offline -> offline public statuses", transition)
+	if transition.Previous.Status != "offline" || transition.Current.Status != "online" {
+		t.Fatalf("transition = %+v, want offline -> online public statuses", transition)
 	}
 	if eventType, ok := notificationEventTypeForStatusChange(transition.Previous.Status, transition.Current.Status); ok {
-		t.Fatalf("event type = %q, want no notification when public status stays offline", eventType)
+		t.Fatalf("event type = %q, want no notification for recovery", eventType)
 	}
 }
 
-func TestAgentHeartbeatTransitionDispatchesOfflineWhenOutOfOrderOnlineMakesNodePubliclyOffline(t *testing.T) {
+func TestAgentHeartbeatTransitionDispatchesOfflineOnExplicitOfflineStatus(t *testing.T) {
 	store, err := OpenSQLiteStore(filepath.Join(t.TempDir(), "zeno.db"))
 	if err != nil {
 		t.Fatalf("open sqlite store: %v", err)
@@ -709,8 +711,7 @@ func TestAgentHeartbeatTransitionDispatchesOfflineWhenOutOfOrderOnlineMakesNodeP
 		t.Fatalf("set fresh heartbeat: %v", err)
 	}
 
-	staleHeartbeat := now.Add(-nodeHeartbeatOfflineAfter - time.Minute)
-	transition, err := store.RecordAgentHeartbeatTransition(ctx, "hytron", staleHeartbeat, "online", "agent-test")
+	transition, err := store.RecordAgentHeartbeatTransition(ctx, "hytron", now, "offline", "agent-test")
 	if err != nil {
 		t.Fatalf("record heartbeat transition: %v", err)
 	}
@@ -755,7 +756,7 @@ func TestAgentHeartbeatNotificationFailureDoesNotRejectHeartbeat(t *testing.T) {
 	if _, err := store.db.ExecContext(ctx, `UPDATE nodes SET status = 'online', last_seen_at = ? WHERE id = 'hytron'`, now.Unix()); err != nil {
 		t.Fatalf("set fresh heartbeat: %v", err)
 	}
-	recorder := postAgentHeartbeat(t, NewHandler(HandlerOptions{Store: store, TelegramAPIBaseURL: closedURL}), now.Add(-nodeHeartbeatOfflineAfter-time.Minute).Unix(), "online")
+	recorder := postAgentHeartbeat(t, NewHandler(HandlerOptions{Store: store, TelegramAPIBaseURL: closedURL}), now.Unix(), "offline")
 	if recorder.Code != http.StatusAccepted {
 		t.Fatalf("heartbeat status = %d, want 202 even if notification send fails; body=%s", recorder.Code, recorder.Body.String())
 	}
@@ -763,7 +764,7 @@ func TestAgentHeartbeatNotificationFailureDoesNotRejectHeartbeat(t *testing.T) {
 	if err := store.db.QueryRowContext(ctx, `SELECT status FROM nodes WHERE id = 'hytron'`).Scan(&status); err != nil {
 		t.Fatalf("query node status: %v", err)
 	}
-	if status != "online" {
+	if status != "offline" {
 		t.Fatalf("stored node status = %q, want heartbeat status persisted despite notification failure", status)
 	}
 }
