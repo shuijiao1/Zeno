@@ -77,18 +77,6 @@ function formatUsage(value: number | null | undefined): string {
   return value.toFixed(2)
 }
 
-function formatLoad(node: HomeCardNode): string {
-  if (node.load1 === null || node.load1 === undefined) return '--'
-  if (node.load5 === null || node.load5 === undefined || node.load15 === null || node.load15 === undefined) return node.load1.toFixed(2)
-  return `${node.load1.toFixed(2)} / ${node.load5.toFixed(2)} / ${node.load15.toFixed(2)}`
-}
-
-function loadPercent(node: HomeCardNode): number | null {
-  if (node.load1 === null || node.load1 === undefined || !Number.isFinite(node.load1)) return null
-  if (!node.cpuCores || node.cpuCores <= 0) return null
-  return (node.load1 / node.cpuCores) * 100
-}
-
 function normalizeLoss(value: number | null | undefined): string {
   if (value === null || value === undefined) return '--'
   return `${value.toFixed(2)}%`
@@ -158,7 +146,6 @@ export function ServerCard({ node, onOpen }: ServerCardProps) {
         <UsageBar label="CPU" valueText={`${formatUsage(node.cpuPercent)}%`} percent={node.cpuPercent} />
         <div className="node-usage-rest">
           <UsageBar label="内存" valueText={`${formatUsage(memoryPercent)}%`} percent={memoryPercent} />
-          <UsageBar label="负载" valueText={formatLoad(node)} percent={loadPercent(node)} />
           <UsageBar label="存储" valueText={`${formatUsage(diskPercent)}%`} percent={diskPercent} />
           <UsageBar label={formatTrafficLabel()} valueText={`${formatKulinBytes(node.monthlyBillableBytes, { compact: true })} / ${formatKulinBytes(node.monthlyQuotaBytes, { compact: true })}`} percent={trafficPercent} />
           <section className="node-footer-grid" aria-label={`${node.displayName} network and latency`}>
