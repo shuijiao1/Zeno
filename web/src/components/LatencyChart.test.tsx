@@ -97,4 +97,21 @@ describe('LatencyChart', () => {
     expect(lineMatch?.[1].match(/M/g)).toHaveLength(1)
     expect(lineMatch?.[1].match(/L/g)).toHaveLength(1)
   })
+
+  it('keeps the full Kulin-style 1 day minute grid instead of thinning visible points', () => {
+    const minutePoints = Array.from({ length: 1440 }, (_, index) => ({
+      ts: new Date(Date.UTC(2026, 6, 5, 0, 0) + index * 60 * 1000).toISOString(),
+      targetId: 'alpha',
+      targetName: 'Alpha',
+      avgMs: 20 + (index % 10),
+      medianMs: 20 + (index % 10),
+      lossPercent: 0,
+    }))
+
+    const html = renderToStaticMarkup(<LatencyChart points={minutePoints} activeTargetNames={['Alpha']} />)
+    const lineMatch = html.match(/<path[^>]+d="([^"]+)"[^>]+stroke="#22c55e"/)
+
+    expect(lineMatch?.[1].match(/M/g)).toHaveLength(1)
+    expect(lineMatch?.[1].match(/L/g)).toHaveLength(1439)
+  })
 })
