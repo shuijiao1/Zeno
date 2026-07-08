@@ -127,14 +127,14 @@ func resolveLatencyWindow(rangeName string) (latencyWindow, bool) {
 	}
 }
 
-func resolveKulinLatencyGridWindow(rangeName string) (latencyWindow, bool) {
+func resolveLatencyGridWindow(rangeName string) (latencyWindow, bool) {
 	switch rangeName {
 	case "1d":
 		return latencyWindow{Name: "1d", Samples: 1440, Step: time.Minute}, true
 	case "7d":
-		return latencyWindow{Name: "7d", Samples: 336, Step: 30 * time.Minute}, true
+		return latencyWindow{Name: "7d", Samples: 1440, Step: 7 * time.Minute}, true
 	case "30d":
-		return latencyWindow{Name: "30d", Samples: 360, Step: 2 * time.Hour}, true
+		return latencyWindow{Name: "30d", Samples: 1440, Step: 30 * time.Minute}, true
 	default:
 		return latencyWindow{}, false
 	}
@@ -158,7 +158,7 @@ func resolveStateWindow(rangeName string) (latencyWindow, bool) {
 func mockLatencyPoints(nodeID string, rangeNames ...string) []LatencyPoint {
 	window, ok := resolveLatencyWindow("")
 	if len(rangeNames) > 0 {
-		if gridWindow, gridOK := resolveKulinLatencyGridWindow(rangeNames[0]); gridOK {
+		if gridWindow, gridOK := resolveLatencyGridWindow(rangeNames[0]); gridOK {
 			window, ok = gridWindow, true
 		} else {
 			window, ok = resolveLatencyWindow(rangeNames[0])
@@ -231,7 +231,7 @@ func mockServiceTargets() []ServiceTarget {
 func mockServiceLatencyPoints(targetID string, rangeNames ...string) []ServiceLatencyPoint {
 	window, ok := resolveLatencyWindow("")
 	if len(rangeNames) > 0 {
-		if gridWindow, gridOK := resolveKulinLatencyGridWindow(rangeNames[0]); gridOK {
+		if gridWindow, gridOK := resolveLatencyGridWindow(rangeNames[0]); gridOK {
 			window, ok = gridWindow, true
 		} else {
 			window, ok = resolveLatencyWindow(rangeNames[0])

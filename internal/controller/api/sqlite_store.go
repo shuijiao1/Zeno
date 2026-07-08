@@ -1336,7 +1336,7 @@ func (s *SQLiteStore) populateServiceTargetLatencySummary(ctx context.Context, t
 }
 
 func (s *SQLiteStore) serviceLatencyPoints(ctx context.Context, targetID string, window latencyWindow) ([]ServiceLatencyPoint, error) {
-	if _, ok := resolveKulinLatencyGridWindow(window.Name); ok {
+	if _, ok := resolveLatencyGridWindow(window.Name); ok {
 		return s.serviceLatencyGridPoints(ctx, targetID, window)
 	}
 	since := time.Now().UTC().Add(-time.Duration(window.Samples) * window.Step).Unix()
@@ -1376,7 +1376,7 @@ func (s *SQLiteStore) serviceLatencyPoints(ctx context.Context, targetID string,
 }
 
 func (s *SQLiteStore) latencyPoints(ctx context.Context, nodeID string, window latencyWindow) ([]LatencyPoint, error) {
-	if _, ok := resolveKulinLatencyGridWindow(window.Name); ok {
+	if _, ok := resolveLatencyGridWindow(window.Name); ok {
 		return s.latencyGridPoints(ctx, nodeID, window)
 	}
 	since := time.Now().UTC().Add(-time.Duration(window.Samples) * window.Step).Unix()
@@ -1475,7 +1475,7 @@ func (bucket latencyGridBucket) lossPercent() float64 {
 }
 
 func (s *SQLiteStore) latencyGridPoints(ctx context.Context, nodeID string, window latencyWindow) ([]LatencyPoint, error) {
-	gridWindow, ok := resolveKulinLatencyGridWindow(window.Name)
+	gridWindow, ok := resolveLatencyGridWindow(window.Name)
 	if !ok {
 		return nil, nil
 	}
@@ -1549,7 +1549,7 @@ func (s *SQLiteStore) latencyGridPoints(ctx context.Context, nodeID string, wind
 }
 
 func (s *SQLiteStore) serviceLatencyGridPoints(ctx context.Context, targetID string, window latencyWindow) ([]ServiceLatencyPoint, error) {
-	gridWindow, ok := resolveKulinLatencyGridWindow(window.Name)
+	gridWindow, ok := resolveLatencyGridWindow(window.Name)
 	if !ok {
 		return nil, nil
 	}
@@ -1675,12 +1675,13 @@ func latencyGridBounds(window latencyWindow) (time.Time, time.Time, int64) {
 	if step <= 0 {
 		step = time.Minute
 	}
-	end := time.Now().UTC().Truncate(step)
-	start := end.Add(-time.Duration(window.Samples-1) * step)
 	stepSeconds := int64(step.Seconds())
 	if stepSeconds <= 0 {
 		stepSeconds = 1
 	}
+	endUnix := (time.Now().UTC().Unix() / stepSeconds) * stepSeconds
+	end := time.Unix(endUnix, 0).UTC()
+	start := end.Add(-time.Duration(window.Samples-1) * step)
 	return start, end, stepSeconds
 }
 

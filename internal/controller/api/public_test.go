@@ -481,11 +481,11 @@ func TestNodeLatencyEndpointUsesRangeSpecificWindows(t *testing.T) {
 	if got := len(uniquePointTimes(oneDay.Points)); got != 1440 {
 		t.Fatalf("1d timestamps = %d, want 1440 one-minute samples", got)
 	}
-	if got := len(uniquePointTimes(sevenDays.Points)); got != 336 {
-		t.Fatalf("7d timestamps = %d, want 336 thirty-minute samples", got)
+	if got := len(uniquePointTimes(sevenDays.Points)); got != 1440 {
+		t.Fatalf("7d timestamps = %d, want 1440 seven-minute samples", got)
 	}
-	if got := len(uniquePointTimes(thirtyDays.Points)); got != 360 {
-		t.Fatalf("30d timestamps = %d, want 360 two-hour samples", got)
+	if got := len(uniquePointTimes(thirtyDays.Points)); got != 1440 {
+		t.Fatalf("30d timestamps = %d, want 1440 thirty-minute samples", got)
 	}
 
 	if pointSpan(t, oneDay.Points) < 23*time.Hour {
