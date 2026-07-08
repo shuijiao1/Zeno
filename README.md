@@ -105,6 +105,8 @@ Agent 只负责上报，不会修改 Controller，也不会打开远程命令入
 
 ## 更新
 
+完整升级、固定版本和回滚说明见 [`docs/UPGRADE.md`](docs/UPGRADE.md)。
+
 Docker Compose 部署可以直接更新镜像：
 
 ```bash
@@ -116,7 +118,7 @@ docker compose up -d
 也可以固定版本：
 
 ```bash
-sed -i 's#^ZENO_IMAGE=.*#ZENO_IMAGE=ghcr.io/shuijiao1/zeno:v0.2.0#' /opt/zeno/.env
+sed -i 's#^ZENO_IMAGE=.*#ZENO_IMAGE=ghcr.io/shuijiao1/zeno:v0.2.3#' /opt/zeno/.env
 cd /opt/zeno
 docker compose pull
 docker compose up -d
@@ -136,6 +138,7 @@ curl -fsS http://127.0.0.1:18980/health
 - 管理员 token 和 Agent token 默认位于 `/opt/zeno/secrets/`，权限应保持为 `600`。
 - 建议定期备份 `/opt/zeno/data` 和 `/opt/zeno/secrets`。
 - Controller 默认本机监听；公网访问应通过 HTTPS 反向代理。
+- 公网部署、token 轮换和安全边界见 [`docs/SECURITY.md`](docs/SECURITY.md)。
 
 ---
 

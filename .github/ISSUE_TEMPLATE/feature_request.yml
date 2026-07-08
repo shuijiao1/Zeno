@@ -1,0 +1,30 @@
+name: Feature request
+about: Suggest an improvement for Zeno
+title: "[Feature] "
+labels: [enhancement]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: 你想解决什么问题？
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: 期望方案
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: 你考虑过的替代方案
+  - type: checkboxes
+    id: scope
+    attributes:
+      label: Scope check
+      options:
+        - label: 这不是远程命令、远程终端、文件管理或脚本任务需求。
+          required: false
+        - label: 这适合轻量自托管监控面板，而不是多租户 SaaS。
+          required: false

@@ -171,3 +171,28 @@ curl -fsS http://127.0.0.1:18980/api/public/v1/summary
 - 多渠道通知、Webhook、自定义通知模板、通知组。
 - 服务器分组、备注。
 - Logo/背景图只使用 URL 或站内静态路径。
+
+## Docker Compose 一键安装
+
+公开部署推荐优先使用仓库根目录的 `install.sh`：
+
+```bash
+bash <(curl -fsSL https://raw.githubusercontent.com/shuijiao1/Zeno/main/install.sh)
+```
+
+脚本行为：
+
+- 默认部署到 `/opt/zeno`。
+- 默认监听 `127.0.0.1:18980`。
+- 重复执行时会保留现有 data/secrets，并在改写配置前备份 `.env`、`docker-compose.yml`、`data`、`secrets` 到 `/opt/zeno/backups/install-YYYYmmdd-HHMMSS/`。
+- 如果已有 `.env`，未显式传入的 `ZENO_IMAGE`、`ZENO_HOST_PORT`、`ZENO_CONTAINER_NAME`、`TZ` 会沿用旧值。
+- `/health` 未通过时会打印 `docker compose ps` 和最近日志，并提示备份目录。
+
+可选固定版本：
+
+```bash
+ZENO_IMAGE=ghcr.io/shuijiao1/zeno:v0.2.3 \
+  bash <(curl -fsSL https://raw.githubusercontent.com/shuijiao1/Zeno/main/install.sh)
+```
+
+详细升级和回滚见 [`UPGRADE.md`](UPGRADE.md)。

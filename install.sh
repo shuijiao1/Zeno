@@ -2,14 +2,18 @@
 set -euo pipefail
 
 REPO="shuijiao1/Zeno"
-IMAGE="${ZENO_IMAGE:-ghcr.io/shuijiao1/zeno:latest}"
+IMAGE="${ZENO_IMAGE:-}"
 INSTALL_DIR="${ZENO_INSTALL_DIR:-/opt/zeno}"
-HOST_PORT="${ZENO_HOST_PORT:-18980}"
-CONTAINER_NAME="${ZENO_CONTAINER_NAME:-zeno}"
-TZ_VALUE="${TZ:-Asia/Shanghai}"
+HOST_PORT="${ZENO_HOST_PORT:-}"
+CONTAINER_NAME="${ZENO_CONTAINER_NAME:-}"
+TZ_VALUE="${TZ:-}"
+BACKUP_DIR=""
 
 fail() {
   echo "错误: $*" >&2
+  if [ -n "${BACKUP_DIR:-}" ]; then
+    echo "本次安装/更新前已备份到: ${BACKUP_DIR}" >&2
+  fi
   exit 1
 }
 
@@ -23,6 +27,60 @@ random_secret() {
   else
     head -c 32 /dev/urandom | base64 | tr '+/' '-_' | tr -d '='
   fi
+}
+
+read_env_value() {
+  local key="$1"
+  local file="$INSTALL_DIR/.env"
+  [ -f "$file" ] || return 1
+  sed -n "s/^${key}=//p" "$file" | tail -n1
+}
+
+load_existing_env_defaults() {
+  local value
+  if [ -z "$IMAGE" ] && value=$(read_env_value ZENO_IMAGE); then
+    IMAGE="$value"
+  fi
+  if [ -z "$HOST_PORT" ] && value=$(read_env_value ZENO_HOST_PORT); then
+    HOST_PORT="$value"
+  fi
+  if [ -z "$CONTAINER_NAME" ] && value=$(read_env_value ZENO_CONTAINER_NAME); then
+    CONTAINER_NAME="$value"
+  fi
+  if [ -z "$TZ_VALUE" ] && value=$(read_env_value TZ); then
+    TZ_VALUE="$value"
+  fi
+
+  IMAGE="${IMAGE:-ghcr.io/shuijiao1/zeno:latest}"
+  HOST_PORT="${HOST_PORT:-18980}"
+  CONTAINER_NAME="${CONTAINER_NAME:-zeno}"
+  TZ_VALUE="${TZ_VALUE:-Asia/Shanghai}"
+}
+
+backup_existing_install() {
+  [ -d "$INSTALL_DIR" ] || return 0
+  local has_existing=0
+  local name
+  for name in .env docker-compose.yml data secrets; do
+    if [ -e "$INSTALL_DIR/$name" ]; then
+      has_existing=1
+      break
+    fi
+  done
+  [ "$has_existing" -eq 1 ] || return 0
+
+  local backup_root="$INSTALL_DIR/backups"
+  BACKUP_DIR="$backup_root/install-$(date +%Y%m%d-%H%M%S)"
+  mkdir -p "$BACKUP_DIR"
+  chmod 700 "$backup_root" "$BACKUP_DIR" 2>/dev/null || true
+
+  for name in .env docker-compose.yml data secrets; do
+    if [ -e "$INSTALL_DIR/$name" ]; then
+      cp -a "$INSTALL_DIR/$name" "$BACKUP_DIR/"
+    fi
+  done
+  printf '%s\n' "$BACKUP_DIR" > "$INSTALL_DIR/.last-install-backup"
+  chmod 600 "$INSTALL_DIR/.last-install-backup" 2>/dev/null || true
 }
 
 wait_health() {
@@ -45,6 +103,9 @@ need curl
 if ! docker compose version >/dev/null 2>&1; then
   fail "未找到 docker compose 插件，请先安装 Docker Compose v2"
 fi
+
+load_existing_env_defaults
+backup_existing_install
 
 mkdir -p "$INSTALL_DIR/data" "$INSTALL_DIR/secrets"
 chmod 700 "$INSTALL_DIR/secrets"
@@ -78,6 +139,7 @@ ZENO_CONTAINER_NAME=${CONTAINER_NAME}
 ZENO_HOST_PORT=${HOST_PORT}
 TZ=${TZ_VALUE}
 EOF_ENV
+chmod 600 "$INSTALL_DIR/.env"
 
 cat > "$INSTALL_DIR/docker-compose.yml" <<'EOF_COMPOSE'
 services:
@@ -106,7 +168,7 @@ docker compose up -d
 if ! wait_health; then
   docker compose ps >&2 || true
   docker compose logs --tail=120 zeno >&2 || true
-  fail "Zeno 启动后 /health 未通过"
+  fail "Zeno 启动后 /health 未通过；请检查上方日志，可用备份目录恢复 .env、docker-compose.yml、data 和 secrets"
 fi
 
 cat <<EOF_OK
@@ -115,6 +177,7 @@ Zeno 已安装并启动
 - 本机监听: http://127.0.0.1:${HOST_PORT}
 - 数据目录: ${INSTALL_DIR}/data
 - 首次后台 bootstrap token: ${admin_secret}
+$(if [ -n "${BACKUP_DIR:-}" ]; then printf '%s\n' "- 更新前备份: ${BACKUP_DIR}"; fi)
 
 如需公网访问，请用 Caddy/Nginx 反代到 127.0.0.1:${HOST_PORT}，不要直接暴露端口。
 EOF_OK

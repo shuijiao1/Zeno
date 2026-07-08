@@ -105,6 +105,8 @@ The Agent only reports metrics and probe results. It does not modify the Control
 
 ## Update
 
+See [`docs/UPGRADE.md`](docs/UPGRADE.md) for upgrade, version pinning and rollback notes.
+
 For Docker Compose deployments:
 
 ```bash
@@ -116,7 +118,7 @@ docker compose up -d
 To pin a specific version:
 
 ```bash
-sed -i 's#^ZENO_IMAGE=.*#ZENO_IMAGE=ghcr.io/shuijiao1/zeno:v0.2.0#' /opt/zeno/.env
+sed -i 's#^ZENO_IMAGE=.*#ZENO_IMAGE=ghcr.io/shuijiao1/zeno:v0.2.3#' /opt/zeno/.env
 cd /opt/zeno
 docker compose pull
 docker compose up -d
@@ -136,6 +138,7 @@ curl -fsS http://127.0.0.1:18980/health
 - Admin and Agent tokens: `/opt/zeno/secrets/`, expected to stay `600`.
 - Back up `/opt/zeno/data` and `/opt/zeno/secrets` regularly.
 - Keep the Controller bound locally and expose it through an HTTPS reverse proxy.
+- See [`docs/SECURITY.md`](docs/SECURITY.md) for public deployment, token rotation and security boundaries.
 
 ---
 

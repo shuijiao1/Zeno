@@ -1,0 +1,58 @@
+name: Installation problem
+about: Get help with Controller or Agent installation
+title: "[Install] "
+labels: [installation]
+body:
+  - type: dropdown
+    id: target
+    attributes:
+      label: 安装对象 / Target
+      options:
+        - Controller
+        - Agent - Linux
+        - Agent - macOS
+        - Agent - Windows
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      placeholder: Controller v0.2.3 / Agent v0.1.11 / latest
+    validations:
+      required: true
+  - type: input
+    id: os
+    attributes:
+      label: OS and architecture
+      placeholder: Debian 13 amd64, Ubuntu 24.04 arm64, Windows Server 2022 amd64...
+    validations:
+      required: true
+  - type: textarea
+    id: command
+    attributes:
+      label: 安装命令 / Install command
+      description: 请先删除 token、密码、真实域名等敏感信息。
+      render: shell
+  - type: textarea
+    id: output
+    attributes:
+      label: 输出 / Output
+      render: shell
+    validations:
+      required: true
+  - type: textarea
+    id: checks
+    attributes:
+      label: 已检查 / What you checked
+      placeholder: |
+        docker compose ps
+        curl -fsS http://127.0.0.1:18980/health
+        systemctl status zeno-agent.service
+  - type: checkboxes
+    id: checklist
+    attributes:
+      label: Checklist
+      options:
+        - label: 我已隐藏 token、密码、Telegram Bot Token 等敏感信息。
+          required: true

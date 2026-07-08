@@ -91,3 +91,51 @@ Public API 只返回展示所需数据：
 - Authorization header。
 
 摘要和文档里也不得保留真实 token。
+
+## 公网部署 checklist
+
+公开给别人使用或部署到公网前，建议逐项确认：
+
+- Controller 仍只监听 `127.0.0.1:18980`，不要直接把 18980 暴露到公网。
+- 公网入口必须走 HTTPS 反向代理，例如 Caddy / Nginx / Cloudflare Tunnel。
+- `/opt/zeno/data` 和 `/opt/zeno/secrets` 只允许 root 或服务用户读取。
+- Telegram Bot Token、Admin session、Agent token 不要写入 issue、截图、日志或公开文档。
+- SQLite 和 secrets 已纳入定期备份。
+- 已保存反代配置和 `/opt/zeno/.env`，方便回滚。
+
+## Token 恢复与轮换
+
+### Admin 密码 / session
+
+首次安装生成的 bootstrap token 位于：
+
+```text
+/opt/zeno/secrets/zeno_admin_token
+```
+
+如果已在后台修改过账号密码，应优先使用后台账户登录。忘记密码时，可以在停机备份数据库后按文档或后续恢复工具重置管理员密码；不要把 bootstrap token 暴露到公网或 issue。
+
+### Agent token
+
+每台服务器应使用独立 Agent token。怀疑泄露时：
+
+1. 在后台重新生成或重建该服务器的 Agent 接入凭据。
+2. 在目标机器重新运行后台复制的 Agent 安装命令。
+3. 确认旧 Agent 已无法继续上报，且新 Agent 正常在线。
+
+### Telegram Bot Token
+
+怀疑泄露时，应在 BotFather 轮换 Token，然后在 Zeno 后台通知渠道里更新。公开 issue 里只写“已设置/未设置”，不要贴原文。
+
+## 备份范围
+
+至少备份：
+
+```text
+/opt/zeno/.env
+/opt/zeno/docker-compose.yml
+/opt/zeno/data/
+/opt/zeno/secrets/
+```
+
+升级和重跑 `install.sh` 前，安装脚本会自动创建 `/opt/zeno/backups/install-YYYYmmdd-HHMMSS/`。恢复 SQLite 前请先停止 Controller。
