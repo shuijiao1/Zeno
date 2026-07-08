@@ -42,6 +42,12 @@ describe('homepage and admin shell layout', () => {
     expect(styles).toContain('.home-top-card .home-summary')
   })
 
+  it('does not leave touch-tapped header icon buttons in the desktop hover accent state', () => {
+    expect(styles).toContain('@media (hover: hover) and (pointer: fine)')
+    expect(styles).toContain('.nav-icon-button:hover { background: #eff6ff; color: var(--blue); transform: translateY(-1px); box-shadow: 0 6px 18px -14px var(--blue); }')
+    expect(styles).toContain('.home-top-card .nav-icon-button:not(.is-solid):hover')
+  })
+
   it('keeps mobile homepage server cards aligned to the top card width', () => {
     expect(styles).toContain('@media (max-width: 767px)')
     expect(styles).toContain('.kulin-node-card { max-width: none; min-height: 394px; }')
@@ -181,6 +187,7 @@ describe('state history layout', () => {
     expect(styles).toContain('.detail-fact-strip')
     expect(styles).toContain('.detail-status-pill')
     expect(styles).toContain('.detail-fact.is-wide')
+    expect(styles).toContain('border-top: 0')
     expect(styles).not.toContain('.detail-info-card')
   })
 
@@ -189,7 +196,9 @@ describe('state history layout', () => {
     expect(styles).toContain('grid-template-columns: repeat(auto-fit, minmax(290px, 1fr))')
     expect(styles).toContain('grid-template-columns: 1fr')
     expect(styles).toContain('.resource-card')
-    expect(styles).toContain('background: var(--card)')
+    expect(styles).toContain('background: var(--surface)')
+    expect(styles).toContain('.resource-card,')
+    expect(styles).toContain('box-shadow: var(--zeno-card-shadow)')
     expect(styles).toContain('.resource-y-axis')
     expect(styles).toContain('.resource-chart-plot')
     expect(styles).toContain('.resource-x-axis')
