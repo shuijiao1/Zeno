@@ -35,6 +35,21 @@ func TestNotificationMessageTextUsesMaskedIPv4AndCompactStatusFormat(t *testing.
 			event: notificationEvent{EventType: "probe_unhealthy", NodeName: "Zouter", NodeIP: "203.0.113.9", PreviousStatus: "warning", Status: "online", Detail: "CPU恢复正常"},
 			want:  "🟢[恢复] Zouter(203.0.***.***)CPU恢复正常",
 		},
+		{
+			name:  "renewal due future",
+			event: notificationEvent{EventType: "renewal_due", NodeName: "Sharon", Detail: "还有 1 天到期，2026-07-10"},
+			want:  "⚠️[到期] Sharon 将于 1 天后（2026-7-10）到期",
+		},
+		{
+			name:  "renewal due today",
+			event: notificationEvent{EventType: "renewal_due", NodeName: "Sharon", Detail: "今天到期，2026-07-10"},
+			want:  "⚠️[到期] Sharon 今天（2026-7-10）到期",
+		},
+		{
+			name:  "renewal due expired",
+			event: notificationEvent{EventType: "renewal_due", NodeName: "Sharon", Detail: "已过期 2 天，2026-07-10"},
+			want:  "⚠️[到期] Sharon 已于 2 天前（2026-7-10）到期",
+		},
 	}
 	for _, tt := range cases {
 		t.Run(tt.name, func(t *testing.T) {

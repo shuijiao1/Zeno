@@ -147,12 +147,49 @@ func (event notificationEvent) messageText() string {
 	case "renewal_due":
 		detail := strings.TrimSpace(event.Detail)
 		if detail != "" {
-			return fmt.Sprintf("Zeno：%s 需要续费（%s）", nodeName, detail)
+			return renewalDueMessageText(nodeName, detail)
 		}
-		return fmt.Sprintf("Zeno：%s 需要续费", nodeName)
+		return fmt.Sprintf("⚠️[到期] %s 即将到期", nodeName)
 	default:
 		return fmt.Sprintf("Zeno：%s %s", nodeName, event.Label)
 	}
+}
+
+func renewalDueMessageText(nodeName, detail string) string {
+	parts := strings.Split(strings.TrimSpace(detail), "，")
+	statusText := strings.TrimSpace(parts[0])
+	dateText := ""
+	if len(parts) > 1 {
+		dateText = formatRenewalMessageDate(strings.TrimSpace(parts[len(parts)-1]))
+	}
+	if dateText == "" {
+		return fmt.Sprintf("⚠️[到期] %s 即将到期", nodeName)
+	}
+	if statusText == "今天到期" {
+		return fmt.Sprintf("⚠️[到期] %s 今天（%s）到期", nodeName, dateText)
+	}
+	if strings.HasPrefix(statusText, "还有 ") && strings.HasSuffix(statusText, " 天到期") {
+		days := strings.TrimSpace(strings.TrimSuffix(strings.TrimPrefix(statusText, "还有 "), " 天到期"))
+		if days != "" {
+			return fmt.Sprintf("⚠️[到期] %s 将于 %s 天后（%s）到期", nodeName, days, dateText)
+		}
+	}
+	if strings.HasPrefix(statusText, "已过期 ") && strings.HasSuffix(statusText, " 天") {
+		days := strings.TrimSpace(strings.TrimSuffix(strings.TrimPrefix(statusText, "已过期 "), " 天"))
+		if days != "" {
+			return fmt.Sprintf("⚠️[到期] %s 已于 %s 天前（%s）到期", nodeName, days, dateText)
+		}
+	}
+	return fmt.Sprintf("⚠️[到期] %s 将于 %s 到期", nodeName, dateText)
+}
+
+func formatRenewalMessageDate(value string) string {
+	date, err := time.ParseInLocation("2006-01-02", strings.TrimSpace(value), time.UTC)
+	if err != nil {
+		return strings.TrimSpace(value)
+	}
+	year, month, day := date.Date()
+	return fmt.Sprintf("%d-%d-%d", year, int(month), day)
 }
 
 func notificationNodeLabel(event notificationEvent) string {

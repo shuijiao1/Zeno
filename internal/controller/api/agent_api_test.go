@@ -950,7 +950,11 @@ func TestAgentHeartbeatDispatchesRenewalDueNotificationOncePerDay(t *testing.T) 
 	if len(errors) != 0 {
 		t.Fatalf("telegram handler errors = %+v", errors)
 	}
-	if len(paths) != 1 || len(forms) != 1 || !strings.Contains(forms[0], "%E9%9C%80%E8%A6%81%E7%BB%AD%E8%B4%B9") || !strings.Contains(forms[0], expiryDate) {
+	messageText := ""
+	if len(forms) == 1 {
+		messageText = decodedTelegramText(forms[0])
+	}
+	if len(paths) != 1 || len(forms) != 1 || !strings.Contains(messageText, "⚠️[到期]") || !strings.Contains(messageText, formatRenewalMessageDate(expiryDate)) {
 		t.Fatalf("telegram request paths=%+v forms=%+v, want one renewal due notification", paths, forms)
 	}
 	assertTelegramFormsDoNotLeakCredential(t, forms, "telegram-bot-credential-value")
@@ -1003,11 +1007,15 @@ func TestAgentHeartbeatDispatchesRenewalDueNotificationForRecurringBillingCycle(
 		t.Fatalf("telegram handler errors = %+v", errors)
 	}
 	cycleDueText := cycleDueDate.Format("2006-01-02")
-	if len(paths) != 1 || len(forms) != 1 || !strings.Contains(forms[0], "%E9%9C%80%E8%A6%81%E7%BB%AD%E8%B4%B9") || !strings.Contains(forms[0], cycleDueText) {
+	messageText := ""
+	if len(forms) == 1 {
+		messageText = decodedTelegramText(forms[0])
+	}
+	if len(paths) != 1 || len(forms) != 1 || !strings.Contains(messageText, "⚠️[到期]") || !strings.Contains(messageText, formatRenewalMessageDate(cycleDueText)) {
 		t.Fatalf("telegram request paths=%+v forms=%+v, want renewal due notification for recurring billing date %s", paths, forms, cycleDueText)
 	}
-	if strings.Contains(forms[0], finalExpiryDate) {
-		t.Fatalf("telegram form %q used final expiry date %s, want recurring billing date %s", forms[0], finalExpiryDate, cycleDueText)
+	if strings.Contains(messageText, finalExpiryDate) || strings.Contains(messageText, formatRenewalMessageDate(finalExpiryDate)) {
+		t.Fatalf("telegram text %q used final expiry date %s, want recurring billing date %s", messageText, finalExpiryDate, cycleDueText)
 	}
 }
 
