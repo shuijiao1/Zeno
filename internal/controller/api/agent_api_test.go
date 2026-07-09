@@ -965,6 +965,52 @@ func TestAgentHeartbeatDispatchesRenewalDueNotificationOncePerDay(t *testing.T) 
 	}
 }
 
+func TestAgentHeartbeatDispatchesRenewalDueNotificationForRecurringBillingCycle(t *testing.T) {
+	store, err := OpenSQLiteStore(filepath.Join(t.TempDir(), "zeno.db"))
+	if err != nil {
+		t.Fatalf("open sqlite store: %v", err)
+	}
+	defer store.Close()
+	ctx := context.Background()
+	if err := store.SeedPreviewData(ctx, PreviewSeedOptions{NodeID: "hytron", DisplayName: "Sharon", CountryCode: "HK", AgentToken: "test-agent-token"}); err != nil {
+		t.Fatalf("seed preview data: %v", err)
+	}
+
+	now := time.Now().UTC().Truncate(time.Second)
+	cycleDueDate := dateOnlyUTC(now).AddDate(0, 0, 1)
+	finalExpiryDate := addMonthsClampedUTC(cycleDueDate, 1).Format("2006-01-02")
+	billingCycle := "月"
+	if _, err := store.UpdateAdminNode(ctx, "hytron", AdminNodeUpdateRequest{ExpiryDate: &finalExpiryDate, BillingCycle: &billingCycle}); err != nil {
+		t.Fatalf("set recurring expiry date: %v", err)
+	}
+	enabled := true
+	if _, err := store.CreateAdminNotificationChannel(ctx, AdminNotificationChannelCreateRequest{ID: "ops-telegram", Name: "Ops Telegram", Destination: "7579942307", Credential: "telegram-bot-credential-value", Enabled: &enabled}); err != nil {
+		t.Fatalf("create notification channel: %v", err)
+	}
+	if _, err := store.UpdateAdminNotificationType(ctx, "renewal_due", AdminNotificationTypeUpdateRequest{Enabled: &enabled}); err != nil {
+		t.Fatalf("enable renewal_due notification type: %v", err)
+	}
+	threshold := 1.0
+	if _, err := store.UpdateAdminAlertRule(ctx, "renewal_due", AdminAlertRuleUpdateRequest{Enabled: &enabled, Threshold: &threshold}); err != nil {
+		t.Fatalf("enable renewal_due alert rule: %v", err)
+	}
+
+	telegram := newTelegramTestCapture(t)
+	handler := NewHandler(telegram.handlerOptions(store))
+	postAgentHeartbeat(t, handler, now.Unix(), "online")
+	paths, forms, errors := telegram.waitForCalls(t, 1)
+	if len(errors) != 0 {
+		t.Fatalf("telegram handler errors = %+v", errors)
+	}
+	cycleDueText := cycleDueDate.Format("2006-01-02")
+	if len(paths) != 1 || len(forms) != 1 || !strings.Contains(forms[0], "%E9%9C%80%E8%A6%81%E7%BB%AD%E8%B4%B9") || !strings.Contains(forms[0], cycleDueText) {
+		t.Fatalf("telegram request paths=%+v forms=%+v, want renewal due notification for recurring billing date %s", paths, forms, cycleDueText)
+	}
+	if strings.Contains(forms[0], finalExpiryDate) {
+		t.Fatalf("telegram form %q used final expiry date %s, want recurring billing date %s", forms[0], finalExpiryDate, cycleDueText)
+	}
+}
+
 func postAgentHeartbeat(t *testing.T, handler http.Handler, ts int64, status string) *httptest.ResponseRecorder {
 	t.Helper()
 	payload := []byte(`{"ts":` + strconv.FormatInt(ts, 10) + `,"status":"` + status + `","agent_version":"agent-test"}`)

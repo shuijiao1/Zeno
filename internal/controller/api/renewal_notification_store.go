@@ -19,7 +19,7 @@ func (s *SQLiteStore) PendingRenewalNotifications(ctx context.Context, now time.
 	defer rollbackUnlessCommitted(tx)
 
 	rows, err := tx.QueryContext(ctx, `
-		SELECT id, display_name, expiry_date
+		SELECT id, display_name, expiry_date, expiry_permanent, billing_cycle
 		FROM nodes
 		WHERE disabled = 0 AND TRIM(COALESCE(expiry_date, '')) <> ''
 		ORDER BY display_order ASC, id ASC
@@ -32,14 +32,20 @@ func (s *SQLiteStore) PendingRenewalNotifications(ctx context.Context, now time.
 	events := make([]notificationEvent, 0)
 	for rows.Next() {
 		var nodeID, displayName, expiryDate string
-		if err := rows.Scan(&nodeID, &displayName, &expiryDate); err != nil {
+		var expiryPermanent int
+		var billingCycle sql.NullString
+		if err := rows.Scan(&nodeID, &displayName, &expiryDate, &expiryPermanent, &billingCycle); err != nil {
 			return nil, err
 		}
-		expiresAt, err := time.ParseInLocation("2006-01-02", strings.TrimSpace(expiryDate), time.UTC)
-		if err != nil {
+		if expiryPermanent != 0 {
 			continue
 		}
-		daysRemaining := int(math.Ceil(expiresAt.Sub(today).Hours() / 24))
+		dueDate, ok := renewalNotificationDueDate(expiryDate, billingCycle, now)
+		if !ok {
+			continue
+		}
+		dueDateText := dueDate.Format("2006-01-02")
+		daysRemaining := int(math.Ceil(dueDate.Sub(today).Hours() / 24))
 		rules, err := alertRulesForMetrics(ctx, tx, nodeID, map[string]bool{"expiry_days": true})
 		if err != nil {
 			return nil, err
@@ -47,7 +53,7 @@ func (s *SQLiteStore) PendingRenewalNotifications(ctx context.Context, now time.
 		if !renewalRulesMatch(rules, float64(daysRemaining)) {
 			continue
 		}
-		mark := renewalNotificationMark(markDay, expiryDate)
+		mark := renewalNotificationMark(markDay, dueDateText)
 		var exists int
 		err = tx.QueryRowContext(ctx, `
 			SELECT 1 FROM notification_event_marks
@@ -65,7 +71,7 @@ func (s *SQLiteStore) PendingRenewalNotifications(ctx context.Context, now time.
 			NodeName:  displayName,
 			Status:    "renewal_due",
 			TS:        now.UTC().Format(time.RFC3339),
-			Detail:    formatRenewalNotificationDetail(daysRemaining, expiryDate),
+			Detail:    formatRenewalNotificationDetail(daysRemaining, dueDateText),
 		})
 	}
 	if err := rows.Err(); err != nil {
@@ -76,6 +82,18 @@ func (s *SQLiteStore) PendingRenewalNotifications(ctx context.Context, now time.
 	}
 	tx = nil
 	return events, nil
+}
+
+func renewalNotificationDueDate(rawDate string, billingCycle sql.NullString, now time.Time) (time.Time, bool) {
+	cycleMonths := billingCycleMonths(billingCycle)
+	if cycleMonths > 0 {
+		return nextBillingCycleDate(rawDate, cycleMonths, now)
+	}
+	expiresAt, err := time.ParseInLocation("2006-01-02", strings.TrimSpace(rawDate), time.UTC)
+	if err != nil {
+		return time.Time{}, false
+	}
+	return dateOnlyUTC(expiresAt), true
 }
 
 func (s *SQLiteStore) MarkRenewalNotification(ctx context.Context, event notificationEvent, now time.Time) error {

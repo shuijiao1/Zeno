@@ -1866,7 +1866,7 @@ func formatExpiryDaysLabel(date, now time.Time) string {
 	if days == 0 {
 		return "今天到期"
 	}
-	return fmt.Sprintf("余 %d 天", days+1)
+	return fmt.Sprintf("余 %d 天", days)
 }
 
 func dateOnlyUTC(value time.Time) time.Time {

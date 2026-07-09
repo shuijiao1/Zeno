@@ -14,8 +14,8 @@ func TestExpiryLabelValueUsesBillingCycleForNextRenewal(t *testing.T) {
 		false,
 		now,
 	)
-	if label != "余 3 天" {
-		t.Fatalf("expiry label = %q, want monthly cycle to use the next renewal as 余 3 天", label)
+	if label != "余 2 天" {
+		t.Fatalf("expiry label = %q, want monthly cycle to use the next renewal as 余 2 天", label)
 	}
 }
 
@@ -40,7 +40,7 @@ func TestExpiryLabelValueClampsMonthEndCycle(t *testing.T) {
 		false,
 		now,
 	)
-	if label != "余 2 天" {
+	if label != "余 1 天" {
 		t.Fatalf("expiry label = %q, want February renewal clamped to month end", label)
 	}
 }
