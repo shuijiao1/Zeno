@@ -286,11 +286,20 @@ func TestNodeStateWebSocketPublishesAgentStateUpdates(t *testing.T) {
 	if err := store.SeedPreviewData(ctx, PreviewSeedOptions{NodeID: "hytron", DisplayName: "Hytron", CountryCode: "HK", AgentToken: "test-agent-token"}); err != nil {
 		t.Fatalf("seed preview data: %v", err)
 	}
+	baseTS := time.Now().UTC().Add(-5 * time.Minute).Unix()
+	for index := 0; index < 6; index++ {
+		if _, err := store.db.ExecContext(ctx, `
+			INSERT INTO state_samples (node_id, ts, cpu_percent, memory_used_bytes, memory_total_bytes, disk_used_bytes, disk_total_bytes, net_in_total_bytes, net_out_total_bytes, net_in_speed_bps, net_out_speed_bps, uptime_seconds)
+			VALUES ('hytron', ?, ?, 100, 200, 300, 400, 1000, 2000, 2468, 8642, 60)
+		`, baseTS+int64(index*30), 10+float64(index)); err != nil {
+			t.Fatalf("insert historical state sample: %v", err)
+		}
+	}
 
 	server := httptest.NewServer(NewHandler(HandlerOptions{Store: store}))
 	defer server.Close()
 
-	wsURL := "ws" + strings.TrimPrefix(server.URL, "http") + "/api/public/v1/nodes/hytron/state/ws?range=1h"
+	wsURL := "ws" + strings.TrimPrefix(server.URL, "http") + "/api/public/v1/nodes/hytron/state/ws?range=1d"
 	conn, response, err := websocket.DefaultDialer.Dial(wsURL, nil)
 	if err != nil {
 		t.Fatalf("open node state websocket: %v", err)
@@ -327,6 +336,13 @@ func TestNodeStateWebSocketPublishesAgentStateUpdates(t *testing.T) {
 	}
 	if !strings.Contains(string(update), `"node_id":"hytron"`) || !strings.Contains(string(update), `"net_out_speed_bps":8642`) {
 		t.Fatalf("node state websocket update = %q, want latest state point", string(update))
+	}
+	var stateUpdate StateResponse
+	if err := json.Unmarshal(update, &stateUpdate); err != nil {
+		t.Fatalf("decode node state websocket update: %v", err)
+	}
+	if got := len(stateUpdate.Points); got < 4 {
+		t.Fatalf("node state websocket update points = %d, want 30-second state buckets rather than latency buckets", got)
 	}
 }
 
@@ -504,8 +520,8 @@ func TestNodeStateEndpointUsesKulinHistoricalWindows(t *testing.T) {
 	sevenDays := requestState(t, "/api/public/v1/nodes/hytron/state?range=7d")
 	thirtyDays := requestState(t, "/api/public/v1/nodes/hytron/state?range=30d")
 
-	if got := len(oneDay.Points); got != 144 {
-		t.Fatalf("1d state points = %d, want 144 ten-minute visual samples", got)
+	if got := len(oneDay.Points); got != 2880 {
+		t.Fatalf("1d state points = %d, want 2880 thirty-second Kulin samples", got)
 	}
 	if got := len(sevenDays.Points); got != 336 {
 		t.Fatalf("7d state points = %d, want Kulin 336 thirty-minute samples", got)

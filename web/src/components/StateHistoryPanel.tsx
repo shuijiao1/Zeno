@@ -298,7 +298,7 @@ function emptyStateRecord(): Record<StateNumericKey, number> {
 function stateRangeStepMs(range: string): number | null {
   switch (range) {
     case '1d':
-      return 10 * 60_000
+      return 30_000
     case '7d':
       return 30 * 60_000
     case '30d':

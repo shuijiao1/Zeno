@@ -377,7 +377,7 @@ func (h *handler) publishNodeState(ctx context.Context, nodeID string) {
 		return
 	}
 	for _, rangeName := range liveWindowNames() {
-		window, ok := resolveLatencyWindow(rangeName)
+		window, ok := resolveStateWindow(rangeName)
 		if !ok {
 			continue
 		}
