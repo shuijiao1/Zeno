@@ -416,6 +416,7 @@ describe('AdminDashboard', () => {
     expect(html).toContain('name="mobile-background-url"')
     expect(html).toContain('https://example.com/mobile-bg.webp')
     expect(html).toContain('外观样式')
+    expect(html).toContain('admin-appearance-top')
     expect(html).toContain('name="appearance-preset"')
     expect(html).toContain('高斯模糊主题')
     expect(html).toContain('name="card-opacity"')
