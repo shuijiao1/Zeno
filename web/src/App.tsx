@@ -22,7 +22,7 @@ const detailCacheMaxAgeMs = 5 * 60 * 1000
 const detailCacheMaxBytes = 700_000
 const adminTokenStorageKey = 'zeno_admin_token'
 const adminTokenStoredAtKey = 'zeno_admin_token_saved_at'
-const adminTokenMaxAgeMs = 7 * 24 * 60 * 60 * 1000
+export const adminTokenMaxAgeMs = 24 * 60 * 60 * 1000
 const renewalDayOptions = [0, 1, 3, 7, 15, 30]
 
 function loadStoredAdminToken(): string {

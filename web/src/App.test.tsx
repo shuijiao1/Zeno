@@ -1,6 +1,6 @@
 import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it } from 'vitest'
-import { AdminDashboard, HomeTopPanel, applyCustomCode, documentBrandingForSettings, isAdminUnauthorizedError, orderHomeNodes, shellStyleForSettings, shouldRefreshHomeRealtimeSnapshot, validateAdminSettingsInput } from './App'
+import { AdminDashboard, HomeTopPanel, adminTokenMaxAgeMs, applyCustomCode, documentBrandingForSettings, isAdminUnauthorizedError, orderHomeNodes, shellStyleForSettings, shouldRefreshHomeRealtimeSnapshot, validateAdminSettingsInput } from './App'
 import type { AdminAlertRule, AdminNode, AdminNotificationChannel, AdminProbeTarget, AdminSettings, HomeCardNode } from './types'
 
 const overviewProps = {
@@ -204,6 +204,10 @@ function renderAdmin(section: 'nodes' | 'targets' | 'notifications' | 'account' 
 }
 
 describe('HomeTopPanel', () => {
+  it('keeps local admin tokens for at most one day', () => {
+    expect(adminTokenMaxAgeMs).toBe(24 * 60 * 60 * 1000)
+  })
+
   it('recognizes expired admin session API responses', () => {
     expect(isAdminUnauthorizedError(new Error('admin nodes request failed: 401'))).toBe(true)
     expect(isAdminUnauthorizedError(new Error('admin settings update failed: 401'))).toBe(true)

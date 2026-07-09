@@ -178,6 +178,52 @@ func TestAdminLoginCreatesSessionAndPasswordUpdateInvalidatesOldPassword(t *test
 	}
 }
 
+func TestAdminSessionExpiresAfterOneDay(t *testing.T) {
+	store, err := OpenSQLiteStore(filepath.Join(t.TempDir(), "zeno.db"))
+	if err != nil {
+		t.Fatalf("open sqlite store: %v", err)
+	}
+	defer store.Close()
+	if err := store.SeedPreviewData(context.Background(), PreviewSeedOptions{NodeID: "hytron", DisplayName: "Hytron", CountryCode: "HK", AgentToken: "test-agent-token"}); err != nil {
+		t.Fatalf("seed preview data: %v", err)
+	}
+	handler := NewHandler(HandlerOptions{Store: store, AdminTokenHash: HashAdminToken("admin-pass")})
+
+	loginRecorder := httptest.NewRecorder()
+	loginRequest := httptest.NewRequest(http.MethodPost, "/api/admin/v1/login", strings.NewReader(`{"username":"admin","password":"admin-pass"}`))
+	handler.ServeHTTP(loginRecorder, loginRequest)
+	if loginRecorder.Code != http.StatusOK {
+		t.Fatalf("login status = %d, want 200; body=%s", loginRecorder.Code, loginRecorder.Body.String())
+	}
+	var loginResponse AdminLoginResponse
+	if err := json.NewDecoder(loginRecorder.Body).Decode(&loginResponse); err != nil {
+		t.Fatalf("decode login: %v", err)
+	}
+
+	now := time.Now().UTC().Unix()
+	if _, err := store.db.ExecContext(context.Background(), `UPDATE admin_sessions SET created_at = ?, last_seen_at = ? WHERE token_hash = ?`, now-int64((23*time.Hour).Seconds()), now, HashAdminToken(loginResponse.Token)); err != nil {
+		t.Fatalf("age fresh session: %v", err)
+	}
+	freshRecorder := httptest.NewRecorder()
+	freshRequest := httptest.NewRequest(http.MethodGet, "/api/admin/v1/nodes", nil)
+	freshRequest.Header.Set("X-Admin-Token", loginResponse.Token)
+	handler.ServeHTTP(freshRecorder, freshRequest)
+	if freshRecorder.Code != http.StatusOK {
+		t.Fatalf("fresh one-day session status = %d, want 200; body=%s", freshRecorder.Code, freshRecorder.Body.String())
+	}
+
+	if _, err := store.db.ExecContext(context.Background(), `UPDATE admin_sessions SET created_at = ?, last_seen_at = ? WHERE token_hash = ?`, now-int64((25*time.Hour).Seconds()), now, HashAdminToken(loginResponse.Token)); err != nil {
+		t.Fatalf("age expired session: %v", err)
+	}
+	expiredRecorder := httptest.NewRecorder()
+	expiredRequest := httptest.NewRequest(http.MethodGet, "/api/admin/v1/nodes", nil)
+	expiredRequest.Header.Set("X-Admin-Token", loginResponse.Token)
+	handler.ServeHTTP(expiredRecorder, expiredRequest)
+	if expiredRecorder.Code != http.StatusUnauthorized {
+		t.Fatalf("expired one-day session status = %d, want 401; body=%s", expiredRecorder.Code, expiredRecorder.Body.String())
+	}
+}
+
 func TestAdminNodesListsEnabledAndDisabledNodesWithoutTokenHashes(t *testing.T) {
 	store, err := OpenSQLiteStore(filepath.Join(t.TempDir(), "zeno.db"))
 	if err != nil {

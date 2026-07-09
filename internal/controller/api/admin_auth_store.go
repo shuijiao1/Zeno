@@ -12,7 +12,7 @@ const (
 	settingKeyAdminUsername     = "admin_username"
 	settingKeyAdminPasswordHash = "admin_password_hash"
 	adminSessionIdleTimeout     = 24 * time.Hour
-	adminSessionAbsoluteTimeout = 7 * 24 * time.Hour
+	adminSessionAbsoluteTimeout = 24 * time.Hour
 )
 
 var (
