@@ -2347,7 +2347,10 @@ svg { display: block; }
   cursor: pointer;
   transition: background-color 150ms ease, border-color 150ms ease, box-shadow 150ms ease, transform 150ms ease;
 }
-.latency-target-grid button[data-active='true'] { border-color: color-mix(in srgb, var(--blue) 48%, var(--border)); background: var(--surface-strong); color: var(--foreground); box-shadow: 0 8px 22px -18px var(--blue); }
+.latency-target-grid button[data-active='true'] { border-color: var(--blue); background: color-mix(in srgb, var(--blue) 92%, #ffffff 8%); color: #fff; box-shadow: 0 10px 24px -16px var(--blue); }
+.latency-target-grid button[data-active='true'] span,
+.latency-target-grid button[data-active='true'] strong,
+.latency-target-grid button[data-active='true'] em { color: #fff; }
 .latency-target-grid button:hover:not([data-active='true']) { border-color: var(--border); background: var(--surface-strong); color: var(--foreground); box-shadow: none; transform: none; }
 .latency-target-grid.is-loading button { pointer-events: none; background: color-mix(in srgb, var(--surface-soft) 96%, var(--blue) 4%); color: var(--muted); }
 .latency-target-grid.is-loading span,
