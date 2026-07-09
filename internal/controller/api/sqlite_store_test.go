@@ -87,9 +87,6 @@ func TestSQLiteBackedHandlerReturnsPersistedLatencyInsteadOfMock(t *testing.T) {
 	if point.TargetID != "google" || point.TargetName != "Google" {
 		t.Fatalf("target = %q/%q, want google/Google", point.TargetID, point.TargetName)
 	}
-	if point.MedianMS == nil || *point.MedianMS != 1.2 {
-		t.Fatalf("median_ms = %v, want 1.2", point.MedianMS)
-	}
 	if point.AvgMS == nil || *point.AvgMS != 1.3 {
 		t.Fatalf("avg_ms = %v, want 1.3", point.AvgMS)
 	}

@@ -422,8 +422,8 @@ func TestLatencyWebSocketsPublishAgentProbeResults(t *testing.T) {
 	if err := json.Unmarshal(nodeUpdate, &nodeLatencyUpdate); err != nil {
 		t.Fatalf("decode node latency update: %v", err)
 	}
-	if !latencyPointsContainMedian(nodeLatencyUpdate.Points, "google-dns", 20) {
-		t.Fatalf("node latency websocket update = %q, want posted probe median", string(nodeUpdate))
+	if !latencyPointsContainAverage(nodeLatencyUpdate.Points, "google-dns", 20) {
+		t.Fatalf("node latency websocket update = %q, want posted probe average", string(nodeUpdate))
 	}
 	_, serviceUpdate, err := serviceConn.ReadMessage()
 	if err != nil {
@@ -433,8 +433,8 @@ func TestLatencyWebSocketsPublishAgentProbeResults(t *testing.T) {
 	if err := json.Unmarshal(serviceUpdate, &serviceLatencyUpdate); err != nil {
 		t.Fatalf("decode service latency update: %v", err)
 	}
-	if !serviceLatencyPointsContainMedian(serviceLatencyUpdate.Points, "hytron", 20) {
-		t.Fatalf("service latency websocket update = %q, want posted probe median", string(serviceUpdate))
+	if !serviceLatencyPointsContainAverage(serviceLatencyUpdate.Points, "hytron", 20) {
+		t.Fatalf("service latency websocket update = %q, want posted probe average", string(serviceUpdate))
 	}
 }
 
@@ -652,18 +652,18 @@ func pointSpan(t *testing.T, points []LatencyPoint) time.Duration {
 	return last.Sub(first)
 }
 
-func latencyPointsContainMedian(points []LatencyPoint, targetID string, median float64) bool {
+func latencyPointsContainAverage(points []LatencyPoint, targetID string, average float64) bool {
 	for _, point := range points {
-		if point.TargetID == targetID && point.MedianMS != nil && *point.MedianMS == median {
+		if point.TargetID == targetID && point.AvgMS != nil && *point.AvgMS == average {
 			return true
 		}
 	}
 	return false
 }
 
-func serviceLatencyPointsContainMedian(points []ServiceLatencyPoint, nodeID string, median float64) bool {
+func serviceLatencyPointsContainAverage(points []ServiceLatencyPoint, nodeID string, average float64) bool {
 	for _, point := range points {
-		if point.NodeID == nodeID && point.MedianMS != nil && *point.MedianMS == median {
+		if point.NodeID == nodeID && point.AvgMS != nil && *point.AvgMS == average {
 			return true
 		}
 	}

@@ -2,6 +2,7 @@ package api
 
 import (
 	"encoding/json"
+	"math"
 	"time"
 )
 
@@ -121,9 +122,8 @@ func latencySeriesFromPoints(points []LatencyPoint) []LatencySeries {
 			order = append(order, point.TargetID)
 		}
 		series.CreatedAt = append(series.CreatedAt, latencyTimestampMillis(point.TS))
-		series.MedianMS = append(series.MedianMS, point.MedianMS)
-		series.AvgMS = append(series.AvgMS, point.AvgMS)
-		series.LossPercent = append(series.LossPercent, point.LossPercent)
+		series.AvgMS = append(series.AvgMS, compactLatencyValue(point.AvgMS))
+		series.LossPercent = append(series.LossPercent, compactLatencyNumber(point.LossPercent))
 	}
 	seriesList := make([]LatencySeries, 0, len(order))
 	for _, targetID := range order {
@@ -175,9 +175,8 @@ func serviceLatencySeriesFromPoints(points []ServiceLatencyPoint) []ServiceLaten
 			order = append(order, point.NodeID)
 		}
 		series.CreatedAt = append(series.CreatedAt, latencyTimestampMillis(point.TS))
-		series.MedianMS = append(series.MedianMS, point.MedianMS)
-		series.AvgMS = append(series.AvgMS, point.AvgMS)
-		series.LossPercent = append(series.LossPercent, point.LossPercent)
+		series.AvgMS = append(series.AvgMS, compactLatencyValue(point.AvgMS))
+		series.LossPercent = append(series.LossPercent, compactLatencyNumber(point.LossPercent))
 	}
 	seriesList := make([]ServiceLatencySeries, 0, len(order))
 	for _, nodeID := range order {
@@ -243,6 +242,18 @@ func sameInt64Slice(left, right []int64) bool {
 		}
 	}
 	return true
+}
+
+func compactLatencyValue(value *float64) *float64 {
+	if value == nil {
+		return nil
+	}
+	compact := compactLatencyNumber(*value)
+	return &compact
+}
+
+func compactLatencyNumber(value float64) float64 {
+	return math.Round(value*100) / 100
 }
 
 func latencyTimestampMillis(value string) int64 {
