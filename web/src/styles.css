@@ -498,8 +498,7 @@ svg { display: block; }
 .admin-row-action:hover,
 .admin-segmented-options button:hover,
 .range-tabs button:hover,
-.detail-range-row > button:hover,
-.latency-target-grid button:hover {
+.detail-range-row > button:hover {
   border-color: color-mix(in srgb, var(--blue) 34%, var(--border));
   background: color-mix(in srgb, var(--surface-soft) 88%, var(--blue) 10%);
   color: var(--blue);
@@ -2349,6 +2348,7 @@ svg { display: block; }
   transition: background-color 150ms ease, border-color 150ms ease, box-shadow 150ms ease, transform 150ms ease;
 }
 .latency-target-grid button[data-active='true'] { border-color: color-mix(in srgb, var(--blue) 48%, var(--border)); background: var(--surface-strong); color: var(--foreground); box-shadow: 0 8px 22px -18px var(--blue); }
+.latency-target-grid button:hover:not([data-active='true']) { border-color: var(--border); background: var(--surface-strong); color: var(--foreground); box-shadow: none; transform: none; }
 .latency-target-grid.is-loading button { pointer-events: none; background: color-mix(in srgb, var(--surface-soft) 96%, var(--blue) 4%); color: var(--muted); }
 .latency-target-grid.is-loading span,
 .latency-target-grid.is-loading strong,

@@ -46,7 +46,7 @@ export function LatencyChart({
   const timestamps = useMemo(() => rows.map((row) => row.created_at), [rows])
   const xStep = timestamps.length > 1 ? (width - pad.left - pad.right) / (timestamps.length - 1) : 0
   const xByTimestamp = useMemo(() => new Map(timestamps.map((timestamp, index) => [timestamp, pad.left + index * xStep])), [timestamps, xStep])
-  const maxAxisTicks = width <= 480 ? 4 : 12
+  const maxAxisTicks = width <= 480 ? 4 : 14
   const axisTicks = useMemo(() => axisTicksForTimestamps(timestamps, maxAxisTicks), [timestamps, maxAxisTicks])
   const plotHeight = height - pad.top - pad.bottom
   const domain = useMemo(() => yDomainForRows(rows, baseView.lineKeys), [rows, baseView.lineKeys])
@@ -408,7 +408,7 @@ function axisTicksForTimestamps(timestamps: number[], maxTicks: number): number[
       const date = new Date(timestamp)
       return index === 0 || index === lastIndex || date.getMinutes() === 0
     })
-    return thinTicks(ticks, maxTicks)
+    return thinTicks(withEndpointTicks(ticks, start, end), maxTicks)
   }
 
   if (spanHours <= 36) {
@@ -417,7 +417,7 @@ function axisTicksForTimestamps(timestamps: number[], maxTicks: number): number[
       const date = new Date(timestamp)
       return date.getMinutes() === 0 && date.getHours() % 2 === 0
     })
-    return thinTicks(ticks.length >= 2 ? ticks : [start, end], maxTicks)
+    return thinTicks(withEndpointTicks(ticks, start, end), maxTicks)
   }
 
   if (spanHours <= 24 * 10) {
@@ -426,10 +426,14 @@ function axisTicksForTimestamps(timestamps: number[], maxTicks: number): number[
       const date = new Date(timestamp)
       return date.getHours() % 12 === 0 && date.getMinutes() === 0
     })
-    return thinTicks(ticks.length >= 2 ? ticks : [start, end], maxTicks)
+    return thinTicks(withEndpointTicks(ticks, start, end), maxTicks)
   }
 
   return thinTicks(timestamps, maxTicks)
+}
+
+function withEndpointTicks(ticks: number[], start: number, end: number): number[] {
+  return [...new Set([start, ...ticks, end])].sort((left, right) => left - right)
 }
 
 function thinTicks(ticks: number[], maxTicks: number): number[] {

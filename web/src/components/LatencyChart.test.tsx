@@ -45,7 +45,7 @@ describe('LatencyChart', () => {
     const xAxisLabels = labels.filter((label) => label.includes(':'))
 
     expect(xAxisLabels.length).toBeGreaterThan(2)
-    expect(xAxisLabels.every((label) => !label.endsWith(':30'))).toBe(true)
+    expect(xAxisLabels.slice(1, -1).every((label) => !label.endsWith(':30'))).toBe(true)
     expect(new Set(xAxisLabels).size).toBeGreaterThan(2)
   })
 

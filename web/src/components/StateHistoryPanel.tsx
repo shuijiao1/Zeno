@@ -418,25 +418,24 @@ function stateAxisTicks(timestamps: number[]): StateAxisTick[] {
     .filter((item) => Number.isFinite(item.timestamp))
   if (valid.length === 0) return []
   if (valid.length === 1) return [valid[0]]
-  return [valid[0], valid.at(-1)!]
+  const middle = valid[Math.floor((valid.length - 1) / 2)]
+  return [valid[0], middle, valid.at(-1)!].filter((tick, index, ticks) => ticks.findIndex((item) => item.index === tick.index) === index)
 }
 
 function formatStateAxisTime(timestamp: number, timestamps: number[]): string {
   if (!Number.isFinite(timestamp)) return '--'
-  const latest = [...timestamps].reverse().find(Number.isFinite) ?? timestamp
-  const diffMs = Math.max(0, latest - timestamp)
-  return formatRelativeDuration(diffMs)
-}
-
-function formatRelativeDuration(diffMs: number): string {
-  const totalSeconds = Math.floor(diffMs / 1000)
-  const days = Math.floor(totalSeconds / 86_400)
-  const hours = Math.floor((totalSeconds % 86_400) / 3_600)
-  const minutes = Math.floor((totalSeconds % 3_600) / 60)
-  if (days > 0) return `${days}d`
-  if (hours > 0) return `${hours}h`
-  if (minutes > 0) return `${minutes}m`
-  return `${Math.max(totalSeconds, 0)}s`
+  const date = new Date(timestamp)
+  if (Number.isNaN(date.getTime())) return '--'
+  const valid = timestamps.filter(Number.isFinite)
+  const start = valid[0] ?? timestamp
+  const end = valid.at(-1) ?? timestamp
+  const spanHours = (end - start) / 3_600_000
+  const time = date.toLocaleTimeString('zh-CN', { hour12: false, hour: '2-digit', minute: '2-digit' })
+  if (spanHours > 12) {
+    const day = date.toLocaleDateString('zh-CN', { month: 'numeric', day: 'numeric' }).replace(/\//g, '/')
+    return `${day} ${time}`
+  }
+  return time
 }
 
 function formatAxisValue(value: number, unitLabel: string): string {
