@@ -1,14 +1,14 @@
 import { type CSSProperties, type DragEvent, type FormEvent, type ReactNode, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import copy from 'copy-to-clipboard'
-import { createAdminNode, createAdminNotificationChannel, createAdminProbeTarget, deleteAdminNode, deleteAdminNotificationChannel, deleteAdminProbeTarget, fetchAdminAccount, fetchAdminAlertRules, fetchAdminNodes, fetchAdminNotificationChannels, fetchAdminProbeTargets, fetchAdminSettings, fetchPublicSettings, fetchSummary, subscribeNodeLatency, subscribeNodeState, subscribeServiceLatency, subscribeSummary, loginAdmin, logoutAdmin, requestAdminNodeInstallCommand, testAdminNotificationChannel, updateAdminAccount, updateAdminAlertRule, updateAdminNode, updateAdminNotificationChannel, updateAdminNotificationType, updateAdminProbeTarget, updateAdminSettings, type AdminAccountData, type AdminAlertRuleUpdateInput, type AdminNodeCreateInput, type AdminNodeUpdateInput, type AdminNotificationChannelCreateInput, type AdminNotificationChannelUpdateInput, type AdminProbeTargetInput, type AdminProbeTargetUpdateInput, type AdminSettingsUpdateInput, type NodeLatencyData, type NodeStateData, type ServiceLatencyData, type SummaryData } from './api/client'
+import { createAdminNode, createAdminNotificationChannel, createAdminProbeTarget, deleteAdminNode, deleteAdminNotificationChannel, deleteAdminProbeTarget, fetchAdminAccount, fetchAdminAlertRules, fetchAdminNodes, fetchAdminNotificationChannels, fetchAdminProbeTargets, fetchAdminSettings, fetchNodeLatency, fetchNodeState, fetchPublicSettings, fetchSummary, subscribeNodeLatency, subscribeNodeState, subscribeServiceLatency, subscribeSummary, loginAdmin, logoutAdmin, requestAdminNodeInstallCommand, testAdminNotificationChannel, updateAdminAccount, updateAdminAlertRule, updateAdminNode, updateAdminNotificationChannel, updateAdminNotificationType, updateAdminProbeTarget, updateAdminSettings, type AdminAccountData, type AdminAlertRuleUpdateInput, type AdminNodeCreateInput, type AdminNodeUpdateInput, type AdminNotificationChannelCreateInput, type AdminNotificationChannelUpdateInput, type AdminProbeTargetInput, type AdminProbeTargetUpdateInput, type AdminSettingsUpdateInput, type NodeLatencyData, type NodeStateData, type ServiceLatencyData, type SummaryData } from './api/client'
 import { LatencyDetail } from './components/LatencyDetail'
 import { LatencyChart } from './components/LatencyChart'
 import { ServerCard } from './components/ServerCard'
 import { ServerFlag } from './components/ServerFlag'
 import { startLiveRefresh } from './lib/liveRefresh'
 import { nodePath, parseDashboardRoute, type DashboardRoute } from './lib/route'
-import type { AdminAlertRule, AdminNode, AdminNodeInstallCommand, AdminNotificationChannel, AdminProbeTarget, AdminSettings, AdminTheme, AppearancePreset, HomeCardNode, LatencyPoint, ProbeType, ServiceTarget } from './types'
+import type { AdminAlertRule, AdminNode, AdminNodeInstallCommand, AdminNotificationChannel, AdminProbeTarget, AdminSettings, AdminTheme, AppearancePreset, HomeCardNode, LatencyPoint, ProbeType, ServiceTarget, StatePoint } from './types'
 
 type LoadState =
   | { kind: 'loading' }
@@ -16,6 +16,10 @@ type LoadState =
   | { kind: 'error'; message: string }
 
 const summaryCacheKey = 'zeno_summary_cache_v1'
+const nodeLatencyCachePrefix = 'zeno_node_latency_cache_v1'
+const nodeStateCachePrefix = 'zeno_node_state_cache_v1'
+const detailCacheMaxAgeMs = 5 * 60 * 1000
+const detailCacheMaxBytes = 700_000
 const adminTokenStorageKey = 'zeno_admin_token'
 const adminTokenStoredAtKey = 'zeno_admin_token_saved_at'
 const adminTokenMaxAgeMs = 7 * 24 * 60 * 60 * 1000
@@ -75,6 +79,92 @@ function rememberSummary(summary: SummaryData) {
   try {
     window.localStorage.setItem(summaryCacheKey, JSON.stringify(summary))
   } catch {}
+}
+
+function detailCacheKey(prefix: string, nodeId: string, range: string): string {
+  return `${prefix}:${nodeId}:${range}`
+}
+
+function loadCachedDetailData<T>(prefix: string, nodeId: string, range: string, validate: (value: unknown) => T | null): T | null {
+  if (typeof window === 'undefined') return null
+  try {
+    const raw = window.sessionStorage.getItem(detailCacheKey(prefix, nodeId, range))
+    if (!raw) return null
+    const parsed = JSON.parse(raw) as { storedAt?: number; data?: unknown }
+    if (!parsed.storedAt || Date.now() - parsed.storedAt > detailCacheMaxAgeMs) return null
+    return validate(parsed.data)
+  } catch {
+    return null
+  }
+}
+
+function rememberDetailData(prefix: string, nodeId: string, range: string, data: unknown) {
+  if (typeof window === 'undefined') return
+  try {
+    const payload = JSON.stringify({ storedAt: Date.now(), data })
+    if (payload.length > detailCacheMaxBytes) return
+    window.sessionStorage.setItem(detailCacheKey(prefix, nodeId, range), payload)
+  } catch {}
+}
+
+function validateNodeLatencyData(value: unknown): NodeLatencyData | null {
+  const data = value as Partial<NodeLatencyData> | null
+  if (!data || typeof data.nodeId !== 'string' || typeof data.range !== 'string' || !Array.isArray(data.points)) return null
+  return data as NodeLatencyData
+}
+
+function validateNodeStateData(value: unknown): NodeStateData | null {
+  const data = value as Partial<NodeStateData> | null
+  if (!data || typeof data.nodeId !== 'string' || typeof data.range !== 'string' || !Array.isArray(data.points)) return null
+  return data as NodeStateData
+}
+
+function seedNodeLatencyFromSummary(summary: SummaryData | null, nodeId: string, range: string): NodeLatencyData | null {
+  const node = summary?.nodes.find((item) => item.id === nodeId)
+  if (!node) return null
+  const summaries = node.latencySummaries && node.latencySummaries.length > 0
+    ? node.latencySummaries
+    : node.latencySummary ? [node.latencySummary] : []
+  if (summaries.length === 0) return null
+  return {
+    nodeId,
+    range,
+    points: summaries.map((summary) => ({
+      ts: summary.updatedAt || new Date().toISOString(),
+      targetId: summary.targetId,
+      targetName: summary.targetName,
+      medianMs: summary.medianMs,
+      avgMs: summary.avgMs ?? null,
+      lossPercent: summary.lossPercent ?? 0,
+    })),
+  }
+}
+
+function seedNodeStateFromSummary(summary: SummaryData | null, nodeId: string, range: string): NodeStateData | null {
+  const node = summary?.nodes.find((item) => item.id === nodeId)
+  if (!node) return null
+  const point: StatePoint = {
+    ts: new Date().toISOString(),
+    cpuPercent: node.cpuPercent,
+    load1: node.load1 ?? null,
+    load5: node.load5 ?? null,
+    load15: node.load15 ?? null,
+    memoryUsedBytes: node.memoryUsedBytes,
+    memoryTotalBytes: node.memoryTotalBytes,
+    swapUsedBytes: null,
+    swapTotalBytes: null,
+    diskUsedBytes: node.diskUsedBytes,
+    diskTotalBytes: node.diskTotalBytes,
+    netInTotalBytes: node.netInTotalBytes,
+    netOutTotalBytes: node.netOutTotalBytes,
+    netInSpeedBps: node.netInSpeedBps,
+    netOutSpeedBps: node.netOutSpeedBps,
+    processCount: null,
+    tcpConnectionCount: null,
+    udpConnectionCount: null,
+    uptimeSeconds: node.uptimeSeconds ?? null,
+  }
+  return { nodeId, range, points: [point] }
 }
 
 type LatencyLoadState =
@@ -403,9 +493,9 @@ export function applyCustomCode(settings: AdminSettings) {
 }
 
 export function App() {
+  const initialSummary = loadStoredSummary()
   const [state, setState] = useState<LoadState>(() => {
-    const cachedSummary = loadStoredSummary()
-    return cachedSummary ? { kind: 'ready', data: cachedSummary } : { kind: 'loading' }
+    return initialSummary ? { kind: 'ready', data: initialSummary } : { kind: 'loading' }
   })
   const [route, setRoute] = useState<DashboardRoute>(() => parseDashboardRoute(window.location.pathname))
   const [nodeLatencyRange, setNodeLatencyRange] = useState('1d')
@@ -416,6 +506,7 @@ export function App() {
   const [serviceLatencyState, setServiceLatencyState] = useState<ServiceLatencyLoadState>({ kind: 'idle' })
   const nodeLatencyCacheRef = useRef(new Map<string, NodeLatencyData>())
   const nodeStateCacheRef = useRef(new Map<string, NodeStateData>())
+  const summaryRef = useRef<SummaryData | null>(initialSummary)
   const homeRealtimeMountedAtRef = useRef(monotonicNowMs())
   const homeRealtimeLastUpdatedAtRef = useRef<number | null>(null)
   const [homeRealtimeSnapshot, setHomeRealtimeSnapshot] = useState<HomeRealtimeSnapshot | null>(() => state.kind === 'ready' ? homeRealtimeSnapshotForNodes(state.data.nodes) : null)
@@ -458,6 +549,7 @@ export function App() {
     const stopSummaryStream = subscribeSummary(
       (data) => {
         rememberSummary(data)
+        summaryRef.current = data
         if (!cancelled) {
           refreshHomeRealtimeSnapshot(data)
           setState({ kind: 'ready', data })
@@ -471,6 +563,7 @@ export function App() {
       fetchSummary()
         .then((data) => {
           rememberSummary(data)
+          summaryRef.current = data
           if (!cancelled) {
             refreshHomeRealtimeSnapshot(data)
             setState({ kind: 'ready', data })
@@ -510,23 +603,36 @@ export function App() {
     let cancelled = false
     const cacheKey = `${route.nodeId}:${nodeLatencyRange}`
     const cached = nodeLatencyCacheRef.current.get(cacheKey)
-    if (cached) {
-      setLatencyState({ kind: 'ready', data: cached })
+      ?? loadCachedDetailData(nodeLatencyCachePrefix, route.nodeId, nodeLatencyRange, validateNodeLatencyData)
+    const seeded = cached ?? seedNodeLatencyFromSummary(summaryRef.current, route.nodeId, nodeLatencyRange)
+    if (cached) nodeLatencyCacheRef.current.set(cacheKey, cached)
+    if (seeded) {
+      setLatencyState({ kind: 'ready', data: seeded })
     } else {
       setLatencyState((current) => (current.kind === 'ready' && current.data.nodeId === route.nodeId ? current : { kind: 'loading' }))
+    }
+    let receivedLiveLatency = false
+    const applyLatencyData = (data: NodeLatencyData, source: 'http' | 'ws') => {
+      if (source === 'http' && receivedLiveLatency) return
+      if (source === 'ws') receivedLiveLatency = true
+      nodeLatencyCacheRef.current.set(cacheKey, data)
+      rememberDetailData(nodeLatencyCachePrefix, route.nodeId, nodeLatencyRange, data)
+      if (!cancelled) setLatencyState({ kind: 'ready', data })
     }
     const stopLatencyStream = subscribeNodeLatency(
       route.nodeId,
       nodeLatencyRange,
-      (data) => {
-        nodeLatencyCacheRef.current.set(cacheKey, data)
-        if (!cancelled) setLatencyState({ kind: 'ready', data })
-      },
+      (data) => applyLatencyData(data, 'ws'),
       (error) => {
         if (!cancelled) setLatencyState((current) => (current.kind === 'ready' ? current : { kind: 'error', message: error.message }))
       },
     )
-    if (!stopLatencyStream && !cached) {
+    fetchNodeLatency(route.nodeId, nodeLatencyRange)
+      .then((data) => applyLatencyData(data, 'http'))
+      .catch((error: unknown) => {
+        if (!cancelled) setLatencyState((current) => (current.kind === 'ready' ? current : { kind: 'error', message: error instanceof Error ? error.message : 'latency request failed' }))
+      })
+    if (!stopLatencyStream && !seeded) {
       setLatencyState({ kind: 'error', message: 'live websocket unavailable' })
     }
     return () => {
@@ -544,23 +650,36 @@ export function App() {
     let cancelled = false
     const cacheKey = `${route.nodeId}:${stateRange}`
     const cached = nodeStateCacheRef.current.get(cacheKey)
-    if (cached) {
-      setStateHistoryState({ kind: 'ready', data: cached })
+      ?? loadCachedDetailData(nodeStateCachePrefix, route.nodeId, stateRange, validateNodeStateData)
+    const seeded = cached ?? seedNodeStateFromSummary(summaryRef.current, route.nodeId, stateRange)
+    if (cached) nodeStateCacheRef.current.set(cacheKey, cached)
+    if (seeded) {
+      setStateHistoryState({ kind: 'ready', data: seeded })
     } else {
       setStateHistoryState({ kind: 'loading' })
+    }
+    let receivedLiveState = false
+    const applyStateData = (data: NodeStateData, source: 'http' | 'ws') => {
+      if (source === 'http' && receivedLiveState) return
+      if (source === 'ws') receivedLiveState = true
+      nodeStateCacheRef.current.set(cacheKey, data)
+      rememberDetailData(nodeStateCachePrefix, route.nodeId, stateRange, data)
+      if (!cancelled) setStateHistoryState({ kind: 'ready', data })
     }
     const stopStateStream = subscribeNodeState(
       route.nodeId,
       stateRange,
-      (data) => {
-        nodeStateCacheRef.current.set(cacheKey, data)
-        if (!cancelled) setStateHistoryState({ kind: 'ready', data })
-      },
+      (data) => applyStateData(data, 'ws'),
       (error) => {
-        if (!cancelled) setStateHistoryState({ kind: 'error', message: error.message })
+        if (!cancelled) setStateHistoryState((current) => (current.kind === 'ready' ? current : { kind: 'error', message: error.message }))
       },
     )
-    if (!stopStateStream && !cached) {
+    fetchNodeState(route.nodeId, stateRange)
+      .then((data) => applyStateData(data, 'http'))
+      .catch((error: unknown) => {
+        if (!cancelled) setStateHistoryState((current) => (current.kind === 'ready' ? current : { kind: 'error', message: error instanceof Error ? error.message : 'state request failed' }))
+      })
+    if (!stopStateStream && !seeded) {
       setStateHistoryState({ kind: 'error', message: 'live websocket unavailable' })
     }
     return () => {
@@ -568,6 +687,18 @@ export function App() {
       stopStateStream?.()
     }
   }, [route, stateRange])
+
+  useEffect(() => {
+    if (state.kind !== 'ready' || route.kind !== 'node') return
+    const latencySeed = seedNodeLatencyFromSummary(state.data, route.nodeId, nodeLatencyRange)
+    if (latencySeed) {
+      setLatencyState((current) => (current.kind === 'loading' || current.kind === 'idle' ? { kind: 'ready', data: latencySeed } : current))
+    }
+    const stateSeed = seedNodeStateFromSummary(state.data, route.nodeId, stateRange)
+    if (stateSeed) {
+      setStateHistoryState((current) => (current.kind === 'loading' || current.kind === 'idle' ? { kind: 'ready', data: stateSeed } : current))
+    }
+  }, [state, route, nodeLatencyRange, stateRange])
 
   useEffect(() => {
     if (route.kind !== 'service') {

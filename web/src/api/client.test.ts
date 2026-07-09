@@ -470,6 +470,31 @@ describe('normalizeNodeState', () => {
     expect(data.points[0].tcpConnectionCount).toBeNull()
     expect(data.points[0].udpConnectionCount).toBeNull()
   })
+
+  it('expands compact state series payloads', () => {
+    const data = normalizeNodeState({
+      node_id: 'hytron',
+      range: '1d',
+      created_at: [Date.parse('2026-07-02T12:00:00Z'), Date.parse('2026-07-02T12:00:30Z')],
+      series: {
+        cpu_percent: [10, 20],
+        load1: [0.1, 0.2],
+        memory_used_bytes: [100, 200],
+        memory_total_bytes: [1000, 1000],
+        disk_used_bytes: [300, 400],
+        disk_total_bytes: [2000, 2000],
+        net_in_speed_bps: [5, 6],
+        net_out_speed_bps: [7, 8],
+        process_count: [90, 91],
+        uptime_seconds: [3600, 3630],
+      },
+    })
+
+    expect(data.points).toEqual([
+      expect.objectContaining({ ts: '2026-07-02T12:00:00.000Z', cpuPercent: 10, load1: 0.1, memoryUsedBytes: 100, netOutSpeedBps: 7, processCount: 90 }),
+      expect.objectContaining({ ts: '2026-07-02T12:00:30.000Z', cpuPercent: 20, load1: 0.2, memoryUsedBytes: 200, netOutSpeedBps: 8, processCount: 91 }),
+    ])
+  })
 })
 
 describe('normalizeAdminNodes', () => {

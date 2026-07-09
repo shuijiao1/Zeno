@@ -334,12 +334,12 @@ func TestNodeStateWebSocketPublishesAgentStateUpdates(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read updated node state websocket message: %v", err)
 	}
-	if !strings.Contains(string(update), `"node_id":"hytron"`) || !strings.Contains(string(update), `"net_out_speed_bps":8642`) {
-		t.Fatalf("node state websocket update = %q, want latest state point", string(update))
-	}
 	var stateUpdate StateResponse
 	if err := json.Unmarshal(update, &stateUpdate); err != nil {
 		t.Fatalf("decode node state websocket update: %v", err)
+	}
+	if stateUpdate.NodeID != "hytron" || !statePointsContainNetOutSpeed(stateUpdate.Points, 8642) {
+		t.Fatalf("node state websocket update = %q, want latest state point", string(update))
 	}
 	if got := len(stateUpdate.Points); got < 4 {
 		t.Fatalf("node state websocket update points = %d, want 30-second state buckets rather than latency buckets", got)
@@ -664,6 +664,15 @@ func latencyPointsContainAverage(points []LatencyPoint, targetID string, average
 func serviceLatencyPointsContainAverage(points []ServiceLatencyPoint, nodeID string, average float64) bool {
 	for _, point := range points {
 		if point.NodeID == nodeID && point.AvgMS != nil && *point.AvgMS == average {
+			return true
+		}
+	}
+	return false
+}
+
+func statePointsContainNetOutSpeed(points []StatePoint, speed float64) bool {
+	for _, point := range points {
+		if point.NetOutSpeedBps != nil && *point.NetOutSpeedBps == speed {
 			return true
 		}
 	}

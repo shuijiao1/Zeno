@@ -140,6 +140,27 @@ interface ApiStatePoint {
   uptime_seconds: number | null
 }
 
+interface ApiStateSeries {
+  cpu_percent?: Array<number | null> | null
+  load1?: Array<number | null> | null
+  load5?: Array<number | null> | null
+  load15?: Array<number | null> | null
+  memory_used_bytes?: Array<number | null> | null
+  memory_total_bytes?: Array<number | null> | null
+  swap_used_bytes?: Array<number | null> | null
+  swap_total_bytes?: Array<number | null> | null
+  disk_used_bytes?: Array<number | null> | null
+  disk_total_bytes?: Array<number | null> | null
+  net_in_total_bytes?: Array<number | null> | null
+  net_out_total_bytes?: Array<number | null> | null
+  net_in_speed_bps?: Array<number | null> | null
+  net_out_speed_bps?: Array<number | null> | null
+  process_count?: Array<number | null> | null
+  tcp_connection_count?: Array<number | null> | null
+  udp_connection_count?: Array<number | null> | null
+  uptime_seconds?: Array<number | null> | null
+}
+
 interface ApiAdminNode {
   id: string
   display_name: string
@@ -293,7 +314,9 @@ export interface ApiServiceLatencyResponse {
 export interface ApiStateResponse {
   node_id: string
   range: string
-  points: ApiStatePoint[] | null
+  points?: ApiStatePoint[] | null
+  created_at?: number[] | null
+  series?: ApiStateSeries | null
 }
 
 export interface ApiAdminNodesResponse {
@@ -1000,7 +1023,7 @@ export function normalizeNodeState(input: ApiStateResponse): NodeStateData {
   return {
     nodeId: input.node_id,
     range: input.range,
-    points: (input.points ?? []).map(normalizeStatePoint),
+    points: normalizeNodeStatePoints(input),
   }
 }
 
@@ -1317,6 +1340,39 @@ function normalizeStatePoint(point: ApiStatePoint): StatePoint {
     udpConnectionCount: point.udp_connection_count ?? null,
     uptimeSeconds: point.uptime_seconds,
   }
+}
+
+function normalizeNodeStatePoints(input: ApiStateResponse): StatePoint[] {
+  if (input.points) return input.points.map(normalizeStatePoint)
+  const timestamps = input.created_at ?? []
+  const series = input.series ?? {}
+  return timestamps.map((createdAt, index) => ({
+    ts: normalizeSeriesTimestamp(createdAt),
+    cpuPercent: stateSeriesValue(series.cpu_percent, index),
+    load1: stateSeriesValue(series.load1, index),
+    load5: stateSeriesValue(series.load5, index),
+    load15: stateSeriesValue(series.load15, index),
+    memoryUsedBytes: stateSeriesValue(series.memory_used_bytes, index),
+    memoryTotalBytes: stateSeriesValue(series.memory_total_bytes, index),
+    swapUsedBytes: stateSeriesValue(series.swap_used_bytes, index),
+    swapTotalBytes: stateSeriesValue(series.swap_total_bytes, index),
+    diskUsedBytes: stateSeriesValue(series.disk_used_bytes, index),
+    diskTotalBytes: stateSeriesValue(series.disk_total_bytes, index),
+    netInTotalBytes: stateSeriesValue(series.net_in_total_bytes, index),
+    netOutTotalBytes: stateSeriesValue(series.net_out_total_bytes, index),
+    netInSpeedBps: stateSeriesValue(series.net_in_speed_bps, index),
+    netOutSpeedBps: stateSeriesValue(series.net_out_speed_bps, index),
+    processCount: stateSeriesValue(series.process_count, index),
+    tcpConnectionCount: stateSeriesValue(series.tcp_connection_count, index),
+    udpConnectionCount: stateSeriesValue(series.udp_connection_count, index),
+    uptimeSeconds: stateSeriesValue(series.uptime_seconds, index),
+  }))
+}
+
+function stateSeriesValue(values: Array<number | null> | null | undefined, index: number): number | null {
+  if (!values || index < 0 || index >= values.length) return null
+  const value = values[index]
+  return typeof value === 'number' && Number.isFinite(value) ? value : null
 }
 
 function normalizeAdminNode(node: ApiAdminNode): AdminNode {

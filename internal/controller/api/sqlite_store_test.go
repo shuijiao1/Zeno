@@ -404,23 +404,7 @@ func TestSQLiteBackedHandlerReturnsPersistedStateHistory(t *testing.T) {
 		t.Fatalf("public state response leaked sensitive wording: %s", recorder.Body.String())
 	}
 
-	var response struct {
-		NodeID string `json:"node_id"`
-		Range  string `json:"range"`
-		Points []struct {
-			TS               string   `json:"ts"`
-			CPUPercent       *float64 `json:"cpu_percent"`
-			MemoryUsedBytes  *float64 `json:"memory_used_bytes"`
-			MemoryTotalBytes *float64 `json:"memory_total_bytes"`
-			DiskUsedBytes    *float64 `json:"disk_used_bytes"`
-			DiskTotalBytes   *float64 `json:"disk_total_bytes"`
-			NetInTotalBytes  *float64 `json:"net_in_total_bytes"`
-			NetOutTotalBytes *float64 `json:"net_out_total_bytes"`
-			NetInSpeedBps    *float64 `json:"net_in_speed_bps"`
-			NetOutSpeedBps   *float64 `json:"net_out_speed_bps"`
-			UptimeSeconds    *float64 `json:"uptime_seconds"`
-		} `json:"points"`
-	}
+	var response StateResponse
 	if err := json.NewDecoder(recorder.Body).Decode(&response); err != nil {
 		t.Fatalf("decode state response: %v", err)
 	}
