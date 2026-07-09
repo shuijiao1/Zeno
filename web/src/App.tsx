@@ -61,6 +61,10 @@ function clearStoredAdminToken() {
   } catch {}
 }
 
+export function isAdminUnauthorizedError(error: unknown): boolean {
+  return error instanceof Error && /^admin .+: 401$/.test(error.message)
+}
+
 function loadStoredSummary(): SummaryData | null {
   if (typeof window === 'undefined') return null
   try {
@@ -776,7 +780,15 @@ export function App() {
         })
         .catch((error: unknown) => {
           loadedOnce = true
-          if (!cancelled) setAdminState({ kind: 'error', message: error instanceof Error ? error.message : 'unknown error' })
+          if (cancelled) return
+          if (isAdminUnauthorizedError(error)) {
+            clearStoredAdminToken()
+            setAdminToken('')
+            setAdminAuthState({ kind: 'error', message: '登录已过期，请重新登录。' })
+            setAdminState({ kind: 'idle' })
+            return
+          }
+          setAdminState({ kind: 'error', message: error instanceof Error ? error.message : 'unknown error' })
         })
     }
 
@@ -814,13 +826,29 @@ export function App() {
     setAdminState({ kind: 'idle' })
   }
 
+  const handleAdminRequestError = (error: unknown) => {
+    if (isAdminUnauthorizedError(error)) {
+      clearStoredAdminToken()
+      setAdminToken('')
+      setAdminAuthState({ kind: 'error', message: '登录已过期，请重新登录。' })
+      setAdminState({ kind: 'idle' })
+      return
+    }
+    setAdminState({ kind: 'error', message: error instanceof Error ? error.message : 'unknown error' })
+  }
+
   const updateAdminAccountDetails = (username: string, currentPassword: string, newPassword: string): Promise<void> => {
     if (adminToken === '') return Promise.reject(new Error('missing admin token'))
-    return updateAdminAccount(adminToken, username, currentPassword, newPassword).then((session) => {
-      rememberAdminToken(session.token)
-      setAdminToken(session.token)
-      setAdminState((current) => current.kind === 'ready' ? { ...current, account: { username: session.username } } : current)
-    })
+    return updateAdminAccount(adminToken, username, currentPassword, newPassword)
+      .then((session) => {
+        rememberAdminToken(session.token)
+        setAdminToken(session.token)
+        setAdminState((current) => current.kind === 'ready' ? { ...current, account: { username: session.username } } : current)
+      })
+      .catch((error: unknown) => {
+        handleAdminRequestError(error)
+        throw error
+      })
   }
 
   const createAdminNodeDetails = (input: AdminNodeCreateInput): Promise<AdminNode> => {
@@ -836,7 +864,7 @@ export function App() {
         return createdNode
       })
       .catch((error: unknown) => {
-        setAdminState({ kind: 'error', message: error instanceof Error ? error.message : 'unknown error' })
+        handleAdminRequestError(error)
         throw error
       })
   }
@@ -844,6 +872,10 @@ export function App() {
   const requestAdminInstallCommand = (nodeId: string): Promise<AdminNodeInstallCommand> => {
     if (adminToken === '') return Promise.reject(new Error('missing admin token'))
     return requestAdminNodeInstallCommand(adminToken, nodeId)
+      .catch((error: unknown) => {
+        handleAdminRequestError(error)
+        throw error
+      })
   }
 
   const updateAdminNodeDetails = (nodeId: string, input: AdminNodeUpdateInput) => {
@@ -860,7 +892,7 @@ export function App() {
           return { kind: 'ready', account: { username: 'admin' }, nodes: [updatedNode], targets: [], notificationChannels: [], alertRules: [] }
         })
       })
-      .catch((error: unknown) => setAdminState({ kind: 'error', message: error instanceof Error ? error.message : 'unknown error' }))
+      .catch(handleAdminRequestError)
   }
 
   const deleteAdminNodeDetails = (nodeId: string) => {
@@ -879,7 +911,7 @@ export function App() {
           }
         })
       })
-      .catch((error: unknown) => setAdminState({ kind: 'error', message: error instanceof Error ? error.message : 'unknown error' }))
+      .catch(handleAdminRequestError)
   }
 
   const createAdminProbeTargetDetails = (input: AdminProbeTargetInput) => {
@@ -893,7 +925,7 @@ export function App() {
           return { kind: 'ready', account: { username: 'admin' }, nodes: [], targets: [createdTarget], notificationChannels: [], alertRules: [] }
         })
       })
-      .catch((error: unknown) => setAdminState({ kind: 'error', message: error instanceof Error ? error.message : 'unknown error' }))
+      .catch(handleAdminRequestError)
   }
 
   const updateAdminProbeTargetDetails = (targetId: string, input: AdminProbeTargetUpdateInput) => {
@@ -907,7 +939,7 @@ export function App() {
           return { kind: 'ready', account: { username: 'admin' }, nodes: [], targets: [updatedTarget], notificationChannels: [], alertRules: [] }
         })
       })
-      .catch((error: unknown) => setAdminState({ kind: 'error', message: error instanceof Error ? error.message : 'unknown error' }))
+      .catch(handleAdminRequestError)
   }
 
   const deleteAdminProbeTargetDetails = (targetId: string) => {
@@ -919,7 +951,7 @@ export function App() {
           return { ...current, targets: current.targets.filter((target) => target.id !== targetId) }
         })
       })
-      .catch((error: unknown) => setAdminState({ kind: 'error', message: error instanceof Error ? error.message : 'unknown error' }))
+      .catch(handleAdminRequestError)
   }
 
   const createAdminNotificationChannelDetails = (input: AdminNotificationChannelCreateInput) => {
@@ -933,7 +965,7 @@ export function App() {
           return { kind: 'ready', account: { username: 'admin' }, nodes: [], targets: [], notificationChannels: [createdChannel], alertRules: [] }
         })
       })
-      .catch((error: unknown) => setAdminState({ kind: 'error', message: error instanceof Error ? error.message : 'unknown error' }))
+      .catch(handleAdminRequestError)
   }
 
   const updateAdminNotificationChannelDetails = (channelId: string, input: AdminNotificationChannelUpdateInput) => {
@@ -947,7 +979,7 @@ export function App() {
           return { kind: 'ready', account: { username: 'admin' }, nodes: [], targets: [], notificationChannels: [updatedChannel], alertRules: [] }
         })
       })
-      .catch((error: unknown) => setAdminState({ kind: 'error', message: error instanceof Error ? error.message : 'unknown error' }))
+      .catch(handleAdminRequestError)
   }
 
   const deleteAdminNotificationChannelDetails = (channelId: string) => {
@@ -959,14 +991,14 @@ export function App() {
           return { ...current, notificationChannels: current.notificationChannels.filter((channel) => channel.id !== channelId) }
         })
       })
-      .catch((error: unknown) => setAdminState({ kind: 'error', message: error instanceof Error ? error.message : 'unknown error' }))
+      .catch(handleAdminRequestError)
   }
 
   const testAdminNotificationChannelDetails = (channelId: string) => {
     if (adminToken === '') return
     testAdminNotificationChannel(adminToken, channelId)
       .then(() => {})
-      .catch((error: unknown) => setAdminState({ kind: 'error', message: error instanceof Error ? error.message : 'unknown error' }))
+      .catch(handleAdminRequestError)
   }
 
   const updateAdminAlertRuleDetails = (ruleId: string, input: AdminAlertRuleUpdateInput) => {
@@ -986,14 +1018,14 @@ export function App() {
           return { kind: 'ready', account: { username: 'admin' }, nodes: [], targets: [], notificationChannels: [], alertRules: [updatedRule] }
         })
       })
-      .catch((error: unknown) => setAdminState({ kind: 'error', message: error instanceof Error ? error.message : 'unknown error' }))
+      .catch(handleAdminRequestError)
   }
 
   const updateAdminSettingsDetails = (input: AdminSettingsUpdateInput) => {
     if (adminToken === '') return
     updateAdminSettings(adminToken, input)
       .then((updatedSettings) => setSettings(updatedSettings))
-      .catch((error: unknown) => setAdminState({ kind: 'error', message: error instanceof Error ? error.message : 'unknown error' }))
+      .catch(handleAdminRequestError)
   }
 
   const navigateHome = () => {

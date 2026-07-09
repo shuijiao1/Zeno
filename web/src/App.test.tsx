@@ -1,6 +1,6 @@
 import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it } from 'vitest'
-import { AdminDashboard, HomeTopPanel, applyCustomCode, documentBrandingForSettings, orderHomeNodes, shellStyleForSettings, shouldRefreshHomeRealtimeSnapshot, validateAdminSettingsInput } from './App'
+import { AdminDashboard, HomeTopPanel, applyCustomCode, documentBrandingForSettings, isAdminUnauthorizedError, orderHomeNodes, shellStyleForSettings, shouldRefreshHomeRealtimeSnapshot, validateAdminSettingsInput } from './App'
 import type { AdminAlertRule, AdminNode, AdminNotificationChannel, AdminProbeTarget, AdminSettings, HomeCardNode } from './types'
 
 const overviewProps = {
@@ -204,6 +204,13 @@ function renderAdmin(section: 'nodes' | 'targets' | 'notifications' | 'account' 
 }
 
 describe('HomeTopPanel', () => {
+  it('recognizes expired admin session API responses', () => {
+    expect(isAdminUnauthorizedError(new Error('admin nodes request failed: 401'))).toBe(true)
+    expect(isAdminUnauthorizedError(new Error('admin settings update failed: 401'))).toBe(true)
+    expect(isAdminUnauthorizedError(new Error('admin nodes request failed: 500'))).toBe(false)
+    expect(isAdminUnauthorizedError(new Error('missing admin token'))).toBe(false)
+  })
+
   it('paces aggregate homepage realtime refreshes on live summary frames', () => {
     expect(shouldRefreshHomeRealtimeSnapshot(null, 100, 100)).toBe(true)
     expect(shouldRefreshHomeRealtimeSnapshot(100, 800, 100)).toBe(true)
