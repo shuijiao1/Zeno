@@ -80,7 +80,7 @@ interface ApiLatencyPoint {
 interface ApiLatencySeries {
   target_id: string
   target_name: string
-  created_at: number[]
+  created_at?: number[] | null
   median_ms?: Array<number | null> | null
   avg_ms?: Array<number | null> | null
   loss_percent?: number[] | null
@@ -112,7 +112,7 @@ interface ApiServiceLatencyPoint {
 interface ApiServiceLatencySeries {
   node_id: string
   node_name: string
-  created_at: number[]
+  created_at?: number[] | null
   median_ms?: Array<number | null> | null
   avg_ms?: Array<number | null> | null
   loss_percent?: number[] | null
@@ -277,6 +277,7 @@ export interface ApiSummaryResponse {
 export interface ApiLatencyResponse {
   node_id: string
   range: string
+  created_at?: number[] | null
   points?: ApiLatencyPoint[] | null
   series?: ApiLatencySeries[] | null
 }
@@ -284,6 +285,7 @@ export interface ApiLatencyResponse {
 export interface ApiServiceLatencyResponse {
   target: ApiServiceTarget
   range: string
+  created_at?: number[] | null
   points?: ApiServiceLatencyPoint[] | null
   series?: ApiServiceLatencySeries[] | null
 }
@@ -1220,11 +1222,12 @@ function normalizeLatencyPoint(point: ApiLatencyPoint): LatencyPoint {
 
 function normalizeNodeLatencyPoints(input: ApiLatencyResponse): LatencyPoint[] {
   if (input.points) return input.points.map(normalizeLatencyPoint)
+  const sharedCreatedAt = input.created_at ?? []
   return (input.series ?? []).flatMap((series) => {
     const medianValues = series.median_ms ?? []
     const avgValues = series.avg_ms ?? []
     const lossValues = series.loss_percent ?? []
-    return (series.created_at ?? []).map((createdAt, index) => {
+    return (series.created_at ?? sharedCreatedAt).map((createdAt, index) => {
       const medianMs = medianValues[index] ?? null
       return {
         ts: normalizeSeriesTimestamp(createdAt),
@@ -1240,11 +1243,12 @@ function normalizeNodeLatencyPoints(input: ApiLatencyResponse): LatencyPoint[] {
 
 function normalizeServiceLatencyPoints(input: ApiServiceLatencyResponse): LatencyPoint[] {
   if (input.points) return input.points.map(normalizeServiceLatencyPoint)
+  const sharedCreatedAt = input.created_at ?? []
   return (input.series ?? []).flatMap((series) => {
     const medianValues = series.median_ms ?? []
     const avgValues = series.avg_ms ?? []
     const lossValues = series.loss_percent ?? []
-    return (series.created_at ?? []).map((createdAt, index) => {
+    return (series.created_at ?? sharedCreatedAt).map((createdAt, index) => {
       const medianMs = medianValues[index] ?? null
       return {
         ts: normalizeSeriesTimestamp(createdAt),

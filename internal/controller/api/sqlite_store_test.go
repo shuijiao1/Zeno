@@ -74,10 +74,16 @@ func TestSQLiteBackedHandlerReturnsPersistedLatencyInsteadOfMock(t *testing.T) {
 	if response.Range != "1h" {
 		t.Fatalf("range = %q, want 1h", response.Range)
 	}
-	if len(response.Points) != 1 {
-		t.Fatalf("points len = %d, want exactly persisted point; points=%+v", len(response.Points), response.Points)
+	var point *LatencyPoint
+	for index := range response.Points {
+		if response.Points[index].TargetID == "google" && response.Points[index].AvgMS != nil {
+			point = &response.Points[index]
+			break
+		}
 	}
-	point := response.Points[0]
+	if point == nil {
+		t.Fatalf("missing persisted google point; points=%+v", response.Points)
+	}
 	if point.TargetID != "google" || point.TargetName != "Google" {
 		t.Fatalf("target = %q/%q, want google/Google", point.TargetID, point.TargetName)
 	}
@@ -277,7 +283,14 @@ func TestSQLiteBackedSummaryUsesPersistedNodeAndLatestLatency(t *testing.T) {
 	if err := json.NewDecoder(serviceRecorder.Body).Decode(&serviceResponse); err != nil {
 		t.Fatalf("decode service response: %v", err)
 	}
-	if serviceResponse.Target.ID != "google" || len(serviceResponse.Points) != 2 || serviceResponse.Points[0].NodeID != "hytron" {
+	var servicePoint *ServiceLatencyPoint
+	for index := range serviceResponse.Points {
+		if serviceResponse.Points[index].NodeID == "hytron" && serviceResponse.Points[index].AvgMS != nil {
+			servicePoint = &serviceResponse.Points[index]
+			break
+		}
+	}
+	if serviceResponse.Target.ID != "google" || servicePoint == nil {
 		t.Fatalf("service response = %+v, want google points by node", serviceResponse)
 	}
 }

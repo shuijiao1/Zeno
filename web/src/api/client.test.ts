@@ -280,6 +280,27 @@ describe('normalizeServiceLatency', () => {
       expect.objectContaining({ ts: '2026-07-02T12:00:00.000Z', targetId: 'hytron', targetName: 'Hytron', medianMs: 1.3, avgMs: 1.5, lossPercent: 0 }),
     ])
   })
+
+  it('expands service latency series with shared timestamps', () => {
+    const data = normalizeServiceLatency({
+      target: { id: 'google', name: 'Google', type: 'http_get', address: 'https://www.google.com/generate_204', port: null, assigned_node_count: 10, reporting_node_count: 9, median_ms: 1.2, loss_percent: 0, updated_at: '2026-07-02T12:00:00Z' },
+      range: '1d',
+      created_at: [Date.parse('2026-07-02T12:00:00Z'), Date.parse('2026-07-02T12:01:00Z')],
+      series: [
+        {
+          node_id: 'hytron',
+          node_name: 'Hytron',
+          avg_ms: [1.5, 2.5],
+          loss_percent: [0, 1],
+        },
+      ],
+    })
+
+    expect(data.points).toEqual([
+      expect.objectContaining({ ts: '2026-07-02T12:00:00.000Z', targetId: 'hytron', targetName: 'Hytron', avgMs: 1.5, lossPercent: 0 }),
+      expect.objectContaining({ ts: '2026-07-02T12:01:00.000Z', targetId: 'hytron', targetName: 'Hytron', avgMs: 2.5, lossPercent: 1 }),
+    ])
+  })
 })
 
 describe('fetchServiceLatency', () => {
@@ -345,6 +366,33 @@ describe('normalizeNodeLatency', () => {
     expect(data.points).toEqual([
       expect.objectContaining({ ts: '2026-07-02T12:00:00.000Z', targetId: 'google', targetName: 'Google', medianMs: 1.2, avgMs: 1.4, lossPercent: 0 }),
       expect.objectContaining({ ts: '2026-07-02T12:01:00.000Z', targetId: 'google', targetName: 'Google', medianMs: null, avgMs: null, lossPercent: 100 }),
+    ])
+  })
+
+  it('expands node latency series with shared timestamps', () => {
+    const data = normalizeNodeLatency({
+      node_id: 'hytron',
+      range: '1h',
+      created_at: [Date.parse('2026-07-02T12:00:00Z')],
+      series: [
+        {
+          target_id: 'google',
+          target_name: 'Google',
+          avg_ms: [1.4],
+          loss_percent: [0],
+        },
+        {
+          target_id: 'dc1',
+          target_name: 'DC1',
+          avg_ms: [20],
+          loss_percent: [100],
+        },
+      ],
+    })
+
+    expect(data.points).toEqual([
+      expect.objectContaining({ ts: '2026-07-02T12:00:00.000Z', targetId: 'google', targetName: 'Google', avgMs: 1.4, lossPercent: 0 }),
+      expect.objectContaining({ ts: '2026-07-02T12:00:00.000Z', targetId: 'dc1', targetName: 'DC1', avgMs: 20, lossPercent: 100 }),
     ])
   })
 })

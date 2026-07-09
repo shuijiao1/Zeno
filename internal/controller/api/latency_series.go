@@ -8,40 +8,44 @@ import (
 type LatencySeries struct {
 	TargetID    string     `json:"target_id"`
 	TargetName  string     `json:"target_name"`
-	CreatedAt   []int64    `json:"created_at"`
-	MedianMS    []*float64 `json:"median_ms"`
-	AvgMS       []*float64 `json:"avg_ms"`
-	LossPercent []float64  `json:"loss_percent"`
+	CreatedAt   []int64    `json:"created_at,omitempty"`
+	MedianMS    []*float64 `json:"median_ms,omitempty"`
+	AvgMS       []*float64 `json:"avg_ms,omitempty"`
+	LossPercent []float64  `json:"loss_percent,omitempty"`
 }
 
 type ServiceLatencySeries struct {
 	NodeID      string     `json:"node_id"`
 	NodeName    string     `json:"node_name"`
-	CreatedAt   []int64    `json:"created_at"`
-	MedianMS    []*float64 `json:"median_ms"`
-	AvgMS       []*float64 `json:"avg_ms"`
-	LossPercent []float64  `json:"loss_percent"`
+	CreatedAt   []int64    `json:"created_at,omitempty"`
+	MedianMS    []*float64 `json:"median_ms,omitempty"`
+	AvgMS       []*float64 `json:"avg_ms,omitempty"`
+	LossPercent []float64  `json:"loss_percent,omitempty"`
 }
 
 func (response LatencyResponse) MarshalJSON() ([]byte, error) {
 	type latencyResponseJSON struct {
-		NodeID string          `json:"node_id"`
-		Range  string          `json:"range"`
-		Series []LatencySeries `json:"series"`
+		NodeID          string          `json:"node_id"`
+		Range           string          `json:"range"`
+		SharedCreatedAt []int64         `json:"created_at,omitempty"`
+		Series          []LatencySeries `json:"series"`
 	}
+	createdAt, series := latencySeriesPayloadFromPoints(response.Points)
 	return json.Marshal(latencyResponseJSON{
-		NodeID: response.NodeID,
-		Range:  response.Range,
-		Series: latencySeriesFromPoints(response.Points),
+		NodeID:          response.NodeID,
+		Range:           response.Range,
+		SharedCreatedAt: createdAt,
+		Series:          series,
 	})
 }
 
 func (response *LatencyResponse) UnmarshalJSON(data []byte) error {
 	type latencyResponseJSON struct {
-		NodeID string          `json:"node_id"`
-		Range  string          `json:"range"`
-		Points []LatencyPoint  `json:"points"`
-		Series []LatencySeries `json:"series"`
+		NodeID          string          `json:"node_id"`
+		Range           string          `json:"range"`
+		SharedCreatedAt []int64         `json:"created_at"`
+		Points          []LatencyPoint  `json:"points"`
+		Series          []LatencySeries `json:"series"`
 	}
 	var raw latencyResponseJSON
 	if err := json.Unmarshal(data, &raw); err != nil {
@@ -53,29 +57,33 @@ func (response *LatencyResponse) UnmarshalJSON(data []byte) error {
 		response.Points = raw.Points
 		return nil
 	}
-	response.Points = latencyPointsFromSeries(raw.Series)
+	response.Points = latencyPointsFromSeries(raw.Series, raw.SharedCreatedAt)
 	return nil
 }
 
 func (response ServiceTargetLatencyResponse) MarshalJSON() ([]byte, error) {
 	type serviceLatencyResponseJSON struct {
-		Target ServiceTarget          `json:"target"`
-		Range  string                 `json:"range"`
-		Series []ServiceLatencySeries `json:"series"`
+		Target          ServiceTarget          `json:"target"`
+		Range           string                 `json:"range"`
+		SharedCreatedAt []int64                `json:"created_at,omitempty"`
+		Series          []ServiceLatencySeries `json:"series"`
 	}
+	createdAt, series := serviceLatencySeriesPayloadFromPoints(response.Points)
 	return json.Marshal(serviceLatencyResponseJSON{
-		Target: response.Target,
-		Range:  response.Range,
-		Series: serviceLatencySeriesFromPoints(response.Points),
+		Target:          response.Target,
+		Range:           response.Range,
+		SharedCreatedAt: createdAt,
+		Series:          series,
 	})
 }
 
 func (response *ServiceTargetLatencyResponse) UnmarshalJSON(data []byte) error {
 	type serviceLatencyResponseJSON struct {
-		Target ServiceTarget          `json:"target"`
-		Range  string                 `json:"range"`
-		Points []ServiceLatencyPoint  `json:"points"`
-		Series []ServiceLatencySeries `json:"series"`
+		Target          ServiceTarget          `json:"target"`
+		Range           string                 `json:"range"`
+		SharedCreatedAt []int64                `json:"created_at"`
+		Points          []ServiceLatencyPoint  `json:"points"`
+		Series          []ServiceLatencySeries `json:"series"`
 	}
 	var raw serviceLatencyResponseJSON
 	if err := json.Unmarshal(data, &raw); err != nil {
@@ -87,8 +95,19 @@ func (response *ServiceTargetLatencyResponse) UnmarshalJSON(data []byte) error {
 		response.Points = raw.Points
 		return nil
 	}
-	response.Points = serviceLatencyPointsFromSeries(raw.Series)
+	response.Points = serviceLatencyPointsFromSeries(raw.Series, raw.SharedCreatedAt)
 	return nil
+}
+
+func latencySeriesPayloadFromPoints(points []LatencyPoint) ([]int64, []LatencySeries) {
+	series := latencySeriesFromPoints(points)
+	shared := sharedLatencyCreatedAt(series)
+	if len(shared) > 0 {
+		for index := range series {
+			series[index].CreatedAt = nil
+		}
+	}
+	return shared, series
 }
 
 func latencySeriesFromPoints(points []LatencyPoint) []LatencySeries {
@@ -113,10 +132,14 @@ func latencySeriesFromPoints(points []LatencyPoint) []LatencySeries {
 	return seriesList
 }
 
-func latencyPointsFromSeries(seriesList []LatencySeries) []LatencyPoint {
+func latencyPointsFromSeries(seriesList []LatencySeries, sharedCreatedAt []int64) []LatencyPoint {
 	points := make([]LatencyPoint, 0)
 	for _, series := range seriesList {
-		for index, createdAt := range series.CreatedAt {
+		createdAtValues := series.CreatedAt
+		if len(createdAtValues) == 0 {
+			createdAtValues = sharedCreatedAt
+		}
+		for index, createdAt := range createdAtValues {
 			points = append(points, LatencyPoint{
 				TS:          latencyTimestampString(createdAt),
 				TargetID:    series.TargetID,
@@ -128,6 +151,17 @@ func latencyPointsFromSeries(seriesList []LatencySeries) []LatencyPoint {
 		}
 	}
 	return points
+}
+
+func serviceLatencySeriesPayloadFromPoints(points []ServiceLatencyPoint) ([]int64, []ServiceLatencySeries) {
+	series := serviceLatencySeriesFromPoints(points)
+	shared := sharedServiceLatencyCreatedAt(series)
+	if len(shared) > 0 {
+		for index := range series {
+			series[index].CreatedAt = nil
+		}
+	}
+	return shared, series
 }
 
 func serviceLatencySeriesFromPoints(points []ServiceLatencyPoint) []ServiceLatencySeries {
@@ -152,10 +186,14 @@ func serviceLatencySeriesFromPoints(points []ServiceLatencyPoint) []ServiceLaten
 	return seriesList
 }
 
-func serviceLatencyPointsFromSeries(seriesList []ServiceLatencySeries) []ServiceLatencyPoint {
+func serviceLatencyPointsFromSeries(seriesList []ServiceLatencySeries, sharedCreatedAt []int64) []ServiceLatencyPoint {
 	points := make([]ServiceLatencyPoint, 0)
 	for _, series := range seriesList {
-		for index, createdAt := range series.CreatedAt {
+		createdAtValues := series.CreatedAt
+		if len(createdAtValues) == 0 {
+			createdAtValues = sharedCreatedAt
+		}
+		for index, createdAt := range createdAtValues {
 			points = append(points, ServiceLatencyPoint{
 				TS:          latencyTimestampString(createdAt),
 				NodeID:      series.NodeID,
@@ -167,6 +205,44 @@ func serviceLatencyPointsFromSeries(seriesList []ServiceLatencySeries) []Service
 		}
 	}
 	return points
+}
+
+func sharedLatencyCreatedAt(seriesList []LatencySeries) []int64 {
+	if len(seriesList) == 0 || len(seriesList[0].CreatedAt) == 0 {
+		return nil
+	}
+	shared := seriesList[0].CreatedAt
+	for _, series := range seriesList[1:] {
+		if !sameInt64Slice(shared, series.CreatedAt) {
+			return nil
+		}
+	}
+	return append([]int64(nil), shared...)
+}
+
+func sharedServiceLatencyCreatedAt(seriesList []ServiceLatencySeries) []int64 {
+	if len(seriesList) == 0 || len(seriesList[0].CreatedAt) == 0 {
+		return nil
+	}
+	shared := seriesList[0].CreatedAt
+	for _, series := range seriesList[1:] {
+		if !sameInt64Slice(shared, series.CreatedAt) {
+			return nil
+		}
+	}
+	return append([]int64(nil), shared...)
+}
+
+func sameInt64Slice(left, right []int64) bool {
+	if len(left) != len(right) {
+		return false
+	}
+	for index := range left {
+		if left[index] != right[index] {
+			return false
+		}
+	}
+	return true
 }
 
 func latencyTimestampMillis(value string) int64 {

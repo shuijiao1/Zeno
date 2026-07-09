@@ -129,6 +129,8 @@ func resolveLatencyWindow(rangeName string) (latencyWindow, bool) {
 
 func resolveLatencyGridWindow(rangeName string) (latencyWindow, bool) {
 	switch rangeName {
+	case "", "1h":
+		return latencyWindow{Name: "1h", Samples: 20, Step: 3 * time.Minute}, true
 	case "1d":
 		return latencyWindow{Name: "1d", Samples: 1440, Step: time.Minute}, true
 	case "7d":

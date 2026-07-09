@@ -1336,7 +1336,7 @@ func (s *SQLiteStore) populateServiceTargetLatencySummary(ctx context.Context, t
 }
 
 func (s *SQLiteStore) serviceLatencyPoints(ctx context.Context, targetID string, window latencyWindow) ([]ServiceLatencyPoint, error) {
-	if _, ok := resolveLatencyGridWindow(window.Name); ok {
+	if useLatencyGrid(window) {
 		return s.serviceLatencyGridPoints(ctx, targetID, window)
 	}
 	since := time.Now().UTC().Add(-time.Duration(window.Samples) * window.Step).Unix()
@@ -1376,7 +1376,7 @@ func (s *SQLiteStore) serviceLatencyPoints(ctx context.Context, targetID string,
 }
 
 func (s *SQLiteStore) latencyPoints(ctx context.Context, nodeID string, window latencyWindow) ([]LatencyPoint, error) {
-	if _, ok := resolveLatencyGridWindow(window.Name); ok {
+	if useLatencyGrid(window) {
 		return s.latencyGridPoints(ctx, nodeID, window)
 	}
 	since := time.Now().UTC().Add(-time.Duration(window.Samples) * window.Step).Unix()
@@ -1418,6 +1418,21 @@ func (s *SQLiteStore) latencyPoints(ctx context.Context, nodeID string, window l
 		return nil, err
 	}
 	return points, nil
+}
+
+func useLatencyGrid(window latencyWindow) bool {
+	gridWindow, ok := resolveLatencyGridWindow(window.Name)
+	if !ok {
+		return false
+	}
+	// Some unit tests pass a custom 1h latencyWindow directly to the store to
+	// assert raw round storage. Public 1h requests use resolveLatencyWindow's
+	// canonical 20 × 3m realtime grid and should stay bucketed for fast initial
+	// chart paint.
+	if window.Name == "1h" && (window.Samples != gridWindow.Samples || window.Step != gridWindow.Step) {
+		return false
+	}
+	return true
 }
 
 type latencyGridTarget struct {

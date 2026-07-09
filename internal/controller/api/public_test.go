@@ -418,14 +418,22 @@ func TestLatencyWebSocketsPublishAgentProbeResults(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read node latency update: %v", err)
 	}
-	if !strings.Contains(string(nodeUpdate), `"target_id":"google-dns"`) || !strings.Contains(string(nodeUpdate), `"median_ms":[20]`) {
+	var nodeLatencyUpdate LatencyResponse
+	if err := json.Unmarshal(nodeUpdate, &nodeLatencyUpdate); err != nil {
+		t.Fatalf("decode node latency update: %v", err)
+	}
+	if !latencyPointsContainMedian(nodeLatencyUpdate.Points, "google-dns", 20) {
 		t.Fatalf("node latency websocket update = %q, want posted probe median", string(nodeUpdate))
 	}
 	_, serviceUpdate, err := serviceConn.ReadMessage()
 	if err != nil {
 		t.Fatalf("read service latency update: %v", err)
 	}
-	if !strings.Contains(string(serviceUpdate), `"node_id":"hytron"`) || !strings.Contains(string(serviceUpdate), `"median_ms":[20]`) {
+	var serviceLatencyUpdate ServiceTargetLatencyResponse
+	if err := json.Unmarshal(serviceUpdate, &serviceLatencyUpdate); err != nil {
+		t.Fatalf("decode service latency update: %v", err)
+	}
+	if !serviceLatencyPointsContainMedian(serviceLatencyUpdate.Points, "hytron", 20) {
 		t.Fatalf("service latency websocket update = %q, want posted probe median", string(serviceUpdate))
 	}
 }
@@ -490,10 +498,14 @@ func TestNodeLatencyEndpointReturnsKulinStyleMonitorTargets(t *testing.T) {
 }
 
 func TestNodeLatencyEndpointUsesRangeSpecificWindows(t *testing.T) {
+	realtime := requestLatency(t, "/api/public/v1/nodes/sharon/latency?range=1h")
 	oneDay := requestLatency(t, "/api/public/v1/nodes/sharon/latency?range=1d")
 	sevenDays := requestLatency(t, "/api/public/v1/nodes/sharon/latency?range=7d")
 	thirtyDays := requestLatency(t, "/api/public/v1/nodes/sharon/latency?range=30d")
 
+	if got := len(uniquePointTimes(realtime.Points)); got != 20 {
+		t.Fatalf("1h timestamps = %d, want 20 realtime three-minute buckets", got)
+	}
 	if got := len(uniquePointTimes(oneDay.Points)); got != 1440 {
 		t.Fatalf("1d timestamps = %d, want 1440 one-minute samples", got)
 	}
@@ -638,6 +650,24 @@ func pointSpan(t *testing.T, points []LatencyPoint) time.Duration {
 		}
 	}
 	return last.Sub(first)
+}
+
+func latencyPointsContainMedian(points []LatencyPoint, targetID string, median float64) bool {
+	for _, point := range points {
+		if point.TargetID == targetID && point.MedianMS != nil && *point.MedianMS == median {
+			return true
+		}
+	}
+	return false
+}
+
+func serviceLatencyPointsContainMedian(points []ServiceLatencyPoint, nodeID string, median float64) bool {
+	for _, point := range points {
+		if point.NodeID == nodeID && point.MedianMS != nil && *point.MedianMS == median {
+			return true
+		}
+	}
+	return false
 }
 
 func TestStaticWebFallbackServesIndexForDashboardRoutes(t *testing.T) {
