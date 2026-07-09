@@ -7,7 +7,10 @@ import (
 )
 
 // Sample is one ping/tcping attempt inside a probe round.
-// Failed samples count toward sent/loss but are excluded from latency math.
+// Failed samples count toward sent/loss. When the agent can still measure an
+// elapsed duration for a failed/timeout sample, that latency is retained for
+// charting so slow probes below the visual cap are drawn instead of flattened
+// to a gap/zero-loss-only sample.
 type Sample struct {
 	Seq       int
 	Success   bool
@@ -16,7 +19,7 @@ type Sample struct {
 }
 
 // Stats is the aggregate summary for one probe round.
-// Latency fields are nil when no sample succeeded.
+// Latency fields are nil when no sample carried a measurable latency.
 type Stats struct {
 	Sent        int
 	Received    int
@@ -35,23 +38,27 @@ func ComputeStats(samples []Sample) (Stats, error) {
 	}
 
 	latencies := make([]float64, 0, len(samples))
+	successes := 0
 	for _, sample := range samples {
-		if !sample.Success {
-			continue
+		if sample.Success {
+			successes++
+			if sample.LatencyMS == nil {
+				return Stats{}, errors.New("successful sample must include latency")
+			}
 		}
 		if sample.LatencyMS == nil {
-			return Stats{}, errors.New("successful sample must include latency")
+			continue
 		}
 		if *sample.LatencyMS < 0 || math.IsNaN(*sample.LatencyMS) || math.IsInf(*sample.LatencyMS, 0) {
-			return Stats{}, errors.New("successful sample latency must be a finite non-negative number")
+			return Stats{}, errors.New("sample latency must be a finite non-negative number")
 		}
 		latencies = append(latencies, *sample.LatencyMS)
 	}
 
 	stats := Stats{
 		Sent:        len(samples),
-		Received:    len(latencies),
-		LossPercent: float64(len(samples)-len(latencies)) / float64(len(samples)) * 100,
+		Received:    successes,
+		LossPercent: float64(len(samples)-successes) / float64(len(samples)) * 100,
 	}
 	if len(latencies) == 0 {
 		return stats, nil

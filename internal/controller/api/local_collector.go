@@ -14,6 +14,8 @@ import (
 
 type ProbeRunner func(ctx context.Context, target ProbeTarget) ([]probe.Sample, error)
 
+const localDrawableLatencyCap = 5 * time.Second
+
 type LocalProbeCollectorOptions struct {
 	NodeID      string
 	Now         func() time.Time
@@ -80,10 +82,8 @@ func RunTCPProbe(ctx context.Context, target ProbeTarget) ([]probe.Sample, error
 	if count <= 0 {
 		count = 1
 	}
-	timeout := time.Duration(target.TimeoutMS) * time.Millisecond
-	if timeout <= 0 {
-		timeout = time.Second
-	}
+	timeout := normalizedLocalProbeTimeout(target.TimeoutMS)
+	observationTimeout := localLatencyObservationTimeout(timeout)
 
 	address := net.JoinHostPort(target.Address, strconv.Itoa(*target.Port))
 	samples := make([]probe.Sample, 0, count)
@@ -94,20 +94,61 @@ func RunTCPProbe(ctx context.Context, target ProbeTarget) ([]probe.Sample, error
 		default:
 		}
 
-		dialCtx, cancel := context.WithTimeout(ctx, timeout)
+		dialCtx, cancel := context.WithTimeout(ctx, observationTimeout)
 		start := time.Now()
-		conn, err := (&net.Dialer{Timeout: timeout}).DialContext(dialCtx, "tcp", address)
+		conn, err := (&net.Dialer{Timeout: observationTimeout}).DialContext(dialCtx, "tcp", address)
 		elapsedMS := float64(time.Since(start).Microseconds()) / 1000
 		cancel()
 		if err != nil {
-			samples = append(samples, probe.Sample{Seq: seq, Success: false, Error: classifyProbeError(err)})
+			samples = append(samples, failedMeasuredLocalProbeSample(seq, elapsedMS, classifyProbeError(err)))
 			continue
 		}
 		_ = conn.Close()
-		latency := elapsedMS
-		samples = append(samples, probe.Sample{Seq: seq, Success: true, LatencyMS: &latency})
+		samples = append(samples, measuredLocalProbeSample(seq, elapsedMS, timeout))
 	}
 	return samples, nil
+}
+
+func normalizedLocalProbeTimeout(timeoutMS int) time.Duration {
+	timeout := time.Duration(timeoutMS) * time.Millisecond
+	if timeout <= 0 {
+		return time.Second
+	}
+	return timeout
+}
+
+func localLatencyObservationTimeout(timeout time.Duration) time.Duration {
+	if timeout < localDrawableLatencyCap {
+		return localDrawableLatencyCap
+	}
+	return timeout
+}
+
+func measuredLocalProbeSample(seq int, elapsedMS float64, timeout time.Duration) probe.Sample {
+	latency := cappedLocalDrawableLatencyMS(elapsedMS)
+	if time.Duration(elapsedMS*float64(time.Millisecond)) > timeout {
+		return probe.Sample{Seq: seq, Success: false, LatencyMS: &latency, Error: "timeout"}
+	}
+	return probe.Sample{Seq: seq, Success: true, LatencyMS: &latency}
+}
+
+func failedMeasuredLocalProbeSample(seq int, elapsedMS float64, errText string) probe.Sample {
+	if errText != "timeout" {
+		return probe.Sample{Seq: seq, Success: false, Error: errText}
+	}
+	latency := cappedLocalDrawableLatencyMS(elapsedMS)
+	return probe.Sample{Seq: seq, Success: false, LatencyMS: &latency, Error: errText}
+}
+
+func cappedLocalDrawableLatencyMS(elapsedMS float64) float64 {
+	if elapsedMS < 0 {
+		return 0
+	}
+	capMS := float64(localDrawableLatencyCap / time.Millisecond)
+	if elapsedMS > capMS {
+		return capMS
+	}
+	return elapsedMS
 }
 
 func (s *SQLiteStore) InsertProbeRound(ctx context.Context, nodeID string, target ProbeTarget, ts time.Time, samples []probe.Sample) error {

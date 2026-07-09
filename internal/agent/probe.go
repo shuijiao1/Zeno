@@ -13,18 +13,19 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 )
+
+const drawableLatencyCap = 5 * time.Second
 
 func RunTCPProbe(ctx context.Context, target ProbeTarget) []ProbeSample {
 	count := target.Count
 	if count <= 0 {
 		count = 1
 	}
-	timeout := time.Duration(target.TimeoutMS) * time.Millisecond
-	if timeout <= 0 {
-		timeout = time.Second
-	}
+	timeout := normalizedProbeTimeout(target.TimeoutMS)
+	observationTimeout := latencyObservationTimeout(timeout)
 	if target.Port == nil {
 		return failedProbeSamples(count, "missing_port")
 	}
@@ -40,18 +41,17 @@ func RunTCPProbe(ctx context.Context, target ProbeTarget) []ProbeSample {
 			return samples
 		default:
 		}
-		dialCtx, cancel := context.WithTimeout(ctx, timeout)
+		dialCtx, cancel := context.WithTimeout(ctx, observationTimeout)
 		start := time.Now()
-		conn, err := (&net.Dialer{Timeout: timeout}).DialContext(dialCtx, "tcp", address)
+		conn, err := (&net.Dialer{Timeout: observationTimeout}).DialContext(dialCtx, "tcp", address)
 		elapsedMS := float64(time.Since(start).Microseconds()) / 1000
 		cancel()
 		if err != nil {
-			samples = append(samples, ProbeSample{Seq: seq, Success: false, Error: classifyProbeError(err)})
+			samples = append(samples, failedMeasuredProbeSample(seq, elapsedMS, classifyProbeError(err)))
 			continue
 		}
 		_ = conn.Close()
-		latency := elapsedMS
-		samples = append(samples, ProbeSample{Seq: seq, Success: true, LatencyMS: &latency})
+		samples = append(samples, measuredProbeSample(seq, elapsedMS, timeout))
 	}
 	return samples
 }
@@ -63,10 +63,8 @@ func RunPingProbe(ctx context.Context, target ProbeTarget) []ProbeSample {
 	if count <= 0 {
 		count = 1
 	}
-	timeout := time.Duration(target.TimeoutMS) * time.Millisecond
-	if timeout <= 0 {
-		timeout = time.Second
-	}
+	timeout := normalizedProbeTimeout(target.TimeoutMS)
+	observationTimeout := latencyObservationTimeout(timeout)
 	address := strings.TrimSpace(target.Address)
 	if address == "" || strings.HasPrefix(address, "-") {
 		return failedProbeSamples(count, "invalid_address")
@@ -83,22 +81,22 @@ func RunPingProbe(ctx context.Context, target ProbeTarget) []ProbeSample {
 		default:
 		}
 
-		attemptCtx, cancel := context.WithTimeout(ctx, timeout+time.Second)
+		attemptCtx, cancel := context.WithTimeout(ctx, observationTimeout+time.Second)
 		start := time.Now()
-		cmd := exec.CommandContext(attemptCtx, "ping", "-n", "-c", "1", "-W", strconv.Itoa(pingTimeoutSeconds(timeout)), address)
+		cmd := exec.CommandContext(attemptCtx, "ping", "-n", "-c", "1", "-W", strconv.Itoa(pingTimeoutSeconds(observationTimeout)), address)
 		output, err := cmd.CombinedOutput()
 		elapsedMS := float64(time.Since(start).Microseconds()) / 1000
 		ctxErr := attemptCtx.Err()
 		cancel()
 		if err != nil {
-			samples = append(samples, ProbeSample{Seq: seq, Success: false, Error: classifyPingError(err, string(output), ctxErr)})
+			samples = append(samples, failedMeasuredProbeSample(seq, elapsedMS, classifyPingError(err, string(output), ctxErr)))
 			continue
 		}
 		latency := elapsedMS
 		if parsed, ok := parsePingLatencyMS(string(output)); ok {
 			latency = parsed
 		}
-		samples = append(samples, ProbeSample{Seq: seq, Success: true, LatencyMS: &latency})
+		samples = append(samples, measuredProbeSample(seq, latency, timeout))
 	}
 	return samples
 }
@@ -108,16 +106,14 @@ func RunHTTPProbe(ctx context.Context, target ProbeTarget) []ProbeSample {
 	if count <= 0 {
 		count = 1
 	}
-	timeout := time.Duration(target.TimeoutMS) * time.Millisecond
-	if timeout <= 0 {
-		timeout = time.Second
-	}
+	timeout := normalizedProbeTimeout(target.TimeoutMS)
+	observationTimeout := latencyObservationTimeout(timeout)
 	address := strings.TrimSpace(target.Address)
 	if !validHTTPProbeURL(address) {
 		return failedProbeSamples(count, "invalid_url")
 	}
 
-	client := &http.Client{Timeout: timeout}
+	client := &http.Client{Timeout: observationTimeout}
 	samples := make([]ProbeSample, 0, count)
 	for seq := 1; seq <= count; seq++ {
 		select {
@@ -129,7 +125,7 @@ func RunHTTPProbe(ctx context.Context, target ProbeTarget) []ProbeSample {
 		default:
 		}
 
-		attemptCtx, cancel := context.WithTimeout(ctx, timeout)
+		attemptCtx, cancel := context.WithTimeout(ctx, observationTimeout)
 		request, err := http.NewRequestWithContext(attemptCtx, http.MethodGet, address, nil)
 		if err != nil {
 			cancel()
@@ -143,7 +139,7 @@ func RunHTTPProbe(ctx context.Context, target ProbeTarget) []ProbeSample {
 		ctxErr := attemptCtx.Err()
 		cancel()
 		if err != nil {
-			samples = append(samples, ProbeSample{Seq: seq, Success: false, Error: classifyHTTPProbeError(err, ctxErr)})
+			samples = append(samples, failedMeasuredProbeSample(seq, elapsedMS, classifyHTTPProbeError(err, ctxErr)))
 			continue
 		}
 		_, _ = io.Copy(io.Discard, io.LimitReader(response.Body, 1024))
@@ -152,10 +148,51 @@ func RunHTTPProbe(ctx context.Context, target ProbeTarget) []ProbeSample {
 			samples = append(samples, ProbeSample{Seq: seq, Success: false, Error: fmt.Sprintf("http_status_%d", response.StatusCode)})
 			continue
 		}
-		latency := elapsedMS
-		samples = append(samples, ProbeSample{Seq: seq, Success: true, LatencyMS: &latency})
+		samples = append(samples, measuredProbeSample(seq, elapsedMS, timeout))
 	}
 	return samples
+}
+
+func normalizedProbeTimeout(timeoutMS int) time.Duration {
+	timeout := time.Duration(timeoutMS) * time.Millisecond
+	if timeout <= 0 {
+		return time.Second
+	}
+	return timeout
+}
+
+func latencyObservationTimeout(timeout time.Duration) time.Duration {
+	if timeout < drawableLatencyCap {
+		return drawableLatencyCap
+	}
+	return timeout
+}
+
+func measuredProbeSample(seq int, elapsedMS float64, timeout time.Duration) ProbeSample {
+	latency := cappedDrawableLatencyMS(elapsedMS)
+	if time.Duration(elapsedMS*float64(time.Millisecond)) > timeout {
+		return ProbeSample{Seq: seq, Success: false, LatencyMS: &latency, Error: "timeout"}
+	}
+	return ProbeSample{Seq: seq, Success: true, LatencyMS: &latency}
+}
+
+func failedMeasuredProbeSample(seq int, elapsedMS float64, errText string) ProbeSample {
+	if errText != "timeout" {
+		return ProbeSample{Seq: seq, Success: false, Error: errText}
+	}
+	latency := cappedDrawableLatencyMS(elapsedMS)
+	return ProbeSample{Seq: seq, Success: false, LatencyMS: &latency, Error: errText}
+}
+
+func cappedDrawableLatencyMS(elapsedMS float64) float64 {
+	if elapsedMS < 0 {
+		return 0
+	}
+	capMS := float64(drawableLatencyCap / time.Millisecond)
+	if elapsedMS > capMS {
+		return capMS
+	}
+	return elapsedMS
 }
 
 func validHTTPProbeURL(address string) bool {
@@ -255,19 +292,29 @@ func classifyProbeError(err error) string {
 }
 
 func ProbeTargets(ctx context.Context, targets []ProbeTarget, ts time.Time) []ProbeRound {
-	rounds := make([]ProbeRound, 0, len(targets))
-	for _, target := range targets {
-		switch target.Type {
-		case "tcping", "tcp":
-			rounds = append(rounds, ProbeRound{TargetID: target.ID, TS: ts, Type: target.Type, Samples: RunTCPProbe(ctx, target)})
-		case "ping", "icmp":
-			rounds = append(rounds, ProbeRound{TargetID: target.ID, TS: ts, Type: target.Type, Samples: RunPingProbe(ctx, target)})
-		case "http_get", "http", "https":
-			rounds = append(rounds, ProbeRound{TargetID: target.ID, TS: ts, Type: target.Type, Samples: RunHTTPProbe(ctx, target)})
-		default:
-			rounds = append(rounds, ProbeRound{TargetID: target.ID, TS: ts, Type: target.Type, Samples: failedProbeSamples(target.Count, fmt.Sprintf("unsupported_%s", target.Type))})
-		}
+	rounds := make([]ProbeRound, len(targets))
+	var wg sync.WaitGroup
+	for index, target := range targets {
+		index, target := index, target
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+
+			var samples []ProbeSample
+			switch target.Type {
+			case "tcping", "tcp":
+				samples = RunTCPProbe(ctx, target)
+			case "ping", "icmp":
+				samples = RunPingProbe(ctx, target)
+			case "http_get", "http", "https":
+				samples = RunHTTPProbe(ctx, target)
+			default:
+				samples = failedProbeSamples(target.Count, fmt.Sprintf("unsupported_%s", target.Type))
+			}
+			rounds[index] = ProbeRound{TargetID: target.ID, TS: ts, Type: target.Type, Samples: samples}
+		}()
 	}
+	wg.Wait()
 	return rounds
 }
 

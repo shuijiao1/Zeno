@@ -129,13 +129,17 @@ func run(ctx context.Context, cfg config) error {
 	go runPeriodic(ctx, cfg.HostInterval, func(ctx context.Context) error {
 		return reportHost(ctx, client, collector, cfg.Version, identityDiscoverer)
 	}, "host report")
-	go runPeriodic(ctx, time.Second, func(ctx context.Context) error { return runDueProbes(ctx, client, probeManager) }, "probe report")
+	go runPeriodicWithTimeout(ctx, time.Second, 30*time.Second, func(ctx context.Context) error { return runDueProbes(ctx, client, probeManager) }, "probe report")
 
 	<-ctx.Done()
 	return ctx.Err()
 }
 
 func runPeriodic(ctx context.Context, interval time.Duration, fn func(context.Context) error, label string) {
+	runPeriodicWithTimeout(ctx, interval, perCallTimeout(interval), fn, label)
+}
+
+func runPeriodicWithTimeout(ctx context.Context, interval time.Duration, timeout time.Duration, fn func(context.Context) error, label string) {
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
 	for {
@@ -143,7 +147,7 @@ func runPeriodic(ctx context.Context, interval time.Duration, fn func(context.Co
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
-			callCtx, cancel := context.WithTimeout(ctx, perCallTimeout(interval))
+			callCtx, cancel := context.WithTimeout(ctx, timeout)
 			if err := fn(callCtx); err != nil {
 				log.Printf("%s failed: %v", label, err)
 			}

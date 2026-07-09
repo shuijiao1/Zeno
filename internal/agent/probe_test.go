@@ -78,6 +78,23 @@ func TestRunHTTPProbeMarksBadStatusAsFailedSample(t *testing.T) {
 	}
 }
 
+func TestRunHTTPProbeKeepsSlowLatencyWhileCountingAsTimeout(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		time.Sleep(80 * time.Millisecond)
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer server.Close()
+
+	samples := RunHTTPProbe(context.Background(), ProbeTarget{ID: "http-slow", Type: "http_get", Address: server.URL, Count: 1, TimeoutMS: 20})
+
+	if len(samples) != 1 {
+		t.Fatalf("samples len = %d, want 1", len(samples))
+	}
+	if samples[0].Success || samples[0].Error != "timeout" || samples[0].LatencyMS == nil || *samples[0].LatencyMS < 20 || *samples[0].LatencyMS > 5000 {
+		t.Fatalf("slow http sample = %+v, want timeout sample with drawable latency", samples[0])
+	}
+}
+
 func TestProbeTargetsRunsHTTPGETTargetsInsteadOfMarkingUnsupported(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)

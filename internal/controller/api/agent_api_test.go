@@ -207,6 +207,42 @@ func TestAgentProbeResultsStoresLatencyWithoutProbeAlertNotification(t *testing.
 	}
 }
 
+func TestAgentProbeResultsStoresMeasuredTimeoutLatencyForCharts(t *testing.T) {
+	store, err := OpenSQLiteStore(filepath.Join(t.TempDir(), "zeno.db"))
+	if err != nil {
+		t.Fatalf("open sqlite store: %v", err)
+	}
+	defer store.Close()
+	ctx := context.Background()
+	if err := store.SeedPreviewData(ctx, PreviewSeedOptions{NodeID: "hytron", DisplayName: "Hytron", CountryCode: "HK", AgentToken: "test-agent-token"}); err != nil {
+		t.Fatalf("seed preview data: %v", err)
+	}
+
+	handler := NewHandler(HandlerOptions{Store: store})
+	now := time.Now().UTC().Truncate(time.Second)
+	postAgentHeartbeat(t, handler, now.Unix(), "online")
+
+	payload := []byte(`{"rounds":[{"target_id":"google-dns","ts":` + strconv.FormatInt(now.Add(time.Second).Unix(), 10) + `,"type":"tcping","samples":[{"seq":1,"success":false,"latency_ms":2400,"error":"timeout"},{"seq":2,"success":false,"latency_ms":2600,"error":"timeout"}]}]}`)
+	recorder := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodPost, "/api/agent/v1/probe-results", bytes.NewReader(payload))
+	request.Header.Set("X-Node-ID", "hytron")
+	request.Header.Set("Authorization", "Bearer test-agent-token")
+	request.Header.Set("Content-Type", "application/json")
+	handler.ServeHTTP(recorder, request)
+	if recorder.Code != http.StatusAccepted {
+		t.Fatalf("probe results status = %d, want 202; body=%s", recorder.Code, recorder.Body.String())
+	}
+
+	var received int
+	var loss, avg, median float64
+	if err := store.db.QueryRowContext(ctx, `SELECT received, loss_percent, avg_ms, median_ms FROM probe_rounds WHERE node_id = 'hytron' AND target_id = 'google-dns' ORDER BY id DESC LIMIT 1`).Scan(&received, &loss, &avg, &median); err != nil {
+		t.Fatalf("query probe round: %v", err)
+	}
+	if received != 0 || loss != 100 || avg != 2500 || median != 2500 {
+		t.Fatalf("round received/loss/avg/median = %d/%.2f/%.2f/%.2f, want 0/100/2500/2500", received, loss, avg, median)
+	}
+}
+
 func TestAgentProbeResultsSuccessfulHighLatencyDoesNotChangeStatus(t *testing.T) {
 	store, err := OpenSQLiteStore(filepath.Join(t.TempDir(), "zeno.db"))
 	if err != nil {
