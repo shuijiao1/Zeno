@@ -32,11 +32,9 @@ export function summarizeLatencyTargets(points: LatencyPoint[]): LatencyTargetSu
     }
 
     acc.targetName = point.targetName
-    const delay = point.avgMs ?? point.medianMs ?? null
-    if (delay !== null) {
-      acc.sampleCount += 1
-      acc.latestDelay = delay
-    }
+    const delay = typeof point.avgMs === 'number' && Number.isFinite(point.avgMs) ? point.avgMs : 0
+    acc.sampleCount += 1
+    acc.latestDelay = delay
     if (Number.isFinite(point.lossPercent)) {
       acc.lossTotal += point.lossPercent
       acc.lossCount += 1

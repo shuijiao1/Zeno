@@ -5,8 +5,8 @@ import { summarizeLatencyTargets } from './latencyTargets'
 const points: LatencyPoint[] = [
   { ts: '2026-07-02T12:00:00Z', targetId: 'google', targetName: 'Google', medianMs: 1, avgMs: 1.5, lossPercent: 0 },
   { ts: '2026-07-02T12:00:00Z', targetId: 'dc1', targetName: 'DC1', medianMs: null, lossPercent: 100 },
-  { ts: '2026-07-02T12:02:00Z', targetId: 'google', targetName: 'Google', medianMs: 3, lossPercent: 2 },
-  { ts: '2026-07-02T12:02:00Z', targetId: 'dc1', targetName: 'DC1', medianMs: 180, lossPercent: 0 },
+  { ts: '2026-07-02T12:02:00Z', targetId: 'google', targetName: 'Google', medianMs: 3, avgMs: 3, lossPercent: 2 },
+  { ts: '2026-07-02T12:02:00Z', targetId: 'dc1', targetName: 'DC1', medianMs: 180, avgMs: 180, lossPercent: 0 },
 ]
 
 describe('summarizeLatencyTargets', () => {
@@ -24,13 +24,13 @@ describe('summarizeLatencyTargets', () => {
     expect(targets[1]).toMatchObject({
       targetId: 'dc1',
       targetName: 'DC1',
-      sampleCount: 1,
+      sampleCount: 2,
       avgMs: 180,
       lossPercent: 50,
     })
   })
 
-  it('keeps all-loss samples as no-delay targets', () => {
+  it('draws all-loss samples as 0ms targets', () => {
     const targets = summarizeLatencyTargets([
       { ts: '2026-07-02T12:00:00Z', targetId: 'dc2', targetName: 'DC2', medianMs: null, lossPercent: 100 },
       { ts: '2026-07-02T12:02:00Z', targetId: 'dc2', targetName: 'DC2', medianMs: null, lossPercent: 100 },
@@ -40,8 +40,8 @@ describe('summarizeLatencyTargets', () => {
       {
         targetId: 'dc2',
         targetName: 'DC2',
-        sampleCount: 0,
-        avgMs: null,
+        sampleCount: 2,
+        avgMs: 0,
         lossPercent: 100,
       },
     ])

@@ -1201,7 +1201,7 @@ function normalizeLatencySummary(summary: ApiLatencySummary) {
     targetId: summary.target_id,
     targetName: summary.target_name,
     medianMs: summary.median_ms,
-    avgMs: summary.avg_ms ?? summary.median_ms,
+    avgMs: summary.avg_ms ?? null,
     lossPercent: summary.loss_percent,
     updatedAt: summary.updated_at,
   }
@@ -1213,7 +1213,7 @@ function normalizeLatencyPoint(point: ApiLatencyPoint): LatencyPoint {
     targetId: point.target_id,
     targetName: point.target_name,
     medianMs: point.median_ms,
-    avgMs: point.avg_ms ?? point.median_ms,
+    avgMs: point.avg_ms ?? null,
     lossPercent: point.loss_percent,
   }
 }
@@ -1231,7 +1231,7 @@ function normalizeNodeLatencyPoints(input: ApiLatencyResponse): LatencyPoint[] {
         targetId: series.target_id,
         targetName: series.target_name,
         medianMs,
-        avgMs: avgValues[index] ?? medianMs,
+        avgMs: avgValues[index] ?? null,
         lossPercent: lossValues[index] ?? 0,
       }
     })
@@ -1251,7 +1251,7 @@ function normalizeServiceLatencyPoints(input: ApiServiceLatencyResponse): Latenc
         targetId: series.node_id,
         targetName: series.node_name,
         medianMs,
-        avgMs: avgValues[index] ?? medianMs,
+        avgMs: avgValues[index] ?? null,
         lossPercent: lossValues[index] ?? 0,
       }
     })
@@ -1286,7 +1286,7 @@ function normalizeServiceLatencyPoint(point: ApiServiceLatencyPoint): LatencyPoi
     targetId: point.node_id,
     targetName: point.node_name,
     medianMs: point.median_ms,
-    avgMs: point.avg_ms ?? point.median_ms,
+    avgMs: point.avg_ms ?? null,
     lossPercent: point.loss_percent,
   }
 }

@@ -3,9 +3,9 @@ import { describe, expect, it } from 'vitest'
 import { LatencyChart } from './LatencyChart'
 
 const points = [
-  { ts: '2026-07-02T00:00:00Z', targetId: 'alpha', targetName: 'Alpha', medianMs: 12, lossPercent: 0 },
-  { ts: '2026-07-02T00:01:00Z', targetId: 'alpha', targetName: 'Alpha', medianMs: 42, lossPercent: 25 },
-  { ts: '2026-07-02T00:00:00Z', targetId: 'beta', targetName: 'Beta', medianMs: 20, lossPercent: 5 },
+  { ts: '2026-07-02T00:00:00Z', targetId: 'alpha', targetName: 'Alpha', medianMs: 12, avgMs: 12, lossPercent: 0 },
+  { ts: '2026-07-02T00:01:00Z', targetId: 'alpha', targetName: 'Alpha', medianMs: 42, avgMs: 42, lossPercent: 25 },
+  { ts: '2026-07-02T00:00:00Z', targetId: 'beta', targetName: 'Beta', medianMs: 20, avgMs: 20, lossPercent: 5 },
 ]
 
 describe('LatencyChart', () => {
@@ -36,6 +36,7 @@ describe('LatencyChart', () => {
       targetId: 'alpha',
       targetName: 'Alpha',
       medianMs: 20 + index,
+      avgMs: 20 + index,
       lossPercent: 0,
     }))
 
@@ -54,6 +55,7 @@ describe('LatencyChart', () => {
       targetId: 'high',
       targetName: 'High latency',
       medianMs,
+      avgMs: medianMs,
       lossPercent: 0,
     }))
 
@@ -71,6 +73,7 @@ describe('LatencyChart', () => {
       targetId: 'high',
       targetName: 'High latency',
       medianMs,
+      avgMs: medianMs,
       lossPercent: 0,
     }))
 
@@ -84,10 +87,10 @@ describe('LatencyChart', () => {
     expect(yAxisValues.some((value) => value > 1000)).toBe(true)
   })
 
-  it('connects null grid gaps like Kulin Recharts connectNulls', () => {
+  it('draws null avg_ms samples at 0ms without falling back to median_ms', () => {
     const gapPoints = [
       { ts: '2026-07-02T00:00:00Z', targetId: 'alpha', targetName: 'Alpha', avgMs: 12, medianMs: 10, lossPercent: 0 },
-      { ts: '2026-07-02T00:01:00Z', targetId: 'alpha', targetName: 'Alpha', avgMs: null, medianMs: null, lossPercent: 0 },
+      { ts: '2026-07-02T00:01:00Z', targetId: 'alpha', targetName: 'Alpha', avgMs: null, medianMs: 999, lossPercent: 0 },
       { ts: '2026-07-02T00:02:00Z', targetId: 'alpha', targetName: 'Alpha', avgMs: 18, medianMs: 16, lossPercent: 0 },
     ]
 
@@ -95,7 +98,7 @@ describe('LatencyChart', () => {
     const lineMatch = html.match(/<path[^>]+d="([^"]+)"[^>]+stroke="#22c55e"/)
 
     expect(lineMatch?.[1].match(/M/g)).toHaveLength(1)
-    expect(lineMatch?.[1].match(/L/g)).toHaveLength(1)
+    expect(lineMatch?.[1].match(/L/g)).toHaveLength(2)
   })
 
   it('keeps the full Kulin-style 1 day minute grid instead of thinning visible points', () => {

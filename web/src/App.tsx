@@ -174,7 +174,7 @@ function summaryLatencyPoints(node: HomeCardNode | undefined): LatencyPoint[] {
       targetId: summary.targetId,
       targetName: summary.targetName,
       medianMs: summary.medianMs,
-      avgMs: summary.avgMs ?? summary.medianMs,
+      avgMs: summary.avgMs,
       lossPercent: summary.lossPercent ?? 0,
     }))
 }
@@ -1075,7 +1075,7 @@ function ServiceDetail({ target, points, range, loading, error, onBack, onRangeC
           <section className="detail-fact-strip" aria-label={`${target.name} service facts`}>
             <ServiceInfoFact label="类型" value={target.type} />
             <ServiceInfoFact label="地址" value={formatServiceEndpoint(target)} wide />
-            <ServiceInfoFact label="最新延迟" value={formatServiceLatency(target.avgMs ?? target.medianMs)} />
+            <ServiceInfoFact label="最新延迟" value={formatServiceLatency(target.avgMs ?? 0)} />
             <ServiceInfoFact label="丢包" value={formatServiceLoss(target.lossPercent)} />
             <ServiceInfoFact label="更新时间" value={target.updatedAt ? formatAdminDate(target.updatedAt) : '--'} />
           </section>

@@ -16,13 +16,13 @@ describe('calculateKulinPacketLoss', () => {
 })
 
 describe('buildKulinTargetSeries', () => {
-  it('uses avg_ms as Kulin avg_delay and keeps loss-only samples as gaps', () => {
+  it('uses avg_ms as Kulin avg_delay and draws missing avg_ms as 0 without median fallback', () => {
     const series = buildKulinTargetSeries([
       { ts: '2026-07-02T00:00:00Z', targetId: 'alpha', targetName: 'Alpha', medianMs: 12, avgMs: 14, lossPercent: 0 },
-      { ts: '2026-07-02T00:01:00Z', targetId: 'alpha', targetName: 'Alpha', medianMs: null, lossPercent: 100 },
+      { ts: '2026-07-02T00:01:00Z', targetId: 'alpha', targetName: 'Alpha', medianMs: 99, lossPercent: 100 },
     ])
 
-    expect(series[0].points.map((point) => point.avg_delay)).toEqual([14, null])
+    expect(series[0].points.map((point) => point.avg_delay)).toEqual([14, 0])
     expect(series[0].points.map((point) => point.packet_loss)).toEqual([0, 100])
   })
 })
@@ -30,8 +30,8 @@ describe('buildKulinTargetSeries', () => {
 describe('buildKulinChartRows', () => {
   it('merges target series by timestamp using monitor names as Kulin chart data keys', () => {
     const series = buildKulinTargetSeries([
-      { ts: '2026-07-02T00:00:00Z', targetId: 'alpha', targetName: 'Alpha', medianMs: 12, lossPercent: 0 },
-      { ts: '2026-07-02T00:01:00Z', targetId: 'beta', targetName: 'Beta', medianMs: 20, lossPercent: 5 },
+      { ts: '2026-07-02T00:00:00Z', targetId: 'alpha', targetName: 'Alpha', medianMs: 12, avgMs: 12, lossPercent: 0 },
+      { ts: '2026-07-02T00:01:00Z', targetId: 'beta', targetName: 'Beta', medianMs: 20, avgMs: 20, lossPercent: 5 },
     ])
 
     expect(buildKulinChartRows(series)).toEqual([
@@ -43,8 +43,8 @@ describe('buildKulinChartRows', () => {
 
 describe('selectKulinChartView', () => {
   const series = buildKulinTargetSeries([
-    { ts: '2026-07-02T00:00:00Z', targetId: 'alpha', targetName: 'Alpha', medianMs: 12, lossPercent: 0 },
-    { ts: '2026-07-02T00:00:00Z', targetId: 'beta', targetName: 'Beta', medianMs: 20, lossPercent: 5 },
+    { ts: '2026-07-02T00:00:00Z', targetId: 'alpha', targetName: 'Alpha', medianMs: 12, avgMs: 12, lossPercent: 0 },
+    { ts: '2026-07-02T00:00:00Z', targetId: 'beta', targetName: 'Beta', medianMs: 20, avgMs: 20, lossPercent: 5 },
   ])
   const rows = buildKulinChartRows(series)
 

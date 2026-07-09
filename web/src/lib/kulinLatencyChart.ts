@@ -106,8 +106,8 @@ export function buildKulinTargetSeries(points: LatencyPoint[]): KulinTargetSerie
   })
 }
 
-function latencyDelay(point: LatencyPoint): number | null {
-  return point.avgMs ?? point.medianMs ?? null
+function latencyDelay(point: LatencyPoint): number {
+  return typeof point.avgMs === 'number' && Number.isFinite(point.avgMs) ? point.avgMs : 0
 }
 
 export function buildKulinChartRows(series: KulinTargetSeries[]): KulinChartRow[] {
