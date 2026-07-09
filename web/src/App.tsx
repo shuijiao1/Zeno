@@ -3022,10 +3022,10 @@ function AdminAppearancePresetCards({ value, onChange }: { value: AppearancePres
 function AdminAppearancePreview({ appearance }: { appearance: AppearanceValues }) {
   const previewStyle = {
     '--appearance-preview-color': appearance.themeColor,
-    '--appearance-preview-bg': `rgba(255, 255, 255, ${appearance.cardOpacity.toFixed(3)})`,
+    '--appearance-preview-bg': `rgba(var(--appearance-preview-surface-rgb), ${appearance.cardOpacity.toFixed(3)})`,
     '--appearance-preview-radius': `${Math.max(10, appearance.cardRadius - 4)}px`,
     '--appearance-preview-blur': `${appearance.cardBlur}px`,
-    '--appearance-preview-shadow': `0 12px 28px -22px rgba(15, 23, 42, ${(0.08 + appearance.shadowStrength * 0.28).toFixed(3)})`,
+    '--appearance-preview-shadow': `0 12px 28px -22px rgba(var(--appearance-preview-shadow-rgb), ${(0.08 + appearance.shadowStrength * 0.28).toFixed(3)})`,
   } as CSSProperties
   return (
     <div className="admin-appearance-preview" style={previewStyle} aria-hidden="true">

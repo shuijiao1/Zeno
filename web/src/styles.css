@@ -33,6 +33,8 @@
   --zeno-card-highlight: #ffffff;
   --zeno-card-shadow: 0 10px 26px -24px rgba(15, 23, 42, 0.22), 0 1px 2px rgba(15, 23, 42, 0.035);
   --zeno-content-width: 1024px;
+  --appearance-preview-surface-rgb: 255, 255, 255;
+  --appearance-preview-shadow-rgb: 15, 23, 42;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -57,6 +59,8 @@
     --metric-shadow: rgba(14, 165, 233, 0.1);
     --zeno-card-highlight: rgba(255, 255, 255, 0.1);
     --zeno-card-shadow: 0 20px 60px -36px rgba(0, 0, 0, 0.72), 0 12px 34px -30px rgba(56, 189, 248, 0.32), inset 0 1px 0 rgba(255, 255, 255, 0.08);
+    --appearance-preview-surface-rgb: 15, 23, 42;
+    --appearance-preview-shadow-rgb: 0, 0, 0;
   }
 }
 
@@ -122,6 +126,8 @@ svg { display: block; }
   --metric-shadow: rgba(37, 99, 235, 0.12);
   --zeno-card-highlight: #ffffff;
   --zeno-card-shadow: 0 10px 26px -24px rgba(15, 23, 42, 0.22), 0 1px 2px rgba(15, 23, 42, 0.035);
+  --appearance-preview-surface-rgb: 255, 255, 255;
+  --appearance-preview-shadow-rgb: 15, 23, 42;
 }
 
 .kulin-shell[data-theme="dark"] {
@@ -143,6 +149,8 @@ svg { display: block; }
   --metric-shadow: rgba(14, 165, 233, 0.1);
   --zeno-card-highlight: rgba(255, 255, 255, 0.1);
   --zeno-card-shadow: 0 20px 60px -36px rgba(0, 0, 0, 0.72), 0 12px 34px -30px rgba(56, 189, 248, 0.32), inset 0 1px 0 rgba(255, 255, 255, 0.08);
+  --appearance-preview-surface-rgb: 15, 23, 42;
+  --appearance-preview-shadow-rgb: 0, 0, 0;
 }
 
 .kulin-nav {
@@ -919,6 +927,22 @@ svg { display: block; }
 }
 .admin-appearance-preview__card strong { color: var(--foreground); font-size: 13px; font-weight: 500; }
 .admin-appearance-preview__card em { color: var(--muted); font-size: 11px; font-style: normal; font-weight: 500; font-variant-numeric: tabular-nums; }
+.kulin-shell[data-theme="dark"] .admin-appearance-presets button,
+.kulin-shell[data-theme="dark"] .admin-style-range,
+.kulin-shell[data-theme="dark"] .admin-color-field__row {
+  background: color-mix(in srgb, var(--field-bg) 84%, rgba(255, 255, 255, .04));
+}
+.kulin-shell[data-theme="dark"] .admin-appearance-presets button[data-active='true'] {
+  background: color-mix(in srgb, var(--field-bg) 74%, var(--blue) 14%);
+  border-color: color-mix(in srgb, var(--blue) 64%, var(--border));
+}
+.kulin-shell[data-theme="dark"] .admin-appearance-preview {
+  background: color-mix(in srgb, var(--field-bg) 78%, var(--blue) 7%);
+  border-color: color-mix(in srgb, var(--blue) 24%, var(--border));
+}
+.kulin-shell[data-theme="dark"] .admin-appearance-preview__card {
+  border-color: color-mix(in srgb, var(--appearance-preview-color) 34%, rgba(255, 255, 255, .18));
+}
 .admin-style-grid {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
