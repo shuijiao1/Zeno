@@ -67,7 +67,7 @@ http://127.0.0.1:18980
 ```bash
 ZENO_INSTALL_DIR=/opt/zeno \
 ZENO_HOST_PORT=18980 \
-ZENO_IMAGE=ghcr.io/shuijiao1/zeno:latest \
+ZENO_IMAGE=ghcr.io/shuijiao1/zeno:v0.3.5 \
 bash <(curl -fsSL https://zeno.shuijiao.de)
 ```
 
@@ -153,7 +153,7 @@ CGO_ENABLED=0 go build -o zeno-controller ./cmd/controller
 ## 技术栈
 
 - Controller：Go + SQLite
-- Agent：Go + systemd
+- Agent：独立 Zeno-Agent release（Linux systemd / macOS LaunchDaemon / Windows service）
 - Web：React + TypeScript + Vite
 - 部署：Docker Compose
 - 通信：Agent 主动 HTTPS/JSON 上报，Public/Admin API 与 Agent API 分离

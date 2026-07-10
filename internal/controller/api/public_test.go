@@ -36,6 +36,51 @@ func TestHealthEndpoint(t *testing.T) {
 	}
 }
 
+func TestReadyEndpointChecksSQLiteStore(t *testing.T) {
+	store, err := OpenSQLiteStore(filepath.Join(t.TempDir(), "zeno.db"))
+	if err != nil {
+		t.Fatalf("open sqlite store: %v", err)
+	}
+	defer store.Close()
+	handler := NewHandler(HandlerOptions{Store: store})
+	recorder := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodGet, "/ready", nil)
+
+	handler.ServeHTTP(recorder, request)
+
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d; body=%s", recorder.Code, http.StatusOK, recorder.Body.String())
+	}
+	var body map[string]bool
+	if err := json.NewDecoder(recorder.Body).Decode(&body); err != nil {
+		t.Fatalf("decode ready body: %v", err)
+	}
+	if !body["ok"] {
+		t.Fatalf("ready ok = false, want true")
+	}
+}
+
+func TestSecurityHeadersAndAdminNoStore(t *testing.T) {
+	handler := NewHandler()
+	recorder := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodPost, "/api/admin/v1/login", strings.NewReader(`{}`))
+
+	handler.ServeHTTP(recorder, request)
+
+	if got := recorder.Header().Get("X-Content-Type-Options"); got != "nosniff" {
+		t.Fatalf("X-Content-Type-Options = %q, want nosniff", got)
+	}
+	if got := recorder.Header().Get("X-Frame-Options"); got != "DENY" {
+		t.Fatalf("X-Frame-Options = %q, want DENY", got)
+	}
+	if got := recorder.Header().Get("Referrer-Policy"); got != "no-referrer" {
+		t.Fatalf("Referrer-Policy = %q, want no-referrer", got)
+	}
+	if got := recorder.Header().Get("Cache-Control"); got != "no-store" {
+		t.Fatalf("Cache-Control = %q, want no-store for admin API", got)
+	}
+}
+
 func TestSummaryEndpointReturnsMockHomeCardsWithoutSecrets(t *testing.T) {
 	handler := NewHandler()
 	recorder := httptest.NewRecorder()

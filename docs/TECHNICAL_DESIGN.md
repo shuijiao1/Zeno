@@ -206,11 +206,10 @@ Hytron 预览部署：
 /opt/zeno/data/agent-token
 /opt/zeno/data/admin-token
 zeno-controller.service
-zeno-agent.service
 port 18980
 ```
 
-发布包由 `scripts/package-release.sh` 生成，目标机由 `scripts/deploy-local-release.sh` 安装/更新。`scripts/import-guko-servers.py` 可把 GUKO `server-manager/servers.json` 导入 Zeno Admin nodes，只同步展示元数据，不删除节点、不轮换 Agent token。
+发布包由 `scripts/package-release.sh` 生成，目标机由 `scripts/deploy-local-release.sh` 安装/更新。Agent 二进制和服务由独立 Zeno-Agent 项目发布。`scripts/import-guko-servers.py` 可把 GUKO `server-manager/servers.json` 导入 Zeno Admin nodes，只同步展示元数据，不删除节点、不轮换 Agent token。
 
 安全更新顺序：
 
@@ -218,10 +217,9 @@ port 18980
 2. 打包 release。
 3. 上传目标机 `/tmp`。
 4. 解压到 `/opt/zeno/releases/`。
-5. 停 Agent。
-6. 切 `/opt/zeno/current`。
-7. 渲染 unit 并 `systemctl daemon-reload`。
-8. 重启 Controller 并等待 `/health` OK。
+5. 切 `/opt/zeno/current`。
+6. 渲染 unit 并 `systemctl daemon-reload`。
+7. 重启 Controller 并等待 `/ready` OK。
 9. Controller 健康后启动 Agent。
 10. smoke Admin API / Agent journal / services。
 11. 清理远端 `/tmp/zeno-*.tar.gz`。

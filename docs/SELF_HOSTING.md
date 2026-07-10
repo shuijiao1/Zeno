@@ -1,6 +1,6 @@
 # Self-hosting / 自部署指南
 
-这份文档描述从源码打包、安装 Controller、配置 Agent 接入 URL、再安装 Agent 的最小闭环。Zeno 保持轻量：一个 Go Controller、一个 SQLite 数据库、一个 Go Agent、一个静态 Web UI。
+这份文档描述从源码打包、安装 Controller、配置 Agent 接入 URL、再安装 Agent 的最小闭环。Zeno 保持轻量：一个 Go Controller、一个 SQLite 数据库、一个静态 Web UI；Agent 由独立的 Zeno-Agent 仓库发布。
 
 ## 1. 构建发布包
 
@@ -19,7 +19,6 @@ build/releases/zeno-<sha>-linux-amd64.tar.gz
 包内包含：
 
 - `zeno-controller`
-- `zeno-agent`
 - `web/`
 - `scripts/`
 - `packaging/systemd/`
@@ -38,8 +37,6 @@ sudo scripts/deploy-local-release.sh \
   --archive /tmp/zeno-<sha>-linux-amd64.tar.gz \
   --install-dir /opt/zeno \
   --controller-addr 0.0.0.0:18980 \
-  --controller-url http://127.0.0.1:18980 \
-  --node-id hytron \
   --seed-preview
 ```
 
@@ -53,7 +50,7 @@ sudo scripts/deploy-local-release.sh \
 /opt/zeno/data/agent-token
 ```
 
-更新脚本的安全顺序固定为：停止 Agent → 切换 `current` → 重启 Controller → 等 `/health` → 启动 Agent。Controller health 失败会回滚到旧 release。
+更新脚本的安全顺序固定为：切换 `current` → 重启 Controller → 等 `/ready`。Controller readiness 失败会回滚到旧 release。
 
 ## 3. 登录 Admin
 
@@ -110,14 +107,7 @@ Zeno 不自动改 DNS、Caddy、Nginx 或防火墙；公网入口由部署者按
 
 注意：复制安装命令会复用该服务器已保存的 Agent token；只有旧数据没有可复用 token 时，首次复制才会生成一个随机 token。
 
-单独安装脚本也可直接使用：
-
-```bash
-sudo scripts/install-agent.sh \
-  --controller-url https://zeno.example.com \
-  --node-id <node-id> \
-  --token <agent-token>
-```
+Agent 安装器和多平台 release 来自 Zeno-Agent 仓库；后台生成的命令会下载匹配系统和架构的 Agent release。
 
 ## 6. 验证
 
@@ -125,6 +115,7 @@ Controller：
 
 ```bash
 curl -fsS http://127.0.0.1:18980/health
+curl -fsS http://127.0.0.1:18980/ready
 systemctl is-active zeno-controller.service
 ```
 
@@ -145,9 +136,9 @@ curl -fsS http://127.0.0.1:18980/api/public/v1/summary
 
 期望看到：
 
-- `/health` 返回 `{"ok":true}`。
-- Controller / Agent 都是 `active`。
-- Agent 日志出现 `reported host/state and ... probe target(s)`。
+- `/health` 返回轻量存活状态；`/ready` 验证 SQLite 可读写。
+- Controller 是 `active`，Agent 服务在目标节点正常运行。
+- Zeno-Agent 日志出现上报 host/state/probe target 的记录。
 - Public summary 中新服务器从 `no_data` 变为 `online` 或 `warning`。
 
 ## 7. 备份和恢复
@@ -160,7 +151,7 @@ curl -fsS http://127.0.0.1:18980/api/public/v1/summary
 /opt/zeno/data/agent-token
 ```
 
-建议在升级前备份 `/opt/zeno/data/`。恢复时保持文件权限只允许服务用户/root 读取 token 文件。
+建议用 SQLite 一致性备份，或停 Controller 后备份 `/opt/zeno/data/`。恢复时保持目录 `0700`、数据库/WAL/SHM 和 token 文件 `0600`。
 
 ## 8. 当前边界
 

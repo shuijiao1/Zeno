@@ -3,7 +3,11 @@ name: CI
 on:
   push:
     branches: [main]
+    tags: ['v*']
   pull_request:
+
+permissions:
+  contents: read
 
 jobs:
   test:
@@ -11,16 +15,25 @@ jobs:
     env:
       TZ: Asia/Shanghai
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
         with:
-          go-version: '1.24.x'
-      - uses: actions/setup-node@v4
+          go-version: '1.25.12'
+          cache: true
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6
         with:
-          node-version: '24'
+          node-version: '24.16.0'
           cache: npm
           cache-dependency-path: web/package-lock.json
       - run: go test ./...
+      - run: go install honnef.co/go/tools/cmd/staticcheck@latest
+      - run: $(go env GOPATH)/bin/staticcheck ./...
+      - uses: golang/govulncheck-action@b625fbe08f3bccbe446d94fbf87fcc875a4f50ee # v1
+        with:
+          go-version-input: '1.25.12'
+          go-package: ./...
+      - run: bash -n install.sh scripts/*.sh
+      - run: docker compose -f docker-compose.yml config >/dev/null
       - run: npm ci
         working-directory: web
       - run: npm test -- --run

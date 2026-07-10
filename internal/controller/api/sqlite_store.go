@@ -38,11 +38,47 @@ func (s *SQLiteStore) Close() error {
 	return s.db.Close()
 }
 
+func (s *SQLiteStore) Ready(ctx context.Context) error {
+	if s == nil || s.db == nil {
+		return fmt.Errorf("sqlite store is closed")
+	}
+	var one int
+	if err := s.db.QueryRowContext(ctx, `SELECT 1`).Scan(&one); err != nil {
+		return err
+	}
+	if one != 1 {
+		return fmt.Errorf("sqlite readiness probe returned %d", one)
+	}
+	_, err := s.db.ExecContext(ctx, `
+		INSERT INTO readiness_probe (id, checked_at) VALUES (1, strftime('%s', 'now'))
+		ON CONFLICT(id) DO UPDATE SET checked_at = excluded.checked_at
+	`)
+	return err
+}
+
+func (s *SQLiteStore) QuickCheck(ctx context.Context) error {
+	if s == nil || s.db == nil {
+		return fmt.Errorf("sqlite store is closed")
+	}
+	var result string
+	if err := s.db.QueryRowContext(ctx, `PRAGMA quick_check`).Scan(&result); err != nil {
+		return err
+	}
+	if result != "ok" {
+		return fmt.Errorf("sqlite quick_check: %s", result)
+	}
+	return nil
+}
+
 func (s *SQLiteStore) ensureSchema(ctx context.Context) error {
 	statements := []string{
 		`PRAGMA foreign_keys = ON;`,
 		`PRAGMA journal_mode = WAL;`,
 		`PRAGMA busy_timeout = 5000;`,
+		`CREATE TABLE IF NOT EXISTS readiness_probe (
+			id INTEGER PRIMARY KEY CHECK (id = 1),
+			checked_at INTEGER NOT NULL
+		);`,
 		`CREATE TABLE IF NOT EXISTS nodes (
 			id TEXT PRIMARY KEY,
 			display_name TEXT NOT NULL,

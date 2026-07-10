@@ -1,15 +1,15 @@
 # Release Packaging / 安装更新工具
 
-Zeno 的 Linux 发布闭环由三个脚本和两个 systemd 模板组成：
+Zeno Controller 的 Linux 发布闭环由两个脚本和一个 systemd 模板组成：
 
 ```text
 scripts/package-release.sh
 scripts/deploy-local-release.sh
-scripts/install-agent.sh
 scripts/import-guko-servers.py
 packaging/systemd/zeno-controller.service
-packaging/systemd/zeno-agent.service
 ```
+
+> Standalone Agent 已拆分到 Zeno-Agent 仓库发布；本仓库不再构建或打包 `cmd/agent` / `internal/agent`。
 
 ## 发布包结构
 
@@ -20,23 +20,19 @@ build/releases/zeno-<sha>-linux-amd64.tar.gz
 └── zeno-<sha>-linux-amd64/
     ├── REVISION
     ├── zeno-controller
-    ├── zeno-agent
     ├── README.md
     ├── docs/
     ├── web/
     ├── scripts/
     │   ├── deploy-local-release.sh
-    │   ├── install-agent.sh
     │   └── import-guko-servers.py
     └── packaging/systemd/
-        ├── zeno-controller.service
-        └── zeno-agent.service
+        └── zeno-controller.service
 ```
 
 构建内容：
 
 - `zeno-controller`：`GOOS=linux GOARCH=amd64 CGO_ENABLED=0`。
-- `zeno-agent`：`GOOS=linux GOARCH=amd64 CGO_ENABLED=0`。
 - `web/`：`npm --prefix web run build` 生成的静态文件。
 - `README.md` / `docs/`：自部署、API、数据模型、安全边界和发布工具文档。
 - `REVISION`：当前 Git short SHA 或 `--sha` 指定值。
@@ -60,8 +56,6 @@ sudo scripts/deploy-local-release.sh \
   --archive /tmp/zeno-<sha>-linux-amd64.tar.gz \
   --install-dir /opt/zeno \
   --controller-addr 0.0.0.0:18980 \
-  --controller-url http://127.0.0.1:18980 \
-  --node-id hytron \
   --seed-preview
 ```
 
@@ -74,8 +68,9 @@ sudo scripts/deploy-local-release.sh \
 /opt/zeno/data/agent-token
 /opt/zeno/data/admin-token
 /etc/systemd/system/zeno-controller.service
-/etc/systemd/system/zeno-agent.service
 ```
+
+可选 `--agent-binary <path>` / `--agent-version <version>` 只用于让 Controller 后台继续提供外部 Zeno-Agent 的下载入口；Agent 本身不再由本仓库 release 包管理。
 
 token 文件处理规则：
 
@@ -92,43 +87,21 @@ token 文件处理规则：
 2. 备份当前 systemd unit。
 3. 渲染新 systemd unit。
 4. 记录旧 `/opt/zeno/current`。
-5. 停止 `zeno-agent.service`。
-6. 切换 `current` symlink。
-7. `systemctl daemon-reload`。
-8. 重启 `zeno-controller.service`。
-9. 等待 `/health` 成功。
-10. Controller 健康后启动 `zeno-agent.service`。
-11. 验证 Controller / Agent 均 active。
+5. 切换 `current` symlink。
+6. `systemctl daemon-reload`。
+7. 重启 `zeno-controller.service`。
+8. 等待 `/ready` 成功。
+9. 验证 Controller active。
 
 失败回滚：
 
-- 如果 Controller 重启或 health check 失败，脚本会把 `current` 切回旧 release。
+- 如果 Controller 重启或 readiness check 失败，脚本会把 `current` 切回旧 release。
 - 旧 release 没有新模板时，恢复部署前备份的 systemd unit。
-- 回滚后重启旧 Controller，health 成功后再恢复 Agent。
+- 回滚后重启旧 Controller 并等待 `/ready`。
 
 ## 单独安装 Agent
 
-非 Controller 节点使用：
-
-```bash
-sudo scripts/install-agent.sh \
-  --controller-url https://example.com \
-  --node-id <node-id> \
-  --token <agent-token>
-```
-
-后台“设置”里的 `Agent 接入 URL` 会影响后台生成的安装命令。Controller 暂时只在本机或内网访问时可以留空；准备给其它服务器安装 Agent 前，应先把它设为可被目标服务器访问的公网 HTTPS Controller 地址。
-
-或使用已存在 token 文件：
-
-```bash
-sudo scripts/install-agent.sh \
-  --controller-url https://example.com \
-  --node-id <node-id> \
-  --token-file /opt/zeno/data/agent-token
-```
-
-`install-agent.sh` 只安装/重启 `zeno-agent.service`，不创建 Controller，不修改 `/opt/zeno/current`。Agent 默认每 2 秒上报 state 以驱动首页实时速率；heartbeat/host/probe-target refresh 仍每 15 秒执行，延迟探测仍按每个目标自己的 interval 判断是否执行，避免每 2 秒全量探测。公网 IPv4 / IPv6 / GeoIP 默认每 6 小时 best-effort 刷新一次，可在手工 unit 或启动参数中用 `-identity-refresh-interval` 调整。
+非 Controller 节点请使用 Zeno-Agent 仓库发布的安装命令。Zeno 后台“设置”里的 `Agent 接入 URL` 会影响后台生成的安装命令；准备给其它服务器安装 Agent 前，应先把它设为可被目标服务器访问的公网 HTTPS Controller 地址。
 
 ## GUKO 服务器清单导入
 
@@ -144,8 +117,6 @@ python3 scripts/import-guko-servers.py \
 默认 dry-run；确认后加 `--apply`。脚本只创建/更新节点展示元数据，不删除节点，不调用 install-command，不轮换 Agent token。
 
 ## 本地 dry-run
-
-两个安装脚本都支持 `--dry-run`：
 
 ```bash
 scripts/deploy-local-release.sh \

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -14,7 +15,7 @@ func TestBuildHandlerUsesSQLiteStoreWhenDBPathProvided(t *testing.T) {
 	if err != nil {
 		t.Fatalf("build controller: %v", err)
 	}
-	defer runtime.Cleanup()
+	defer runtime.Cleanup(context.Background())
 
 	recorder := httptest.NewRecorder()
 	runtime.Handler.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/api/public/v1/summary", nil))
@@ -44,7 +45,7 @@ func TestBuildHandlerEnablesAdminAPIWithAdminToken(t *testing.T) {
 	if err != nil {
 		t.Fatalf("build controller: %v", err)
 	}
-	defer runtime.Cleanup()
+	defer runtime.Cleanup(context.Background())
 
 	recorder := httptest.NewRecorder()
 	request := httptest.NewRequest(http.MethodGet, "/api/admin/v1/nodes", nil)
@@ -65,7 +66,7 @@ func TestBuildHandlerServesConfiguredAgentBinary(t *testing.T) {
 	if err != nil {
 		t.Fatalf("build controller: %v", err)
 	}
-	defer runtime.Cleanup()
+	defer runtime.Cleanup(context.Background())
 
 	recorder := httptest.NewRecorder()
 	runtime.Handler.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/api/public/v1/agent/linux-amd64", nil))

@@ -269,6 +269,9 @@ func (h *handler) publishSummary(_ context.Context) {
 }
 
 func (h *handler) scheduleSummaryPublish() {
+	if h == nil || h.backgroundContext().Err() != nil {
+		return
+	}
 	now := time.Now()
 	h.summaryPublishMu.Lock()
 	if h.summaryPublishTimer != nil {
@@ -282,8 +285,22 @@ func (h *handler) scheduleSummaryPublish() {
 			wait = minWait
 		}
 	}
-	var timer *time.Timer
-	timer = time.AfterFunc(wait, func() {
+	timer := time.NewTimer(wait)
+	h.summaryPublishTimer = timer
+	h.backgroundWG.Add(1)
+	go func() {
+		defer h.backgroundWG.Done()
+		select {
+		case <-h.backgroundContext().Done():
+			if !timer.Stop() {
+				select {
+				case <-timer.C:
+				default:
+				}
+			}
+			return
+		case <-timer.C:
+		}
 		h.summaryPublishMu.Lock()
 		if h.summaryPublishTimer != timer {
 			h.summaryPublishMu.Unlock()
@@ -293,11 +310,10 @@ func (h *handler) scheduleSummaryPublish() {
 		h.summaryLastPublished = time.Now()
 		h.summaryPublishMu.Unlock()
 
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		ctx, cancel := context.WithTimeout(h.backgroundContext(), 5*time.Second)
 		defer cancel()
 		h.publishSummaryNow(ctx)
-	})
-	h.summaryPublishTimer = timer
+	}()
 	h.summaryPublishMu.Unlock()
 }
 
@@ -348,13 +364,30 @@ func (h *handler) summaryCacheStale(maxAge time.Duration) bool {
 }
 
 func (h *handler) scheduleSummaryPublishAfter(delay time.Duration) {
+	if h == nil || h.backgroundContext().Err() != nil {
+		return
+	}
 	h.summaryPublishMu.Lock()
 	if h.summaryPublishTimer != nil {
 		h.summaryPublishMu.Unlock()
 		return
 	}
-	var timer *time.Timer
-	timer = time.AfterFunc(delay, func() {
+	timer := time.NewTimer(delay)
+	h.summaryPublishTimer = timer
+	h.backgroundWG.Add(1)
+	go func() {
+		defer h.backgroundWG.Done()
+		select {
+		case <-h.backgroundContext().Done():
+			if !timer.Stop() {
+				select {
+				case <-timer.C:
+				default:
+				}
+			}
+			return
+		case <-timer.C:
+		}
 		h.summaryPublishMu.Lock()
 		if h.summaryPublishTimer != timer {
 			h.summaryPublishMu.Unlock()
@@ -364,11 +397,10 @@ func (h *handler) scheduleSummaryPublishAfter(delay time.Duration) {
 		h.summaryLastPublished = time.Now()
 		h.summaryPublishMu.Unlock()
 
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		ctx, cancel := context.WithTimeout(h.backgroundContext(), 5*time.Second)
 		defer cancel()
 		h.publishSummaryNow(ctx)
-	})
-	h.summaryPublishTimer = timer
+	}()
 	h.summaryPublishMu.Unlock()
 }
 

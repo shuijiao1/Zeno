@@ -6,7 +6,7 @@ usage() {
 Usage: deploy-local-release.sh --archive <zeno-*.tar.gz> [options]
 
 Installs or updates a Zeno Controller release on the current Linux host.
-Safe order: stop Agent -> switch current -> restart Controller -> wait /health -> start Agent.
+The standalone zeno-agent is managed by the separate Zeno-Agent project.
 
 Options:
   --archive <path>              Release archive to install (required)
@@ -15,18 +15,11 @@ Options:
   --systemd-dir <dir>           Default: /etc/systemd/system
   --run-user <user>             Default: root
   --controller-addr <addr>      Default: 0.0.0.0:18980
-  --controller-url <url>        Default: http://127.0.0.1:18980
-  --node-id <id>                Default: hytron
-  --agent-state-interval <duration> Default: 3s
-  --agent-heartbeat-interval <duration> Default: 15s
-  --agent-host-interval <duration> Default: 30m
-  --agent-identity-refresh-interval <duration> Default: 12h
-  --agent-interval <duration>   Deprecated alias for --agent-state-interval
-  --agent-version <version>     Default: release REVISION
-  --agent-token-file <path>     Default: <data-dir>/agent-token
   --admin-token-file <path>     Default: <data-dir>/admin-token
+  --agent-token-file <path>     Default: <data-dir>/agent-token (controller API token for external agents)
+  --agent-binary <path>         Optional external Zeno-Agent binary served by dashboard install commands
+  --agent-version <version>     Optional external agent version label
   --seed-preview                Pass -seed-preview to Controller
-  --no-agent                    Do not manage zeno-agent.service
   --health-timeout <seconds>    Default: 60
   --dry-run                     Extract/render into install-dir but do not call systemctl or switch live services
   -h, --help                    Show help
@@ -39,17 +32,11 @@ data_dir=""
 systemd_dir="/etc/systemd/system"
 run_user="root"
 controller_addr="0.0.0.0:18980"
-controller_url="http://127.0.0.1:18980"
-node_id="hytron"
-agent_state_interval="3s"
-agent_heartbeat_interval="15s"
-agent_host_interval="30m"
-agent_identity_refresh_interval="12h"
-agent_version=""
-agent_token_file=""
 admin_token_file=""
+agent_token_file=""
+agent_binary=""
+agent_version=""
 seed_preview=0
-manage_agent=1
 health_timeout=60
 dry_run=0
 
@@ -61,18 +48,11 @@ while [ "$#" -gt 0 ]; do
     --systemd-dir) systemd_dir="${2:-}"; shift 2 ;;
     --run-user) run_user="${2:-}"; shift 2 ;;
     --controller-addr) controller_addr="${2:-}"; shift 2 ;;
-    --controller-url) controller_url="${2:-}"; shift 2 ;;
-    --node-id) node_id="${2:-}"; shift 2 ;;
-    --agent-state-interval) agent_state_interval="${2:-}"; shift 2 ;;
-    --agent-heartbeat-interval) agent_heartbeat_interval="${2:-}"; shift 2 ;;
-    --agent-host-interval) agent_host_interval="${2:-}"; shift 2 ;;
-    --agent-identity-refresh-interval) agent_identity_refresh_interval="${2:-}"; shift 2 ;;
-    --agent-interval) agent_state_interval="${2:-}"; shift 2 ;;
-    --agent-version) agent_version="${2:-}"; shift 2 ;;
-    --agent-token-file) agent_token_file="${2:-}"; shift 2 ;;
     --admin-token-file) admin_token_file="${2:-}"; shift 2 ;;
+    --agent-token-file) agent_token_file="${2:-}"; shift 2 ;;
+    --agent-binary) agent_binary="${2:-}"; shift 2 ;;
+    --agent-version) agent_version="${2:-}"; shift 2 ;;
     --seed-preview) seed_preview=1; shift ;;
-    --no-agent) manage_agent=0; shift ;;
     --health-timeout) health_timeout="${2:-}"; shift 2 ;;
     --dry-run) dry_run=1; shift ;;
     -h|--help) usage; exit 0 ;;
@@ -88,8 +68,8 @@ case "$health_timeout" in
   ''|*[!0-9]*) echo "--health-timeout must be an integer" >&2; exit 2 ;;
 esac
 if [ -z "$data_dir" ]; then data_dir="$install_dir/data"; fi
-if [ -z "$agent_token_file" ]; then agent_token_file="$data_dir/agent-token"; fi
 if [ -z "$admin_token_file" ]; then admin_token_file="$data_dir/admin-token"; fi
+if [ -z "$agent_token_file" ]; then agent_token_file="$data_dir/agent-token"; fi
 
 need_cmd() { command -v "$1" >/dev/null 2>&1 || { echo "missing command: $1" >&2; exit 1; }; }
 need_cmd tar
@@ -122,49 +102,42 @@ sed_escape() {
   printf '%s' "$1" | sed -e 's/[\/&]/\\&/g'
 }
 
-render_template() {
+render_controller_unit() {
   local template="$1"
   local output="$2"
   local version="$3"
-  local reported_agent_version="$4"
   local seed_flag=""
+  local agent_binary_args=""
+  local agent_version_args=""
   if [ "$seed_preview" -eq 1 ]; then seed_flag=" -seed-preview"; fi
+  if [ -n "$agent_binary" ]; then agent_binary_args=" -agent-binary $(sed_escape "$agent_binary")"; fi
+  if [ -n "$agent_version" ]; then agent_version_args=" -agent-version $(sed_escape "$agent_version")"; fi
   mkdir -p "$(dirname "$output")"
   sed \
     -e "s/{{RUN_USER}}/$(sed_escape "$run_user")/g" \
     -e "s/{{INSTALL_DIR}}/$(sed_escape "$install_dir")/g" \
     -e "s/{{DATA_DIR}}/$(sed_escape "$data_dir")/g" \
     -e "s/{{CONTROLLER_BINARY}}/$(sed_escape "$install_dir/current/zeno-controller")/g" \
-    -e "s/{{AGENT_BINARY}}/$(sed_escape "$install_dir/current/zeno-agent")/g" \
-    -e "s/{{AGENT_WORKING_DIR}}/$(sed_escape "$install_dir/current")/g" \
-    -e "s/{{AGENT_AFTER_CONTROLLER}}/$(sed_escape " zeno-controller.service")/g" \
-    -e "s/{{AGENT_REQUIRES_CONTROLLER}}/$(sed_escape "Requires=zeno-controller.service")/g" \
     -e "s/{{CONTROLLER_ADDR}}/$(sed_escape "$controller_addr")/g" \
-    -e "s/{{CONTROLLER_URL}}/$(sed_escape "$controller_url")/g" \
-    -e "s/{{NODE_ID}}/$(sed_escape "$node_id")/g" \
-    -e "s/{{AGENT_STATE_INTERVAL}}/$(sed_escape "$agent_state_interval")/g" \
-    -e "s/{{AGENT_HEARTBEAT_INTERVAL}}/$(sed_escape "$agent_heartbeat_interval")/g" \
-    -e "s/{{AGENT_HOST_INTERVAL}}/$(sed_escape "$agent_host_interval")/g" \
-    -e "s/{{AGENT_IDENTITY_REFRESH_INTERVAL}}/$(sed_escape "$agent_identity_refresh_interval")/g" \
-    -e "s/{{AGENT_EXTRA_ARGS}}//g" \
-    -e "s/{{AGENT_VERSION}}/$(sed_escape "$reported_agent_version")/g" \
     -e "s/{{AGENT_TOKEN_FILE}}/$(sed_escape "$agent_token_file")/g" \
     -e "s/{{ADMIN_TOKEN_FILE}}/$(sed_escape "$admin_token_file")/g" \
+    -e "s/{{AGENT_BINARY_FLAG}}/${agent_binary_args}/g" \
+    -e "s/{{AGENT_VERSION_FLAG}}/${agent_version_args}/g" \
     -e "s/{{SEED_PREVIEW_FLAG}}/$(sed_escape "$seed_flag")/g" \
     -e "s/{{VERSION}}/$(sed_escape "$version")/g" \
     "$template" > "$output"
 }
 
-health_url() {
+ready_url() {
   local host_port
   host_port=${controller_addr#*:}
   if [ "$controller_addr" = "$host_port" ]; then
     host_port="18980"
   fi
-  printf 'http://127.0.0.1:%s/health' "$host_port"
+  printf 'http://127.0.0.1:%s/ready' "$host_port"
 }
 
-wait_health() {
+wait_ready() {
   local url="$1"
   local timeout="$2"
   local i
@@ -187,7 +160,7 @@ if [ -z "$release_source" ]; then
   echo "archive does not contain a release directory" >&2
   exit 1
 fi
-for required in zeno-controller zeno-agent REVISION packaging/systemd/zeno-controller.service packaging/systemd/zeno-agent.service; do
+for required in zeno-controller REVISION packaging/systemd/zeno-controller.service; do
   if [ ! -e "$release_source/$required" ]; then
     echo "release missing $required" >&2
     exit 1
@@ -198,43 +171,33 @@ if [ -z "$version" ]; then
   echo "release REVISION is empty" >&2
   exit 1
 fi
-if [ -z "$agent_version" ]; then
-  agent_version="$version"
-fi
 release_name=$(basename "$release_source")
 release_dir="$install_dir/releases/$release_name"
 
 mkdir -p "$install_dir/releases" "$data_dir"
-ensure_secret_file "$agent_token_file"
+chmod 700 "$data_dir" 2>/dev/null || true
 ensure_secret_file "$admin_token_file"
+ensure_secret_file "$agent_token_file"
 rm -rf "$release_dir.tmp"
 cp -a "$release_source" "$release_dir.tmp"
 mv -Tf "$release_dir.tmp" "$release_dir"
 
 unit_output_dir="$systemd_dir"
 controller_unit_backup=""
-agent_unit_backup=""
 previous=""
-agent_was_active=0
 if [ "$dry_run" -eq 1 ]; then
   unit_output_dir="$install_dir/systemd-dry-run"
 else
   if [ -e "$install_dir/current" ]; then
     previous=$(readlink -f "$install_dir/current" || true)
   fi
-  if [ "$manage_agent" -eq 1 ] && systemctl is-active --quiet zeno-agent.service; then
-    agent_was_active=1
-  fi
   controller_unit_backup="$extract_parent/zeno-controller.service.previous"
-  agent_unit_backup="$extract_parent/zeno-agent.service.previous"
   if [ -f "$systemd_dir/zeno-controller.service" ]; then cp "$systemd_dir/zeno-controller.service" "$controller_unit_backup"; fi
-  if [ -f "$systemd_dir/zeno-agent.service" ]; then cp "$systemd_dir/zeno-agent.service" "$agent_unit_backup"; fi
 fi
-render_template "$release_dir/packaging/systemd/zeno-controller.service" "$unit_output_dir/zeno-controller.service" "$version" "$agent_version"
-render_template "$release_dir/packaging/systemd/zeno-agent.service" "$unit_output_dir/zeno-agent.service" "$version" "$agent_version"
+render_controller_unit "$release_dir/packaging/systemd/zeno-controller.service" "$unit_output_dir/zeno-controller.service" "$version"
 
 if [ "$dry_run" -eq 1 ]; then
-  printf 'dry-run ok: release=%s units=%s\n' "$release_dir" "$unit_output_dir"
+  printf 'dry-run ok: release=%s unit=%s/zeno-controller.service\n' "$release_dir" "$unit_output_dir"
   exit 0
 fi
 
@@ -247,51 +210,29 @@ rollback() {
     if [ -z "$previous_version" ]; then previous_version="previous"; fi
     ln -sfn "$previous" "$install_dir/current"
     if [ -f "$previous/packaging/systemd/zeno-controller.service" ]; then
-      render_template "$previous/packaging/systemd/zeno-controller.service" "$systemd_dir/zeno-controller.service" "$previous_version"
+      render_controller_unit "$previous/packaging/systemd/zeno-controller.service" "$systemd_dir/zeno-controller.service" "$previous_version"
     elif [ -n "${controller_unit_backup:-}" ] && [ -f "$controller_unit_backup" ]; then
       cp "$controller_unit_backup" "$systemd_dir/zeno-controller.service"
     fi
-    if [ "$manage_agent" -eq 1 ]; then
-      if [ -f "$previous/packaging/systemd/zeno-agent.service" ]; then
-        render_template "$previous/packaging/systemd/zeno-agent.service" "$systemd_dir/zeno-agent.service" "$previous_version"
-      elif [ -n "${agent_unit_backup:-}" ] && [ -f "$agent_unit_backup" ]; then
-        cp "$agent_unit_backup" "$systemd_dir/zeno-agent.service"
-      fi
-    fi
     systemctl daemon-reload
     systemctl restart zeno-controller.service || true
-    if wait_health "$(health_url)" 30; then
-      if [ "$manage_agent" -eq 1 ] && [ "$agent_was_active" -eq 1 ]; then
-        systemctl start zeno-agent.service || true
-      fi
+    if wait_ready "$(ready_url)" 30; then
       echo "rolled back to $previous" >&2
     else
-      echo "rollback controller health check failed; inspect zeno-controller.service" >&2
+      echo "rollback controller readiness check failed; inspect zeno-controller.service" >&2
     fi
   fi
   exit 1
 }
 
-if [ "$manage_agent" -eq 1 ]; then
-  systemctl stop zeno-agent.service || true
-fi
 ln -sfn "$release_dir" "$install_dir/current"
 systemctl daemon-reload
 systemctl restart zeno-controller.service || rollback "controller restart failed"
-if ! wait_health "$(health_url)" "$health_timeout"; then
+if ! wait_ready "$(ready_url)" "$health_timeout"; then
   journalctl -u zeno-controller.service -n 80 --no-pager >&2 || true
-  rollback "controller health check failed"
-fi
-if [ "$manage_agent" -eq 1 ]; then
-  systemctl enable zeno-agent.service >/dev/null 2>&1 || true
-  systemctl start zeno-agent.service || rollback "agent start failed"
+  rollback "controller readiness check failed"
 fi
 systemctl enable zeno-controller.service >/dev/null 2>&1 || true
-# systemctl enable may update wants/ symlinks after the earlier reload; reload once more
-# so post-deploy smoke checks do not see stale unit-file warnings.
 systemctl daemon-reload
 systemctl is-active --quiet zeno-controller.service || rollback "controller inactive after deploy"
-if [ "$manage_agent" -eq 1 ]; then
-  systemctl is-active --quiet zeno-agent.service || rollback "agent inactive after deploy"
-fi
 printf 'deploy ok: revision=%s release=%s\n' "$version" "$release_dir"

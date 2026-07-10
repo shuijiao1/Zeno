@@ -62,15 +62,6 @@ func (m *agentPresenceManager) isOnline(nodeID string) bool {
 	return m.sessions[nodeID] != nil
 }
 
-func (m *agentPresenceManager) isExpected(nodeID string) bool {
-	if m == nil {
-		return false
-	}
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	return m.seen[nodeID]
-}
-
 func (m *agentPresenceManager) notifyConfigChanged(nodeID string, version int64) bool {
 	if m == nil {
 		return false
@@ -129,11 +120,6 @@ type agentPresenceClientMessage struct {
 	Version int64  `json:"version,omitempty"`
 }
 
-type agentPresenceTransitionStore interface {
-	RecordAgentPresenceOnlineTransition(ctx context.Context, nodeID string, ts time.Time) (notificationStatusTransition, error)
-	RecordAgentPresenceOfflineTransition(ctx context.Context, nodeID string, ts time.Time) (notificationStatusTransition, error)
-}
-
 type staleAgentOfflineStore interface {
 	agentStore
 	StaleAgentOfflineNodeIDs(ctx context.Context, now time.Time) ([]string, error)
@@ -183,7 +169,7 @@ func (h *handler) dispatchStaleAgentOfflineChecks(ctx context.Context) {
 		return
 	}
 	h.invalidateSummaryCache()
-	publishCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	publishCtx, cancel := context.WithTimeout(h.backgroundContext(), 5*time.Second)
 	defer cancel()
 	h.publishSummaryNow(publishCtx)
 }
@@ -219,7 +205,7 @@ func (h *handler) handleAgentPresenceWebSocket(w http.ResponseWriter, r *http.Re
 		if h.presence.disconnect(session) {
 			h.scheduleAgentPresenceOfflineCheck(store, nodeID)
 			h.invalidateSummaryCache()
-			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			ctx, cancel := context.WithTimeout(h.backgroundContext(), 5*time.Second)
 			defer cancel()
 			h.publishSummaryNow(ctx)
 		}
@@ -274,15 +260,19 @@ func (h *handler) scheduleAgentPresenceOfflineCheck(store agentStore, nodeID str
 	if _, ok := store.(staleAgentOfflineStore); !ok {
 		return
 	}
-	go func() {
+	h.startBackground(func(ctx context.Context) {
 		timer := time.NewTimer(nodeHeartbeatOfflineAfter)
 		defer timer.Stop()
-		<-timer.C
+		select {
+		case <-ctx.Done():
+			return
+		case <-timer.C:
+		}
 		if h.presence.isOnline(nodeID) {
 			return
 		}
-		h.dispatchStaleAgentOfflineChecks(context.Background())
-	}()
+		h.dispatchStaleAgentOfflineChecks(ctx)
+	})
 }
 
 const (

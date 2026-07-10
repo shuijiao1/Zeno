@@ -22,6 +22,7 @@ type HandlerOptions struct {
 	NotificationClient       *http.Client
 	TelegramAPIBaseURL       string
 	StaleOfflineScanInterval time.Duration
+	BackgroundContext        context.Context
 }
 
 type handler struct {
@@ -39,6 +40,10 @@ type handler struct {
 	summaryCacheMu       sync.RWMutex
 	summaryCache         []byte
 	summaryCacheUpdated  time.Time
+	backgroundCtx        context.Context
+	backgroundCancel     context.CancelFunc
+	backgroundWG         sync.WaitGroup
+	router               http.Handler
 }
 
 const (
@@ -124,6 +129,11 @@ func NewHandler(options ...HandlerOptions) http.Handler {
 	if store == nil {
 		store = mockStore{}
 	}
+	backgroundParent := opts.BackgroundContext
+	if backgroundParent == nil {
+		backgroundParent = context.Background()
+	}
+	backgroundCtx, backgroundCancel := context.WithCancel(backgroundParent)
 	h := &handler{
 		store:              store,
 		adminTokenHash:     opts.AdminTokenHash,
@@ -133,13 +143,16 @@ func NewHandler(options ...HandlerOptions) http.Handler {
 		loginLimiter:       newAdminLoginLimiter(),
 		liveHub:            newLiveUpdateHub(),
 		presence:           newAgentPresenceManager(),
+		backgroundCtx:      backgroundCtx,
+		backgroundCancel:   backgroundCancel,
 	}
 	if opts.StaleOfflineScanInterval > 0 {
-		go h.runStaleAgentOfflineScanner(context.Background(), opts.StaleOfflineScanInterval)
+		h.startBackground(func(ctx context.Context) { h.runStaleAgentOfflineScanner(ctx, opts.StaleOfflineScanInterval) })
 	}
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/health", handleHealth)
+	mux.HandleFunc("/ready", h.handleReady)
 	mux.HandleFunc("/api/public/v1/agent/linux-amd64", h.handleAgentBinary)
 	mux.HandleFunc("/api/public/v1/settings", h.handlePublicSettings)
 	mux.HandleFunc("/api/public/v1/summary", h.handleSummary)
@@ -168,7 +181,72 @@ func NewHandler(options ...HandlerOptions) http.Handler {
 	if opts.StaticDir != "" {
 		mux.HandleFunc("/", handleStatic(opts.StaticDir))
 	}
-	return mux
+	h.router = withSecurityHeaders(mux)
+	return h
+}
+
+func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	h.router.ServeHTTP(w, r)
+}
+
+func (h *handler) startBackground(fn func(context.Context)) {
+	if h == nil || fn == nil {
+		return
+	}
+	if h.backgroundCtx == nil {
+		h.backgroundCtx, h.backgroundCancel = context.WithCancel(context.Background())
+	}
+	h.backgroundWG.Add(1)
+	go func() {
+		defer h.backgroundWG.Done()
+		fn(h.backgroundCtx)
+	}()
+}
+
+func (h *handler) backgroundContext() context.Context {
+	if h == nil || h.backgroundCtx == nil {
+		return context.Background()
+	}
+	return h.backgroundCtx
+}
+
+func (h *handler) Cleanup(ctx context.Context) error {
+	if h == nil {
+		return nil
+	}
+	if h.backgroundCancel != nil {
+		h.backgroundCancel()
+	}
+	h.summaryPublishMu.Lock()
+	if h.summaryPublishTimer != nil {
+		h.summaryPublishTimer.Stop()
+	}
+	h.summaryPublishMu.Unlock()
+	done := make(chan struct{})
+	go func() {
+		h.backgroundWG.Wait()
+		close(done)
+	}()
+	select {
+	case <-done:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+
+}
+
+func withSecurityHeaders(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("X-Content-Type-Options", "nosniff")
+		w.Header().Set("X-Frame-Options", "DENY")
+		w.Header().Set("Referrer-Policy", "no-referrer")
+		w.Header().Set("Permissions-Policy", "camera=(), microphone=(), geolocation=()")
+		if strings.HasPrefix(r.URL.Path, "/api/admin/") {
+			w.Header().Set("Cache-Control", "no-store")
+		}
+		next.ServeHTTP(w, r)
+	})
 }
 
 func (h *handler) handlePublicServiceResource(w http.ResponseWriter, r *http.Request) {
@@ -206,6 +284,27 @@ func (h *handler) handlePublicServiceResource(w http.ResponseWriter, r *http.Req
 func handleHealth(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
+}
+
+func (h *handler) handleReady(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+	checker, ok := h.store.(interface {
+		Ready(ctx context.Context) error
+	})
+	if !ok {
+		writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 2*time.Second)
+	defer cancel()
+	if err := checker.Ready(ctx); err != nil {
+		writeError(w, http.StatusServiceUnavailable, "not ready")
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})

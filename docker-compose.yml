@@ -1,6 +1,6 @@
 services:
   zeno:
-    image: ${ZENO_IMAGE:-ghcr.io/shuijiao1/zeno:latest}
+    image: ${ZENO_IMAGE:-ghcr.io/shuijiao1/zeno:v0.3.5}
     container_name: ${ZENO_CONTAINER_NAME:-zeno}
     restart: unless-stopped
     environment:
@@ -11,7 +11,8 @@ services:
       - ./data:/data
       - ./secrets:/run/secrets:ro
     healthcheck:
-      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:18980/health >/dev/null || exit 1"]
+      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:18980/ready >/dev/null || exit 1"]
       interval: 30s
       timeout: 5s
       retries: 3
+      start_period: 10s

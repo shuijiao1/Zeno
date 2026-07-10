@@ -68,7 +68,7 @@ func (h *handler) handleAdminLogin(w http.ResponseWriter, r *http.Request) {
 		if h.loginLimiter != nil {
 			h.loginLimiter.recordSuccess(key)
 		}
-		writeJSON(w, http.StatusOK, AdminLoginResponse{Username: session.Username, Token: session.Token})
+		writeJSON(w, http.StatusOK, AdminLoginResponse(session))
 		return
 	}
 	if strings.TrimSpace(request.Username) != "admin" || !adminTokenMatches(h.adminTokenHash, request.Password) {
@@ -126,7 +126,7 @@ func (h *handler) handleAdminAccount(w http.ResponseWriter, r *http.Request) {
 			writeAdminError(w, err)
 			return
 		}
-		writeJSON(w, http.StatusOK, AdminLoginResponse{Username: session.Username, Token: session.Token})
+		writeJSON(w, http.StatusOK, AdminLoginResponse(session))
 	default:
 		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
 	}

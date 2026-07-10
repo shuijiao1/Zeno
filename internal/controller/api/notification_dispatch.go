@@ -21,10 +21,6 @@ type notificationEventStore interface {
 	EnabledNotificationChannelsForEvent(ctx context.Context, eventType, nodeID string) (string, []notificationDispatchChannel, error)
 }
 
-type notificationDelayStore interface {
-	NotificationEventDelay(ctx context.Context, eventType, nodeID string) (time.Duration, bool, error)
-}
-
 type notificationStatusMarkStore interface {
 	ClaimStatusNotification(ctx context.Context, event notificationEvent) (bool, error)
 }

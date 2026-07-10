@@ -1,6 +1,10 @@
 # syntax=docker/dockerfile:1
+# Base image policy: track explicit upstream patch/minor tags (not latest) so
+# routine rebuilds pick up maintained Debian package fixes without hiding major
+# upgrades. The GitHub Docker workflow emits provenance and SBOM attestations for
+# every published image.
 
-FROM node:24-bookworm-slim AS web-builder
+FROM node:24.16.0-bookworm-slim AS web-builder
 WORKDIR /src/web
 COPY web/package*.json ./
 RUN npm ci
@@ -9,7 +13,7 @@ ARG VERSION=dev
 ENV VITE_BUILD_ID=${VERSION}
 RUN npm run build
 
-FROM golang:1.24-bookworm AS go-builder
+FROM golang:1.25.12-bookworm AS go-builder
 WORKDIR /src
 COPY go.mod go.sum ./
 RUN go mod download
@@ -18,7 +22,7 @@ COPY --from=web-builder /src/web/dist ./web/dist
 ARG VERSION=dev
 RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -ldflags "-s -w" -o /out/zeno-controller ./cmd/controller
 
-FROM debian:13-slim
+FROM debian:13.2-slim
 ARG VERSION=dev
 ARG REVISION=unknown
 LABEL org.opencontainers.image.title="Zeno" \
