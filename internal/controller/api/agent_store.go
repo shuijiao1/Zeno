@@ -25,17 +25,31 @@ func (s *SQLiteStore) RecordAgentHeartbeatTransition(ctx context.Context, nodeID
 
 	var previous notificationNodeSnapshot
 	var storedStatus string
+	var offlineIncident int
 	if err := tx.QueryRowContext(ctx, `
-		SELECT id, display_name, status, COALESCE(public_ipv4, '')
-		FROM nodes
-		WHERE id = ? AND disabled = 0
-	`, nodeID).Scan(&previous.ID, &previous.DisplayName, &storedStatus, &previous.PublicIPv4); err != nil {
+		SELECT n.id, n.display_name, n.status, COALESCE(n.public_ipv4, ''),
+		       CASE WHEN
+		         EXISTS (
+		           SELECT 1 FROM alert_rule_states ars
+		           WHERE ars.node_id = n.id AND ars.rule_id = 'node_offline' AND ars.active = 1
+		         ) OR EXISTS (
+		           SELECT 1 FROM notification_event_marks nem
+		           WHERE nem.event_type = 'node_offline' AND nem.node_id = n.id AND nem.mark = 'status-active:offline'
+		         )
+		       THEN 1 ELSE 0 END
+		FROM nodes n
+		WHERE n.id = ? AND n.disabled = 0
+	`, nodeID).Scan(&previous.ID, &previous.DisplayName, &storedStatus, &previous.PublicIPv4, &offlineIncident); err != nil {
 		if err == sql.ErrNoRows {
 			return notificationStatusTransition{}, errNodeNotFound
 		}
 		return notificationStatusTransition{}, err
 	}
 	previous.Status = storedNodeStatusForNotification(storedStatus)
+	livenessRecovered := offlineIncident != 0 && (status == "online" || status == "warning")
+	if livenessRecovered {
+		previous.Status = "offline"
+	}
 	current := notificationNodeSnapshot{ID: previous.ID, DisplayName: previous.DisplayName, PublicIPv4: previous.PublicIPv4}
 
 	nextStatus := status
@@ -50,6 +64,18 @@ func (s *SQLiteStore) RecordAgentHeartbeatTransition(ctx context.Context, nodeID
 		return notificationStatusTransition{}, err
 	}
 	current.Status = storedNodeStatusForNotification(nextStatus)
+	if livenessRecovered {
+		if _, err := tx.ExecContext(ctx, `
+			UPDATE alert_rule_states
+			SET active = 0, last_seen_at = ?, updated_at = ?
+			WHERE node_id = ? AND rule_id = 'node_offline'
+		`, nowUnix, nowUnix, nodeID); err != nil {
+			return notificationStatusTransition{}, err
+		}
+		// This transition is specifically the liveness recovery. The persisted
+		// node may still be warning because of a separate resource incident.
+		current.Status = "online"
+	}
 	if agentVersion != "" {
 		if _, err := tx.ExecContext(ctx, `
 			INSERT INTO host_info (node_id, agent_version, updated_at)
@@ -314,7 +340,7 @@ func (s *SQLiteStore) UpsertAgentHost(ctx context.Context, nodeID string, host A
 	countryCode := normalizeAgentCountryCode(host.CountryCode)
 	if _, err := tx.ExecContext(ctx, `
 		UPDATE nodes
-		SET status = CASE WHEN status = 'warning' THEN 'warning' ELSE 'online' END,
+		SET status = CASE WHEN status IN ('warning', 'offline') THEN status ELSE 'online' END,
 		    last_seen_at = ?,
 		    updated_at = ?,
 		    public_ipv4 = CASE WHEN ? <> '' THEN ? ELSE public_ipv4 END,

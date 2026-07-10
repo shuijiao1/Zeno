@@ -209,17 +209,30 @@ func updateNodeStatusForAlertRules(ctx context.Context, tx *sql.Tx, nodeID strin
 	var previous notificationNodeSnapshot
 	var storedStatus string
 	var lastSeenAt sql.NullInt64
+	var offlineIncident int
 	if err := tx.QueryRowContext(ctx, `
-		SELECT id, display_name, status, last_seen_at, COALESCE(public_ipv4, '')
-		FROM nodes
-		WHERE id = ? AND disabled = 0
-	`, nodeID).Scan(&previous.ID, &previous.DisplayName, &storedStatus, &lastSeenAt, &previous.PublicIPv4); err != nil {
+		SELECT n.id, n.display_name, n.status, n.last_seen_at, COALESCE(n.public_ipv4, ''),
+		       CASE WHEN
+		         EXISTS (
+		           SELECT 1 FROM alert_rule_states ars
+		           WHERE ars.node_id = n.id AND ars.rule_id = 'node_offline' AND ars.active = 1
+		         ) OR EXISTS (
+		           SELECT 1 FROM notification_event_marks nem
+		           WHERE nem.event_type = 'node_offline' AND nem.node_id = n.id AND nem.mark = 'status-active:offline'
+		         )
+		       THEN 1 ELSE 0 END
+		FROM nodes n
+		WHERE n.id = ? AND n.disabled = 0
+	`, nodeID).Scan(&previous.ID, &previous.DisplayName, &storedStatus, &lastSeenAt, &previous.PublicIPv4, &offlineIncident); err != nil {
 		if err == sql.ErrNoRows {
 			return notificationStatusTransition{}, errNodeNotFound
 		}
 		return notificationStatusTransition{}, err
 	}
 	previous.Status = publicNodeStatus(storedStatus, lastSeenAt, now)
+	if offlineIncident != 0 {
+		previous.Status = "offline"
+	}
 	nextStatus := status
 	if preserveExistingWarning && status == "online" && storedStatus == "warning" {
 		nextStatus = "warning"
@@ -231,7 +244,21 @@ func updateNodeStatusForAlertRules(ctx context.Context, tx *sql.Tx, nodeID strin
 	`, nextStatus, seenAt, nowUnix, nodeID); err != nil {
 		return notificationStatusTransition{}, err
 	}
+	if offlineIncident != 0 {
+		if _, err := tx.ExecContext(ctx, `
+			UPDATE alert_rule_states
+			SET active = 0, last_seen_at = ?, updated_at = ?
+			WHERE node_id = ? AND rule_id = 'node_offline'
+		`, nowUnix, nowUnix, nodeID); err != nil {
+			return notificationStatusTransition{}, err
+		}
+	}
 	current := notificationNodeSnapshot{ID: previous.ID, DisplayName: previous.DisplayName, Status: publicNodeStatus(nextStatus, sql.NullInt64{Int64: seenAt, Valid: true}, now), PublicIPv4: previous.PublicIPv4}
+	if offlineIncident != 0 {
+		// Report the liveness recovery independently from any resource warning
+		// that remains persisted on the node.
+		current.Status = "online"
+	}
 	return notificationStatusTransition{Previous: previous, Current: current}, nil
 }
 

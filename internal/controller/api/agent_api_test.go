@@ -450,7 +450,7 @@ func TestAgentHeartbeatDoesNotClearExistingProbeWarning(t *testing.T) {
 	}
 }
 
-func TestAgentProbeResultsClearsWarningAfterHealthyProbe(t *testing.T) {
+func TestAgentProbeResultsDoNotClearResourceWarning(t *testing.T) {
 	store, err := OpenSQLiteStore(filepath.Join(t.TempDir(), "zeno.db"))
 	if err != nil {
 		t.Fatalf("open sqlite store: %v", err)
@@ -480,8 +480,8 @@ func TestAgentProbeResultsClearsWarningAfterHealthyProbe(t *testing.T) {
 	if err := store.db.QueryRowContext(ctx, `SELECT status FROM nodes WHERE id = 'hytron'`).Scan(&status); err != nil {
 		t.Fatalf("query node status: %v", err)
 	}
-	if status != "online" {
-		t.Fatalf("node status = %q, want healthy probe to clear warning", status)
+	if status != "warning" {
+		t.Fatalf("node status = %q, want service probe results to preserve resource warning", status)
 	}
 }
 

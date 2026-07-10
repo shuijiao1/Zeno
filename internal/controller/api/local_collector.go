@@ -188,14 +188,9 @@ func (s *SQLiteStore) InsertProbeRound(ctx context.Context, nodeID string, targe
 		}
 	}
 
-	now := time.Now().UTC().Unix()
-	if _, err := tx.ExecContext(ctx, `
-		UPDATE nodes
-		SET status = 'online', last_seen_at = ?, updated_at = ?
-		WHERE id = ?
-	`, ts.UTC().Unix(), now, nodeID); err != nil {
-		return err
-	}
+	// Probe rounds may be delayed, batched, or use an Agent-provided timestamp.
+	// They are service measurements, not authoritative node-liveness updates;
+	// heartbeat/state/host reports own last_seen_at and status transitions.
 
 	if err := tx.Commit(); err != nil {
 		return err

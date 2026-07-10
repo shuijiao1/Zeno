@@ -127,10 +127,25 @@ type staleAgentOfflineStore interface {
 }
 
 func (h *handler) runStaleAgentOfflineScanner(ctx context.Context, interval time.Duration) {
-	if h == nil || interval <= 0 {
+	h.runStaleAgentOfflineScannerWithGrace(ctx, interval, nodeHeartbeatOfflineAfter)
+}
+
+func (h *handler) runStaleAgentOfflineScannerWithGrace(ctx context.Context, interval, startupGrace time.Duration) {
+	if h == nil || interval <= 0 || startupGrace <= 0 {
 		return
 	}
-	h.dispatchStaleAgentOfflineChecks(ctx)
+	// A freshly started Controller cannot distinguish an actually offline Agent
+	// from one that simply has not reconnected after the Controller restart yet.
+	// Give Agents one full liveness window before the first scan so deployments
+	// and short Controller outages do not immediately create false incidents.
+	startupTimer := time.NewTimer(startupGrace)
+	defer startupTimer.Stop()
+	select {
+	case <-ctx.Done():
+		return
+	case <-startupTimer.C:
+		h.dispatchStaleAgentOfflineChecks(ctx)
+	}
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
 	for {

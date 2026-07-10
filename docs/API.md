@@ -713,7 +713,7 @@ Controller 会在 Agent 上报时实际使用这些规则：
 - `/api/agent/v1/state` 会按启用的资源规则评估 `cpu_percent`、内存使用率、磁盘使用率。资源规则的 `duration_sec` 表示统计窗口，默认按 5 分钟平均值超过阈值时把节点公共状态置为 `warning` 并进入 `probe_unhealthy` 通知链路。
 - `/api/agent/v1/probe-results` 只写入探针历史，不再通过延迟或丢包阈值改变节点公共状态。
 - 资源规则命中状态会记录在 Controller 内部的 `alert_rule_states` 表，用来避免某一类健康上报误清另一类仍活跃的异常；`alert_rule_states` 只作为 Controller 内部命中状态存储。
-- 如果规则配置了 `scope_node_ids`，Agent 上报、规则命中和通知发送都会只对这些服务器生效；空数组表示全部服务器。离线规则的 `duration_sec` 同时作为公共在线/离线状态与离线通知的心跳超时时间，默认 30 秒；presence WebSocket 不覆盖页面状态；Controller 每 5 秒补扫一次过期 `last_seen_at`，把漏掉的离线状态落库并进入同一条 `node_offline` 通知链路。
+- 如果规则配置了 `scope_node_ids`，Agent 上报、规则命中和通知发送都会只对这些服务器生效；空数组表示全部服务器。离线规则的 `duration_sec` 同时作为公共在线/离线状态与离线通知的心跳超时时间，默认 30 秒；presence WebSocket 和服务探测结果不覆盖页面在线状态；Controller 启动后先留出一个完整心跳窗口，再每 5 秒补扫一次过期 `last_seen_at`，把漏掉的离线状态落库并进入同一条 `node_offline` 通知链路。
 - 通知发送同时要求：状态转换存在、对应通知类型启用、至少一条映射到该事件类型且对该服务器生效的规则启用、且存在启用并配置好的通知渠道。
 
 ```json

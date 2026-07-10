@@ -83,7 +83,7 @@ offline: last_seen_at 超过离线通知 duration
 no_data: 从未收到 heartbeat/state
 ```
 
-关键规则：heartbeat/host 只证明 Agent 活着，不能清除 resource warning；新的 state 上报会更新资源规则命中状态。presence WebSocket 只用于配置变更推送和触发补扫，不覆盖公共页面或后台列表的在线状态。Controller 会周期性扫描 stale `last_seen_at` 并原子落库离线状态，避免重启或 WebSocket 断开事件丢失导致漏发离线通知；恢复通知只在已经落库为 offline 后收到新 heartbeat/state 时发送，避免 recovery-only 误报。
+关键规则：heartbeat/host 只证明 Agent 活着，不能清除 resource warning；新的 state 上报会更新资源规则命中状态；服务探测结果只记录目标质量，不拥有节点在线状态或 `last_seen_at`。presence WebSocket 只用于配置变更推送和触发补扫，不覆盖公共页面或后台列表的在线状态。Controller 启动后先等待一个完整心跳窗口，再周期性扫描 stale `last_seen_at` 并原子落库离线状态，避免部署重启误报以及 WebSocket 断开事件丢失导致漏发离线通知；恢复通知会对照持久化 incident state/mark 补发并清理残留，同时拒绝没有 active incident 的 recovery-only 通知。
 
 ## 月流量计算
 

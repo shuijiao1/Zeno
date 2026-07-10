@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"database/sql"
+	"strings"
 	"time"
 )
 
@@ -145,13 +146,33 @@ func notificationRetryDelay(attempt int) time.Duration {
 }
 
 func claimStatusNotificationTx(ctx context.Context, tx *sql.Tx, event notificationEvent) (bool, error) {
-	status := event.Status
-	previousStatus := event.PreviousStatus
+	eventType := strings.TrimSpace(event.EventType)
+	nodeID := strings.TrimSpace(event.NodeID)
+	status := strings.TrimSpace(event.Status)
+	previousStatus := strings.TrimSpace(event.PreviousStatus)
+	if eventType == "" || nodeID == "" || status == "" || previousStatus == status {
+		return false, nil
+	}
 	mark := activeStatusNotificationMark(status)
 	clearMark := recoveredStatusNotificationMark(status)
 	if status == "online" && previousStatus != "" {
 		mark = recoveredStatusNotificationMark(previousStatus)
 		clearMark = activeStatusNotificationMark(previousStatus)
+		if clearMark == "" {
+			return false, nil
+		}
+		var activeIncident int
+		if err := tx.QueryRowContext(ctx, `
+			SELECT EXISTS (
+				SELECT 1 FROM notification_event_marks
+				WHERE event_type = ? AND node_id = ? AND mark = ?
+			)
+		`, eventType, nodeID, clearMark).Scan(&activeIncident); err != nil {
+			return false, err
+		}
+		if activeIncident == 0 {
+			return false, nil
+		}
 	}
 	if mark == "" {
 		return false, nil
@@ -159,7 +180,7 @@ func claimStatusNotificationTx(ctx context.Context, tx *sql.Tx, event notificati
 	result, err := tx.ExecContext(ctx, `
 		INSERT OR IGNORE INTO notification_event_marks (event_type, node_id, mark, created_at)
 		VALUES (?, ?, ?, ?)
-	`, event.EventType, event.NodeID, mark, time.Now().UTC().Unix())
+	`, eventType, nodeID, mark, time.Now().UTC().Unix())
 	if err != nil {
 		return false, err
 	}
@@ -171,7 +192,7 @@ func claimStatusNotificationTx(ctx context.Context, tx *sql.Tx, event notificati
 		if _, err := tx.ExecContext(ctx, `
 			DELETE FROM notification_event_marks
 			WHERE event_type = ? AND node_id = ? AND mark = ?
-		`, event.EventType, event.NodeID, clearMark); err != nil {
+		`, eventType, nodeID, clearMark); err != nil {
 			return false, err
 		}
 	}

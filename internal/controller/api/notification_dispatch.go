@@ -462,53 +462,20 @@ func (s *SQLiteStore) NotificationEventDelay(ctx context.Context, eventType, nod
 }
 
 func (s *SQLiteStore) ClaimStatusNotification(ctx context.Context, event notificationEvent) (bool, error) {
-	eventType := strings.TrimSpace(event.EventType)
-	nodeID := strings.TrimSpace(event.NodeID)
-	status := strings.TrimSpace(event.Status)
-	previousStatus := strings.TrimSpace(event.PreviousStatus)
-	if eventType == "" || nodeID == "" || status == "" || previousStatus == status {
-		return false, nil
-	}
-	mark := activeStatusNotificationMark(status)
-	clearMark := recoveredStatusNotificationMark(status)
-	if status == "online" && previousStatus != "" {
-		mark = recoveredStatusNotificationMark(previousStatus)
-		clearMark = activeStatusNotificationMark(previousStatus)
-	}
-	if mark == "" {
-		return false, nil
-	}
-
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return false, err
 	}
 	defer rollbackUnlessCommitted(tx)
-
-	result, err := tx.ExecContext(ctx, `
-		INSERT OR IGNORE INTO notification_event_marks (event_type, node_id, mark, created_at)
-		VALUES (?, ?, ?, ?)
-	`, eventType, nodeID, mark, time.Now().UTC().Unix())
+	claimed, err := claimStatusNotificationTx(ctx, tx, event)
 	if err != nil {
 		return false, err
-	}
-	claimed, err := result.RowsAffected()
-	if err != nil {
-		return false, err
-	}
-	if claimed > 0 && clearMark != "" {
-		if _, err := tx.ExecContext(ctx, `
-			DELETE FROM notification_event_marks
-			WHERE event_type = ? AND node_id = ? AND mark = ?
-		`, eventType, nodeID, clearMark); err != nil {
-			return false, err
-		}
 	}
 	if err := tx.Commit(); err != nil {
 		return false, err
 	}
 	tx = nil
-	return claimed > 0, nil
+	return claimed, nil
 }
 
 func activeStatusNotificationMark(status string) string {
