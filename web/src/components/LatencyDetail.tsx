@@ -5,6 +5,7 @@ import { summarizeLatencyTargets } from '../lib/latencyTargets'
 import { LatencyChart } from './LatencyChart'
 import { ServerFlag } from './ServerFlag'
 import { StateHistoryPanel } from './StateHistoryPanel'
+import { availableHistoryRanges } from '../lib/historyRange'
 
 interface LatencyDetailProps {
   node: HomeCardNode
@@ -16,17 +17,14 @@ interface LatencyDetailProps {
   error?: string
   stateLoading?: boolean
   stateError?: string
+  dataNotice?: string
+  stateNotice?: string
+  canUseExtendedRanges?: boolean
   onBack: () => void
   onRangeChange: (range: string) => void
   onStateRangeChange?: (range: string) => void
   topHeader?: ReactNode
 }
-
-const rangeOptions = [
-  { value: '1d', label: '1 天' },
-  { value: '7d', label: '7 天' },
-  { value: '30d', label: '30 天' },
-]
 
 export function LatencyDetail({
   node,
@@ -36,8 +34,11 @@ export function LatencyDetail({
   stateRange = '1h',
   loading = false,
   error,
+  dataNotice,
   stateLoading = false,
   stateError,
+  stateNotice,
+  canUseExtendedRanges = false,
   onBack,
   onRangeChange,
   onStateRangeChange = () => {},
@@ -49,6 +50,7 @@ export function LatencyDetail({
   const activeTargetNames = targetSummaries
     .filter((target) => activeTargetIds.includes(target.targetId))
     .map((target) => target.targetName)
+  const rangeOptions = availableHistoryRanges(canUseExtendedRanges)
   const rangeLabel = rangeOptions.find((option) => option.value === range)?.label ?? range
   const latestState = latestStatePoint(statePoints)
   const visualStatus = node.status === 'online' ? 'online' : 'offline'
@@ -130,6 +132,7 @@ export function LatencyDetail({
 
         {showLatencySkeleton && <LatencyLoadingSkeleton />}
         {error && <div className="detail-state is-error">网络延迟读取失败：{error}</div>}
+        {!error && dataNotice && <div className="detail-state is-warning">{dataNotice}</div>}
 
         {!showLatencySkeleton && !error && hasLatencyData && (
           <>
@@ -169,6 +172,8 @@ export function LatencyDetail({
         onRangeChange={onStateRangeChange}
         loading={stateLoading}
         error={stateError}
+        notice={stateNotice}
+        canUseExtendedRanges={canUseExtendedRanges}
       />
     </div>
   )

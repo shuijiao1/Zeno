@@ -1,12 +1,15 @@
 import { type MouseEvent, type ReactNode, useMemo, useState } from 'react'
 import type { StatePoint } from '../types'
 import { formatBps, formatPercent } from '../lib/format'
+import { availableHistoryRanges } from '../lib/historyRange'
 
 interface StateHistoryPanelProps {
   points: StatePoint[]
   range: string
   loading?: boolean
   error?: string
+  notice?: string
+  canUseExtendedRanges?: boolean
   onRangeChange?: (range: string) => void
 }
 
@@ -30,14 +33,8 @@ interface MetricConfig {
 
 const plotWidth = 640
 const plotHeight = 112
-const stateRangeOptions = [
-  { value: '1h', label: '实时' },
-  { value: '1d', label: '1 天' },
-  { value: '7d', label: '7 天' },
-  { value: '30d', label: '30 天' },
-]
-
-export function StateHistoryPanel({ points, range, loading = false, error, onRangeChange = () => {} }: StateHistoryPanelProps) {
+export function StateHistoryPanel({ points, range, loading = false, error, notice, canUseExtendedRanges = false, onRangeChange = () => {} }: StateHistoryPanelProps) {
+  const stateRangeOptions = availableHistoryRanges(canUseExtendedRanges)
   const chartPoints = useMemo(() => downsampleStatePoints(points, range), [points, range])
   const sampleCount = chartPoints.length
   const latestCpu = latest(chartPoints, (point) => point.cpuPercent)
@@ -131,6 +128,7 @@ export function StateHistoryPanel({ points, range, loading = false, error, onRan
 
       {loading && <div className="detail-state">正在读取系统资源…</div>}
       {error && <div className="detail-state is-error">系统资源读取失败：{error}</div>}
+      {!error && notice && <div className="detail-state is-warning">{notice}</div>}
       {!loading && !error && sampleCount === 0 && <div className="detail-state">暂无系统资源历史</div>}
 
       {!loading && !error && sampleCount > 0 && (

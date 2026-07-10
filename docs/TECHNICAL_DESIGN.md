@@ -192,7 +192,7 @@ Agent 使用 tokenless、可替换的轻量 HTTP provider 自动发现公网 IPv
 - `shadow_strength`
 - `background_overlay`
 - `theme_color`
-- `custom_code`
+- `custom_code`（CSS-only 外观扩展；前端不执行脚本/事件处理器）
 
 兼容字段：`background_url` 会映射到 desktop background。不要重新拆出 `avatar_url`。
 

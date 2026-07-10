@@ -535,7 +535,9 @@ function liveWebSocketURL(path: string): string {
   return url.toString()
 }
 
-function subscribeLiveWebSocket<T>(path: string, normalize: (payload: unknown) => T, onData: (data: T) => void, onError?: (error: Error) => void): (() => void) | null {
+export type LiveWebSocketStatus = 'connecting' | 'open' | 'reconnecting' | 'closed'
+
+function subscribeLiveWebSocket<T>(path: string, normalize: (payload: unknown) => T, onData: (data: T) => void, onError?: (error: Error) => void, onStatus?: (status: LiveWebSocketStatus) => void): (() => void) | null {
   if (typeof WebSocket === 'undefined') return null
   let closedByClient = false
   let socket: WebSocket | null = null
@@ -552,9 +554,11 @@ function subscribeLiveWebSocket<T>(path: string, normalize: (payload: unknown) =
 
   const connect = () => {
     if (closedByClient) return
+    onStatus?.(reconnectAttempts > 0 ? 'reconnecting' : 'connecting')
     socket = new WebSocket(liveWebSocketURL(path))
     socket.onopen = () => {
       reconnectAttempts = 0
+      onStatus?.('open')
     }
     socket.onmessage = (event) => {
       try {
@@ -570,10 +574,12 @@ function subscribeLiveWebSocket<T>(path: string, normalize: (payload: unknown) =
     socket.onclose = () => {
       if (closedByClient) return
       if (reconnectAttempts >= maxReconnectAttempts) {
+        onStatus?.('closed')
         onError?.(new Error('live websocket closed'))
         return
       }
       reconnectAttempts += 1
+      onStatus?.('reconnecting')
       clearReconnectTimer()
       reconnectTimer = setTimeout(connect, Math.min(1000 + reconnectAttempts * 250, 3000))
     }
@@ -588,40 +594,44 @@ function subscribeLiveWebSocket<T>(path: string, normalize: (payload: unknown) =
   }
 }
 
-export function subscribeSummary(onSummary: (summary: SummaryData) => void, onError?: (error: Error) => void): (() => void) | null {
-  return subscribeLiveWebSocket('/api/public/v1/summary/ws', (payload) => normalizeSummary(payload as ApiSummaryResponse), onSummary, onError)
+export function subscribeSummary(onSummary: (summary: SummaryData) => void, onError?: (error: Error) => void, onStatus?: (status: LiveWebSocketStatus) => void): (() => void) | null {
+  return subscribeLiveWebSocket('/api/public/v1/summary/ws', (payload) => normalizeSummary(payload as ApiSummaryResponse), onSummary, onError, onStatus)
 }
 
-export function subscribeNodeLatency(nodeId: string, range: string, onLatency: (latency: NodeLatencyData) => void, onError?: (error: Error) => void): (() => void) | null {
-  return subscribeLiveWebSocket(`/api/public/v1/nodes/${encodeURIComponent(nodeId)}/latency/ws?range=${encodeURIComponent(range)}`, (payload) => normalizeNodeLatency(payload as ApiLatencyResponse), onLatency, onError)
+export function subscribeNodeLatency(nodeId: string, range: string, onLatency: (latency: NodeLatencyData) => void, onError?: (error: Error) => void, onStatus?: (status: LiveWebSocketStatus) => void): (() => void) | null {
+  return subscribeLiveWebSocket(`/api/public/v1/nodes/${encodeURIComponent(nodeId)}/latency/ws?range=${encodeURIComponent(range)}`, (payload) => normalizeNodeLatency(payload as ApiLatencyResponse), onLatency, onError, onStatus)
 }
 
-export function subscribeNodeState(nodeId: string, range: string, onState: (state: NodeStateData) => void, onError?: (error: Error) => void): (() => void) | null {
-  return subscribeLiveWebSocket(`/api/public/v1/nodes/${encodeURIComponent(nodeId)}/state/ws?range=${encodeURIComponent(range)}`, (payload) => normalizeNodeState(payload as ApiStateResponse), onState, onError)
+export function subscribeNodeState(nodeId: string, range: string, onState: (state: NodeStateData) => void, onError?: (error: Error) => void, onStatus?: (status: LiveWebSocketStatus) => void): (() => void) | null {
+  return subscribeLiveWebSocket(`/api/public/v1/nodes/${encodeURIComponent(nodeId)}/state/ws?range=${encodeURIComponent(range)}`, (payload) => normalizeNodeState(payload as ApiStateResponse), onState, onError, onStatus)
 }
 
-export function subscribeServiceLatency(targetId: string, range: string, onLatency: (latency: ServiceLatencyData) => void, onError?: (error: Error) => void): (() => void) | null {
-  return subscribeLiveWebSocket(`/api/public/v1/services/${encodeURIComponent(targetId)}/latency/ws?range=${encodeURIComponent(range)}`, (payload) => normalizeServiceLatency(payload as ApiServiceLatencyResponse), onLatency, onError)
+export function subscribeServiceLatency(targetId: string, range: string, onLatency: (latency: ServiceLatencyData) => void, onError?: (error: Error) => void, onStatus?: (status: LiveWebSocketStatus) => void): (() => void) | null {
+  return subscribeLiveWebSocket(`/api/public/v1/services/${encodeURIComponent(targetId)}/latency/ws?range=${encodeURIComponent(range)}`, (payload) => normalizeServiceLatency(payload as ApiServiceLatencyResponse), onLatency, onError, onStatus)
 }
 
-export async function fetchNodeLatency(nodeId: string, range = '1h'): Promise<NodeLatencyData> {
-  const response = await fetch(`/api/public/v1/nodes/${encodeURIComponent(nodeId)}/latency?range=${encodeURIComponent(range)}`, { headers: { Accept: 'application/json' } })
+function optionalAdminHeaders(adminToken?: string): HeadersInit {
+  return adminToken ? { Accept: 'application/json', 'X-Admin-Token': adminToken } : { Accept: 'application/json' }
+}
+
+export async function fetchNodeLatency(nodeId: string, range = '1h', adminToken?: string): Promise<NodeLatencyData> {
+  const response = await fetch(`/api/public/v1/nodes/${encodeURIComponent(nodeId)}/latency?range=${encodeURIComponent(range)}`, { headers: optionalAdminHeaders(adminToken) })
   if (!response.ok) {
     throw new Error(`latency request failed: ${response.status}`)
   }
   return normalizeNodeLatency(await response.json() as ApiLatencyResponse)
 }
 
-export async function fetchServiceLatency(targetId: string, range = '1h'): Promise<ServiceLatencyData> {
-  const response = await fetch(`/api/public/v1/services/${encodeURIComponent(targetId)}/latency?range=${encodeURIComponent(range)}`, { headers: { Accept: 'application/json' } })
+export async function fetchServiceLatency(targetId: string, range = '1h', adminToken?: string): Promise<ServiceLatencyData> {
+  const response = await fetch(`/api/public/v1/services/${encodeURIComponent(targetId)}/latency?range=${encodeURIComponent(range)}`, { headers: optionalAdminHeaders(adminToken) })
   if (!response.ok) {
     throw new Error(`service latency request failed: ${response.status}`)
   }
   return normalizeServiceLatency(await response.json() as ApiServiceLatencyResponse)
 }
 
-export async function fetchNodeState(nodeId: string, range = '1h'): Promise<NodeStateData> {
-  const response = await fetch(`/api/public/v1/nodes/${encodeURIComponent(nodeId)}/state?range=${encodeURIComponent(range)}`, { headers: { Accept: 'application/json' } })
+export async function fetchNodeState(nodeId: string, range = '1h', adminToken?: string): Promise<NodeStateData> {
+  const response = await fetch(`/api/public/v1/nodes/${encodeURIComponent(nodeId)}/state?range=${encodeURIComponent(range)}`, { headers: optionalAdminHeaders(adminToken) })
   if (!response.ok) {
     throw new Error(`state request failed: ${response.status}`)
   }

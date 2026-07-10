@@ -365,6 +365,14 @@ svg { display: block; }
   font-weight: 500;
   letter-spacing: 0;
 }
+.home-summary__data-status {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: color-mix(in srgb, var(--muted) 88%, transparent);
+  font-size: 11px;
+}
 .home-summary__metric {
   --summary-accent: var(--blue);
   min-width: 0;
@@ -2224,6 +2232,7 @@ svg { display: block; }
   font-weight: 500;
 }
 .detail-state.is-error { color: var(--red); }
+.detail-state.is-warning { color: var(--orange); }
 
 .resource-history-panel {
   overflow: hidden;

@@ -51,7 +51,7 @@ const points: StatePoint[] = [
 describe('StateHistoryPanel', () => {
   it('renders real agent state history metrics and sparklines', () => {
     const html = renderToStaticMarkup(
-      <StateHistoryPanel points={points} range="1h" loading={false} />,
+      <StateHistoryPanel points={points} range="1h" loading={false} canUseExtendedRanges />,
     )
 
     expect(html).toContain('系统资源历史')

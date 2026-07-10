@@ -292,7 +292,7 @@ CREATE TABLE settings (
 - `shadow_strength`
 - `background_overlay`
 - `theme_color`
-- `custom_code`
+- `custom_code`：公开页面 CSS-only 外观扩展内容；前端只提取 `<style>` 或纯 CSS，不执行脚本/事件处理器。
 - `admin_username`：单管理员账号名，默认 `admin`。
 - `admin_password_hash`：单管理员密码 hash。首次部署未设置时可用 bootstrap admin token 登录；修改账号或密码后以后以这些设置为准。
 

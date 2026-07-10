@@ -432,7 +432,7 @@ describe('AdminDashboard', () => {
     expect(html).toContain('name="background-overlay"')
     expect(html).toContain('背景遮罩')
     expect(html).toContain('name="theme-color"')
-    expect(html).toContain('自定义代码')
+    expect(html).toContain('自定义 CSS')
     expect(html).toContain('name="custom-code"')
     expect(html).toContain('&lt;style&gt;.home-top-card { border-color: #2563eb; }&lt;/style&gt;')
     expect(html).toContain('&lt;script&gt;window.ZenoCustomLoaded = true;&lt;/script&gt;')
@@ -553,8 +553,8 @@ describe('AdminDashboard', () => {
     try {
       Object.defineProperty(globalThis, 'document', { value: documentStub, configurable: true })
       applyCustomCode(settings)
-      expect(documentStub.body.children.some((child) => child.textContent === 'window.ZenoCustomLoaded = true;')).toBe(true)
-      expect(documentStub.body.children.some((child) => child.childNodes.some((nested) => nested.textContent === '.home-top-card { border-color: #2563eb; }'))).toBe(true)
+      expect(documentStub.body.children.some((child) => child.textContent === 'window.ZenoCustomLoaded = true;')).toBe(false)
+      expect(documentStub.head.children.some((child) => child.nodeName === 'STYLE' && child.textContent === '.home-top-card { border-color: #2563eb; }')).toBe(true)
       applyCustomCode({ ...settings, customCode: '' })
       expect(documentStub.querySelectorAll('[data-zeno-custom-code]')).toHaveLength(0)
     } finally {

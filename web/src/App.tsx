@@ -1,25 +1,30 @@
 import { type CSSProperties, type DragEvent, type FormEvent, type ReactNode, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import copy from 'copy-to-clipboard'
-import { createAdminNode, createAdminNotificationChannel, createAdminProbeTarget, deleteAdminNode, deleteAdminNotificationChannel, deleteAdminProbeTarget, fetchAdminAccount, fetchAdminAlertRules, fetchAdminNodes, fetchAdminNotificationChannels, fetchAdminProbeTargets, fetchAdminSettings, fetchNodeLatency, fetchNodeState, fetchPublicSettings, fetchSummary, subscribeNodeLatency, subscribeNodeState, subscribeServiceLatency, subscribeSummary, loginAdmin, logoutAdmin, requestAdminNodeInstallCommand, testAdminNotificationChannel, updateAdminAccount, updateAdminAlertRule, updateAdminNode, updateAdminNotificationChannel, updateAdminNotificationType, updateAdminProbeTarget, updateAdminSettings, type AdminAccountData, type AdminAlertRuleUpdateInput, type AdminNodeCreateInput, type AdminNodeUpdateInput, type AdminNotificationChannelCreateInput, type AdminNotificationChannelUpdateInput, type AdminProbeTargetInput, type AdminProbeTargetUpdateInput, type AdminSettingsUpdateInput, type NodeLatencyData, type NodeStateData, type ServiceLatencyData, type SummaryData } from './api/client'
+import { createAdminNode, createAdminNotificationChannel, createAdminProbeTarget, deleteAdminNode, deleteAdminNotificationChannel, deleteAdminProbeTarget, fetchAdminAccount, fetchAdminAlertRules, fetchAdminNodes, fetchAdminNotificationChannels, fetchAdminProbeTargets, fetchAdminSettings, fetchNodeLatency, fetchNodeState, fetchPublicSettings, fetchServiceLatency, fetchSummary, subscribeNodeLatency, subscribeNodeState, subscribeServiceLatency, subscribeSummary, loginAdmin, logoutAdmin, requestAdminNodeInstallCommand, testAdminNotificationChannel, updateAdminAccount, updateAdminAlertRule, updateAdminNode, updateAdminNotificationChannel, updateAdminNotificationType, updateAdminProbeTarget, updateAdminSettings, type AdminAccountData, type AdminAlertRuleUpdateInput, type AdminNodeCreateInput, type AdminNodeUpdateInput, type AdminNotificationChannelCreateInput, type AdminNotificationChannelUpdateInput, type AdminProbeTargetInput, type AdminProbeTargetUpdateInput, type AdminSettingsUpdateInput, type LiveWebSocketStatus, type NodeLatencyData, type NodeStateData, type ServiceLatencyData, type SummaryData } from './api/client'
 import { LatencyDetail } from './components/LatencyDetail'
 import { LatencyChart } from './components/LatencyChart'
 import { ServerCard } from './components/ServerCard'
 import { ServerFlag } from './components/ServerFlag'
 import { startLiveRefresh } from './lib/liveRefresh'
+import { shouldStartHttpFallback } from './lib/liveFallback'
 import { nodePath, parseDashboardRoute, type DashboardRoute } from './lib/route'
+import { applyCustomCode } from './lib/customCode'
+import { availableHistoryRanges, coerceHistoryRange, isHTTPUnauthorizedError, rangeRequiresAdmin } from './lib/historyRange'
+import { loadCachedDetailData, nodeLatencyCachePrefix, nodeStateCachePrefix, rememberDetailData, serviceLatencyCachePrefix } from './lib/detailCache'
+import { formatCacheTimestamp, loadStoredSummary, rememberSummary } from './lib/summaryCache'
 import type { AdminAlertRule, AdminNode, AdminNodeInstallCommand, AdminNotificationChannel, AdminProbeTarget, AdminSettings, AdminTheme, AppearancePreset, HomeCardNode, LatencyPoint, ProbeType, ServiceTarget, StatePoint } from './types'
+
+export { applyCustomCode, extractSafeCustomCSS } from './lib/customCode'
+export { availableHistoryRanges, coerceHistoryRange, rangeRequiresAdmin } from './lib/historyRange'
+export { loadStoredSummary, rememberSummary } from './lib/summaryCache'
+export { shouldStartHttpFallback } from './lib/liveFallback'
 
 type LoadState =
   | { kind: 'loading' }
-  | { kind: 'ready'; data: SummaryData }
+  | { kind: 'ready'; data: SummaryData; storedAt?: number; stale?: boolean }
   | { kind: 'error'; message: string }
 
-const summaryCacheKey = 'zeno_summary_cache_v1'
-const nodeLatencyCachePrefix = 'zeno_node_latency_cache_v1'
-const nodeStateCachePrefix = 'zeno_node_state_cache_v1'
-const detailCacheMaxAgeMs = 5 * 60 * 1000
-const detailCacheMaxBytes = 700_000
 const adminTokenStorageKey = 'zeno_admin_token'
 const adminTokenStoredAtKey = 'zeno_admin_token_saved_at'
 export const adminTokenMaxAgeMs = 24 * 60 * 60 * 1000
@@ -65,52 +70,6 @@ export function isAdminUnauthorizedError(error: unknown): boolean {
   return error instanceof Error && /^admin .+: 401$/.test(error.message)
 }
 
-function loadStoredSummary(): SummaryData | null {
-  if (typeof window === 'undefined') return null
-  try {
-    const raw = window.localStorage.getItem(summaryCacheKey)
-    if (!raw) return null
-    const parsed = JSON.parse(raw) as Partial<SummaryData>
-    if (!Array.isArray(parsed.nodes) || !Array.isArray(parsed.services)) return null
-    return { nodes: parsed.nodes as SummaryData['nodes'], services: parsed.services as SummaryData['services'], latencyPoints: Array.isArray(parsed.latencyPoints) ? parsed.latencyPoints as SummaryData['latencyPoints'] : [] }
-  } catch {
-    return null
-  }
-}
-
-function rememberSummary(summary: SummaryData) {
-  if (typeof window === 'undefined') return
-  try {
-    window.localStorage.setItem(summaryCacheKey, JSON.stringify(summary))
-  } catch {}
-}
-
-function detailCacheKey(prefix: string, nodeId: string, range: string): string {
-  return `${prefix}:${nodeId}:${range}`
-}
-
-function loadCachedDetailData<T>(prefix: string, nodeId: string, range: string, validate: (value: unknown) => T | null): T | null {
-  if (typeof window === 'undefined') return null
-  try {
-    const raw = window.sessionStorage.getItem(detailCacheKey(prefix, nodeId, range))
-    if (!raw) return null
-    const parsed = JSON.parse(raw) as { storedAt?: number; data?: unknown }
-    if (!parsed.storedAt || Date.now() - parsed.storedAt > detailCacheMaxAgeMs) return null
-    return validate(parsed.data)
-  } catch {
-    return null
-  }
-}
-
-function rememberDetailData(prefix: string, nodeId: string, range: string, data: unknown) {
-  if (typeof window === 'undefined') return
-  try {
-    const payload = JSON.stringify({ storedAt: Date.now(), data })
-    if (payload.length > detailCacheMaxBytes) return
-    window.sessionStorage.setItem(detailCacheKey(prefix, nodeId, range), payload)
-  } catch {}
-}
-
 function validateNodeLatencyData(value: unknown): NodeLatencyData | null {
   const data = value as Partial<NodeLatencyData> | null
   if (!data || typeof data.nodeId !== 'string' || typeof data.range !== 'string' || !Array.isArray(data.points)) return null
@@ -121,6 +80,12 @@ function validateNodeStateData(value: unknown): NodeStateData | null {
   const data = value as Partial<NodeStateData> | null
   if (!data || typeof data.nodeId !== 'string' || typeof data.range !== 'string' || !Array.isArray(data.points)) return null
   return data as NodeStateData
+}
+
+function validateServiceLatencyData(value: unknown): ServiceLatencyData | null {
+  const data = value as Partial<ServiceLatencyData> | null
+  if (!data || !data.target || typeof data.range !== 'string' || !Array.isArray(data.points)) return null
+  return data as ServiceLatencyData
 }
 
 function seedNodeLatencyFromSummary(summary: SummaryData | null, nodeId: string, range: string): NodeLatencyData | null {
@@ -174,19 +139,19 @@ function seedNodeStateFromSummary(summary: SummaryData | null, nodeId: string, r
 type LatencyLoadState =
   | { kind: 'idle' }
   | { kind: 'loading' }
-  | { kind: 'ready'; data: NodeLatencyData }
+  | { kind: 'ready'; data: NodeLatencyData; freshness?: DataFreshness; warning?: string }
   | { kind: 'error'; message: string }
 
 type StateHistoryLoadState =
   | { kind: 'idle' }
   | { kind: 'loading' }
-  | { kind: 'ready'; data: NodeStateData }
+  | { kind: 'ready'; data: NodeStateData; freshness?: DataFreshness; warning?: string }
   | { kind: 'error'; message: string }
 
 type ServiceLatencyLoadState =
   | { kind: 'idle' }
   | { kind: 'loading' }
-  | { kind: 'ready'; data: ServiceLatencyData }
+  | { kind: 'ready'; data: ServiceLatencyData; freshness?: DataFreshness; warning?: string }
   | { kind: 'error'; message: string }
 
 type AdminLoadState =
@@ -201,6 +166,7 @@ type AdminAuthState =
   | { kind: 'error'; message: string }
 
 type AdminSection = 'nodes' | 'targets' | 'notifications' | 'account' | 'settings'
+type MaybePromise<T = void> = T | Promise<T>
 
 function blurActiveElement() {
   if (typeof document === 'undefined') return
@@ -213,6 +179,16 @@ type HomeRealtimeSnapshot = {
   upSpeed: number
   downSpeed: number
 }
+
+type DataFreshness = {
+  stale: boolean
+  storedAt?: number
+  source?: 'cache' | 'summary' | 'http' | 'ws'
+}
+
+type LiveStatus = 'connecting' | 'live' | 'reconnecting' | 'fallback' | 'stale' | 'error'
+
+const detailHttpFallbackDelayMs = 1800
 
 const HOME_REALTIME_SNAPSHOT_INTERVAL_MS = 2000
 const HOME_REALTIME_SNAPSHOT_FRAME_TOLERANCE_MS = 150
@@ -236,6 +212,22 @@ export function shouldRefreshHomeRealtimeSnapshot(lastUpdatedAt: number | null, 
 
 function monotonicNowMs(): number {
   return typeof performance !== 'undefined' ? performance.now() : Date.now()
+}
+
+function freshnessNotice(freshness: DataFreshness | undefined, explicitWarning?: string): string | undefined {
+  if (explicitWarning) return explicitWarning
+  if (!freshness?.stale) return undefined
+  return `数据已过期 · 最后更新 ${formatCacheTimestamp(freshness.storedAt ?? 0)}`
+}
+
+function liveStatusLabel(status: LiveStatus, stale?: boolean, storedAt?: number): string {
+  if (stale) return `数据已过期 · 最后更新 ${formatCacheTimestamp(storedAt ?? 0)}`
+  if (status === 'live') return 'WS 实时'
+  if (status === 'reconnecting') return 'WS 重连中'
+  if (status === 'fallback') return 'HTTP 更新'
+  if (status === 'error') return 'HTTP 失败'
+  if (status === 'stale') return `数据已过期 · 最后更新 ${formatCacheTimestamp(storedAt ?? 0)}`
+  return 'WS 连接中'
 }
 
 function compactBytes(value: number): string {
@@ -324,9 +316,7 @@ const appearancePresetOptions: Array<{ value: AppearancePreset; label: string }>
 ]
 
 const fallbackLogoUrl = 'https://cdn.jsdelivr.net/gh/shuijiao1/Fly@main/ID-128.png'
-const customCodeNodeAttribute = 'data-zeno-custom-code'
 const maxSettingsCustomCodeLength = 60000
-let appliedCustomCode = ''
 
 function backgroundImageValue(url: string): string {
   return `url("${url.replaceAll('"', '%22')}")`
@@ -461,45 +451,10 @@ export function applyDocumentBranding(settings: AdminSettings) {
   icon.href = branding.iconHref
 }
 
-export function applyCustomCode(settings: AdminSettings) {
-  if (typeof document === 'undefined') return
-  const customCode = (settings.customCode ?? '').trim()
-  const currentNodes = document.querySelectorAll(`[${customCodeNodeAttribute}]`)
-  if (customCode === '') {
-    currentNodes.forEach((node) => node.remove())
-    appliedCustomCode = ''
-    return
-  }
-  if (customCode === appliedCustomCode && currentNodes.length > 0) return
-  currentNodes.forEach((node) => node.remove())
-
-  const template = document.createElement('template')
-  template.innerHTML = customCode
-  const scriptTarget = document.body || document.head
-  const fragmentTarget = document.createElement('div')
-  fragmentTarget.hidden = true
-  fragmentTarget.setAttribute(customCodeNodeAttribute, 'fragment')
-
-  Array.from(template.content.childNodes).forEach((node) => {
-    if (node.nodeName.toLowerCase() === 'script') {
-      const sourceScript = node as HTMLScriptElement
-      const scriptElement = document.createElement('script')
-      Array.from(sourceScript.attributes).forEach((attribute) => scriptElement.setAttribute(attribute.name, attribute.value))
-      scriptElement.textContent = sourceScript.textContent
-      scriptElement.setAttribute(customCodeNodeAttribute, 'script')
-      scriptTarget.appendChild(scriptElement)
-      return
-    }
-    fragmentTarget.appendChild(node)
-  })
-  if (fragmentTarget.childNodes.length > 0) scriptTarget.appendChild(fragmentTarget)
-  appliedCustomCode = customCode
-}
-
 export function App() {
   const initialSummary = loadStoredSummary()
   const [state, setState] = useState<LoadState>(() => {
-    return initialSummary ? { kind: 'ready', data: initialSummary } : { kind: 'loading' }
+    return initialSummary ? { kind: 'ready', data: initialSummary.data, storedAt: initialSummary.storedAt, stale: initialSummary.stale } : { kind: 'loading' }
   })
   const [route, setRoute] = useState<DashboardRoute>(() => parseDashboardRoute(window.location.pathname))
   const [nodeLatencyRange, setNodeLatencyRange] = useState('1d')
@@ -510,10 +465,12 @@ export function App() {
   const [serviceLatencyState, setServiceLatencyState] = useState<ServiceLatencyLoadState>({ kind: 'idle' })
   const nodeLatencyCacheRef = useRef(new Map<string, NodeLatencyData>())
   const nodeStateCacheRef = useRef(new Map<string, NodeStateData>())
-  const summaryRef = useRef<SummaryData | null>(initialSummary)
+  const serviceLatencyCacheRef = useRef(new Map<string, ServiceLatencyData>())
+  const summaryRef = useRef<SummaryData | null>(initialSummary?.data ?? null)
   const homeRealtimeMountedAtRef = useRef(monotonicNowMs())
   const homeRealtimeLastUpdatedAtRef = useRef<number | null>(null)
   const [homeRealtimeSnapshot, setHomeRealtimeSnapshot] = useState<HomeRealtimeSnapshot | null>(() => state.kind === 'ready' ? homeRealtimeSnapshotForNodes(state.data.nodes) : null)
+  const [summaryLiveStatus, setSummaryLiveStatus] = useState<LiveStatus>(() => initialSummary ? (initialSummary.stale ? 'stale' : 'fallback') : 'connecting')
   const [adminToken, setAdminToken] = useState(loadStoredAdminToken)
   const [adminAuthState, setAdminAuthState] = useState<AdminAuthState>({ kind: 'idle' })
   const [adminState, setAdminState] = useState<AdminLoadState>({ kind: 'idle' })
@@ -544,41 +501,64 @@ export function App() {
 
   useEffect(() => {
     let cancelled = false
+    let receivedLiveSummary = false
+    let fallbackStarted = false
+    let fallbackTimer: ReturnType<typeof setTimeout> | null = null
     const refreshHomeRealtimeSnapshot = (data: SummaryData) => {
       const now = monotonicNowMs()
       if (!shouldRefreshHomeRealtimeSnapshot(homeRealtimeLastUpdatedAtRef.current, now, homeRealtimeMountedAtRef.current)) return
       homeRealtimeLastUpdatedAtRef.current = now
       setHomeRealtimeSnapshot(homeRealtimeSnapshotForNodes(data.nodes))
     }
+    const applySummaryData = (data: SummaryData, source: 'http' | 'ws') => {
+      if (source === 'http' && receivedLiveSummary) return
+      if (source === 'ws') receivedLiveSummary = true
+      const storedAt = Date.now()
+      rememberSummary(data, storedAt)
+      summaryRef.current = data
+      if (!cancelled) {
+        refreshHomeRealtimeSnapshot(data)
+        setSummaryLiveStatus(source === 'ws' ? 'live' : 'fallback')
+        setState({ kind: 'ready', data, storedAt, stale: false })
+      }
+    }
+    const startSummaryFallback = (reason?: string) => {
+      if (fallbackStarted) return
+      fallbackStarted = true
+      if (!cancelled) setSummaryLiveStatus('fallback')
+      fetchSummary()
+        .then((data) => applySummaryData(data, 'http'))
+        .catch((error: unknown) => {
+          if (cancelled) return
+          const message = error instanceof Error ? error.message : (reason ?? 'summary request failed')
+          setSummaryLiveStatus('error')
+          setState((current) => (current.kind === 'ready' ? { ...current, stale: true } : { kind: 'error', message }))
+        })
+    }
+    const updateSummarySocketStatus = (status: LiveWebSocketStatus) => {
+      if (cancelled) return
+      if (status === 'open') setSummaryLiveStatus('live')
+      else if (status === 'reconnecting') setSummaryLiveStatus('reconnecting')
+      else if (status === 'connecting') setSummaryLiveStatus('connecting')
+      else if (status === 'closed') setSummaryLiveStatus('fallback')
+    }
     const stopSummaryStream = subscribeSummary(
-      (data) => {
-        rememberSummary(data)
-        summaryRef.current = data
-        if (!cancelled) {
-          refreshHomeRealtimeSnapshot(data)
-          setState({ kind: 'ready', data })
-        }
-      },
+      (data) => applySummaryData(data, 'ws'),
       (error) => {
-        if (!cancelled) setState((current) => (current.kind === 'ready' ? current : { kind: 'error', message: error.message }))
+        if (!cancelled) startSummaryFallback(error.message)
       },
+      updateSummarySocketStatus,
     )
     if (!stopSummaryStream) {
-      fetchSummary()
-        .then((data) => {
-          rememberSummary(data)
-          summaryRef.current = data
-          if (!cancelled) {
-            refreshHomeRealtimeSnapshot(data)
-            setState({ kind: 'ready', data })
-          }
-        })
-        .catch((error: unknown) => {
-          if (!cancelled) setState((current) => (current.kind === 'ready' ? current : { kind: 'error', message: error instanceof Error ? error.message : 'summary request failed' }))
-        })
+      startSummaryFallback('live websocket unavailable')
+    } else {
+      fallbackTimer = setTimeout(() => {
+        if (shouldStartHttpFallback(fallbackStarted, receivedLiveSummary)) startSummaryFallback('live websocket timeout')
+      }, detailHttpFallbackDelayMs)
     }
     return () => {
       cancelled = true
+      if (fallbackTimer) clearTimeout(fallbackTimer)
       stopSummaryStream?.()
     }
   }, [])
@@ -599,6 +579,16 @@ export function App() {
   }, [route.kind, route.kind === 'node' ? route.nodeId : route.kind === 'service' ? route.targetId : ''])
 
   useEffect(() => {
+    const hasToken = adminToken !== ''
+    const nextNodeRange = coerceHistoryRange(nodeLatencyRange, hasToken, '1d')
+    const nextStateRange = coerceHistoryRange(stateRange, hasToken, '1h')
+    const nextServiceRange = coerceHistoryRange(serviceLatencyRange, hasToken, '1h')
+    if (nextNodeRange !== nodeLatencyRange) setNodeLatencyRange(nextNodeRange)
+    if (nextStateRange !== stateRange) setStateRange(nextStateRange)
+    if (nextServiceRange !== serviceLatencyRange) setServiceLatencyRange(nextServiceRange)
+  }, [adminToken, nodeLatencyRange, stateRange, serviceLatencyRange])
+
+  useEffect(() => {
     if (route.kind !== 'node') {
       setLatencyState({ kind: 'idle' })
       return
@@ -606,44 +596,69 @@ export function App() {
 
     let cancelled = false
     const cacheKey = `${route.nodeId}:${nodeLatencyRange}`
-    const cached = nodeLatencyCacheRef.current.get(cacheKey)
-      ?? loadCachedDetailData(nodeLatencyCachePrefix, route.nodeId, nodeLatencyRange, validateNodeLatencyData)
+    const memoryCached = nodeLatencyCacheRef.current.get(cacheKey)
+    const sessionCached = memoryCached ? null : loadCachedDetailData(nodeLatencyCachePrefix, route.nodeId, nodeLatencyRange, validateNodeLatencyData)
+    const cached = memoryCached ?? sessionCached?.data ?? null
     const seeded = cached ?? seedNodeLatencyFromSummary(summaryRef.current, route.nodeId, nodeLatencyRange)
     if (cached) nodeLatencyCacheRef.current.set(cacheKey, cached)
     if (seeded) {
-      setLatencyState({ kind: 'ready', data: seeded })
+      setLatencyState({
+        kind: 'ready',
+        data: seeded,
+        freshness: sessionCached ? { stale: sessionCached.stale, storedAt: sessionCached.storedAt, source: 'cache' } : cached ? { stale: false, source: 'cache' } : { stale: true, source: 'summary' },
+      })
     } else {
       setLatencyState((current) => (current.kind === 'ready' && current.data.nodeId === route.nodeId ? current : { kind: 'loading' }))
     }
     let receivedLiveLatency = false
+    let fallbackStarted = false
+    let fallbackTimer: ReturnType<typeof setTimeout> | null = null
     const applyLatencyData = (data: NodeLatencyData, source: 'http' | 'ws') => {
       if (source === 'http' && receivedLiveLatency) return
       if (source === 'ws') receivedLiveLatency = true
       nodeLatencyCacheRef.current.set(cacheKey, data)
       rememberDetailData(nodeLatencyCachePrefix, route.nodeId, nodeLatencyRange, data)
-      if (!cancelled) setLatencyState({ kind: 'ready', data })
+      if (!cancelled) setLatencyState({ kind: 'ready', data, freshness: { stale: false, storedAt: Date.now(), source } })
     }
-    const stopLatencyStream = subscribeNodeLatency(
+    const startLatencyFallback = (reason?: string) => {
+      if (fallbackStarted) return
+      fallbackStarted = true
+      fetchNodeLatency(route.nodeId, nodeLatencyRange, rangeRequiresAdmin(nodeLatencyRange) ? adminToken : undefined)
+        .then((data) => applyLatencyData(data, 'http'))
+        .catch((error: unknown) => {
+          if (cancelled) return
+          const unauthorized = isHTTPUnauthorizedError(error)
+          if (unauthorized) {
+            clearStoredAdminToken()
+            setAdminToken('')
+            setAdminAuthState({ kind: 'error', message: '登录已过期，请重新登录。' })
+          }
+          const message = unauthorized ? '登录已过期，请重新登录。' : error instanceof Error ? error.message : (reason ?? 'latency request failed')
+          setLatencyState((current) => (current.kind === 'ready'
+            ? { ...current, freshness: { ...current.freshness, stale: true }, warning: unauthorized ? `${message} · 数据已过期 · 最后更新 ${formatCacheTimestamp(current.freshness?.storedAt ?? 0)}` : `数据已过期 · 最后更新 ${formatCacheTimestamp(current.freshness?.storedAt ?? 0)}` }
+            : { kind: 'error', message }))
+        })
+    }
+    const useLiveStream = !rangeRequiresAdmin(nodeLatencyRange)
+    const stopLatencyStream = useLiveStream ? subscribeNodeLatency(
       route.nodeId,
       nodeLatencyRange,
       (data) => applyLatencyData(data, 'ws'),
-      (error) => {
-        if (!cancelled) setLatencyState((current) => (current.kind === 'ready' ? current : { kind: 'error', message: error.message }))
-      },
-    )
-    fetchNodeLatency(route.nodeId, nodeLatencyRange)
-      .then((data) => applyLatencyData(data, 'http'))
-      .catch((error: unknown) => {
-        if (!cancelled) setLatencyState((current) => (current.kind === 'ready' ? current : { kind: 'error', message: error instanceof Error ? error.message : 'latency request failed' }))
-      })
-    if (!stopLatencyStream && !seeded) {
-      setLatencyState({ kind: 'error', message: 'live websocket unavailable' })
+      (error) => startLatencyFallback(error.message),
+    ) : null
+    if (!stopLatencyStream) {
+      startLatencyFallback(useLiveStream ? 'live websocket unavailable' : undefined)
+    } else {
+      fallbackTimer = setTimeout(() => {
+        if (shouldStartHttpFallback(fallbackStarted, receivedLiveLatency)) startLatencyFallback('live websocket timeout')
+      }, detailHttpFallbackDelayMs)
     }
     return () => {
       cancelled = true
+      if (fallbackTimer) clearTimeout(fallbackTimer)
       stopLatencyStream?.()
     }
-  }, [route, nodeLatencyRange])
+  }, [route, nodeLatencyRange, adminToken])
 
   useEffect(() => {
     if (route.kind !== 'node') {
@@ -653,54 +668,79 @@ export function App() {
 
     let cancelled = false
     const cacheKey = `${route.nodeId}:${stateRange}`
-    const cached = nodeStateCacheRef.current.get(cacheKey)
-      ?? loadCachedDetailData(nodeStateCachePrefix, route.nodeId, stateRange, validateNodeStateData)
+    const memoryCached = nodeStateCacheRef.current.get(cacheKey)
+    const sessionCached = memoryCached ? null : loadCachedDetailData(nodeStateCachePrefix, route.nodeId, stateRange, validateNodeStateData)
+    const cached = memoryCached ?? sessionCached?.data ?? null
     const seeded = cached ?? seedNodeStateFromSummary(summaryRef.current, route.nodeId, stateRange)
     if (cached) nodeStateCacheRef.current.set(cacheKey, cached)
     if (seeded) {
-      setStateHistoryState({ kind: 'ready', data: seeded })
+      setStateHistoryState({
+        kind: 'ready',
+        data: seeded,
+        freshness: sessionCached ? { stale: sessionCached.stale, storedAt: sessionCached.storedAt, source: 'cache' } : cached ? { stale: false, source: 'cache' } : { stale: true, source: 'summary' },
+      })
     } else {
       setStateHistoryState({ kind: 'loading' })
     }
     let receivedLiveState = false
+    let fallbackStarted = false
+    let fallbackTimer: ReturnType<typeof setTimeout> | null = null
     const applyStateData = (data: NodeStateData, source: 'http' | 'ws') => {
       if (source === 'http' && receivedLiveState) return
       if (source === 'ws') receivedLiveState = true
       nodeStateCacheRef.current.set(cacheKey, data)
       rememberDetailData(nodeStateCachePrefix, route.nodeId, stateRange, data)
-      if (!cancelled) setStateHistoryState({ kind: 'ready', data })
+      if (!cancelled) setStateHistoryState({ kind: 'ready', data, freshness: { stale: false, storedAt: Date.now(), source } })
     }
-    const stopStateStream = subscribeNodeState(
+    const startStateFallback = (reason?: string) => {
+      if (fallbackStarted) return
+      fallbackStarted = true
+      fetchNodeState(route.nodeId, stateRange, rangeRequiresAdmin(stateRange) ? adminToken : undefined)
+        .then((data) => applyStateData(data, 'http'))
+        .catch((error: unknown) => {
+          if (cancelled) return
+          const unauthorized = isHTTPUnauthorizedError(error)
+          if (unauthorized) {
+            clearStoredAdminToken()
+            setAdminToken('')
+            setAdminAuthState({ kind: 'error', message: '登录已过期，请重新登录。' })
+          }
+          const message = unauthorized ? '登录已过期，请重新登录。' : error instanceof Error ? error.message : (reason ?? 'state request failed')
+          setStateHistoryState((current) => (current.kind === 'ready'
+            ? { ...current, freshness: { ...current.freshness, stale: true }, warning: unauthorized ? `${message} · 数据已过期 · 最后更新 ${formatCacheTimestamp(current.freshness?.storedAt ?? 0)}` : `数据已过期 · 最后更新 ${formatCacheTimestamp(current.freshness?.storedAt ?? 0)}` }
+            : { kind: 'error', message }))
+        })
+    }
+    const useLiveStream = !rangeRequiresAdmin(stateRange)
+    const stopStateStream = useLiveStream ? subscribeNodeState(
       route.nodeId,
       stateRange,
       (data) => applyStateData(data, 'ws'),
-      (error) => {
-        if (!cancelled) setStateHistoryState((current) => (current.kind === 'ready' ? current : { kind: 'error', message: error.message }))
-      },
-    )
-    fetchNodeState(route.nodeId, stateRange)
-      .then((data) => applyStateData(data, 'http'))
-      .catch((error: unknown) => {
-        if (!cancelled) setStateHistoryState((current) => (current.kind === 'ready' ? current : { kind: 'error', message: error instanceof Error ? error.message : 'state request failed' }))
-      })
-    if (!stopStateStream && !seeded) {
-      setStateHistoryState({ kind: 'error', message: 'live websocket unavailable' })
+      (error) => startStateFallback(error.message),
+    ) : null
+    if (!stopStateStream) {
+      startStateFallback(useLiveStream ? 'live websocket unavailable' : undefined)
+    } else {
+      fallbackTimer = setTimeout(() => {
+        if (shouldStartHttpFallback(fallbackStarted, receivedLiveState)) startStateFallback('live websocket timeout')
+      }, detailHttpFallbackDelayMs)
     }
     return () => {
       cancelled = true
+      if (fallbackTimer) clearTimeout(fallbackTimer)
       stopStateStream?.()
     }
-  }, [route, stateRange])
+  }, [route, stateRange, adminToken])
 
   useEffect(() => {
     if (state.kind !== 'ready' || route.kind !== 'node') return
     const latencySeed = seedNodeLatencyFromSummary(state.data, route.nodeId, nodeLatencyRange)
     if (latencySeed) {
-      setLatencyState((current) => (current.kind === 'loading' || current.kind === 'idle' ? { kind: 'ready', data: latencySeed } : current))
+      setLatencyState((current) => (current.kind === 'loading' || current.kind === 'idle' ? { kind: 'ready', data: latencySeed, freshness: { stale: true, source: 'summary' } } : current))
     }
     const stateSeed = seedNodeStateFromSummary(state.data, route.nodeId, stateRange)
     if (stateSeed) {
-      setStateHistoryState((current) => (current.kind === 'loading' || current.kind === 'idle' ? { kind: 'ready', data: stateSeed } : current))
+      setStateHistoryState((current) => (current.kind === 'loading' || current.kind === 'idle' ? { kind: 'ready', data: stateSeed, freshness: { stale: true, source: 'summary' } } : current))
     }
   }, [state, route, nodeLatencyRange, stateRange])
 
@@ -711,25 +751,69 @@ export function App() {
     }
 
     let cancelled = false
-    setServiceLatencyState({ kind: 'loading' })
-    const stopServiceLatencyStream = subscribeServiceLatency(
+    const cacheKey = `${route.targetId}:${serviceLatencyRange}`
+    const memoryCached = serviceLatencyCacheRef.current.get(cacheKey)
+    const sessionCached = memoryCached ? null : loadCachedDetailData(serviceLatencyCachePrefix, route.targetId, serviceLatencyRange, validateServiceLatencyData)
+    const cached = memoryCached ?? sessionCached?.data ?? null
+    if (cached) {
+      serviceLatencyCacheRef.current.set(cacheKey, cached)
+      setServiceLatencyState({
+        kind: 'ready',
+        data: cached,
+        freshness: sessionCached ? { stale: sessionCached.stale, storedAt: sessionCached.storedAt, source: 'cache' } : { stale: false, source: 'cache' },
+      })
+    } else {
+      setServiceLatencyState({ kind: 'loading' })
+    }
+    let receivedLiveLatency = false
+    let fallbackStarted = false
+    let fallbackTimer: ReturnType<typeof setTimeout> | null = null
+    const applyServiceLatencyData = (data: ServiceLatencyData, source: 'http' | 'ws') => {
+      if (source === 'http' && receivedLiveLatency) return
+      if (source === 'ws') receivedLiveLatency = true
+      serviceLatencyCacheRef.current.set(cacheKey, data)
+      rememberDetailData(serviceLatencyCachePrefix, route.targetId, serviceLatencyRange, data)
+      if (!cancelled) setServiceLatencyState({ kind: 'ready', data, freshness: { stale: false, storedAt: Date.now(), source } })
+    }
+    const startServiceLatencyFallback = (reason?: string) => {
+      if (fallbackStarted) return
+      fallbackStarted = true
+      fetchServiceLatency(route.targetId, serviceLatencyRange, rangeRequiresAdmin(serviceLatencyRange) ? adminToken : undefined)
+        .then((data) => applyServiceLatencyData(data, 'http'))
+        .catch((error: unknown) => {
+          if (cancelled) return
+          const unauthorized = isHTTPUnauthorizedError(error)
+          if (unauthorized) {
+            clearStoredAdminToken()
+            setAdminToken('')
+            setAdminAuthState({ kind: 'error', message: '登录已过期，请重新登录。' })
+          }
+          const message = unauthorized ? '登录已过期，请重新登录。' : error instanceof Error ? error.message : (reason ?? 'service latency request failed')
+          setServiceLatencyState((current) => (current.kind === 'ready'
+            ? { ...current, freshness: { ...current.freshness, stale: true }, warning: unauthorized ? `${message} · 数据已过期 · 最后更新 ${formatCacheTimestamp(current.freshness?.storedAt ?? 0)}` : `数据已过期 · 最后更新 ${formatCacheTimestamp(current.freshness?.storedAt ?? 0)}` }
+            : { kind: 'error', message }))
+        })
+    }
+    const useLiveStream = !rangeRequiresAdmin(serviceLatencyRange)
+    const stopServiceLatencyStream = useLiveStream ? subscribeServiceLatency(
       route.targetId,
       serviceLatencyRange,
-      (data) => {
-        if (!cancelled) setServiceLatencyState({ kind: 'ready', data })
-      },
-      (error) => {
-        if (!cancelled) setServiceLatencyState((current) => (current.kind === 'ready' ? current : { kind: 'error', message: error.message }))
-      },
-    )
+      (data) => applyServiceLatencyData(data, 'ws'),
+      (error) => startServiceLatencyFallback(error.message),
+    ) : null
     if (!stopServiceLatencyStream) {
-      setServiceLatencyState({ kind: 'error', message: 'live websocket unavailable' })
+      startServiceLatencyFallback(useLiveStream ? 'live websocket unavailable' : undefined)
+    } else {
+      fallbackTimer = setTimeout(() => {
+        if (shouldStartHttpFallback(fallbackStarted, receivedLiveLatency)) startServiceLatencyFallback('live websocket timeout')
+      }, detailHttpFallbackDelayMs)
     }
     return () => {
       cancelled = true
+      if (fallbackTimer) clearTimeout(fallbackTimer)
       stopServiceLatencyStream?.()
     }
-  }, [route, serviceLatencyRange])
+  }, [route, serviceLatencyRange, adminToken])
 
   useEffect(() => {
     if (adminState.kind !== 'loading') {
@@ -769,6 +853,14 @@ export function App() {
         .then((results) => {
           if (!results || cancelled) return
           const [settingsResult, accountResult, targetsResult, channelsResult, alertRulesResult] = results
+          const unauthorizedResult = results.find((result) => result.status === 'rejected' && isAdminUnauthorizedError(result.reason))
+          if (unauthorizedResult) {
+            clearStoredAdminToken()
+            setAdminToken('')
+            setAdminAuthState({ kind: 'error', message: '登录已过期，请重新登录。' })
+            setAdminState({ kind: 'idle' })
+            return
+          }
           if (settingsResult.status === 'fulfilled') setSettings(settingsResult.value)
           setAdminState((current) => current.kind === 'ready' ? {
             ...current,
@@ -878,9 +970,9 @@ export function App() {
       })
   }
 
-  const updateAdminNodeDetails = (nodeId: string, input: AdminNodeUpdateInput) => {
-    if (adminToken === '') return
-    updateAdminNode(adminToken, nodeId, input)
+  const updateAdminNodeDetails = (nodeId: string, input: AdminNodeUpdateInput): Promise<void> => {
+    if (adminToken === '') return Promise.reject(new Error('missing admin token'))
+    return updateAdminNode(adminToken, nodeId, input)
       .then((updatedNode) => {
         setAdminState((current) => {
           if (current.kind === 'ready') {
@@ -892,12 +984,15 @@ export function App() {
           return { kind: 'ready', account: { username: 'admin' }, nodes: [updatedNode], targets: [], notificationChannels: [], alertRules: [] }
         })
       })
-      .catch(handleAdminRequestError)
+      .catch((error: unknown) => {
+        handleAdminRequestError(error)
+        throw error
+      })
   }
 
-  const deleteAdminNodeDetails = (nodeId: string) => {
-    if (adminToken === '') return
-    deleteAdminNode(adminToken, nodeId)
+  const deleteAdminNodeDetails = (nodeId: string): Promise<void> => {
+    if (adminToken === '') return Promise.reject(new Error('missing admin token'))
+    return deleteAdminNode(adminToken, nodeId)
       .then(() => {
         setAdminState((current) => {
           if (current.kind !== 'ready') return current
@@ -911,12 +1006,15 @@ export function App() {
           }
         })
       })
-      .catch(handleAdminRequestError)
+      .catch((error: unknown) => {
+        handleAdminRequestError(error)
+        throw error
+      })
   }
 
-  const createAdminProbeTargetDetails = (input: AdminProbeTargetInput) => {
-    if (adminToken === '') return
-    createAdminProbeTarget(adminToken, input)
+  const createAdminProbeTargetDetails = (input: AdminProbeTargetInput): Promise<void> => {
+    if (adminToken === '') return Promise.reject(new Error('missing admin token'))
+    return createAdminProbeTarget(adminToken, input)
       .then((createdTarget) => {
         setAdminState((current) => {
           if (current.kind === 'ready') {
@@ -925,12 +1023,15 @@ export function App() {
           return { kind: 'ready', account: { username: 'admin' }, nodes: [], targets: [createdTarget], notificationChannels: [], alertRules: [] }
         })
       })
-      .catch(handleAdminRequestError)
+      .catch((error: unknown) => {
+        handleAdminRequestError(error)
+        throw error
+      })
   }
 
-  const updateAdminProbeTargetDetails = (targetId: string, input: AdminProbeTargetUpdateInput) => {
-    if (adminToken === '') return
-    updateAdminProbeTarget(adminToken, targetId, input)
+  const updateAdminProbeTargetDetails = (targetId: string, input: AdminProbeTargetUpdateInput): Promise<void> => {
+    if (adminToken === '') return Promise.reject(new Error('missing admin token'))
+    return updateAdminProbeTarget(adminToken, targetId, input)
       .then((updatedTarget) => {
         setAdminState((current) => {
           if (current.kind === 'ready') {
@@ -939,24 +1040,30 @@ export function App() {
           return { kind: 'ready', account: { username: 'admin' }, nodes: [], targets: [updatedTarget], notificationChannels: [], alertRules: [] }
         })
       })
-      .catch(handleAdminRequestError)
+      .catch((error: unknown) => {
+        handleAdminRequestError(error)
+        throw error
+      })
   }
 
-  const deleteAdminProbeTargetDetails = (targetId: string) => {
-    if (adminToken === '') return
-    deleteAdminProbeTarget(adminToken, targetId)
+  const deleteAdminProbeTargetDetails = (targetId: string): Promise<void> => {
+    if (adminToken === '') return Promise.reject(new Error('missing admin token'))
+    return deleteAdminProbeTarget(adminToken, targetId)
       .then(() => {
         setAdminState((current) => {
           if (current.kind !== 'ready') return current
           return { ...current, targets: current.targets.filter((target) => target.id !== targetId) }
         })
       })
-      .catch(handleAdminRequestError)
+      .catch((error: unknown) => {
+        handleAdminRequestError(error)
+        throw error
+      })
   }
 
-  const createAdminNotificationChannelDetails = (input: AdminNotificationChannelCreateInput) => {
-    if (adminToken === '') return
-    createAdminNotificationChannel(adminToken, input)
+  const createAdminNotificationChannelDetails = (input: AdminNotificationChannelCreateInput): Promise<void> => {
+    if (adminToken === '') return Promise.reject(new Error('missing admin token'))
+    return createAdminNotificationChannel(adminToken, input)
       .then((createdChannel) => {
         setAdminState((current) => {
           if (current.kind === 'ready') {
@@ -965,12 +1072,15 @@ export function App() {
           return { kind: 'ready', account: { username: 'admin' }, nodes: [], targets: [], notificationChannels: [createdChannel], alertRules: [] }
         })
       })
-      .catch(handleAdminRequestError)
+      .catch((error: unknown) => {
+        handleAdminRequestError(error)
+        throw error
+      })
   }
 
-  const updateAdminNotificationChannelDetails = (channelId: string, input: AdminNotificationChannelUpdateInput) => {
-    if (adminToken === '') return
-    updateAdminNotificationChannel(adminToken, channelId, input)
+  const updateAdminNotificationChannelDetails = (channelId: string, input: AdminNotificationChannelUpdateInput): Promise<void> => {
+    if (adminToken === '') return Promise.reject(new Error('missing admin token'))
+    return updateAdminNotificationChannel(adminToken, channelId, input)
       .then((updatedChannel) => {
         setAdminState((current) => {
           if (current.kind === 'ready') {
@@ -979,19 +1089,25 @@ export function App() {
           return { kind: 'ready', account: { username: 'admin' }, nodes: [], targets: [], notificationChannels: [updatedChannel], alertRules: [] }
         })
       })
-      .catch(handleAdminRequestError)
+      .catch((error: unknown) => {
+        handleAdminRequestError(error)
+        throw error
+      })
   }
 
-  const deleteAdminNotificationChannelDetails = (channelId: string) => {
-    if (adminToken === '') return
-    deleteAdminNotificationChannel(adminToken, channelId)
+  const deleteAdminNotificationChannelDetails = (channelId: string): Promise<void> => {
+    if (adminToken === '') return Promise.reject(new Error('missing admin token'))
+    return deleteAdminNotificationChannel(adminToken, channelId)
       .then(() => {
         setAdminState((current) => {
           if (current.kind !== 'ready') return current
           return { ...current, notificationChannels: current.notificationChannels.filter((channel) => channel.id !== channelId) }
         })
       })
-      .catch(handleAdminRequestError)
+      .catch((error: unknown) => {
+        handleAdminRequestError(error)
+        throw error
+      })
   }
 
   const testAdminNotificationChannelDetails = (channelId: string) => {
@@ -1001,13 +1117,16 @@ export function App() {
       .catch(handleAdminRequestError)
   }
 
-  const updateAdminAlertRuleDetails = (ruleId: string, input: AdminAlertRuleUpdateInput) => {
-    if (adminToken === '') return
-    updateAdminAlertRule(adminToken, ruleId, input)
-      .then(async (updatedRule) => {
-        if (input.enabled === true) {
-          await updateAdminNotificationType(adminToken, updatedRule.notificationEventType, true)
-        }
+  const updateAdminAlertRuleDetails = (ruleId: string, input: AdminAlertRuleUpdateInput): Promise<void> => {
+    if (adminToken === '') return Promise.reject(new Error('missing admin token'))
+    const updateRule = () => updateAdminAlertRule(adminToken, ruleId, input)
+    const currentRule = adminState.kind === 'ready' ? adminState.alertRules.find((rule) => rule.id === ruleId) : undefined
+    const notificationEventType = currentRule?.notificationEventType ?? ruleId
+    const ruleRequest = input.enabled === true
+      ? updateAdminNotificationType(adminToken, notificationEventType, true).then(updateRule, updateRule)
+      : updateRule()
+    return ruleRequest
+      .then((updatedRule) => {
         setAdminState((current) => {
           if (current.kind === 'ready') {
             return {
@@ -1018,14 +1137,20 @@ export function App() {
           return { kind: 'ready', account: { username: 'admin' }, nodes: [], targets: [], notificationChannels: [], alertRules: [updatedRule] }
         })
       })
-      .catch(handleAdminRequestError)
+      .catch((error: unknown) => {
+        handleAdminRequestError(error)
+        throw error
+      })
   }
 
-  const updateAdminSettingsDetails = (input: AdminSettingsUpdateInput) => {
-    if (adminToken === '') return
-    updateAdminSettings(adminToken, input)
+  const updateAdminSettingsDetails = (input: AdminSettingsUpdateInput): Promise<void> => {
+    if (adminToken === '') return Promise.reject(new Error('missing admin token'))
+    return updateAdminSettings(adminToken, input)
       .then((updatedSettings) => setSettings(updatedSettings))
-      .catch(handleAdminRequestError)
+      .catch((error: unknown) => {
+        handleAdminRequestError(error)
+        throw error
+      })
   }
 
   const navigateHome = () => {
@@ -1078,6 +1203,8 @@ export function App() {
   const upSpeed = currentRealtimeSnapshot.upSpeed
   const downSpeed = currentRealtimeSnapshot.downSpeed
   const hasBackgroundImage = (effectiveSettings.desktopBackgroundUrl || effectiveSettings.backgroundUrl || effectiveSettings.mobileBackgroundUrl).trim() !== ''
+  const hasAdminToken = adminToken !== ''
+  const summaryStatusText = state.kind === 'ready' ? liveStatusLabel(summaryLiveStatus, state.stale, state.storedAt) : liveStatusLabel(summaryLiveStatus)
 
   return (
     <main className="kulin-shell" data-theme={effectiveSettings.theme} data-background={hasBackgroundImage ? 'on' : 'off'} style={shellStyleForSettings(effectiveSettings)}>
@@ -1086,7 +1213,7 @@ export function App() {
           onHome={navigateHome}
           settings={settings}
           chromeSettings={effectiveSettings}
-          hasAdminToken={adminToken !== ''}
+          hasAdminToken={hasAdminToken}
           authState={adminAuthState}
           adminState={adminState}
           showAdminLoading={showAdminLoading}
@@ -1126,6 +1253,9 @@ export function App() {
           error={latencyState.kind === 'error' ? latencyState.message : undefined}
           stateLoading={stateHistoryState.kind === 'loading'}
           stateError={stateHistoryState.kind === 'error' ? stateHistoryState.message : undefined}
+          dataNotice={latencyState.kind === 'ready' ? freshnessNotice(latencyState.freshness, latencyState.warning) : undefined}
+          stateNotice={stateHistoryState.kind === 'ready' ? freshnessNotice(stateHistoryState.freshness, stateHistoryState.warning) : undefined}
+          canUseExtendedRanges={hasAdminToken}
           onBack={navigateHome}
           onRangeChange={setNodeLatencyRange}
           onStateRangeChange={setStateRange}
@@ -1144,6 +1274,8 @@ export function App() {
           range={serviceLatencyRange}
           loading={serviceLatencyState.kind === 'loading'}
           error={serviceLatencyState.kind === 'error' ? serviceLatencyState.message : undefined}
+          dataNotice={serviceLatencyState.kind === 'ready' ? freshnessNotice(serviceLatencyState.freshness, serviceLatencyState.warning) : undefined}
+          canUseExtendedRanges={hasAdminToken}
           onBack={navigateHome}
           onRangeChange={setServiceLatencyRange}
           topHeader={<DashboardHeader settings={effectiveSettings} onHome={navigateHome} onAdmin={navigateAdmin} onThemeChange={setThemeMode} onBackgroundToggle={toggleBackground} backgroundEnabled={backgroundEnabled} />}
@@ -1165,6 +1297,7 @@ export function App() {
             totalDown={totalDown}
             upSpeed={upSpeed}
             downSpeed={downSpeed}
+            dataStatus={summaryStatusText}
             onHome={navigateHome}
             onAdmin={navigateAdmin}
             onThemeChange={setThemeMode}
@@ -1190,6 +1323,7 @@ interface HomeOverviewPanelProps {
   totalDown: number
   upSpeed: number
   downSpeed: number
+  dataStatus?: string
 }
 
 interface DashboardHeaderProps {
@@ -1220,8 +1354,9 @@ export function HomeTopPanel({ settings = defaultSettings, onHome, onAdmin, onTh
   )
 }
 
-function ServiceDetail({ target, points, range, loading, error, onBack, onRangeChange, topHeader }: { target: ServiceTarget; points: LatencyPoint[]; range: string; loading?: boolean; error?: string; onBack: () => void; onRangeChange: (range: string) => void; topHeader?: ReactNode }) {
+function ServiceDetail({ target, points, range, loading, error, dataNotice, canUseExtendedRanges = false, onBack, onRangeChange, topHeader }: { target: ServiceTarget; points: LatencyPoint[]; range: string; loading?: boolean; error?: string; dataNotice?: string; canUseExtendedRanges?: boolean; onBack: () => void; onRangeChange: (range: string) => void; topHeader?: ReactNode }) {
   const [peakCut, setPeakCut] = useState(false)
+  const serviceRangeOptions = availableHistoryRanges(canUseExtendedRanges)
   const rangeLabel = serviceRangeOptions.find((option) => option.value === range)?.label ?? range
   return (
     <div className="kulin-container detail-container">
@@ -1266,6 +1401,7 @@ function ServiceDetail({ target, points, range, loading, error, onBack, onRangeC
         </header>
         {loading && <div className="detail-state">正在读取服务延迟…</div>}
         {error && <div className="detail-state is-error">服务延迟读取失败：{error}</div>}
+        {!error && dataNotice && <div className="detail-state is-warning">{dataNotice}</div>}
         {!loading && !error && points.length === 0 && <div className="detail-state">暂无服务延迟历史</div>}
         {!loading && !error && points.length > 0 && (
           <LatencyChart points={points} title={`${target.name} 多节点延迟`} eyebrow={`${rangeLabel} · ${target.reportingNodeCount} 个节点`} compactHeader peakCut={peakCut} />
@@ -1283,13 +1419,6 @@ function ServiceInfoFact({ label, value, wide = false }: { label: string; value:
     </article>
   )
 }
-
-const serviceRangeOptions = [
-  { value: '1h', label: '实时' },
-  { value: '1d', label: '1 天' },
-  { value: '7d', label: '7 天' },
-  { value: '30d', label: '30 天' },
-]
 
 function serviceTone(service: ServiceTarget): 'online' | 'warning' | 'offline' {
   if (service.reportingNodeCount <= 0) return 'offline'
@@ -1405,18 +1534,18 @@ interface AdminDashboardProps {
   onAdminTokenClear?: () => void
   onAdminAccountUpdate?: (username: string, currentPassword: string, newPassword: string) => Promise<void>
   onAdminNodeCreate?: (input: AdminNodeCreateInput) => Promise<AdminNode | void>
-  onAdminNodeUpdate?: (nodeId: string, input: AdminNodeUpdateInput) => void
-  onAdminNodeDelete?: (nodeId: string) => void
+  onAdminNodeUpdate?: (nodeId: string, input: AdminNodeUpdateInput) => MaybePromise
+  onAdminNodeDelete?: (nodeId: string) => MaybePromise
   onAdminInstallCommand?: (nodeId: string) => Promise<AdminNodeInstallCommand>
-  onAdminProbeTargetCreate?: (input: AdminProbeTargetInput) => void
-  onAdminProbeTargetUpdate?: (targetId: string, input: AdminProbeTargetUpdateInput) => void
-  onAdminProbeTargetDelete?: (targetId: string) => void
-  onAdminNotificationChannelCreate?: (input: AdminNotificationChannelCreateInput) => void
-  onAdminNotificationChannelUpdate?: (channelId: string, input: AdminNotificationChannelUpdateInput) => void
-  onAdminNotificationChannelDelete?: (channelId: string) => void
+  onAdminProbeTargetCreate?: (input: AdminProbeTargetInput) => MaybePromise
+  onAdminProbeTargetUpdate?: (targetId: string, input: AdminProbeTargetUpdateInput) => MaybePromise
+  onAdminProbeTargetDelete?: (targetId: string) => MaybePromise
+  onAdminNotificationChannelCreate?: (input: AdminNotificationChannelCreateInput) => MaybePromise
+  onAdminNotificationChannelUpdate?: (channelId: string, input: AdminNotificationChannelUpdateInput) => MaybePromise
+  onAdminNotificationChannelDelete?: (channelId: string) => MaybePromise
   onAdminNotificationChannelTest?: (channelId: string) => void
-  onAdminAlertRuleUpdate?: (ruleId: string, input: AdminAlertRuleUpdateInput) => void
-  onAdminSettingsUpdate?: (input: AdminSettingsUpdateInput) => void
+  onAdminAlertRuleUpdate?: (ruleId: string, input: AdminAlertRuleUpdateInput) => MaybePromise
+  onAdminSettingsUpdate?: (input: AdminSettingsUpdateInput) => MaybePromise
   onThemeChange?: (theme: AdminTheme) => void
   onBackgroundToggle?: () => void
   backgroundEnabled?: boolean
@@ -1660,8 +1789,9 @@ function validAdminAccountUsername(username: string): boolean {
   return /^[A-Za-z0-9._-]{3,64}$/.test(username.trim())
 }
 
-function AdminSettingsSection({ settings, onUpdate }: { settings: AdminSettings; onUpdate: (input: AdminSettingsUpdateInput) => void }) {
+function AdminSettingsSection({ settings, onUpdate }: { settings: AdminSettings; onUpdate: (input: AdminSettingsUpdateInput) => MaybePromise }) {
   const [settingsError, setSettingsError] = useState<string | null>(null)
+  const [submitting, setSubmitting] = useState(false)
   const [appearance, setAppearance] = useState<AppearanceValues>(() => appearanceValuesForSettings(settings))
   useEffect(() => {
     setAppearance(appearanceValuesForSettings(settings))
@@ -1700,7 +1830,10 @@ function AdminSettingsSection({ settings, onUpdate }: { settings: AdminSettings;
       return
     }
     setSettingsError(null)
-    onUpdate(input)
+    setSubmitting(true)
+    Promise.resolve(onUpdate(input))
+      .catch((error: unknown) => setSettingsError(error instanceof Error ? error.message : '设置保存失败'))
+      .finally(() => setSubmitting(false))
   }
 
   return (
@@ -1773,17 +1906,17 @@ function AdminSettingsSection({ settings, onUpdate }: { settings: AdminSettings;
             </label>
           </div>
         </AdminFormSection>
-        <AdminFormSection title="自定义代码">
+        <AdminFormSection title="自定义 CSS">
           <div className="admin-form-grid">
             <label className="admin-form-span-2">
-              <span>自定义代码</span>
-              <textarea className="admin-code-field" name="custom-code" defaultValue={settings.customCode} spellCheck={false} placeholder={'<style>\n.home-top-card { border-color: #2563eb; }\n</style>\n<script>\nconsole.log(\'Zeno custom code\')\n</script>'} />
+              <span>自定义 CSS</span>
+              <textarea className="admin-code-field" name="custom-code" defaultValue={settings.customCode} spellCheck={false} placeholder={'<style>\n.home-top-card { border-color: #2563eb; }\n</style>'} />
             </label>
           </div>
         </AdminFormSection>
         {settingsError && <p className="admin-install-error">{settingsError}</p>}
         <div className="admin-modal-actions">
-          <button type="submit">保存设置</button>
+          <button type="submit" disabled={submitting}>{submitting ? '保存中…' : '保存设置'}</button>
         </div>
       </form>
     </section>
@@ -1838,7 +1971,7 @@ function validAgentControllerURL(value: string): boolean {
   }
 }
 
-function AdminNodeSection({ nodes, targets, onCreate, onUpdate, onDelete, onTargetUpdate, onInstallCommand }: { nodes: AdminNode[]; targets: AdminProbeTarget[]; onCreate: (input: AdminNodeCreateInput) => Promise<AdminNode | void>; onUpdate: (nodeId: string, input: AdminNodeUpdateInput) => void; onDelete: (nodeId: string) => void; onTargetUpdate: (targetId: string, input: AdminProbeTargetUpdateInput) => void; onInstallCommand: (nodeId: string) => Promise<AdminNodeInstallCommand> }) {
+function AdminNodeSection({ nodes, targets, onCreate, onUpdate, onDelete, onTargetUpdate, onInstallCommand }: { nodes: AdminNode[]; targets: AdminProbeTarget[]; onCreate: (input: AdminNodeCreateInput) => Promise<AdminNode | void>; onUpdate: (nodeId: string, input: AdminNodeUpdateInput) => MaybePromise; onDelete: (nodeId: string) => MaybePromise; onTargetUpdate: (targetId: string, input: AdminProbeTargetUpdateInput) => MaybePromise; onInstallCommand: (nodeId: string) => Promise<AdminNodeInstallCommand> }) {
   const [creatingNode, setCreatingNode] = useState(false)
   const [editingNodeId, setEditingNodeId] = useState<string | null>(null)
   const [sortingNodes, setSortingNodes] = useState(false)
@@ -1846,7 +1979,7 @@ function AdminNodeSection({ nodes, targets, onCreate, onUpdate, onDelete, onTarg
   const orderedNodes = sortAdminNodes(nodes)
   const applyOrderPatches = (orderedNodes: AdminNode[]) => {
     const patches = buildAdminNodeOrderPatches(orderedNodes)
-    patches.forEach((patch) => onUpdate(patch.nodeId, { displayOrder: patch.displayOrder }))
+    return Promise.all(patches.map((patch) => Promise.resolve(onUpdate(patch.nodeId, { displayOrder: patch.displayOrder })))).then(() => undefined)
   }
 
   return (
@@ -1878,10 +2011,7 @@ function AdminNodeSection({ nodes, targets, onCreate, onUpdate, onDelete, onTarg
           node={editingNode}
           targets={targets}
           onClose={() => setEditingNodeId(null)}
-          onUpdate={(nodeId, input) => {
-            onUpdate(nodeId, input)
-            setEditingNodeId(null)
-          }}
+          onUpdate={onUpdate}
           onTargetUpdate={onTargetUpdate}
           onInstallCommand={onInstallCommand}
         />
@@ -1891,8 +2021,8 @@ function AdminNodeSection({ nodes, targets, onCreate, onUpdate, onDelete, onTarg
         <AdminNodeSortModal
           nodes={orderedNodes}
           onClose={() => setSortingNodes(false)}
-          onSave={(nextNodes) => {
-            applyOrderPatches(nextNodes)
+          onSave={async (nextNodes) => {
+            await applyOrderPatches(nextNodes)
             setSortingNodes(false)
           }}
         />
@@ -1959,9 +2089,11 @@ function moveAdminNodeInOrder(nodeIds: string[], sourceId: string, targetId: str
   return nextIds
 }
 
-function AdminNodeSortModal({ nodes, onSave, onClose }: { nodes: AdminNode[]; onSave: (nodes: AdminNode[]) => void; onClose: () => void }) {
+function AdminNodeSortModal({ nodes, onSave, onClose }: { nodes: AdminNode[]; onSave: (nodes: AdminNode[]) => MaybePromise; onClose: () => void }) {
   const [orderedIds, setOrderedIds] = useState(() => nodes.map((node) => node.id))
   const [draggedNodeId, setDraggedNodeId] = useState<string | null>(null)
+  const [submitting, setSubmitting] = useState(false)
+  const [formError, setFormError] = useState<string | null>(null)
   const nodeById = new Map(nodes.map((node) => [node.id, node]))
   const orderedNodes = orderedIds.map((nodeId) => nodeById.get(nodeId)).filter((node): node is AdminNode => Boolean(node))
   const moveNode = (sourceId: string, targetId: string) => {
@@ -1978,6 +2110,13 @@ function AdminNodeSortModal({ nodes, onSave, onClose }: { nodes: AdminNode[]; on
     if (!sourceId || sourceId === targetId) return
     moveNode(sourceId, targetId)
     setDraggedNodeId(sourceId)
+  }
+  const saveOrder = () => {
+    setSubmitting(true)
+    setFormError(null)
+    Promise.resolve(onSave(orderedNodes))
+      .catch((error: unknown) => setFormError(error instanceof Error ? error.message : '保存失败'))
+      .finally(() => setSubmitting(false))
   }
 
   return (
@@ -2009,8 +2148,9 @@ function AdminNodeSortModal({ nodes, onSave, onClose }: { nodes: AdminNode[]; on
             ))}
           </div>
           <div className="admin-modal-actions">
+            {formError && <span className="admin-inline-note admin-modal-action-note is-error">{formError}</span>}
             <button type="button" onClick={onClose}>取消</button>
-            <button className="admin-primary-action" type="button" onClick={() => onSave(orderedNodes)}>保存排序</button>
+            <button className="admin-primary-action" type="button" onClick={saveOrder} disabled={submitting}>{submitting ? '保存中…' : '保存排序'}</button>
           </div>
         </div>
       </div>
@@ -2222,9 +2362,11 @@ function AdminNodeCreateModal({ onCreate, onInstallCommand, onClose }: { onCreat
   )
 }
 
-function AdminNodeEditModal({ node, targets, onUpdate, onTargetUpdate, onInstallCommand, onClose }: { node: AdminNode; targets: AdminProbeTarget[]; onUpdate: (nodeId: string, input: AdminNodeUpdateInput) => void; onTargetUpdate: (targetId: string, input: AdminProbeTargetUpdateInput) => void; onInstallCommand: (nodeId: string) => Promise<AdminNodeInstallCommand>; onClose: () => void }) {
+function AdminNodeEditModal({ node, targets, onUpdate, onTargetUpdate, onInstallCommand, onClose }: { node: AdminNode; targets: AdminProbeTarget[]; onUpdate: (nodeId: string, input: AdminNodeUpdateInput) => MaybePromise; onTargetUpdate: (targetId: string, input: AdminProbeTargetUpdateInput) => MaybePromise; onInstallCommand: (nodeId: string) => Promise<AdminNodeInstallCommand>; onClose: () => void }) {
   const [installCommandState, setInstallCommandState] = useState<InstallCommandState>({ kind: 'idle' })
   const [installCopyState, setInstallCopyState] = useState<InstallNoticeState>({ kind: 'idle' })
+  const [submitting, setSubmitting] = useState(false)
+  const [formError, setFormError] = useState<string | null>(null)
   const [installPlatformPickerOpen, setInstallPlatformPickerOpen] = useState(false)
   const [installPlatformMenuStyle, setInstallPlatformMenuStyle] = useState<CSSProperties>({})
   const installCopyButtonRef = useRef<HTMLButtonElement>(null)
@@ -2245,7 +2387,9 @@ function AdminNodeEditModal({ node, targets, onUpdate, onTargetUpdate, onInstall
     const formData = new FormData(event.currentTarget)
     const displayName = String(formData.get('display-name') ?? '').trim()
     const selectedTargets = new Set(selectedTargetIds)
-    onUpdate(node.id, {
+    setSubmitting(true)
+    setFormError(null)
+    const requests: Array<MaybePromise> = [onUpdate(node.id, {
       displayName: displayName || node.displayName,
       homeProbeTargetId: selectedTargets.has(homeTargetId) ? homeTargetId : '',
       expiryDate: String(formData.get('expiry-date') ?? '').trim(),
@@ -2254,14 +2398,18 @@ function AdminNodeEditModal({ node, targets, onUpdate, onTargetUpdate, onInstall
       billingMode: String(formData.get('billing-mode') ?? node.billingMode),
       monthlyResetDay: parseMonthlyResetDay(String(formData.get('monthly-reset-day') ?? '')) ?? node.monthlyResetDay,
       monthlyQuotaBytes: parseQuota(String(formData.get('monthly-quota') ?? ''), String(formData.get('monthly-quota-unit') ?? quotaUnitForBytes(node.monthlyQuotaBytes))),
-    })
+    })]
     sortedTargets.forEach((target) => {
       const currentEnabled = target.assignments.some((assignment) => assignment.nodeId === node.id && assignment.enabled)
       const nextEnabled = selectedTargets.has(target.id)
       if (currentEnabled !== nextEnabled) {
-        onTargetUpdate(target.id, { assignments: [{ nodeId: node.id, enabled: nextEnabled }] })
+        requests.push(onTargetUpdate(target.id, { assignments: [{ nodeId: node.id, enabled: nextEnabled }] }))
       }
     })
+    Promise.all(requests.map((request) => Promise.resolve(request)))
+      .then(() => onClose())
+      .catch((error: unknown) => setFormError(error instanceof Error ? error.message : '保存失败'))
+      .finally(() => setSubmitting(false))
   }
 
   const requestInstallCommand = (openPickerAfterGenerate = false) => {
@@ -2370,14 +2518,15 @@ function AdminNodeEditModal({ node, targets, onUpdate, onTargetUpdate, onInstall
           {installCommandState.kind === 'error' && <div className="admin-install-error">安装命令生成失败：{installCommandState.message}</div>}
         </AdminFormSection>
         <div className="admin-modal-actions">
-          <button type="submit">保存服务器</button>
+          {formError && <span className="admin-inline-note admin-modal-action-note is-error">{formError}</span>}
+          <button type="submit" disabled={submitting}>{submitting ? '保存中…' : '保存服务器'}</button>
         </div>
       </form>
     </AdminModal>
   )
 }
 
-function AdminTargetSection({ targets, nodes, onCreate, onUpdate, onDelete }: { targets: AdminProbeTarget[]; nodes: AdminNode[]; onCreate: (input: AdminProbeTargetInput) => void; onUpdate: (targetId: string, input: AdminProbeTargetUpdateInput) => void; onDelete: (targetId: string) => void }) {
+function AdminTargetSection({ targets, nodes, onCreate, onUpdate, onDelete }: { targets: AdminProbeTarget[]; nodes: AdminNode[]; onCreate: (input: AdminProbeTargetInput) => MaybePromise; onUpdate: (targetId: string, input: AdminProbeTargetUpdateInput) => MaybePromise; onDelete: (targetId: string) => MaybePromise }) {
   const [creatingTarget, setCreatingTarget] = useState(false)
   const [editingTargetId, setEditingTargetId] = useState<string | null>(null)
   const editingTarget = editingTargetId ? targets.find((target) => target.id === editingTargetId) : undefined
@@ -2401,10 +2550,7 @@ function AdminTargetSection({ targets, nodes, onCreate, onUpdate, onDelete }: { 
         <AdminTargetCreateModal
           nodes={nodes}
           onClose={() => setCreatingTarget(false)}
-          onCreate={(input) => {
-            onCreate(input)
-            setCreatingTarget(false)
-          }}
+          onCreate={onCreate}
         />
       )}
 
@@ -2414,10 +2560,7 @@ function AdminTargetSection({ targets, nodes, onCreate, onUpdate, onDelete }: { 
           target={editingTarget}
           nodes={nodes}
           onClose={() => setEditingTargetId(null)}
-          onUpdate={(targetId, input) => {
-            onUpdate(targetId, input)
-            setEditingTargetId(null)
-          }}
+          onUpdate={onUpdate}
         />
       )}
     </section>
@@ -2455,9 +2598,11 @@ function AdminTargetList({ targets, onEdit, onDelete }: { targets: AdminProbeTar
   )
 }
 
-function AdminTargetCreateModal({ nodes, onCreate, onClose }: { nodes: AdminNode[]; onCreate: (input: AdminProbeTargetInput) => void; onClose: () => void }) {
+function AdminTargetCreateModal({ nodes, onCreate, onClose }: { nodes: AdminNode[]; onCreate: (input: AdminProbeTargetInput) => MaybePromise; onClose: () => void }) {
   const [targetType, setTargetType] = useState<ProbeType>('tcping')
   const [assignmentNodeIds, setAssignmentNodeIds] = useState<string[]>([])
+  const [submitting, setSubmitting] = useState(false)
+  const [formError, setFormError] = useState<string | null>(null)
 
   const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
@@ -2467,7 +2612,9 @@ function AdminTargetCreateModal({ nodes, onCreate, onClose }: { nodes: AdminNode
     const address = String(formData.get('new-target-address') ?? '').trim()
     const port = type === 'tcping' ? parsePositiveInt(String(formData.get('new-target-port') ?? '')) : null
     if (name === '' || address === '' || (type === 'tcping' && port === null)) return
-    onCreate({
+    setSubmitting(true)
+    setFormError(null)
+    Promise.resolve(onCreate({
       name,
       type,
       address,
@@ -2476,7 +2623,10 @@ function AdminTargetCreateModal({ nodes, onCreate, onClose }: { nodes: AdminNode
       timeoutMs: parsePositiveInt(String(formData.get('new-target-timeout-ms') ?? '')) ?? 1000,
       intervalSec: parsePositiveInt(String(formData.get('new-target-interval-sec') ?? '')) ?? 30,
       assignments: nodes.map((node) => ({ nodeId: node.id, enabled: assignmentNodeIds.includes(node.id) })),
-    })
+    }))
+      .then(() => onClose())
+      .catch((error: unknown) => setFormError(error instanceof Error ? error.message : '添加失败'))
+      .finally(() => setSubmitting(false))
   }
 
   return (
@@ -2529,15 +2679,18 @@ function AdminTargetCreateModal({ nodes, onCreate, onClose }: { nodes: AdminNode
           </div>
         </AdminFormSection>
         <div className="admin-modal-actions">
-          <button type="submit">添加目标</button>
+          {formError && <span className="admin-inline-note admin-modal-action-note is-error">{formError}</span>}
+          <button type="submit" disabled={submitting}>{submitting ? '添加中…' : '添加目标'}</button>
         </div>
       </form>
     </AdminModal>
   )
 }
 
-function AdminTargetEditModal({ target, nodes, onUpdate, onClose }: { target: AdminProbeTarget; nodes: AdminNode[]; onUpdate: (targetId: string, input: AdminProbeTargetUpdateInput) => void; onClose: () => void }) {
+function AdminTargetEditModal({ target, nodes, onUpdate, onClose }: { target: AdminProbeTarget; nodes: AdminNode[]; onUpdate: (targetId: string, input: AdminProbeTargetUpdateInput) => MaybePromise; onClose: () => void }) {
   const [targetType, setTargetType] = useState<ProbeType>(target.type)
+  const [submitting, setSubmitting] = useState(false)
+  const [formError, setFormError] = useState<string | null>(null)
   const assignmentRows = targetAssignmentRows(target, nodes)
   const [assignmentNodeIds, setAssignmentNodeIds] = useState<string[]>(() => assignmentRows.filter((assignment) => assignment.enabled).map((assignment) => assignment.nodeId))
   const selectedAssignmentNodes = new Set(assignmentNodeIds)
@@ -2548,7 +2701,9 @@ function AdminTargetEditModal({ target, nodes, onUpdate, onClose }: { target: Ad
     const type = normalizeTargetFormType(String(formData.get('target-type') ?? targetType))
     const port = type === 'tcping' ? parsePositiveInt(String(formData.get('target-port') ?? '')) : null
     if (type === 'tcping' && port === null) return
-    onUpdate(target.id, {
+    setSubmitting(true)
+    setFormError(null)
+    Promise.resolve(onUpdate(target.id, {
       name: String(formData.get('target-name') ?? ''),
       type,
       address: String(formData.get('target-address') ?? ''),
@@ -2563,7 +2718,10 @@ function AdminTargetEditModal({ target, nodes, onUpdate, onClose }: { target: Ad
             enabled: selectedAssignmentNodes.has(assignment.nodeId),
           }))
         : undefined,
-    })
+    }))
+      .then(() => onClose())
+      .catch((error: unknown) => setFormError(error instanceof Error ? error.message : '保存失败'))
+      .finally(() => setSubmitting(false))
   }
 
   return (
@@ -2620,14 +2778,15 @@ function AdminTargetEditModal({ target, nodes, onUpdate, onClose }: { target: Ad
           </AdminFormSection>
         )}
         <div className="admin-modal-actions">
-          <button type="submit">保存目标</button>
+          {formError && <span className="admin-inline-note admin-modal-action-note is-error">{formError}</span>}
+          <button type="submit" disabled={submitting}>{submitting ? '保存中…' : '保存目标'}</button>
         </div>
       </form>
     </AdminModal>
   )
 }
 
-function AdminAlertRulesSection({ rules, nodes, onUpdate }: { rules: AdminAlertRule[]; nodes: AdminNode[]; onUpdate: (ruleId: string, input: AdminAlertRuleUpdateInput) => void }) {
+function AdminAlertRulesSection({ rules, nodes, onUpdate }: { rules: AdminAlertRule[]; nodes: AdminNode[]; onUpdate: (ruleId: string, input: AdminAlertRuleUpdateInput) => MaybePromise }) {
   const [editingRule, setEditingRule] = useState<AdminAlertRule | null>(null)
   const [addingRule, setAddingRule] = useState(false)
   const addedRules = rules.filter((rule) => rule.enabled)
@@ -2647,10 +2806,7 @@ function AdminAlertRulesSection({ rules, nodes, onUpdate }: { rules: AdminAlertR
           rules={availableRules}
           nodes={nodes}
           onClose={() => setAddingRule(false)}
-          onAdd={(ruleId) => {
-            onUpdate(ruleId, { enabled: true })
-            setAddingRule(false)
-          }}
+          onAdd={onUpdate}
         />
       )}
 
@@ -2659,17 +2815,14 @@ function AdminAlertRulesSection({ rules, nodes, onUpdate }: { rules: AdminAlertR
           rule={editingRule}
           nodes={nodes}
           onClose={() => setEditingRule(null)}
-          onUpdate={(ruleId, input) => {
-            onUpdate(ruleId, input)
-            setEditingRule(null)
-          }}
+          onUpdate={onUpdate}
         />
       )}
     </section>
   )
 }
 
-function AdminAlertRuleList({ rules, nodes, onEdit, onUpdate }: { rules: AdminAlertRule[]; nodes: AdminNode[]; onEdit: (rule: AdminAlertRule) => void; onUpdate: (ruleId: string, input: AdminAlertRuleUpdateInput) => void }) {
+function AdminAlertRuleList({ rules, nodes, onEdit, onUpdate }: { rules: AdminAlertRule[]; nodes: AdminNode[]; onEdit: (rule: AdminAlertRule) => void; onUpdate: (ruleId: string, input: AdminAlertRuleUpdateInput) => MaybePromise }) {
   const confirmDelete = (rule: AdminAlertRule) => {
     const ok = typeof window === 'undefined' ? true : window.confirm(`确认删除通知类型「${rule.name}」？`)
     if (ok) onUpdate(rule.id, { enabled: false })
@@ -2699,7 +2852,17 @@ function AdminAlertRuleList({ rules, nodes, onEdit, onUpdate }: { rules: AdminAl
   )
 }
 
-function AdminAlertRuleAddModal({ rules, nodes, onAdd, onClose }: { rules: AdminAlertRule[]; nodes: AdminNode[]; onAdd: (ruleId: string) => void; onClose: () => void }) {
+function AdminAlertRuleAddModal({ rules, nodes, onAdd, onClose }: { rules: AdminAlertRule[]; nodes: AdminNode[]; onAdd: (ruleId: string, input: AdminAlertRuleUpdateInput) => MaybePromise; onClose: () => void }) {
+  const [submittingRuleId, setSubmittingRuleId] = useState<string | null>(null)
+  const [formError, setFormError] = useState<string | null>(null)
+  const addRule = (ruleId: string) => {
+    setSubmittingRuleId(ruleId)
+    setFormError(null)
+    Promise.resolve(onAdd(ruleId, { enabled: true }))
+      .then(() => onClose())
+      .catch((error: unknown) => setFormError(error instanceof Error ? error.message : '添加失败'))
+      .finally(() => setSubmittingRuleId(null))
+  }
   return (
     <AdminModal title="添加通知类型" onClose={onClose}>
       <div className="admin-alert-rule-add-form admin-node-edit-form is-sectioned" aria-label="添加通知类型">
@@ -2712,17 +2875,20 @@ function AdminAlertRuleAddModal({ rules, nodes, onAdd, onClose }: { rules: Admin
                   <strong>{rule.name}</strong>
                   <small>{formatAlertRuleNote(rule) || formatAlertRuleScope(rule, nodes)}</small>
                 </div>
-                <button className="admin-primary-action" type="button" onClick={() => onAdd(rule.id)}>添加</button>
+                <button className="admin-primary-action" type="button" onClick={() => addRule(rule.id)} disabled={submittingRuleId !== null}>{submittingRuleId === rule.id ? '添加中…' : '添加'}</button>
               </article>
             ))}
           </div>
         </AdminFormSection>
+        {formError && <div className="admin-install-error">{formError}</div>}
       </div>
     </AdminModal>
   )
 }
 
-function AdminAlertRuleEditModal({ rule, nodes, onUpdate, onClose }: { rule: AdminAlertRule; nodes: AdminNode[]; onUpdate: (ruleId: string, input: AdminAlertRuleUpdateInput) => void; onClose: () => void }) {
+function AdminAlertRuleEditModal({ rule, nodes, onUpdate, onClose }: { rule: AdminAlertRule; nodes: AdminNode[]; onUpdate: (ruleId: string, input: AdminAlertRuleUpdateInput) => MaybePromise; onClose: () => void }) {
+  const [submitting, setSubmitting] = useState(false)
+  const [formError, setFormError] = useState<string | null>(null)
   const initialScopeNodeIds = rule.scopeNodeIds.length === 0 ? nodes.map((node) => node.id) : rule.scopeNodeIds
   const isRenewalRule = rule.metric === 'expiry_days'
   const isResourceRule = rule.category === 'resource' && rule.thresholdUnit === '%'
@@ -2734,13 +2900,18 @@ function AdminAlertRuleEditModal({ rule, nodes, onUpdate, onClose }: { rule: Adm
     const renewalThreshold = isRenewalRule ? parseRenewalThreshold(String(formData.get('rule-renewal-days') ?? '')) : null
     const resourceThreshold = isResourceRule ? parsePercentage(String(formData.get('rule-threshold-percent') ?? '')) : null
     const durationSec = supportsDuration ? parseNonNegativeInt(String(formData.get('rule-duration-sec') ?? '')) : null
-    onUpdate(rule.id, {
+    setSubmitting(true)
+    setFormError(null)
+    Promise.resolve(onUpdate(rule.id, {
       enabled: formData.get('rule-enabled') === 'on',
       ...(isRenewalRule && renewalThreshold !== null ? { threshold: renewalThreshold } : {}),
       ...(isResourceRule && resourceThreshold !== null ? { threshold: resourceThreshold } : {}),
       ...(supportsDuration && durationSec !== null ? { durationSec } : {}),
       scopeNodeIds,
-    })
+    }))
+      .then(() => onClose())
+      .catch((error: unknown) => setFormError(error instanceof Error ? error.message : '保存失败'))
+      .finally(() => setSubmitting(false))
   }
 
   return (
@@ -2789,14 +2960,15 @@ function AdminAlertRuleEditModal({ rule, nodes, onUpdate, onClose }: { rule: Adm
           </AdminFormSection>
         )}
         <div className="admin-modal-actions">
-          <button type="submit">保存通知类型</button>
+          {formError && <span className="admin-inline-note admin-modal-action-note is-error">{formError}</span>}
+          <button type="submit" disabled={submitting}>{submitting ? '保存中…' : '保存通知类型'}</button>
         </div>
       </form>
     </AdminModal>
   )
 }
 
-function AdminNotificationsSection({ channels, rules, nodes, onChannelCreate, onChannelUpdate, onChannelDelete, onChannelTest, onRuleUpdate }: { channels: AdminNotificationChannel[]; rules: AdminAlertRule[]; nodes: AdminNode[]; onChannelCreate: (input: AdminNotificationChannelCreateInput) => void; onChannelUpdate: (channelId: string, input: AdminNotificationChannelUpdateInput) => void; onChannelDelete: (channelId: string) => void; onChannelTest: (channelId: string) => void; onRuleUpdate: (ruleId: string, input: AdminAlertRuleUpdateInput) => void }) {
+function AdminNotificationsSection({ channels, rules, nodes, onChannelCreate, onChannelUpdate, onChannelDelete, onChannelTest, onRuleUpdate }: { channels: AdminNotificationChannel[]; rules: AdminAlertRule[]; nodes: AdminNode[]; onChannelCreate: (input: AdminNotificationChannelCreateInput) => MaybePromise; onChannelUpdate: (channelId: string, input: AdminNotificationChannelUpdateInput) => MaybePromise; onChannelDelete: (channelId: string) => MaybePromise; onChannelTest: (channelId: string) => void; onRuleUpdate: (ruleId: string, input: AdminAlertRuleUpdateInput) => MaybePromise }) {
   const [creatingChannel, setCreatingChannel] = useState(false)
   const [editingChannel, setEditingChannel] = useState<AdminNotificationChannel | null>(null)
 
@@ -2820,10 +2992,7 @@ function AdminNotificationsSection({ channels, rules, nodes, onChannelCreate, on
       {creatingChannel && (
         <AdminNotificationChannelCreateModal
           onClose={() => setCreatingChannel(false)}
-          onCreate={(input) => {
-            onChannelCreate(input)
-            setCreatingChannel(false)
-          }}
+          onCreate={onChannelCreate}
         />
       )}
       {editingChannel && (
@@ -2831,10 +3000,7 @@ function AdminNotificationsSection({ channels, rules, nodes, onChannelCreate, on
           channel={editingChannel}
           onClose={() => setEditingChannel(null)}
           onTest={onChannelTest}
-          onUpdate={(channelId, input) => {
-            onChannelUpdate(channelId, input)
-            setEditingChannel(null)
-          }}
+          onUpdate={onChannelUpdate}
         />
       )}
     </section>
@@ -2874,7 +3040,9 @@ function AdminStatusBadge({ label, status, dataLabel }: { label: string; status:
   return <span data-label={dataLabel} className={`admin-node-status admin-status-indicator status-${status}`}><i className="admin-status-dot" aria-hidden="true" />{label}</span>
 }
 
-function AdminNotificationChannelEditModal({ channel, onUpdate, onTest, onClose }: { channel: AdminNotificationChannel; onUpdate: (channelId: string, input: AdminNotificationChannelUpdateInput) => void; onTest: (channelId: string) => void; onClose: () => void }) {
+function AdminNotificationChannelEditModal({ channel, onUpdate, onTest, onClose }: { channel: AdminNotificationChannel; onUpdate: (channelId: string, input: AdminNotificationChannelUpdateInput) => MaybePromise; onTest: (channelId: string) => void; onClose: () => void }) {
+  const [submitting, setSubmitting] = useState(false)
+  const [formError, setFormError] = useState<string | null>(null)
   const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
     const formData = new FormData(event.currentTarget)
@@ -2882,12 +3050,17 @@ function AdminNotificationChannelEditModal({ channel, onUpdate, onTest, onClose 
     const destination = String(formData.get('channel-destination') ?? '').trim()
     const credential = String(formData.get('channel-credential') ?? '').trim()
     if (name === '') return
-    onUpdate(channel.id, {
+    setSubmitting(true)
+    setFormError(null)
+    Promise.resolve(onUpdate(channel.id, {
       name,
       ...(destination !== '' ? { destination } : {}),
       ...(credential !== '' ? { credential } : {}),
       enabled: formData.get('channel-enabled') === 'on',
-    })
+    }))
+      .then(() => onClose())
+      .catch((error: unknown) => setFormError(error instanceof Error ? error.message : '保存失败'))
+      .finally(() => setSubmitting(false))
   }
 
   return (
@@ -2914,15 +3087,18 @@ function AdminNotificationChannelEditModal({ channel, onUpdate, onTest, onClose 
           </div>
         </AdminFormSection>
         <div className="admin-modal-actions">
+          {formError && <span className="admin-inline-note admin-modal-action-note is-error">{formError}</span>}
           <button type="button" onClick={() => onTest(channel.id)}>测试发送</button>
-          <button type="submit">保存通知渠道</button>
+          <button type="submit" disabled={submitting}>{submitting ? '保存中…' : '保存通知渠道'}</button>
         </div>
       </form>
     </AdminModal>
   )
 }
 
-function AdminNotificationChannelCreateModal({ onCreate, onClose }: { onCreate: (input: AdminNotificationChannelCreateInput) => void; onClose: () => void }) {
+function AdminNotificationChannelCreateModal({ onCreate, onClose }: { onCreate: (input: AdminNotificationChannelCreateInput) => MaybePromise; onClose: () => void }) {
+  const [submitting, setSubmitting] = useState(false)
+  const [formError, setFormError] = useState<string | null>(null)
   const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
     const formData = new FormData(event.currentTarget)
@@ -2930,12 +3106,17 @@ function AdminNotificationChannelCreateModal({ onCreate, onClose }: { onCreate: 
     const destination = String(formData.get('new-channel-destination') ?? '').trim()
     const credential = String(formData.get('new-channel-credential') ?? '').trim()
     if (name === '' || destination === '' || credential === '') return
-    onCreate({
+    setSubmitting(true)
+    setFormError(null)
+    Promise.resolve(onCreate({
       name,
       destination,
       credential,
       enabled: formData.get('new-channel-enabled') === 'on',
-    })
+    }))
+      .then(() => onClose())
+      .catch((error: unknown) => setFormError(error instanceof Error ? error.message : '添加失败'))
+      .finally(() => setSubmitting(false))
   }
 
   return (
@@ -2962,7 +3143,8 @@ function AdminNotificationChannelCreateModal({ onCreate, onClose }: { onCreate: 
           </div>
         </AdminFormSection>
         <div className="admin-modal-actions">
-          <button type="submit">保存通知渠道</button>
+          {formError && <span className="admin-inline-note admin-modal-action-note is-error">{formError}</span>}
+          <button type="submit" disabled={submitting}>{submitting ? '保存中…' : '保存通知渠道'}</button>
         </div>
       </form>
     </AdminModal>
@@ -3590,13 +3772,14 @@ function formatAdminDate(value?: string): string {
   return date.toLocaleString('zh-CN', { hour12: false })
 }
 
-export function HomeOverviewPanel({ totalCount, onlineCount, offlineCount: _offlineCount, totalUp, totalDown, upSpeed, downSpeed }: HomeOverviewPanelProps) {
+export function HomeOverviewPanel({ totalCount, onlineCount, offlineCount: _offlineCount, totalUp, totalDown, upSpeed, downSpeed, dataStatus }: HomeOverviewPanelProps) {
   const uploadRate = compactRateParts(upSpeed)
   const downloadRate = compactRateParts(downSpeed)
   return (
     <section className="home-summary" aria-label="server overview">
       <div className="home-summary__tile home-summary__status-line" aria-label="服务器在线摘要">
         <strong>{onlineCount} / {totalCount} 在线</strong>
+        {dataStatus && <span className="home-summary__data-status">{dataStatus}</span>}
       </div>
 
       <dl className="home-summary__tile home-summary__metric home-summary__metric--send" aria-label="traffic sent">

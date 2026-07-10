@@ -247,7 +247,7 @@ X-Admin-Token: <session-token>
 
 ### GET /api/public/v1/settings
 
-读取公开站点配置。首页启动时会先读取该接口，用于品牌标题、头像/Logo、副标题、主题、Agent 接入 URL、电脑端/手机端背景图，以及管理员配置的自定义代码。头像/Logo 只用 `logo_url` 一个字段，不再拆出额外头像字段。图片字段只保存 URL / 站内静态路径，不存图片二进制。响应只包含公开展示字段，不包含 Admin token、Agent token、token hash、通知渠道凭据、secret 或 credential 原文。
+读取公开站点配置。首页启动时会先读取该接口，用于品牌标题、头像/Logo、副标题、主题、Agent 接入 URL、电脑端/手机端背景图，以及管理员配置的自定义 CSS。头像/Logo 只用 `logo_url` 一个字段，不再拆出额外头像字段。图片字段只保存 URL / 站内静态路径，不存图片二进制。响应只包含公开展示字段，不包含 Admin token、Agent token、token hash、通知渠道凭据、secret 或 credential 原文。
 
 默认值：
 
@@ -275,7 +275,7 @@ X-Admin-Token: <session-token>
 
 ### GET /api/public/v1/summary
 
-首页使用，返回节点卡片所需数据。节点按后台 `display_order ASC, id ASC` 排序；`expiry_label` 来自后台节点的 `expiry_date`，没有配置时为空，前端按永久展示。
+首页使用，返回节点卡片所需数据。节点按后台 `display_order ASC, id ASC` 排序；`expiry_label` 来自后台节点的 `expiry_date`，没有配置时为空，前端按永久展示。前端会把 summary 写入 localStorage，携带 `storedAt`，短 TTL 内作为新鲜数据；超过短 TTL 仍可作为兜底展示，但必须标出“数据已过期 / 最后更新”，同时展示 WS/HTTP 当前状态。
 
 节点响应示例：
 
@@ -328,7 +328,7 @@ X-Admin-Token: <session-token>
 
 ### GET /api/public/v1/services/{target_id}/latency
 
-查询某个监控服务在所有节点上的历史延迟。前端把每个节点作为一条曲线，用于服务详情页。`range` 支持 `1h`、`1d`、`7d`、`30d`。
+查询某个监控服务在所有节点上的历史延迟。前端把每个节点作为一条曲线，用于服务详情页。`range` 支持 `1h`、`1d`、`7d`、`30d`；未登录前台只提供 `1h` / `1d`，登录后才显示 `7d` / `30d`。若后端对长范围返回 401，前端会清除本地 Admin token 并提示重新登录。
 
 ```json
 {
@@ -366,6 +366,8 @@ X-Admin-Token: <session-token>
 range=1h|1d|7d|30d
 ```
 
+未登录前台只显示 `1h` / `1d`；登录后才显示 `7d` / `30d`。若长范围请求返回 401，前端清除本地 Admin token 并提示重新登录。详情页优先用 WS 实时更新，WS 不可用/超时/失败时再发轻量 HTTP fallback，避免一进入页面就 HTTP+WS 重复请求。
+
 响应字段重点：
 
 ```json
@@ -393,6 +395,8 @@ range=1h|1d|7d|30d
 ```text
 range=1h|1d|7d|30d
 ```
+
+未登录前台只显示 `1h` / `1d`；登录后才显示 `7d` / `30d`。若长范围请求返回 401，前端清除本地 Admin token 并提示重新登录。详情页优先用 WS 实时更新，WS 不可用/超时/失败时再发轻量 HTTP fallback，避免一进入页面就 HTTP+WS 重复请求。
 
 响应字段重点：
 
@@ -494,7 +498,7 @@ X-Admin-Token: <admin-token>
   "shadow_strength": 0.34,
   "background_overlay": 0.08,
   "theme_color": "#6366f1",
-  "custom_code": "<style>.home-top-card { border-color: #2563eb; }</style><script>console.log('Zeno custom code')</script>"
+  "custom_code": "<style>.home-top-card { border-color: #2563eb; }</style>"
 }
 ```
 
@@ -508,7 +512,7 @@ X-Admin-Token: <admin-token>
 - `background_url` 是旧兼容字段，当前等价于电脑端背景图；`background_url`、`desktop_background_url`、`mobile_background_url` 均可为空，非空时必须是站内绝对路径或 `https://` URL。手机端背景留空时前端跟随电脑端背景。
 - `appearance_preset` 只能是 `default` 或 `gaussian_blur`。预设会在前端作为默认参数组合，具体样式仍由下面的数值字段控制。
 - `card_opacity` 范围 `0.2`–`1`；`card_blur` 范围 `0`–`40`；`card_radius` 范围 `8`–`36`；`border_strength` / `shadow_strength` 范围 `0`–`1`；`background_overlay` 范围 `0`–`0.8`；`theme_color` 必须是 `#RRGGBB`。
-- `custom_code` 可为空，作为自定义代码注入公开页面，支持 `<style>` 和 `<script>`；最长 60000 字符。这里是公开展示代码，不要写入 token、secret 或 credential。
+- `custom_code` 可为空，当前作为 CSS-only 外观扩展注入公开页面：前端只提取 `<style>` 内容或纯 CSS 文本，不执行 `<script>`，也不挂载 HTML 事件处理器；最长 60000 字符。这里是公开展示样式，不要写入 token、secret 或 credential。
 - 图片只通过 URL / 站内静态路径引用，不把外观图片写入数据库。
 - 后台保存前会先做同口径的客户端校验，减少提交后才被 API 拒绝的情况。
 - 响应仍只返回公开展示字段，不返回 Admin token、Agent token、token hash、secret、credential 或任何凭据值。
@@ -755,7 +759,7 @@ Controller 会在 Agent 上报时实际使用这些规则：
 
 ### PATCH /api/admin/v1/alert-rules/{rule_id}
 
-部分更新通知类型规则的安全可调字段。当前允许调整启用状态、阈值、统计窗口/确认时间和作用服务器范围；启用状态在 Admin 中表现为添加 / 移除通知类型。规则 id、名称、指标、比较符、通知事件类型等结构性字段由 seed/代码控制。`scope_node_ids` 省略表示保持原范围不变，空数组表示作用于全部服务器，非空数组表示只作用于这些服务器；数组里的 node id 必须存在且不能重复。
+部分更新通知类型规则的安全可调字段。当前允许调整启用状态、阈值、统计窗口/确认时间和作用服务器范围；启用状态在 Admin 中表现为添加 / 移除通知类型。规则 id、名称、指标、比较符、通知事件类型等结构性字段由 seed/代码控制。`scope_node_ids` 省略表示保持原范围不变，空数组表示作用于全部服务器，非空数组表示只作用于这些服务器；数组里的 node id 必须存在且不能重复。前端保存通知类型时会等待该请求成功后才关闭弹窗；如后端后续提供原子化“规则 + 通知事件类型”接口，应优先改用原子接口，当前兼容路径失败时会留在弹窗并显示短错误。
 
 请求：
 
