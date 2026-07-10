@@ -561,7 +561,7 @@ func (s *SQLiteStore) AdminNodes(ctx context.Context) ([]AdminNode, error) {
 	defer rows.Close()
 
 	var nodes []AdminNode
-	now := time.Now().UTC()
+	now := time.Now()
 	for rows.Next() {
 		var node AdminNode
 		var status string
@@ -1088,7 +1088,7 @@ func (s *SQLiteStore) nodes(ctx context.Context) ([]Node, error) {
 	defer rows.Close()
 
 	var nodes []Node
-	now := time.Now().UTC()
+	now := time.Now()
 	for rows.Next() {
 		var id, displayName, status string
 		var countryCode, expiryDate, billingCycle, billingMode, osName, osVersion, kernel, arch, virtualization, cpuModel sql.NullString
@@ -1940,8 +1940,8 @@ func formatExpiryDaysLabel(date, now time.Time) string {
 }
 
 func dateOnlyUTC(value time.Time) time.Time {
-	utc := value.UTC()
-	return time.Date(utc.Year(), utc.Month(), utc.Day(), 0, 0, 0, 0, time.UTC)
+	year, month, day := value.Date()
+	return time.Date(year, month, day, 0, 0, 0, 0, time.UTC)
 }
 
 func addMonthsClampedUTC(value time.Time, months int) time.Time {

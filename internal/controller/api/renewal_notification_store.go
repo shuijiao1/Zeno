@@ -10,7 +10,7 @@ import (
 )
 
 func (s *SQLiteStore) PendingRenewalNotifications(ctx context.Context, now time.Time) ([]notificationEvent, error) {
-	today := truncateUTCDate(now)
+	today := dateOnlyUTC(now)
 	markDay := today.Format("2006-01-02")
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
@@ -101,7 +101,7 @@ func (s *SQLiteStore) MarkRenewalNotification(ctx context.Context, event notific
 	if nodeID == "" {
 		return nil
 	}
-	markDay := truncateUTCDate(now).Format("2006-01-02")
+	markDay := dateOnlyUTC(now).Format("2006-01-02")
 	expiryDate := extractRenewalExpiryDate(event.Detail)
 	if expiryDate == "" {
 		expiryDate = markDay
@@ -123,11 +123,6 @@ func renewalRulesMatch(rules []AdminAlertRule, daysRemaining float64) bool {
 		}
 	}
 	return false
-}
-
-func truncateUTCDate(ts time.Time) time.Time {
-	year, month, day := ts.UTC().Date()
-	return time.Date(year, month, day, 0, 0, 0, 0, time.UTC)
 }
 
 func renewalNotificationMark(day, expiryDate string) string {

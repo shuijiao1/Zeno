@@ -262,7 +262,7 @@ func (h *handler) dispatchRenewalNotifications(store agentStore) {
 	if !ok || h.notificationSender == nil {
 		return
 	}
-	now := time.Now().UTC()
+	now := time.Now()
 	events, err := renewalStore.PendingRenewalNotifications(context.Background(), now)
 	if err != nil {
 		return
