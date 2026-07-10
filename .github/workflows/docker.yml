@@ -34,6 +34,7 @@ jobs:
         with:
           go-version-input: '1.25.12'
           go-package: ./...
+          repo-checkout: false
       - run: npm ci
         working-directory: web
       - run: npm test -- --run

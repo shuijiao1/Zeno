@@ -32,6 +32,7 @@ jobs:
         with:
           go-version-input: '1.25.12'
           go-package: ./...
+          repo-checkout: false
       - run: bash -n install.sh scripts/*.sh
       - run: docker compose -f docker-compose.yml config >/dev/null
       - run: npm ci
