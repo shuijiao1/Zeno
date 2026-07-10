@@ -1,7 +1,7 @@
 import { type CSSProperties, type DragEvent, type FormEvent, type ReactNode, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import copy from 'copy-to-clipboard'
-import { createAdminNode, createAdminNotificationChannel, createAdminProbeTarget, deleteAdminNode, deleteAdminNotificationChannel, deleteAdminProbeTarget, fetchAdminAccount, fetchAdminAlertRules, fetchAdminNodes, fetchAdminNotificationChannels, fetchAdminProbeTargets, fetchAdminSettings, fetchNodeLatency, fetchNodeState, fetchPublicSettings, fetchServiceLatency, fetchSummary, subscribeNodeLatency, subscribeNodeState, subscribeServiceLatency, subscribeSummary, loginAdmin, logoutAdmin, requestAdminNodeInstallCommand, testAdminNotificationChannel, updateAdminAccount, updateAdminAlertRule, updateAdminNode, updateAdminNotificationChannel, updateAdminNotificationType, updateAdminProbeTarget, updateAdminSettings, type AdminAccountData, type AdminAlertRuleUpdateInput, type AdminNodeCreateInput, type AdminNodeUpdateInput, type AdminNotificationChannelCreateInput, type AdminNotificationChannelUpdateInput, type AdminProbeTargetInput, type AdminProbeTargetUpdateInput, type AdminSettingsUpdateInput, type LiveWebSocketStatus, type NodeLatencyData, type NodeStateData, type ServiceLatencyData, type SummaryData } from './api/client'
+import { createAdminNode, createAdminNotificationChannel, createAdminProbeTarget, deleteAdminNode, deleteAdminNotificationChannel, deleteAdminProbeTarget, fetchAdminAccount, fetchAdminAlertRules, fetchAdminNodes, fetchAdminNotificationChannels, fetchAdminProbeTargets, fetchAdminSettings, fetchNodeLatency, fetchNodeState, fetchPublicSettings, fetchServiceLatency, fetchSummary, subscribeNodeLatency, subscribeNodeState, subscribeServiceLatency, subscribeSummary, loginAdmin, logoutAdmin, requestAdminNodeInstallCommand, testAdminNotificationChannel, updateAdminAccount, updateAdminAlertRule, updateAdminNode, updateAdminNotificationChannel, updateAdminNotificationType, updateAdminProbeTarget, updateAdminSettings, type AdminAccountData, type AdminAlertRuleUpdateInput, type AdminNodeCreateInput, type AdminNodeUpdateInput, type AdminNotificationChannelCreateInput, type AdminNotificationChannelUpdateInput, type AdminProbeTargetInput, type AdminProbeTargetUpdateInput, type AdminSettingsUpdateInput, type NodeLatencyData, type NodeStateData, type ServiceLatencyData, type SummaryData } from './api/client'
 import { LatencyDetail } from './components/LatencyDetail'
 import { LatencyChart } from './components/LatencyChart'
 import { ServerCard } from './components/ServerCard'
@@ -186,8 +186,6 @@ type DataFreshness = {
   source?: 'cache' | 'summary' | 'http' | 'ws'
 }
 
-type LiveStatus = 'connecting' | 'live' | 'reconnecting' | 'fallback' | 'stale' | 'error'
-
 const detailHttpFallbackDelayMs = 1800
 
 const HOME_REALTIME_SNAPSHOT_INTERVAL_MS = 2000
@@ -218,16 +216,6 @@ function freshnessNotice(freshness: DataFreshness | undefined, explicitWarning?:
   if (explicitWarning) return explicitWarning
   if (!freshness?.stale) return undefined
   return `数据已过期 · 最后更新 ${formatCacheTimestamp(freshness.storedAt ?? 0)}`
-}
-
-function liveStatusLabel(status: LiveStatus, stale?: boolean, storedAt?: number): string {
-  if (stale) return `数据已过期 · 最后更新 ${formatCacheTimestamp(storedAt ?? 0)}`
-  if (status === 'live') return 'WS 实时'
-  if (status === 'reconnecting') return 'WS 重连中'
-  if (status === 'fallback') return 'HTTP 更新'
-  if (status === 'error') return 'HTTP 失败'
-  if (status === 'stale') return `数据已过期 · 最后更新 ${formatCacheTimestamp(storedAt ?? 0)}`
-  return 'WS 连接中'
 }
 
 function compactBytes(value: number): string {
@@ -470,7 +458,6 @@ export function App() {
   const homeRealtimeMountedAtRef = useRef(monotonicNowMs())
   const homeRealtimeLastUpdatedAtRef = useRef<number | null>(null)
   const [homeRealtimeSnapshot, setHomeRealtimeSnapshot] = useState<HomeRealtimeSnapshot | null>(() => state.kind === 'ready' ? homeRealtimeSnapshotForNodes(state.data.nodes) : null)
-  const [summaryLiveStatus, setSummaryLiveStatus] = useState<LiveStatus>(() => initialSummary ? (initialSummary.stale ? 'stale' : 'fallback') : 'connecting')
   const [adminToken, setAdminToken] = useState(loadStoredAdminToken)
   const [adminAuthState, setAdminAuthState] = useState<AdminAuthState>({ kind: 'idle' })
   const [adminState, setAdminState] = useState<AdminLoadState>({ kind: 'idle' })
@@ -518,36 +505,25 @@ export function App() {
       summaryRef.current = data
       if (!cancelled) {
         refreshHomeRealtimeSnapshot(data)
-        setSummaryLiveStatus(source === 'ws' ? 'live' : 'fallback')
         setState({ kind: 'ready', data, storedAt, stale: false })
       }
     }
     const startSummaryFallback = (reason?: string) => {
       if (fallbackStarted) return
       fallbackStarted = true
-      if (!cancelled) setSummaryLiveStatus('fallback')
       fetchSummary()
         .then((data) => applySummaryData(data, 'http'))
         .catch((error: unknown) => {
           if (cancelled) return
           const message = error instanceof Error ? error.message : (reason ?? 'summary request failed')
-          setSummaryLiveStatus('error')
           setState((current) => (current.kind === 'ready' ? { ...current, stale: true } : { kind: 'error', message }))
         })
-    }
-    const updateSummarySocketStatus = (status: LiveWebSocketStatus) => {
-      if (cancelled) return
-      if (status === 'open') setSummaryLiveStatus('live')
-      else if (status === 'reconnecting') setSummaryLiveStatus('reconnecting')
-      else if (status === 'connecting') setSummaryLiveStatus('connecting')
-      else if (status === 'closed') setSummaryLiveStatus('fallback')
     }
     const stopSummaryStream = subscribeSummary(
       (data) => applySummaryData(data, 'ws'),
       (error) => {
         if (!cancelled) startSummaryFallback(error.message)
       },
-      updateSummarySocketStatus,
     )
     if (!stopSummaryStream) {
       startSummaryFallback('live websocket unavailable')
@@ -1204,7 +1180,7 @@ export function App() {
   const downSpeed = currentRealtimeSnapshot.downSpeed
   const hasBackgroundImage = (effectiveSettings.desktopBackgroundUrl || effectiveSettings.backgroundUrl || effectiveSettings.mobileBackgroundUrl).trim() !== ''
   const hasAdminToken = adminToken !== ''
-  const summaryStatusText = state.kind === 'ready' ? liveStatusLabel(summaryLiveStatus, state.stale, state.storedAt) : liveStatusLabel(summaryLiveStatus)
+  const summaryDataNotice = state.kind === 'ready' ? freshnessNotice({ stale: Boolean(state.stale), storedAt: state.storedAt }) : undefined
 
   return (
     <main className="kulin-shell" data-theme={effectiveSettings.theme} data-background={hasBackgroundImage ? 'on' : 'off'} style={shellStyleForSettings(effectiveSettings)}>
@@ -1297,7 +1273,7 @@ export function App() {
             totalDown={totalDown}
             upSpeed={upSpeed}
             downSpeed={downSpeed}
-            dataStatus={summaryStatusText}
+            dataStatus={summaryDataNotice}
             onHome={navigateHome}
             onAdmin={navigateAdmin}
             onThemeChange={setThemeMode}
