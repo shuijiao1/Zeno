@@ -112,6 +112,10 @@ type latencyWindow struct {
 	Step    time.Duration
 }
 
+func extendedHistoryWindow(window latencyWindow) bool {
+	return window.Name == "7d" || window.Name == "30d"
+}
+
 func resolveLatencyWindow(rangeName string) (latencyWindow, bool) {
 	switch rangeName {
 	case "", "1h":

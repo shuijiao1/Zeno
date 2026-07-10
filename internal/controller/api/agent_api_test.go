@@ -243,6 +243,48 @@ func TestAgentProbeResultsStoresMeasuredTimeoutLatencyForCharts(t *testing.T) {
 	}
 }
 
+func TestAgentProbeResultsCapsOverFiveSecondSamplesAndCountsTimeoutLoss(t *testing.T) {
+	store, err := OpenSQLiteStore(filepath.Join(t.TempDir(), "zeno.db"))
+	if err != nil {
+		t.Fatalf("open sqlite store: %v", err)
+	}
+	defer store.Close()
+	ctx := context.Background()
+	if err := store.SeedPreviewData(ctx, PreviewSeedOptions{NodeID: "hytron", DisplayName: "Hytron", CountryCode: "HK", AgentToken: "test-agent-token"}); err != nil {
+		t.Fatalf("seed preview data: %v", err)
+	}
+
+	handler := NewHandler(HandlerOptions{Store: store})
+	now := time.Now().UTC().Truncate(time.Second)
+	payload := []byte(`{"rounds":[{"target_id":"google-dns","ts":` + strconv.FormatInt(now.Unix(), 10) + `,"type":"tcping","samples":[{"seq":1,"success":true,"latency_ms":7600}]}]}`)
+	recorder := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodPost, "/api/agent/v1/probe-results", bytes.NewReader(payload))
+	request.Header.Set("X-Node-ID", "hytron")
+	request.Header.Set("Authorization", "Bearer test-agent-token")
+	handler.ServeHTTP(recorder, request)
+	if recorder.Code != http.StatusAccepted {
+		t.Fatalf("probe results status = %d, want 202; body=%s", recorder.Code, recorder.Body.String())
+	}
+
+	var received int
+	var loss, avg float64
+	if err := store.db.QueryRowContext(ctx, `SELECT received, loss_percent, avg_ms FROM probe_rounds WHERE target_id = 'google-dns' ORDER BY id DESC LIMIT 1`).Scan(&received, &loss, &avg); err != nil {
+		t.Fatalf("query probe round: %v", err)
+	}
+	if received != 0 || loss != 100 || avg != 5000 {
+		t.Fatalf("received/loss/avg = %d/%.0f/%.0f, want 0/100/5000", received, loss, avg)
+	}
+}
+
+func TestLocalProbeObservationHasHardFiveSecondCap(t *testing.T) {
+	if got := localLatencyObservationTimeout(12 * time.Second); got != 5*time.Second {
+		t.Fatalf("observation timeout = %s, want 5s", got)
+	}
+	if got := localLatencyObservationTimeout(500 * time.Millisecond); got != 5*time.Second {
+		t.Fatalf("short target observation timeout = %s, want 5s to retain measured slow timeout latency", got)
+	}
+}
+
 func TestAgentProbeResultsSuccessfulHighLatencyDoesNotChangeStatus(t *testing.T) {
 	store, err := OpenSQLiteStore(filepath.Join(t.TempDir(), "zeno.db"))
 	if err != nil {

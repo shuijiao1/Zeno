@@ -227,6 +227,16 @@ func (h *handler) dispatchNotificationEvent(store agentStore, event notification
 	if event.Label == "" {
 		event.Label = label
 	}
+	if outboxStore, ok := store.(notificationOutboxStore); ok {
+		queued, err := outboxStore.QueueNotificationEvent(context.Background(), event, channels)
+		if err != nil || !queued {
+			return false
+		}
+		// Kick the durable worker immediately; the periodic worker remains the
+		// restart-safe fallback and handles backoff retries.
+		h.startBackground(func(ctx context.Context) { h.dispatchPendingNotificationDeliveries(ctx) })
+		return true
+	}
 	if shouldClaimStatusNotification(event) {
 		if markStore, ok := store.(notificationStatusMarkStore); ok {
 			claimed, err := markStore.ClaimStatusNotification(context.Background(), event)

@@ -52,6 +52,8 @@ func buildController(config handlerConfig) (*controllerRuntime, error) {
 		store = opened
 		options.Store = store
 		options.StaleOfflineScanInterval = 5 * time.Second
+		options.HistoryRetentionInterval = time.Hour
+		options.NotificationDispatchInterval = 5 * time.Second
 		cleanupHandlers = append(cleanupHandlers, func(context.Context) error { return store.Close() })
 		if config.SeedPreview {
 			if err := store.SeedPreviewData(context.Background(), api.PreviewSeedOptions{NodeID: config.NodeID, DisplayName: "Hytron", CountryCode: "HK", AgentToken: config.AgentToken}); err != nil {

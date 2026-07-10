@@ -630,9 +630,14 @@ func TestNodeLatencyEndpointPreservesLossOnlyPointsAsNullLatency(t *testing.T) {
 
 func requestLatency(t *testing.T, path string) LatencyResponse {
 	t.Helper()
-	handler := NewHandler()
+	const adminToken = "history-test-admin"
+	handler := NewHandler(HandlerOptions{AdminTokenHash: HashAdminToken(adminToken)})
 	recorder := httptest.NewRecorder()
-	handler.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, path, nil))
+	request := httptest.NewRequest(http.MethodGet, path, nil)
+	if strings.Contains(path, "range=7d") || strings.Contains(path, "range=30d") {
+		request.Header.Set("X-Admin-Token", adminToken)
+	}
+	handler.ServeHTTP(recorder, request)
 	if recorder.Code != http.StatusOK {
 		t.Fatalf("status = %d, want %d; body=%s", recorder.Code, http.StatusOK, recorder.Body.String())
 	}
@@ -646,9 +651,14 @@ func requestLatency(t *testing.T, path string) LatencyResponse {
 
 func requestState(t *testing.T, path string) StateResponse {
 	t.Helper()
-	handler := NewHandler()
+	const adminToken = "history-test-admin"
+	handler := NewHandler(HandlerOptions{AdminTokenHash: HashAdminToken(adminToken)})
 	recorder := httptest.NewRecorder()
-	handler.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, path, nil))
+	request := httptest.NewRequest(http.MethodGet, path, nil)
+	if strings.Contains(path, "range=7d") || strings.Contains(path, "range=30d") {
+		request.Header.Set("X-Admin-Token", adminToken)
+	}
+	handler.ServeHTTP(recorder, request)
 	if recorder.Code != http.StatusOK {
 		t.Fatalf("status = %d, want %d; body=%s", recorder.Code, http.StatusOK, recorder.Body.String())
 	}

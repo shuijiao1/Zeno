@@ -2,12 +2,19 @@ package api
 
 import (
 	"context"
+	"errors"
 	"net/url"
 	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 )
+
+type failingNotificationSender struct{}
+
+func (failingNotificationSender) Send(context.Context, notificationDispatchChannel, notificationEvent) error {
+	return errors.New("temporary network failure")
+}
 
 func TestNotificationMessageTextUsesMaskedIPv4AndCompactStatusFormat(t *testing.T) {
 	cases := []struct {
@@ -115,6 +122,56 @@ func TestDispatchAgentStatusNotificationDedupesActiveWarningsUntilRecovery(t *te
 	_, forms, errors = telegram.waitForCalls(t, 3)
 	if len(errors) != 0 || len(forms) != 3 || !strings.Contains(decodedTelegramText(forms[2]), "⚠️[警告]") {
 		t.Fatalf("forms after new warning cycle = %+v errors=%+v, want warning allowed after recovery", forms, errors)
+	}
+}
+
+func TestNotificationOutboxPersistsFailureAndRetriesAfterRestart(t *testing.T) {
+	store, err := OpenSQLiteStore(filepath.Join(t.TempDir(), "zeno.db"))
+	if err != nil {
+		t.Fatalf("open sqlite store: %v", err)
+	}
+	defer store.Close()
+	ctx := context.Background()
+	if err := store.SeedPreviewData(ctx, PreviewSeedOptions{NodeID: "hytron", DisplayName: "Hytron", CountryCode: "HK", AgentToken: "test-agent-token"}); err != nil {
+		t.Fatalf("seed preview data: %v", err)
+	}
+	enabled := true
+	channel, err := store.CreateAdminNotificationChannel(ctx, AdminNotificationChannelCreateRequest{ID: "ops", Name: "Ops", Destination: "7579942307", Credential: "super-secret-bot-token", Enabled: &enabled})
+	if err != nil {
+		t.Fatalf("create notification channel: %v", err)
+	}
+	event := notificationEvent{EventType: "node_offline", Label: "离线", NodeID: "hytron", NodeName: "Hytron", PreviousStatus: "online", Status: "offline", TS: time.Now().UTC().Format(time.RFC3339)}
+	queued, err := store.QueueNotificationEvent(ctx, event, []notificationDispatchChannel{{ID: channel.ID, Name: channel.Name, Destination: channel.Destination, Credential: "super-secret-bot-token", Type: "telegram"}})
+	if err != nil || !queued {
+		t.Fatalf("queue event = %v, %v", queued, err)
+	}
+
+	failing := &handler{store: store, notificationSender: failingNotificationSender{}}
+	failing.dispatchPendingNotificationDeliveries(ctx)
+	var state, lastError string
+	var attempts int
+	if err := store.db.QueryRowContext(ctx, `SELECT state, attempts, last_error FROM notification_deliveries ORDER BY id DESC LIMIT 1`).Scan(&state, &attempts, &lastError); err != nil {
+		t.Fatalf("read failed delivery: %v", err)
+	}
+	if state != "pending" || attempts != 1 || lastError == "" || strings.Contains(lastError, "super-secret") {
+		t.Fatalf("failed delivery = state %q attempts %d error %q", state, attempts, lastError)
+	}
+	if _, err := store.db.ExecContext(ctx, `UPDATE notification_deliveries SET next_attempt_at = 0`); err != nil {
+		t.Fatalf("make delivery retryable: %v", err)
+	}
+
+	telegram := newTelegramTestCapture(t)
+	restarted := &handler{store: store, notificationSender: newHTTPNotificationSender(telegram.server.Client(), telegram.server.URL)}
+	restarted.dispatchPendingNotificationDeliveries(ctx)
+	_, forms, captureErrors := telegram.waitForCalls(t, 1)
+	if len(captureErrors) != 0 || len(forms) != 1 {
+		t.Fatalf("retry calls=%d errors=%v", len(forms), captureErrors)
+	}
+	if err := store.db.QueryRowContext(ctx, `SELECT state, attempts, last_error FROM notification_deliveries ORDER BY id DESC LIMIT 1`).Scan(&state, &attempts, &lastError); err != nil {
+		t.Fatalf("read delivered row: %v", err)
+	}
+	if state != "delivered" || attempts != 2 || lastError != "" {
+		t.Fatalf("delivered row = state %q attempts %d error %q", state, attempts, lastError)
 	}
 }
 

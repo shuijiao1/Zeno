@@ -188,6 +188,10 @@ CREATE TABLE probe_samples (
 );
 ```
 
+Controller 每小时清理一次超过 30 天的 `state_samples`、`probe_rounds`，关联的
+`probe_samples` 通过外键级联删除。30 天边界数据保留；配置、当前状态、月流量和
+通知事件标记不属于原始高频历史，不随该任务删除。
+
 ## notification_channels / notification_types
 
 通知当前是 Telegram-only 产品路径；SQLite schema 不保留多渠道 `type` / `channel_type` 兼容列。
@@ -209,9 +213,32 @@ CREATE TABLE notification_types (
   updated_at INTEGER NOT NULL
 );
 
+CREATE TABLE notification_deliveries (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  event_type TEXT NOT NULL,
+  label TEXT NOT NULL DEFAULT '',
+  node_id TEXT NOT NULL DEFAULT '',
+  node_name TEXT NOT NULL DEFAULT '',
+  previous_status TEXT NOT NULL DEFAULT '',
+  status TEXT NOT NULL DEFAULT '',
+  detail TEXT NOT NULL DEFAULT '',
+  channel_id TEXT NOT NULL,
+  channel_name TEXT NOT NULL DEFAULT '',
+  state TEXT NOT NULL DEFAULT 'pending',
+  attempts INTEGER NOT NULL DEFAULT 0,
+  next_attempt_at INTEGER NOT NULL,
+  last_error TEXT NOT NULL DEFAULT '',
+  created_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL,
+  delivered_at INTEGER
+);
+
 ```
 
 `credential` 不通过 Admin API 响应返回。
+通知事件与 incident 去重标记在同一事务中写入 outbox；发送失败按退避策略最多
+尝试 5 次，Controller 重启后继续处理。投递历史只保存净化后的错误，不保存 Bot
+Token 或请求 URL。
 
 ## alert_rules / alert_rule_node_scopes / alert_rule_states
 

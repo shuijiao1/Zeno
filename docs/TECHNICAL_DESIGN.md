@@ -120,6 +120,8 @@ delta_out = current_out_total - last_out_total
 
 - summary 用于快速首页、服务详情定位和图表。
 - samples 保留 raw ping/tcp/http 结果，便于后续扩展抖动、尖峰、loss 细节。
+- 原始状态和探测历史最多保留 30 天，由 Controller 启动后及每小时定期清理。
+- 7 天、30 天历史只允许已登录管理员读取；游客仍可读取实时和 1 天范围。
 
 目标类型：
 

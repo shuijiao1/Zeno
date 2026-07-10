@@ -14,15 +14,17 @@ import (
 )
 
 type HandlerOptions struct {
-	StaticDir                string
-	Store                    Store
-	AdminTokenHash           string
-	AgentBinaryPath          string
-	AgentVersion             string
-	NotificationClient       *http.Client
-	TelegramAPIBaseURL       string
-	StaleOfflineScanInterval time.Duration
-	BackgroundContext        context.Context
+	StaticDir                    string
+	Store                        Store
+	AdminTokenHash               string
+	AgentBinaryPath              string
+	AgentVersion                 string
+	NotificationClient           *http.Client
+	TelegramAPIBaseURL           string
+	StaleOfflineScanInterval     time.Duration
+	HistoryRetentionInterval     time.Duration
+	NotificationDispatchInterval time.Duration
+	BackgroundContext            context.Context
 }
 
 type handler struct {
@@ -43,6 +45,7 @@ type handler struct {
 	backgroundCtx        context.Context
 	backgroundCancel     context.CancelFunc
 	backgroundWG         sync.WaitGroup
+	notificationDrainMu  sync.Mutex
 	router               http.Handler
 }
 
@@ -148,6 +151,12 @@ func NewHandler(options ...HandlerOptions) http.Handler {
 	}
 	if opts.StaleOfflineScanInterval > 0 {
 		h.startBackground(func(ctx context.Context) { h.runStaleAgentOfflineScanner(ctx, opts.StaleOfflineScanInterval) })
+	}
+	if opts.HistoryRetentionInterval > 0 {
+		h.startBackground(func(ctx context.Context) { h.runHistoryRetention(ctx, opts.HistoryRetentionInterval) })
+	}
+	if opts.NotificationDispatchInterval > 0 {
+		h.startBackground(func(ctx context.Context) { h.runNotificationOutbox(ctx, opts.NotificationDispatchInterval) })
 	}
 
 	mux := http.NewServeMux()
@@ -267,6 +276,9 @@ func (h *handler) handlePublicServiceResource(w http.ResponseWriter, r *http.Req
 	window, ok := resolveLatencyWindow(r.URL.Query().Get("range"))
 	if !ok {
 		writeError(w, http.StatusBadRequest, "unsupported range")
+		return
+	}
+	if extendedHistoryWindow(window) && !h.authorizeExtendedHistoryRequest(w, r) {
 		return
 	}
 	if len(parts) == 3 {
@@ -408,6 +420,9 @@ func (h *handler) handlePublicNodeResource(w http.ResponseWriter, r *http.Reques
 			writeError(w, http.StatusBadRequest, "unsupported range")
 			return
 		}
+		if extendedHistoryWindow(window) && !h.authorizeExtendedHistoryRequest(w, r) {
+			return
+		}
 		if len(parts) == 3 {
 			h.handleNodeLatencyWebSocket(w, r, nodeID, window)
 			return
@@ -422,6 +437,9 @@ func (h *handler) handlePublicNodeResource(w http.ResponseWriter, r *http.Reques
 		window, ok := resolveStateWindow(rangeName)
 		if !ok {
 			writeError(w, http.StatusBadRequest, "unsupported range")
+			return
+		}
+		if extendedHistoryWindow(window) && !h.authorizeExtendedHistoryRequest(w, r) {
 			return
 		}
 		if len(parts) == 3 {

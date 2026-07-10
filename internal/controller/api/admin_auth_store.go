@@ -13,6 +13,7 @@ const (
 	settingKeyAdminPasswordHash = "admin_password_hash"
 	adminSessionIdleTimeout     = 24 * time.Hour
 	adminSessionAbsoluteTimeout = 24 * time.Hour
+	adminSessionMaxActive       = 8
 )
 
 var (
@@ -60,8 +61,8 @@ func (s *SQLiteStore) AuthorizeAdminSession(ctx context.Context, token string) (
 		UPDATE admin_sessions
 		SET last_seen_at = ?
 		WHERE token_hash = ?
-		  AND created_at >= ?
-		  AND last_seen_at >= ?
+		  AND created_at > ?
+		  AND last_seen_at > ?
 	`, now, HashAdminToken(token), now-int64(adminSessionAbsoluteTimeout.Seconds()), now-int64(adminSessionIdleTimeout.Seconds()))
 	if err != nil {
 		return false, err
@@ -191,17 +192,38 @@ func (s *SQLiteStore) createAdminSession(ctx context.Context, token string) erro
 	if err := s.pruneExpiredAdminSessions(ctx, now); err != nil {
 		return err
 	}
-	_, err := s.db.ExecContext(ctx, `
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer rollbackUnlessCommitted(tx)
+	if _, err := tx.ExecContext(ctx, `
 		INSERT INTO admin_sessions (token_hash, created_at, last_seen_at)
 		VALUES (?, ?, ?)
-	`, HashAdminToken(token), now, now)
-	return err
+	`, HashAdminToken(token), now, now); err != nil {
+		return err
+	}
+	if _, err := tx.ExecContext(ctx, `
+		DELETE FROM admin_sessions
+		WHERE token_hash NOT IN (
+			SELECT token_hash FROM admin_sessions
+			ORDER BY last_seen_at DESC, created_at DESC, token_hash DESC
+			LIMIT ?
+		)
+	`, adminSessionMaxActive); err != nil {
+		return err
+	}
+	if err := tx.Commit(); err != nil {
+		return err
+	}
+	tx = nil
+	return nil
 }
 
 func (s *SQLiteStore) pruneExpiredAdminSessions(ctx context.Context, now int64) error {
 	_, err := s.db.ExecContext(ctx, `
 		DELETE FROM admin_sessions
-		WHERE created_at < ? OR last_seen_at < ?
+		WHERE created_at <= ? OR last_seen_at <= ?
 	`, now-int64(adminSessionAbsoluteTimeout.Seconds()), now-int64(adminSessionIdleTimeout.Seconds()))
 	return err
 }

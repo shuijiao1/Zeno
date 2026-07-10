@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"math"
 	"net/http"
 	"strings"
 	"time"
@@ -121,7 +122,31 @@ func (h *handler) handleAgentProbeResults(w http.ResponseWriter, r *http.Request
 			if seq == 0 {
 				seq = index + 1
 			}
-			samples = append(samples, probe.Sample{Seq: seq, Success: sample.Success, LatencyMS: sample.LatencyMS, Error: sample.Error})
+			latency := sample.LatencyMS
+			if latency != nil {
+				if math.IsNaN(*latency) || math.IsInf(*latency, 0) || *latency < 0 {
+					writeError(w, http.StatusBadRequest, "invalid sample latency")
+					return
+				}
+				normalized := *latency
+				if normalized > float64(localDrawableLatencyCap/time.Millisecond) {
+					normalized = float64(localDrawableLatencyCap / time.Millisecond)
+				}
+				latency = &normalized
+			}
+			success := sample.Success
+			errorText := strings.TrimSpace(sample.Error)
+			if latency != nil {
+				effectiveTimeoutMS := target.TimeoutMS
+				if effectiveTimeoutMS <= 0 || effectiveTimeoutMS > int(localDrawableLatencyCap/time.Millisecond) {
+					effectiveTimeoutMS = int(localDrawableLatencyCap / time.Millisecond)
+				}
+				if *sample.LatencyMS > float64(effectiveTimeoutMS) {
+					success = false
+					errorText = "timeout"
+				}
+			}
+			samples = append(samples, probe.Sample{Seq: seq, Success: success, LatencyMS: latency, Error: errorText})
 		}
 		if len(samples) == 0 {
 			writeError(w, http.StatusBadRequest, "samples required")

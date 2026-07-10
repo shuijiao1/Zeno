@@ -118,10 +118,10 @@ func normalizedLocalProbeTimeout(timeoutMS int) time.Duration {
 }
 
 func localLatencyObservationTimeout(timeout time.Duration) time.Duration {
-	if timeout < localDrawableLatencyCap {
-		return localDrawableLatencyCap
-	}
-	return timeout
+	// Five seconds is the hard observation cap used by the charts. A target's
+	// configured success timeout may be shorter, but must never keep a probe
+	// goroutine or socket blocked beyond the drawable window.
+	return localDrawableLatencyCap
 }
 
 func measuredLocalProbeSample(seq int, elapsedMS float64, timeout time.Duration) probe.Sample {

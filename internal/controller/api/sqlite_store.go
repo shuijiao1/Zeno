@@ -263,6 +263,26 @@ func (s *SQLiteStore) ensureSchema(ctx context.Context) error {
 			PRIMARY KEY (event_type, node_id, mark)
 		);`,
 		`CREATE INDEX IF NOT EXISTS idx_notification_event_marks_event_node ON notification_event_marks(event_type, node_id);`,
+		`CREATE TABLE IF NOT EXISTS notification_deliveries (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			event_type TEXT NOT NULL,
+			label TEXT NOT NULL DEFAULT '',
+			node_id TEXT NOT NULL DEFAULT '',
+			node_name TEXT NOT NULL DEFAULT '',
+			previous_status TEXT NOT NULL DEFAULT '',
+			status TEXT NOT NULL DEFAULT '',
+			detail TEXT NOT NULL DEFAULT '',
+			channel_id TEXT NOT NULL,
+			channel_name TEXT NOT NULL DEFAULT '',
+			state TEXT NOT NULL DEFAULT 'pending',
+			attempts INTEGER NOT NULL DEFAULT 0,
+			next_attempt_at INTEGER NOT NULL,
+			last_error TEXT NOT NULL DEFAULT '',
+			created_at INTEGER NOT NULL,
+			updated_at INTEGER NOT NULL,
+			delivered_at INTEGER
+		);`,
+		`CREATE INDEX IF NOT EXISTS idx_notification_deliveries_pending ON notification_deliveries(state, next_attempt_at, id);`,
 		`CREATE TABLE IF NOT EXISTS settings (
 			key TEXT PRIMARY KEY,
 			value TEXT NOT NULL,
@@ -341,8 +361,7 @@ func (s *SQLiteStore) ensureSchema(ctx context.Context) error {
 }
 
 func (s *SQLiteStore) pruneRetiredTables(ctx context.Context) error {
-	_, err := s.db.ExecContext(ctx, `DROP TABLE IF EXISTS notification_deliveries`)
-	return err
+	return nil
 }
 
 func (s *SQLiteStore) migrateNotificationChannels(ctx context.Context) error {

@@ -366,6 +366,37 @@ func (h *handler) authorizeAdminRequest(w http.ResponseWriter, r *http.Request) 
 	return store, true
 }
 
+// authorizeExtendedHistoryRequest protects the heavier 7-day and 30-day
+// history endpoints while allowing the public dashboard to pass its existing
+// opaque admin session in X-Admin-Token.
+func (h *handler) authorizeExtendedHistoryRequest(w http.ResponseWriter, r *http.Request) bool {
+	provided := strings.TrimSpace(r.Header.Get("X-Admin-Token"))
+	if authStore, ok := h.store.(adminAuthStore); ok {
+		authorized, err := authStore.AuthorizeAdminSession(r.Context(), provided)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, "internal error")
+			return false
+		}
+		if authorized {
+			return true
+		}
+		configured, err := authStore.AdminAccountConfigured(r.Context())
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, "internal error")
+			return false
+		}
+		if configured {
+			writeError(w, http.StatusUnauthorized, "unauthorized")
+			return false
+		}
+	}
+	if h.adminTokenHash != "" && adminTokenMatches(h.adminTokenHash, provided) {
+		return true
+	}
+	writeError(w, http.StatusUnauthorized, "unauthorized")
+	return false
+}
+
 func adminLoginRateLimitKey(r *http.Request, username string) string {
 	remote := strings.TrimSpace(r.RemoteAddr)
 	if host, _, ok := strings.Cut(remote, ":"); ok && host != "" {
