@@ -67,7 +67,7 @@ Optional environment variables:
 ```bash
 ZENO_INSTALL_DIR=/opt/zeno \
 ZENO_HOST_PORT=18980 \
-ZENO_IMAGE=ghcr.io/shuijiao1/zeno:v0.3.5 \
+ZENO_IMAGE=ghcr.io/shuijiao1/zeno:latest \
 bash <(curl -fsSL https://zeno.shuijiao.de)
 ```
 

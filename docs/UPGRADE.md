@@ -26,7 +26,7 @@ Zeno Controller 推荐使用 Docker Compose 部署。数据库迁移会在 Contr
 不要用不可回滚的 `latest` 流程。指定版本 tag 或 digest 后再更新：
 
 ```bash
-sudo ZENO_IMAGE=ghcr.io/shuijiao1/zeno:v0.3.5 bash install.sh
+sudo ZENO_IMAGE=ghcr.io/shuijiao1/zeno:latest bash install.sh
 ```
 
 手工 Compose 更新也应先改 `.env` 中的 `ZENO_IMAGE` 为明确版本：

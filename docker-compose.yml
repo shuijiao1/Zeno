@@ -1,6 +1,6 @@
 services:
   zeno:
-    image: ${ZENO_IMAGE:-ghcr.io/shuijiao1/zeno:v0.3.5}
+    image: ${ZENO_IMAGE:-ghcr.io/shuijiao1/zeno:latest}
     container_name: ${ZENO_CONTAINER_NAME:-zeno}
     restart: unless-stopped
     environment:

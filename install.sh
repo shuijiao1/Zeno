@@ -2,7 +2,7 @@
 set -euo pipefail
 
 REPO="shuijiao1/Zeno"
-DEFAULT_IMAGE="ghcr.io/shuijiao1/zeno:v0.3.5"
+DEFAULT_IMAGE="ghcr.io/shuijiao1/zeno:latest"
 IMAGE="${ZENO_IMAGE:-}"
 INSTALL_DIR="${ZENO_INSTALL_DIR:-/opt/zeno}"
 HOST_PORT="${ZENO_HOST_PORT:-}"
@@ -40,9 +40,6 @@ read_env_value() {
 
 validate_image_reference() {
   local image="$1"
-  if [[ "$image" == *":latest" ]]; then
-    fail "ZENO_IMAGE 不能使用 latest；请指定版本 tag（例如 ${DEFAULT_IMAGE}）或 digest"
-  fi
   if [[ "$image" != *@sha256:* && "$image" != *:* ]]; then
     fail "ZENO_IMAGE 必须明确 tag 或 digest，不能使用隐式 latest: ${image}"
   fi
@@ -158,7 +155,7 @@ write_compose_file() {
   cat > "$INSTALL_DIR/docker-compose.yml" <<'EOF_COMPOSE'
 services:
   zeno:
-    image: ${ZENO_IMAGE:?ZENO_IMAGE must be an explicit non-latest tag or digest}
+    image: ${ZENO_IMAGE:?ZENO_IMAGE must be an explicit tag or digest}
     container_name: ${ZENO_CONTAINER_NAME:-zeno}
     restart: unless-stopped
     environment:
