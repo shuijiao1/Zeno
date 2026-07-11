@@ -82,7 +82,10 @@ const summaryLiveTopic = "summary"
 
 const (
 	summaryPublishCoalesceDelay = 250 * time.Millisecond
-	summaryPublishMinInterval   = 1 * time.Second
+	// Agents report state every three seconds. Rebuilding the full public
+	// summary more frequently cannot expose newer state, but repeatedly scans
+	// the rolling 24-hour latency aggregates on large databases.
+	summaryPublishMinInterval = 3 * time.Second
 )
 
 func nodeStateLiveTopic(nodeID, rangeName string) string {
