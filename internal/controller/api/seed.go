@@ -115,6 +115,9 @@ func (s *SQLiteStore) SeedPreviewData(ctx context.Context, options PreviewSeedOp
 			return err
 		}
 	}
+	if err := bumpProbeConfigVersionTx(ctx, tx); err != nil {
+		return err
+	}
 
 	if err := tx.Commit(); err != nil {
 		return err
@@ -155,7 +158,19 @@ func previewTarget(id, name, address string, port int) ProbeTarget {
 }
 
 func (s *SQLiteStore) EnabledProbeTargets(ctx context.Context, nodeID string) ([]ProbeTarget, error) {
-	rows, err := s.db.QueryContext(ctx, `
+	return enabledProbeTargetsQuery(ctx, s.db, nodeID)
+}
+
+func enabledProbeTargetsTx(ctx context.Context, tx *sql.Tx, nodeID string) ([]ProbeTarget, error) {
+	return enabledProbeTargetsQuery(ctx, tx, nodeID)
+}
+
+type probeTargetQueryer interface {
+	QueryContext(ctx context.Context, query string, args ...any) (*sql.Rows, error)
+}
+
+func enabledProbeTargetsQuery(ctx context.Context, queryer probeTargetQueryer, nodeID string) ([]ProbeTarget, error) {
+	rows, err := queryer.QueryContext(ctx, `
 		SELECT pt.id, pt.name, pt.type, pt.address, pt.port, pt.count, pt.timeout_ms, pt.interval_sec
 		FROM probe_targets pt
 		JOIN node_probe_targets npt ON npt.target_id = pt.id
@@ -169,7 +184,8 @@ func (s *SQLiteStore) EnabledProbeTargets(ctx context.Context, nodeID string) ([
 	}
 	defer rows.Close()
 
-	var targets []ProbeTarget
+	targets := make([]ProbeTarget, 0, maxProbeTargetsPerNode)
+	var nodeBudgetMS int64
 	for rows.Next() {
 		var target ProbeTarget
 		var port sql.NullInt64
@@ -180,6 +196,12 @@ func (s *SQLiteStore) EnabledProbeTargets(ctx context.Context, nodeID string) ([
 			p := int(port.Int64)
 			target.Port = &p
 		}
+		target = normalizeProbeTargetForExecution(target)
+		targetBudgetMS := probeTargetRoundBudgetMS(target.Count, target.TimeoutMS)
+		if len(targets) >= maxProbeTargetsPerNode || nodeBudgetMS+targetBudgetMS > maxProbeNodeRoundBudgetMS {
+			continue
+		}
+		nodeBudgetMS += targetBudgetMS
 		targets = append(targets, target)
 	}
 	if err := rows.Err(); err != nil {

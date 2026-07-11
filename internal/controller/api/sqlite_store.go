@@ -4,6 +4,8 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"net/url"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -17,11 +19,19 @@ type SQLiteStore struct {
 const nodeHeartbeatOfflineAfter = 30 * time.Second
 
 func OpenSQLiteStore(path string) (*SQLiteStore, error) {
-	db, err := sql.Open("sqlite", path)
+	dsn, err := sqliteDSN(path)
 	if err != nil {
 		return nil, err
 	}
-	db.SetMaxOpenConns(1)
+	db, err := sql.Open("sqlite", dsn)
+	if err != nil {
+		return nil, err
+	}
+	// WAL supports concurrent readers while SQLite still serializes writes.
+	// Keeping a small pool prevents history/chart reads from queueing behind
+	// Agent writes and summary refreshes on one shared connection.
+	db.SetMaxOpenConns(4)
+	db.SetMaxIdleConns(4)
 	if _, err := db.Exec(`PRAGMA foreign_keys = ON;`); err != nil {
 		_ = db.Close()
 		return nil, err
@@ -32,6 +42,20 @@ func OpenSQLiteStore(path string) (*SQLiteStore, error) {
 		return nil, err
 	}
 	return store, nil
+}
+
+func sqliteDSN(path string) (string, error) {
+	if strings.TrimSpace(path) == "" {
+		return "", fmt.Errorf("sqlite path is required")
+	}
+	absolutePath, err := filepath.Abs(path)
+	if err != nil {
+		return "", err
+	}
+	values := url.Values{}
+	values.Add("_pragma", "foreign_keys(1)")
+	values.Add("_pragma", "busy_timeout(5000)")
+	return (&url.URL{Scheme: "file", Path: absolutePath, RawQuery: values.Encode()}).String(), nil
 }
 
 func (s *SQLiteStore) Close() error {
@@ -49,11 +73,14 @@ func (s *SQLiteStore) Ready(ctx context.Context) error {
 	if one != 1 {
 		return fmt.Errorf("sqlite readiness probe returned %d", one)
 	}
-	_, err := s.db.ExecContext(ctx, `
-		INSERT INTO readiness_probe (id, checked_at) VALUES (1, strftime('%s', 'now'))
-		ON CONFLICT(id) DO UPDATE SET checked_at = excluded.checked_at
-	`)
-	return err
+	var tableName string
+	if err := s.db.QueryRowContext(ctx, `SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'nodes'`).Scan(&tableName); err != nil {
+		return err
+	}
+	if tableName != "nodes" {
+		return fmt.Errorf("sqlite readiness schema missing nodes table")
+	}
+	return nil
 }
 
 func (s *SQLiteStore) QuickCheck(ctx context.Context) error {
@@ -185,6 +212,9 @@ func (s *SQLiteStore) ensureSchema(ctx context.Context) error {
 			target_id TEXT NOT NULL REFERENCES probe_targets(id),
 			ts INTEGER NOT NULL,
 			type TEXT NOT NULL,
+			idempotency_key TEXT NOT NULL DEFAULT '',
+			agent_round_id TEXT,
+			payload_hash TEXT NOT NULL DEFAULT '',
 			sent INTEGER NOT NULL,
 			received INTEGER NOT NULL,
 			loss_percent REAL NOT NULL,
@@ -198,6 +228,7 @@ func (s *SQLiteStore) ensureSchema(ctx context.Context) error {
 		`CREATE INDEX IF NOT EXISTS idx_probe_rounds_node_target_ts ON probe_rounds(node_id, target_id, ts);`,
 		`CREATE INDEX IF NOT EXISTS idx_probe_rounds_node_ts ON probe_rounds(node_id, ts);`,
 		`CREATE INDEX IF NOT EXISTS idx_probe_rounds_target_ts ON probe_rounds(target_id, ts);`,
+		`CREATE INDEX IF NOT EXISTS idx_probe_rounds_ts_target_node ON probe_rounds(ts, target_id, node_id);`,
 		`CREATE TABLE IF NOT EXISTS probe_samples (
 			round_id INTEGER NOT NULL REFERENCES probe_rounds(id) ON DELETE CASCADE,
 			seq INTEGER NOT NULL,
@@ -320,6 +351,18 @@ func (s *SQLiteStore) ensureSchema(ctx context.Context) error {
 			return err
 		}
 	}
+	if err := s.ensureColumn(ctx, "probe_rounds", "idempotency_key", "TEXT NOT NULL DEFAULT ''"); err != nil {
+		return err
+	}
+	if err := s.ensureColumn(ctx, "probe_rounds", "agent_round_id", "TEXT"); err != nil {
+		return err
+	}
+	if err := s.ensureColumn(ctx, "probe_rounds", "payload_hash", "TEXT NOT NULL DEFAULT ''"); err != nil {
+		return err
+	}
+	if err := s.migrateProbeRoundIdempotency(ctx); err != nil {
+		return err
+	}
 	nodeColumns := map[string]string{
 		"install_token":        "TEXT",
 		"home_probe_target_id": "TEXT",
@@ -342,6 +385,27 @@ func (s *SQLiteStore) ensureSchema(ctx context.Context) error {
 		if err := s.ensureColumn(ctx, "probe_targets", column, columnType); err != nil {
 			return err
 		}
+	}
+	trafficMonthlyColumns := map[string]string{
+		"last_sample_ts": "INTEGER",
+	}
+	for column, columnType := range trafficMonthlyColumns {
+		if err := s.ensureColumn(ctx, "traffic_monthly", column, columnType); err != nil {
+			return err
+		}
+	}
+	if _, err := s.db.ExecContext(ctx, `
+		UPDATE traffic_monthly
+		SET last_sample_ts = COALESCE(
+			(SELECT MAX(ss.ts)
+			 FROM state_samples ss
+			 WHERE ss.node_id = traffic_monthly.node_id
+			   AND ss.ts <= CAST(strftime('%s', 'now') AS INTEGER) + 300),
+			updated_at
+		)
+		WHERE last_sample_ts IS NULL
+	`); err != nil {
+		return err
 	}
 	alertRuleStateColumns := map[string]string{
 		"last_value": "REAL",
@@ -472,17 +536,21 @@ func (s *SQLiteStore) Summary(ctx context.Context) (SummaryResponse, error) {
 	if err != nil {
 		return SummaryResponse{}, err
 	}
+	homeSummaries, err := s.latestHomeLatencySummaries(ctx)
+	if err != nil {
+		return SummaryResponse{}, err
+	}
+	latencySummaries, err := s.latestLatencySummariesByNode(ctx)
+	if err != nil {
+		return SummaryResponse{}, err
+	}
 	for index := range nodes {
-		summary, err := s.latestLatencySummary(ctx, nodes[index].ID)
-		if err != nil {
-			return SummaryResponse{}, err
+		nodes[index].LatencySummary = homeSummaries[nodes[index].ID]
+		if summaries, ok := latencySummaries[nodes[index].ID]; ok {
+			nodes[index].LatencySummaries = summaries
+		} else {
+			nodes[index].LatencySummaries = []LatencySummary{}
 		}
-		nodes[index].LatencySummary = summary
-		latencySummaries, err := s.latestLatencySummaries(ctx, nodes[index].ID)
-		if err != nil {
-			return SummaryResponse{}, err
-		}
-		nodes[index].LatencySummaries = latencySummaries
 	}
 	services, err := s.serviceTargets(ctx)
 	if err != nil {
@@ -700,6 +768,13 @@ func (s *SQLiteStore) CreateAdminProbeTarget(ctx context.Context, create AdminPr
 		return AdminProbeTarget{}, err
 	}
 	defer rollbackUnlessCommitted(tx)
+	if _, err := tx.ExecContext(ctx, `UPDATE probe_config_meta SET version = version WHERE id = 1`); err != nil {
+		return AdminProbeTarget{}, err
+	}
+	usageBefore, err := probeNodeUsagesTx(ctx, tx)
+	if err != nil {
+		return AdminProbeTarget{}, err
+	}
 	result, err := tx.ExecContext(ctx, `
 		INSERT OR IGNORE INTO probe_targets (id, name, type, address, port, count, timeout_ms, interval_sec, display_order, enabled, created_at, updated_at)
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -734,6 +809,16 @@ func (s *SQLiteStore) CreateAdminProbeTarget(ctx context.Context, create AdminPr
 			return AdminProbeTarget{}, err
 		}
 	}
+	usageAfter, err := probeNodeUsagesTx(ctx, tx)
+	if err != nil {
+		return AdminProbeTarget{}, err
+	}
+	if err := validateProbeNodeUsageTransition(usageBefore, usageAfter); err != nil {
+		return AdminProbeTarget{}, err
+	}
+	if err := bumpProbeConfigVersionTx(ctx, tx); err != nil {
+		return AdminProbeTarget{}, err
+	}
 	if err := tx.Commit(); err != nil {
 		return AdminProbeTarget{}, err
 	}
@@ -751,7 +836,8 @@ func (s *SQLiteStore) UpdateAdminProbeTarget(ctx context.Context, targetID strin
 	}
 	var currentType, currentAddress string
 	var currentPort sql.NullInt64
-	if err := s.db.QueryRowContext(ctx, `SELECT type, address, port FROM probe_targets WHERE id = ?`, targetID).Scan(&currentType, &currentAddress, &currentPort); err != nil {
+	var currentCount, currentTimeoutMS, currentIntervalSec int
+	if err := s.db.QueryRowContext(ctx, `SELECT type, address, port, count, timeout_ms, interval_sec FROM probe_targets WHERE id = ?`, targetID).Scan(&currentType, &currentAddress, &currentPort, &currentCount, &currentTimeoutMS, &currentIntervalSec); err != nil {
 		if err == sql.ErrNoRows {
 			return AdminProbeTarget{}, errProbeTargetNotFound
 		}
@@ -770,6 +856,30 @@ func (s *SQLiteStore) UpdateAdminProbeTarget(ctx context.Context, targetID strin
 		finalPort = sql.NullInt64{Valid: update.Port.Valid, Int64: update.Port.Value}
 	}
 	if !validAdminProbeTargetForType(finalType, finalAddress, finalPort) {
+		return AdminProbeTarget{}, errInvalidAdminTargetWrite
+	}
+	finalCount := currentCount
+	if update.Count != nil {
+		finalCount = *update.Count
+	}
+	finalTimeoutMS := currentTimeoutMS
+	if update.TimeoutMS != nil {
+		finalTimeoutMS = *update.TimeoutMS
+	}
+	finalIntervalSec := currentIntervalSec
+	if update.IntervalSec != nil {
+		finalIntervalSec = *update.IntervalSec
+	}
+	validateResourceConfig := update.Count != nil || update.TimeoutMS != nil || update.IntervalSec != nil || (update.Enabled != nil && *update.Enabled)
+	if !validateResourceConfig && update.Assignments != nil {
+		for _, assignment := range update.Assignments {
+			if assignment.Enabled {
+				validateResourceConfig = true
+				break
+			}
+		}
+	}
+	if validateResourceConfig && !validProbeTargetResourceConfig(finalCount, finalTimeoutMS, finalIntervalSec) {
 		return AdminProbeTarget{}, errInvalidAdminTargetWrite
 	}
 	sets := make([]string, 0, 9)
@@ -819,6 +929,13 @@ func (s *SQLiteStore) UpdateAdminProbeTarget(ctx context.Context, targetID strin
 		return AdminProbeTarget{}, err
 	}
 	defer rollbackUnlessCommitted(tx)
+	if _, err := tx.ExecContext(ctx, `UPDATE probe_config_meta SET version = version WHERE id = 1`); err != nil {
+		return AdminProbeTarget{}, err
+	}
+	usageBefore, err := probeNodeUsagesTx(ctx, tx)
+	if err != nil {
+		return AdminProbeTarget{}, err
+	}
 	if len(sets) > 0 {
 		sets = append(sets, "updated_at = ?")
 		args = append(args, time.Now().UTC().Unix(), targetID)
@@ -857,6 +974,16 @@ func (s *SQLiteStore) UpdateAdminProbeTarget(ctx context.Context, targetID strin
 		if _, err := tx.ExecContext(ctx, `UPDATE nodes SET home_probe_target_id = NULL WHERE home_probe_target_id = ?`, targetID); err != nil {
 			return AdminProbeTarget{}, err
 		}
+	}
+	usageAfter, err := probeNodeUsagesTx(ctx, tx)
+	if err != nil {
+		return AdminProbeTarget{}, err
+	}
+	if err := validateProbeNodeUsageTransition(usageBefore, usageAfter); err != nil {
+		return AdminProbeTarget{}, err
+	}
+	if err := bumpProbeConfigVersionTx(ctx, tx); err != nil {
+		return AdminProbeTarget{}, err
 	}
 	if err := tx.Commit(); err != nil {
 		return AdminProbeTarget{}, err
@@ -898,10 +1025,60 @@ func (s *SQLiteStore) DeleteAdminProbeTarget(ctx context.Context, targetID strin
 	if affected == 0 {
 		return errProbeTargetNotFound
 	}
+	if err := bumpProbeConfigVersionTx(ctx, tx); err != nil {
+		return err
+	}
 	if err := tx.Commit(); err != nil {
 		return err
 	}
 	tx = nil
+	return nil
+}
+
+type probeNodeUsage struct {
+	targetCount   int
+	roundBudgetMS int64
+}
+
+func probeNodeUsagesTx(ctx context.Context, tx *sql.Tx) (map[string]probeNodeUsage, error) {
+	rows, err := tx.QueryContext(ctx, `
+		SELECT npt.node_id, COUNT(*) AS target_count, COALESCE(SUM(pt.count * pt.timeout_ms), 0) AS round_budget_ms
+		FROM node_probe_targets npt
+		JOIN probe_targets pt ON pt.id = npt.target_id
+		WHERE npt.enabled = 1
+		  AND pt.enabled = 1
+		GROUP BY npt.node_id
+	`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	usages := make(map[string]probeNodeUsage)
+	for rows.Next() {
+		var nodeID string
+		var usage probeNodeUsage
+		if err := rows.Scan(&nodeID, &usage.targetCount, &usage.roundBudgetMS); err != nil {
+			return nil, err
+		}
+		usages[nodeID] = usage
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return usages, nil
+}
+
+func validateProbeNodeUsageTransition(before, after map[string]probeNodeUsage) error {
+	for nodeID, current := range after {
+		if current.targetCount <= maxProbeTargetsPerNode && current.roundBudgetMS <= maxProbeNodeRoundBudgetMS {
+			continue
+		}
+		previous := before[nodeID]
+		if current.targetCount > previous.targetCount || current.roundBudgetMS > previous.roundBudgetMS {
+			return errInvalidAdminTargetWrite
+		}
+	}
 	return nil
 }
 
@@ -1283,6 +1460,123 @@ func (s *SQLiteStore) latestLatencySummaries(ctx context.Context, nodeID string)
 	return summaries, nil
 }
 
+func (s *SQLiteStore) latestHomeLatencySummaries(ctx context.Context) (map[string]*LatencySummary, error) {
+	since := time.Now().UTC().Add(-24 * time.Hour).Unix()
+	rows, err := s.db.QueryContext(ctx, `
+		WITH home_rounds AS (
+			SELECT pr.node_id, pr.target_id, pt.name AS target_name, pr.median_ms, pr.avg_ms,
+			       pr.loss_percent, pr.ts, pr.id,
+			       ROW_NUMBER() OVER (PARTITION BY pr.node_id ORDER BY pr.ts DESC, pr.id DESC) AS latest_rank,
+			       ROW_NUMBER() OVER (
+			         PARTITION BY pr.node_id
+			         ORDER BY CASE WHEN pr.avg_ms IS NOT NULL OR pr.median_ms IS NOT NULL THEN 0 ELSE 1 END,
+			                  pr.ts DESC, pr.id DESC
+			       ) AS value_rank
+			FROM nodes n
+			JOIN probe_rounds pr ON pr.node_id = n.id AND pr.target_id = TRIM(n.home_probe_target_id)
+			JOIN probe_targets pt ON pt.id = pr.target_id
+			LEFT JOIN node_probe_targets npt ON npt.node_id = pr.node_id AND npt.target_id = pr.target_id
+			WHERE n.disabled = 0
+			  AND TRIM(COALESCE(n.home_probe_target_id, '')) <> ''
+			  AND pt.enabled = 1
+			  AND COALESCE(npt.enabled, 0) = 1
+			  AND pr.ts >= ?
+		),
+		loss_by_node AS (
+			SELECT node_id, AVG(loss_percent) AS loss_percent
+			FROM home_rounds
+			GROUP BY node_id
+		)
+		SELECT latest.node_id, latest.target_id, latest.target_name,
+		       value.median_ms, value.avg_ms, loss_by_node.loss_percent, latest.ts
+		FROM home_rounds latest
+		JOIN loss_by_node ON loss_by_node.node_id = latest.node_id
+		LEFT JOIN home_rounds value ON value.node_id = latest.node_id
+		  AND value.value_rank = 1
+		  AND (value.avg_ms IS NOT NULL OR value.median_ms IS NOT NULL)
+		WHERE latest.latest_rank = 1
+	`, since)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	summaries := map[string]*LatencySummary{}
+	for rows.Next() {
+		var nodeID, targetID, targetName string
+		var median, avg, loss sql.NullFloat64
+		var ts int64
+		if err := rows.Scan(&nodeID, &targetID, &targetName, &median, &avg, &loss, &ts); err != nil {
+			return nil, err
+		}
+		medianPtr := floatPtr(median)
+		avgPtr := floatPtr(avg)
+		if avgPtr == nil {
+			avgPtr = medianPtr
+		}
+		summaries[nodeID] = &LatencySummary{
+			TargetID:    targetID,
+			TargetName:  targetName,
+			MedianMS:    medianPtr,
+			AvgMS:       avgPtr,
+			LossPercent: floatPtr(loss),
+			UpdatedAt:   time.Unix(ts, 0).UTC().Format(time.RFC3339),
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return summaries, nil
+}
+
+func (s *SQLiteStore) latestLatencySummariesByNode(ctx context.Context) (map[string][]LatencySummary, error) {
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT npt.node_id, pt.id AS target_id, pt.name AS target_name,
+		       pr.median_ms, pr.avg_ms, pr.loss_percent, pr.ts
+		FROM node_probe_targets npt
+		JOIN nodes n ON n.id = npt.node_id
+		JOIN probe_targets pt ON pt.id = npt.target_id
+		JOIN probe_rounds pr ON pr.id = (
+			SELECT candidate.id
+			FROM probe_rounds candidate
+			WHERE candidate.node_id = npt.node_id
+			  AND candidate.target_id = npt.target_id
+			ORDER BY candidate.ts DESC, candidate.id DESC
+			LIMIT 1
+		)
+		WHERE n.disabled = 0
+		  AND npt.enabled = 1
+		  AND pt.enabled = 1
+		ORDER BY npt.node_id ASC, pt.display_order ASC, pt.name ASC, pt.id ASC
+	`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	summaries := map[string][]LatencySummary{}
+	for rows.Next() {
+		var nodeID, targetID, targetName string
+		var median, avg, loss sql.NullFloat64
+		var ts int64
+		if err := rows.Scan(&nodeID, &targetID, &targetName, &median, &avg, &loss, &ts); err != nil {
+			return nil, err
+		}
+		summaries[nodeID] = append(summaries[nodeID], LatencySummary{
+			TargetID:    targetID,
+			TargetName:  targetName,
+			MedianMS:    floatPtr(median),
+			AvgMS:       floatPtr(avg),
+			LossPercent: floatPtr(loss),
+			UpdatedAt:   time.Unix(ts, 0).UTC().Format(time.RFC3339),
+		})
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return summaries, nil
+}
+
 func (s *SQLiteStore) serviceTargets(ctx context.Context) ([]ServiceTarget, error) {
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT pt.id, pt.name, pt.type, pt.address, pt.port,
@@ -1312,10 +1606,8 @@ func (s *SQLiteStore) serviceTargets(ctx context.Context) ([]ServiceTarget, erro
 	if err := rows.Err(); err != nil {
 		return nil, err
 	}
-	for index := range targets {
-		if err := s.populateServiceTargetLatencySummary(ctx, &targets[index]); err != nil {
-			return nil, err
-		}
+	if err := s.populateServiceTargetLatencySummaries(ctx, targets); err != nil {
+		return nil, err
 	}
 	return targets, nil
 }
@@ -1345,6 +1637,73 @@ func (s *SQLiteStore) serviceTargetByID(ctx context.Context, targetID string) (S
 		return ServiceTarget{}, err
 	}
 	return target, nil
+}
+
+func (s *SQLiteStore) populateServiceTargetLatencySummaries(ctx context.Context, targets []ServiceTarget) error {
+	if len(targets) == 0 {
+		return nil
+	}
+	since := time.Now().UTC().Add(-24 * time.Hour).Unix()
+	rows, err := s.db.QueryContext(ctx, `
+		WITH reporting AS (
+			SELECT pr.target_id, COUNT(DISTINCT pr.node_id) AS reporting_node_count
+			FROM probe_rounds pr
+			JOIN nodes n ON n.id = pr.node_id
+			JOIN node_probe_targets npt ON npt.node_id = pr.node_id AND npt.target_id = pr.target_id
+			WHERE pr.ts >= ?
+			  AND n.disabled = 0
+			  AND npt.enabled = 1
+			GROUP BY pr.target_id
+		)
+		SELECT pt.id, COALESCE(reporting.reporting_node_count, 0),
+		       latest.median_ms, latest.avg_ms, latest.loss_percent, latest.ts
+		FROM probe_targets pt
+		JOIN probe_rounds latest ON latest.id = (
+			SELECT candidate.id
+			FROM probe_rounds candidate
+			JOIN nodes candidate_node ON candidate_node.id = candidate.node_id
+			JOIN node_probe_targets candidate_assignment
+			  ON candidate_assignment.node_id = candidate.node_id
+			 AND candidate_assignment.target_id = candidate.target_id
+			WHERE candidate.target_id = pt.id
+			  AND candidate_node.disabled = 0
+			  AND candidate_assignment.enabled = 1
+			ORDER BY candidate.ts DESC, candidate.id DESC
+			LIMIT 1
+		)
+		LEFT JOIN reporting ON reporting.target_id = pt.id
+		WHERE pt.enabled = 1
+	`, since)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+
+	indexByID := make(map[string]int, len(targets))
+	for index := range targets {
+		indexByID[targets[index].ID] = index
+	}
+	for rows.Next() {
+		var targetID string
+		var reportingNodeCount int
+		var median, avg, loss sql.NullFloat64
+		var ts sql.NullInt64
+		if err := rows.Scan(&targetID, &reportingNodeCount, &median, &avg, &loss, &ts); err != nil {
+			return err
+		}
+		index, ok := indexByID[targetID]
+		if !ok {
+			continue
+		}
+		targets[index].ReportingNodeCount = reportingNodeCount
+		targets[index].MedianMS = floatPtr(median)
+		targets[index].AvgMS = floatPtr(avg)
+		targets[index].LossPercent = floatPtr(loss)
+		if ts.Valid {
+			targets[index].UpdatedAt = time.Unix(ts.Int64, 0).UTC().Format(time.RFC3339)
+		}
+	}
+	return rows.Err()
 }
 
 func (s *SQLiteStore) populateServiceTargetLatencySummary(ctx context.Context, target *ServiceTarget) error {
@@ -1560,7 +1919,8 @@ func (s *SQLiteStore) latencyGridPoints(ctx context.Context, nodeID string, wind
 	start, end, stepSeconds := latencyGridBounds(gridWindow)
 	buckets := make(map[string]map[int64]*latencyGridBucket, len(targets))
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT pr.ts, pr.target_id, pr.median_ms, pr.avg_ms, pr.loss_percent
+		SELECT (pr.ts / ?) * ? AS bucket_ts, pr.target_id,
+		       AVG(pr.median_ms), AVG(pr.avg_ms), AVG(pr.loss_percent)
 		FROM probe_rounds pr
 		JOIN probe_targets pt ON pt.id = pr.target_id
 		LEFT JOIN node_probe_targets npt ON npt.node_id = pr.node_id AND npt.target_id = pr.target_id
@@ -1569,22 +1929,20 @@ func (s *SQLiteStore) latencyGridPoints(ctx context.Context, nodeID string, wind
 		  AND pr.ts < ?
 		  AND pt.enabled = 1
 		  AND COALESCE(npt.enabled, 0) = 1
-		ORDER BY pr.ts ASC, pt.display_order ASC, pt.name ASC, pr.id ASC
-	`, nodeID, start.Unix(), end.Add(gridWindow.Step).Unix())
+		GROUP BY bucket_ts, pr.target_id
+	`, stepSeconds, stepSeconds, nodeID, start.Unix(), end.Add(gridWindow.Step).Unix())
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
 
 	for rows.Next() {
-		var ts int64
+		var bucketTS int64
 		var targetID string
-		var median, avg sql.NullFloat64
-		var loss float64
-		if err := rows.Scan(&ts, &targetID, &median, &avg, &loss); err != nil {
+		var median, avg, loss sql.NullFloat64
+		if err := rows.Scan(&bucketTS, &targetID, &median, &avg, &loss); err != nil {
 			return nil, err
 		}
-		bucketTS := (ts / stepSeconds) * stepSeconds
 		if bucketTS < start.Unix() || bucketTS > end.Unix() {
 			continue
 		}
@@ -1594,7 +1952,7 @@ func (s *SQLiteStore) latencyGridPoints(ctx context.Context, nodeID string, wind
 		if buckets[targetID][bucketTS] == nil {
 			buckets[targetID][bucketTS] = &latencyGridBucket{}
 		}
-		buckets[targetID][bucketTS].add(median, avg, loss)
+		buckets[targetID][bucketTS].add(median, avg, nullFloatOr(loss, 0))
 	}
 	if err := rows.Err(); err != nil {
 		return nil, err
@@ -1634,7 +1992,8 @@ func (s *SQLiteStore) serviceLatencyGridPoints(ctx context.Context, targetID str
 	start, end, stepSeconds := latencyGridBounds(gridWindow)
 	buckets := make(map[string]map[int64]*latencyGridBucket, len(nodes))
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT pr.ts, pr.node_id, pr.median_ms, pr.avg_ms, pr.loss_percent
+		SELECT (pr.ts / ?) * ? AS bucket_ts, pr.node_id,
+		       AVG(pr.median_ms), AVG(pr.avg_ms), AVG(pr.loss_percent)
 		FROM probe_rounds pr
 		JOIN nodes n ON n.id = pr.node_id
 		JOIN probe_targets pt ON pt.id = pr.target_id
@@ -1645,22 +2004,20 @@ func (s *SQLiteStore) serviceLatencyGridPoints(ctx context.Context, targetID str
 		  AND pt.enabled = 1
 		  AND n.disabled = 0
 		  AND COALESCE(npt.enabled, 0) = 1
-		ORDER BY pr.ts ASC, n.display_order ASC, n.display_name ASC, pr.id ASC
-	`, targetID, start.Unix(), end.Add(gridWindow.Step).Unix())
+		GROUP BY bucket_ts, pr.node_id
+	`, stepSeconds, stepSeconds, targetID, start.Unix(), end.Add(gridWindow.Step).Unix())
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
 
 	for rows.Next() {
-		var ts int64
+		var bucketTS int64
 		var nodeID string
-		var median, avg sql.NullFloat64
-		var loss float64
-		if err := rows.Scan(&ts, &nodeID, &median, &avg, &loss); err != nil {
+		var median, avg, loss sql.NullFloat64
+		if err := rows.Scan(&bucketTS, &nodeID, &median, &avg, &loss); err != nil {
 			return nil, err
 		}
-		bucketTS := (ts / stepSeconds) * stepSeconds
 		if bucketTS < start.Unix() || bucketTS > end.Unix() {
 			continue
 		}
@@ -1670,7 +2027,7 @@ func (s *SQLiteStore) serviceLatencyGridPoints(ctx context.Context, targetID str
 		if buckets[nodeID][bucketTS] == nil {
 			buckets[nodeID][bucketTS] = &latencyGridBucket{}
 		}
-		buckets[nodeID][bucketTS].add(median, avg, loss)
+		buckets[nodeID][bucketTS].add(median, avg, nullFloatOr(loss, 0))
 	}
 	if err := rows.Err(); err != nil {
 		return nil, err
@@ -2012,6 +2369,13 @@ func floatPtr(value sql.NullFloat64) *float64 {
 	}
 	converted := value.Float64
 	return &converted
+}
+
+func nullFloatOr(value sql.NullFloat64, fallback float64) float64 {
+	if !value.Valid {
+		return fallback
+	}
+	return value.Float64
 }
 
 func (s *SQLiteStore) String() string {

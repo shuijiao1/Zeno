@@ -17,10 +17,33 @@ type AgentProbeTarget struct {
 }
 
 type AgentProbeResultsRequest struct {
-	Rounds []AgentProbeRound `json:"rounds"`
+	ConfigVersion int64             `json:"config_version"`
+	LegacyVersion *int64            `json:"version,omitempty"`
+	Rounds        []AgentProbeRound `json:"rounds"`
+}
+
+func (request AgentProbeResultsRequest) effectiveConfigVersion() (int64, bool) {
+	if request.ConfigVersion < 0 {
+		return 0, false
+	}
+	if request.LegacyVersion == nil {
+		return request.ConfigVersion, true
+	}
+	legacy := *request.LegacyVersion
+	if legacy < 0 {
+		return 0, false
+	}
+	if request.ConfigVersion > 0 && legacy > 0 && request.ConfigVersion != legacy {
+		return 0, false
+	}
+	if request.ConfigVersion > 0 {
+		return request.ConfigVersion, true
+	}
+	return legacy, true
 }
 
 type AgentProbeRound struct {
+	RoundID  string             `json:"round_id,omitempty"`
 	TargetID string             `json:"target_id"`
 	TS       int64              `json:"ts"`
 	Type     string             `json:"type"`

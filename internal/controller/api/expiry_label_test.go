@@ -1,7 +1,9 @@
 package api
 
 import (
+	"context"
 	"database/sql"
+	"path/filepath"
 	"testing"
 	"time"
 )
@@ -16,6 +18,34 @@ func TestExpiryLabelValueUsesBillingCycleForNextRenewal(t *testing.T) {
 	)
 	if label != "余 2 天" {
 		t.Fatalf("expiry label = %q, want monthly cycle to use the next renewal as 余 2 天", label)
+	}
+}
+
+func TestPendingRenewalNotificationsSkipsPermanentNode(t *testing.T) {
+	store, err := OpenSQLiteStore(filepath.Join(t.TempDir(), "zeno.db"))
+	if err != nil {
+		t.Fatalf("open sqlite store: %v", err)
+	}
+	defer store.Close()
+	ctx := context.Background()
+	if err := store.SeedPreviewData(ctx, PreviewSeedOptions{NodeID: "hytron", DisplayName: "Hytron", CountryCode: "HK", AgentToken: "token"}); err != nil {
+		t.Fatalf("seed preview data: %v", err)
+	}
+	expiryDate := time.Now().UTC().Add(24 * time.Hour).Format("2006-01-02")
+	permanent := true
+	if _, err := store.UpdateAdminNode(ctx, "hytron", AdminNodeUpdateRequest{ExpiryDate: &expiryDate, ExpiryPermanent: &permanent}); err != nil {
+		t.Fatalf("set permanent expiry: %v", err)
+	}
+	enabled := true
+	if _, err := store.UpdateAdminAlertRule(ctx, "renewal_due", AdminAlertRuleUpdateRequest{Enabled: &enabled}); err != nil {
+		t.Fatalf("enable renewal rule: %v", err)
+	}
+	events, err := store.PendingRenewalNotifications(ctx, time.Now().UTC())
+	if err != nil {
+		t.Fatalf("list pending renewal notifications: %v", err)
+	}
+	if len(events) != 0 {
+		t.Fatalf("permanent node produced renewal events: %+v", events)
 	}
 }
 

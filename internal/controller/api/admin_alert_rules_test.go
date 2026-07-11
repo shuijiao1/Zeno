@@ -137,6 +137,9 @@ func TestDefaultAlertRuleDurationMigration(t *testing.T) {
 		"disk_high":    600,
 		"node_offline": 180,
 	}
+	if _, err := store.db.ExecContext(ctx, `UPDATE alert_rules SET threshold = 180 WHERE id = 'node_offline'`); err != nil {
+		t.Fatalf("set old offline threshold: %v", err)
+	}
 	for ruleID, duration := range oldDurations {
 		if _, err := store.db.ExecContext(ctx, `UPDATE alert_rules SET duration_sec = ? WHERE id = ?`, duration, ruleID); err != nil {
 			t.Fatalf("set old duration for %s: %v", ruleID, err)
@@ -153,6 +156,113 @@ func TestDefaultAlertRuleDurationMigration(t *testing.T) {
 		}
 		if duration != wantDurations[ruleID] {
 			t.Fatalf("%s duration = %d, want migrated default %ds", ruleID, duration, wantDurations[ruleID])
+		}
+	}
+	var offlineThreshold float64
+	if err := store.db.QueryRowContext(ctx, `SELECT threshold FROM alert_rules WHERE id = 'node_offline'`).Scan(&offlineThreshold); err != nil {
+		t.Fatalf("read offline threshold: %v", err)
+	}
+	if offlineThreshold != 30 {
+		t.Fatalf("node_offline threshold = %v, want migrated default 30", offlineThreshold)
+	}
+}
+
+func TestDefaultAlertRuleDurationMigrationPreservesUserEditedValues(t *testing.T) {
+	store, err := OpenSQLiteStore(filepath.Join(t.TempDir(), "zeno.db"))
+	if err != nil {
+		t.Fatalf("open sqlite store: %v", err)
+	}
+	defer store.Close()
+	ctx := context.Background()
+	if _, err := store.db.ExecContext(ctx, `DELETE FROM settings WHERE key IN ('alert_default_durations_v2_migrated', 'resource_alert_duration_5m_migrated')`); err != nil {
+		t.Fatalf("clear migration markers: %v", err)
+	}
+	if _, err := store.db.ExecContext(ctx, `
+		UPDATE alert_rules
+		SET duration_sec = 600, updated_at = created_at + 1
+		WHERE id = 'disk_high'
+	`); err != nil {
+		t.Fatalf("set user-edited duration: %v", err)
+	}
+	if err := store.ensureDefaultAlertRules(ctx); err != nil {
+		t.Fatalf("ensure default alert rules: %v", err)
+	}
+	var duration int
+	if err := store.db.QueryRowContext(ctx, `SELECT duration_sec FROM alert_rules WHERE id = 'disk_high'`).Scan(&duration); err != nil {
+		t.Fatalf("read disk duration: %v", err)
+	}
+	if duration != 600 {
+		t.Fatalf("user-edited disk duration = %d, want preserved 600", duration)
+	}
+}
+
+func TestResourceAlertDurationMigrationRecoversPartialLegacyMigration(t *testing.T) {
+	store, err := OpenSQLiteStore(filepath.Join(t.TempDir(), "zeno.db"))
+	if err != nil {
+		t.Fatalf("open sqlite store: %v", err)
+	}
+	defer store.Close()
+	ctx := context.Background()
+	if _, err := store.db.ExecContext(ctx, `DELETE FROM settings WHERE key = 'resource_alert_duration_5m_migrated'`); err != nil {
+		t.Fatalf("clear resource migration marker: %v", err)
+	}
+	if _, err := store.db.ExecContext(ctx, `
+		UPDATE alert_rules
+		SET duration_sec = 60,
+		    created_at = (SELECT updated_at - 100 FROM settings WHERE key = 'alert_default_durations_v2_migrated'),
+		    updated_at = (SELECT updated_at FROM settings WHERE key = 'alert_default_durations_v2_migrated')
+		WHERE id = 'cpu_high'
+	`); err != nil {
+		t.Fatalf("seed partially migrated resource rule: %v", err)
+	}
+	if err := store.ensureDefaultAlertRules(ctx); err != nil {
+		t.Fatalf("ensure default alert rules: %v", err)
+	}
+	var duration int
+	if err := store.db.QueryRowContext(ctx, `SELECT duration_sec FROM alert_rules WHERE id = 'cpu_high'`).Scan(&duration); err != nil {
+		t.Fatalf("read cpu duration: %v", err)
+	}
+	if duration != 300 {
+		t.Fatalf("partially migrated cpu duration = %d, want 300", duration)
+	}
+}
+
+func TestNotificationTypeMigrationPreservesEditedAlertRules(t *testing.T) {
+	store, err := OpenSQLiteStore(filepath.Join(t.TempDir(), "zeno.db"))
+	if err != nil {
+		t.Fatalf("open sqlite store: %v", err)
+	}
+	defer store.Close()
+	ctx := context.Background()
+	if _, err := store.db.ExecContext(ctx, `DELETE FROM settings WHERE key = 'notification_types_alert_rules_migrated'`); err != nil {
+		t.Fatalf("clear migration marker: %v", err)
+	}
+	legacyUpdatedAt := time.Now().UTC().Add(-time.Hour).Unix()
+	for _, eventType := range []string{"node_offline", "probe_unhealthy"} {
+		if _, err := store.db.ExecContext(ctx, `
+			INSERT INTO notification_types (event_type, enabled, updated_at)
+			VALUES (?, 0, ?)
+			ON CONFLICT(event_type) DO UPDATE SET enabled = 0, updated_at = excluded.updated_at
+		`, eventType, legacyUpdatedAt); err != nil {
+			t.Fatalf("set legacy notification type %s: %v", eventType, err)
+		}
+	}
+	if _, err := store.db.ExecContext(ctx, `UPDATE alert_rules SET enabled = 1, updated_at = created_at + 86400 WHERE id IN ('node_offline', 'cpu_high')`); err != nil {
+		t.Fatalf("mark alert rules user-edited: %v", err)
+	}
+	if _, err := store.db.ExecContext(ctx, `UPDATE alert_rules SET enabled = 1, updated_at = created_at WHERE id = 'memory_high'`); err != nil {
+		t.Fatalf("reset untouched alert rule marker: %v", err)
+	}
+	if err := store.migrateNotificationTypesToAlertRules(ctx); err != nil {
+		t.Fatalf("migrate notification types: %v", err)
+	}
+	for ruleID, wantEnabled := range map[string]int{"node_offline": 1, "cpu_high": 1, "memory_high": 0} {
+		var enabled int
+		if err := store.db.QueryRowContext(ctx, `SELECT enabled FROM alert_rules WHERE id = ?`, ruleID).Scan(&enabled); err != nil {
+			t.Fatalf("read %s: %v", ruleID, err)
+		}
+		if enabled != wantEnabled {
+			t.Fatalf("%s enabled = %d, want %d", ruleID, enabled, wantEnabled)
 		}
 	}
 }

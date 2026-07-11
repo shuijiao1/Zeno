@@ -33,7 +33,6 @@ func (s *SQLiteStore) AdminNotificationChannels(ctx context.Context) ([]AdminNot
 		if err := rows.Scan(&channel.ID, &channel.Name, &channel.Destination, &credential, &enabled, &createdAt, &updatedAt); err != nil {
 			return nil, err
 		}
-		channel.Credential = strings.TrimSpace(credential)
 		channel.CredentialSet = strings.TrimSpace(credential) != ""
 		channel.Enabled = enabled != 0
 		channel.CreatedAt = unixStringOr(createdAt, time.Now().UTC())
@@ -169,7 +168,7 @@ func (s *SQLiteStore) AdminNotificationDispatchChannel(ctx context.Context, chan
 	if err := s.db.QueryRowContext(ctx, `
 		SELECT id, name, destination, credential
 		FROM notification_channels
-		WHERE id = ?
+		WHERE id = ? AND enabled = 1
 	`, channelID).Scan(&channel.ID, &channel.Name, &channel.Destination, &channel.Credential); err != nil {
 		if err == sql.ErrNoRows {
 			return notificationDispatchChannel{}, errNotificationChannelNotFound
@@ -192,6 +191,12 @@ func (s *SQLiteStore) UpdateAdminNotificationType(ctx context.Context, eventType
 	if !ok {
 		return AdminNotificationType{}, errNotificationTypeNotFound
 	}
+	if eventType != "node_offline" && eventType != "renewal_due" {
+		// Resource warnings share probe_unhealthy but are independently managed
+		// alert rules. Pretending this legacy endpoint updated that shared event
+		// type would be a successful no-op, so require the alert-rules API.
+		return AdminNotificationType{}, errNotificationTypeGone
+	}
 	enabled := 0
 	if *update.Enabled {
 		enabled = 1
@@ -202,6 +207,17 @@ func (s *SQLiteStore) UpdateAdminNotificationType(ctx context.Context, eventType
 		VALUES (?, ?, ?)
 		ON CONFLICT(event_type) DO UPDATE SET enabled = excluded.enabled, updated_at = excluded.updated_at
 	`, eventType, enabled, now); err != nil {
+		return AdminNotificationType{}, err
+	}
+	// Compatibility endpoint: only event types that have a one-to-one default
+	// alert rule (currently node_offline and renewal_due) update that rule. Do
+	// not fan out by notification_event_type; resource rules share
+	// probe_unhealthy and must remain independently configurable.
+	if _, err := s.db.ExecContext(ctx, `
+		UPDATE alert_rules
+		SET enabled = ?, updated_at = ?
+		WHERE id = ?
+	`, enabled, now, eventType); err != nil {
 		return AdminNotificationType{}, err
 	}
 	return AdminNotificationType{EventType: eventType, Label: label, Enabled: *update.Enabled, UpdatedAt: time.Unix(now, 0).UTC().Format(time.RFC3339)}, nil

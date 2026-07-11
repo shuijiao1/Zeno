@@ -2,10 +2,13 @@ package api
 
 import (
 	"context"
+	"log"
 	"time"
 )
 
 const rawHistoryRetention = 30 * 24 * time.Hour
+
+const stalePendingNotificationDeliveryAfter = 7 * 24 * time.Hour
 
 type historyRetentionStore interface {
 	PruneRawHistory(ctx context.Context, before time.Time) error
@@ -27,6 +30,20 @@ func (s *SQLiteStore) PruneRawHistory(ctx context.Context, before time.Time) err
 	if _, err := tx.ExecContext(ctx, `DELETE FROM state_samples WHERE ts < ?`, cutoff); err != nil {
 		return err
 	}
+	if _, err := tx.ExecContext(ctx, `
+		DELETE FROM notification_deliveries
+		WHERE state IN ('delivered', 'failed') AND updated_at < ?
+	`, cutoff); err != nil {
+		return err
+	}
+	stalePendingCutoff := time.Now().UTC().Add(-stalePendingNotificationDeliveryAfter).Unix()
+	if _, err := tx.ExecContext(ctx, `
+		UPDATE notification_deliveries
+		SET state = 'failed', last_error = 'expired before delivery', updated_at = ?
+		WHERE state = 'pending' AND created_at < ?
+	`, time.Now().UTC().Unix(), stalePendingCutoff); err != nil {
+		return err
+	}
 	if err := tx.Commit(); err != nil {
 		return err
 	}
@@ -42,7 +59,9 @@ func (h *handler) runHistoryRetention(ctx context.Context, interval time.Duratio
 	prune := func() {
 		pruneCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
 		defer cancel()
-		_ = store.PruneRawHistory(pruneCtx, time.Now().UTC().Add(-rawHistoryRetention))
+		if err := store.PruneRawHistory(pruneCtx, time.Now().UTC().Add(-rawHistoryRetention)); err != nil {
+			log.Printf("history retention cleanup failed: %v", err)
+		}
 	}
 	prune()
 	ticker := time.NewTicker(interval)

@@ -118,7 +118,7 @@ docker compose up -d
 检查健康状态：
 
 ```bash
-curl -fsS http://127.0.0.1:18980/health
+curl -fsS http://127.0.0.1:18980/ready
 ```
 
 ---
@@ -127,6 +127,7 @@ curl -fsS http://127.0.0.1:18980/health
 
 - SQLite 数据库默认位于 `/opt/zeno/data/zeno.db`。
 - 管理员 token 和 Agent token 默认位于 `/opt/zeno/secrets/`，权限应保持为 `600`。
+- 官方 Compose 以非 root UID/GID `10001:10001` 运行；`data/`、`secrets/` 必须由该 UID/GID 持有，一键安装器会自动迁移既有目录。
 - 建议定期备份 `/opt/zeno/data` 和 `/opt/zeno/secrets`。
 - Controller 默认本机监听；公网访问应通过 HTTPS 反向代理。
 - 公网部署、token 轮换和安全边界见 [`docs/SECURITY.md`](docs/SECURITY.md)。

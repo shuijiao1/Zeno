@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"database/sql"
+	"log"
 	"strings"
 	"time"
 )
@@ -46,6 +47,17 @@ func (s *SQLiteStore) QueueNotificationEvent(ctx context.Context, event notifica
 	}
 
 	now := time.Now().UTC().Unix()
+	if err := insertNotificationDeliveriesTx(ctx, tx, event, channels, now); err != nil {
+		return false, err
+	}
+	if err := tx.Commit(); err != nil {
+		return false, err
+	}
+	tx = nil
+	return true, nil
+}
+
+func insertNotificationDeliveriesTx(ctx context.Context, tx *sql.Tx, event notificationEvent, channels []notificationDispatchChannel, nowUnix int64) error {
 	for _, channel := range channels {
 		if _, err := tx.ExecContext(ctx, `
 			INSERT INTO notification_deliveries (
@@ -53,15 +65,37 @@ func (s *SQLiteStore) QueueNotificationEvent(ctx context.Context, event notifica
 				channel_id, channel_name, state, attempts, next_attempt_at, created_at, updated_at
 			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', 0, ?, ?, ?)
 		`, event.EventType, event.Label, event.NodeID, event.NodeName, event.PreviousStatus, event.Status,
-			event.Detail, channel.ID, channel.Name, now, now, now); err != nil {
-			return false, err
+			event.Detail, channel.ID, channel.Name, nowUnix, nowUnix, nowUnix); err != nil {
+			return err
 		}
 	}
-	if err := tx.Commit(); err != nil {
-		return false, err
+	return nil
+}
+
+func enabledNotificationChannelsTx(ctx context.Context, tx *sql.Tx) ([]notificationDispatchChannel, error) {
+	rows, err := tx.QueryContext(ctx, `
+		SELECT id, name, destination, credential
+		FROM notification_channels
+		WHERE enabled = 1 AND TRIM(destination) <> '' AND TRIM(credential) <> ''
+		ORDER BY id ASC
+	`)
+	if err != nil {
+		return nil, err
 	}
-	tx = nil
-	return true, nil
+	defer rows.Close()
+	channels := make([]notificationDispatchChannel, 0)
+	for rows.Next() {
+		var channel notificationDispatchChannel
+		if err := rows.Scan(&channel.ID, &channel.Name, &channel.Destination, &channel.Credential); err != nil {
+			return nil, err
+		}
+		channel.Type = "telegram"
+		channels = append(channels, channel)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return channels, nil
 }
 
 func (s *SQLiteStore) PendingNotificationDeliveries(ctx context.Context, now time.Time, limit int) ([]queuedNotificationDelivery, error) {
@@ -226,6 +260,7 @@ func (h *handler) dispatchPendingNotificationDeliveries(ctx context.Context) {
 
 	deliveries, err := store.PendingNotificationDeliveries(ctx, time.Now().UTC(), notificationDeliveryBatchSize)
 	if err != nil {
+		log.Printf("notification outbox fetch failed: %v", err)
 		return
 	}
 	for _, delivery := range deliveries {
@@ -240,6 +275,8 @@ func (h *handler) dispatchPendingNotificationDeliveries(ctx context.Context) {
 			sendErr = h.notificationSender.Send(sendCtx, delivery.Channel, delivery.Event)
 		}
 		cancel()
-		_ = store.RecordNotificationDeliveryAttempt(ctx, delivery, sendErr, time.Now().UTC())
+		if err := store.RecordNotificationDeliveryAttempt(ctx, delivery, sendErr, time.Now().UTC()); err != nil {
+			log.Printf("notification outbox update failed for delivery %d: %v", delivery.ID, err)
+		}
 	}
 }

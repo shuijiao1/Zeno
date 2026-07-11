@@ -1,70 +1,33 @@
 import { type CSSProperties, type DragEvent, type FormEvent, type ReactNode, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import copy from 'copy-to-clipboard'
-import { createAdminNode, createAdminNotificationChannel, createAdminProbeTarget, deleteAdminNode, deleteAdminNotificationChannel, deleteAdminProbeTarget, fetchAdminAccount, fetchAdminAlertRules, fetchAdminNodes, fetchAdminNotificationChannels, fetchAdminProbeTargets, fetchAdminSettings, fetchNodeLatency, fetchNodeState, fetchPublicSettings, fetchServiceLatency, fetchSummary, subscribeNodeLatency, subscribeNodeState, subscribeServiceLatency, subscribeSummary, loginAdmin, logoutAdmin, requestAdminNodeInstallCommand, testAdminNotificationChannel, updateAdminAccount, updateAdminAlertRule, updateAdminNode, updateAdminNotificationChannel, updateAdminNotificationType, updateAdminProbeTarget, updateAdminSettings, type AdminAccountData, type AdminAlertRuleUpdateInput, type AdminNodeCreateInput, type AdminNodeUpdateInput, type AdminNotificationChannelCreateInput, type AdminNotificationChannelUpdateInput, type AdminProbeTargetInput, type AdminProbeTargetUpdateInput, type AdminSettingsUpdateInput, type NodeLatencyData, type NodeStateData, type ServiceLatencyData, type SummaryData } from './api/client'
+import { createAdminNode, createAdminNotificationChannel, createAdminProbeTarget, deleteAdminNode, deleteAdminNotificationChannel, deleteAdminProbeTarget, fetchAdminAccount, fetchAdminAlertRules, fetchAdminNodes, fetchAdminNotificationChannels, fetchAdminProbeTargets, fetchAdminSettings, fetchNodeLatency, fetchNodeState, fetchPublicSettings, fetchServiceLatency, fetchSummary, subscribeNodeLatency, subscribeNodeState, subscribeServiceLatency, subscribeSummary, loginAdmin, logoutAdmin, requestAdminNodeInstallCommand, testAdminNotificationChannel, updateAdminAccount, updateAdminAlertRule, updateAdminNode, updateAdminNotificationChannel, updateAdminProbeTarget, updateAdminSettings, type AdminAccountData, type AdminAlertRuleUpdateInput, type AdminNodeCreateInput, type AdminNodeUpdateInput, type AdminNotificationChannelCreateInput, type AdminNotificationChannelUpdateInput, type AdminProbeTargetInput, type AdminProbeTargetUpdateInput, type AdminSettingsUpdateInput, type NodeLatencyData, type NodeStateData, type ServiceLatencyData, type SummaryData } from './api/client'
 import { LatencyDetail } from './components/LatencyDetail'
 import { LatencyChart } from './components/LatencyChart'
 import { ServerCard } from './components/ServerCard'
 import { ServerFlag } from './components/ServerFlag'
 import { startLiveRefresh } from './lib/liveRefresh'
-import { shouldStartHttpFallback } from './lib/liveFallback'
+import { startResilientLiveData } from './lib/resilientLive'
+import { createMutationEpoch } from './lib/mutationEpoch'
+import { clearStoredAdminToken, loadStoredAdminToken, rememberAdminToken } from './lib/adminToken'
 import { nodePath, parseDashboardRoute, type DashboardRoute } from './lib/route'
 import { applyCustomCode } from './lib/customCode'
 import { availableHistoryRanges, coerceHistoryRange, isHTTPUnauthorizedError, rangeRequiresAdmin } from './lib/historyRange'
 import { loadCachedDetailData, nodeLatencyCachePrefix, nodeStateCachePrefix, rememberDetailData, serviceLatencyCachePrefix } from './lib/detailCache'
-import { formatCacheTimestamp, loadStoredSummary, rememberSummary } from './lib/summaryCache'
+import { loadStoredSummary, rememberSummary } from './lib/summaryCache'
 import type { AdminAlertRule, AdminNode, AdminNodeInstallCommand, AdminNotificationChannel, AdminProbeTarget, AdminSettings, AdminTheme, AppearancePreset, HomeCardNode, LatencyPoint, ProbeType, ServiceTarget, StatePoint } from './types'
 
 export { applyCustomCode, extractSafeCustomCSS } from './lib/customCode'
 export { availableHistoryRanges, coerceHistoryRange, rangeRequiresAdmin } from './lib/historyRange'
 export { loadStoredSummary, rememberSummary } from './lib/summaryCache'
-export { shouldStartHttpFallback } from './lib/liveFallback'
+export { adminTokenMaxAgeMs } from './lib/adminToken'
 
 type LoadState =
   | { kind: 'loading' }
   | { kind: 'ready'; data: SummaryData; storedAt?: number; stale?: boolean }
   | { kind: 'error'; message: string }
 
-const adminTokenStorageKey = 'zeno_admin_token'
-const adminTokenStoredAtKey = 'zeno_admin_token_saved_at'
-export const adminTokenMaxAgeMs = 24 * 60 * 60 * 1000
 const renewalDayOptions = [0, 1, 3, 7, 15, 30]
-
-function loadStoredAdminToken(): string {
-  if (typeof window === 'undefined') return ''
-  try {
-    const token = window.localStorage.getItem(adminTokenStorageKey) ?? ''
-    if (token === '') return ''
-    const storedAt = Number(window.localStorage.getItem(adminTokenStoredAtKey) ?? '')
-    if (Number.isFinite(storedAt) && storedAt > 0) {
-      if (Date.now() - storedAt > adminTokenMaxAgeMs) {
-        clearStoredAdminToken()
-        return ''
-      }
-      return token
-    }
-    window.localStorage.setItem(adminTokenStoredAtKey, String(Date.now()))
-    return token
-  } catch {
-    return ''
-  }
-}
-
-function rememberAdminToken(token: string) {
-  if (typeof window === 'undefined') return
-  try {
-    window.localStorage.setItem(adminTokenStorageKey, token)
-    window.localStorage.setItem(adminTokenStoredAtKey, String(Date.now()))
-  } catch {}
-}
-
-function clearStoredAdminToken() {
-  if (typeof window === 'undefined') return
-  try {
-    window.localStorage.removeItem(adminTokenStorageKey)
-    window.localStorage.removeItem(adminTokenStoredAtKey)
-  } catch {}
-}
 
 export function isAdminUnauthorizedError(error: unknown): boolean {
   return error instanceof Error && /^admin .+: 401$/.test(error.message)
@@ -139,19 +102,19 @@ function seedNodeStateFromSummary(summary: SummaryData | null, nodeId: string, r
 type LatencyLoadState =
   | { kind: 'idle' }
   | { kind: 'loading' }
-  | { kind: 'ready'; data: NodeLatencyData; freshness?: DataFreshness; warning?: string }
+  | { kind: 'ready'; data: NodeLatencyData; freshness?: DataFreshness }
   | { kind: 'error'; message: string }
 
 type StateHistoryLoadState =
   | { kind: 'idle' }
   | { kind: 'loading' }
-  | { kind: 'ready'; data: NodeStateData; freshness?: DataFreshness; warning?: string }
+  | { kind: 'ready'; data: NodeStateData; freshness?: DataFreshness }
   | { kind: 'error'; message: string }
 
 type ServiceLatencyLoadState =
   | { kind: 'idle' }
   | { kind: 'loading' }
-  | { kind: 'ready'; data: ServiceLatencyData; freshness?: DataFreshness; warning?: string }
+  | { kind: 'ready'; data: ServiceLatencyData; freshness?: DataFreshness }
   | { kind: 'error'; message: string }
 
 type AdminLoadState =
@@ -210,12 +173,6 @@ export function shouldRefreshHomeRealtimeSnapshot(lastUpdatedAt: number | null, 
 
 function monotonicNowMs(): number {
   return typeof performance !== 'undefined' ? performance.now() : Date.now()
-}
-
-function freshnessNotice(freshness: DataFreshness | undefined, explicitWarning?: string): string | undefined {
-  if (explicitWarning) return explicitWarning
-  if (!freshness?.stale) return undefined
-  return `数据已过期 · 最后更新 ${formatCacheTimestamp(freshness.storedAt ?? 0)}`
 }
 
 function compactBytes(value: number): string {
@@ -457,6 +414,7 @@ export function App() {
   const summaryRef = useRef<SummaryData | null>(initialSummary?.data ?? null)
   const homeRealtimeMountedAtRef = useRef(monotonicNowMs())
   const homeRealtimeLastUpdatedAtRef = useRef<number | null>(null)
+  const adminMutationEpochRef = useRef(createMutationEpoch())
   const [homeRealtimeSnapshot, setHomeRealtimeSnapshot] = useState<HomeRealtimeSnapshot | null>(() => state.kind === 'ready' ? homeRealtimeSnapshotForNodes(state.data.nodes) : null)
   const [adminToken, setAdminToken] = useState(loadStoredAdminToken)
   const [adminAuthState, setAdminAuthState] = useState<AdminAuthState>({ kind: 'idle' })
@@ -488,9 +446,6 @@ export function App() {
 
   useEffect(() => {
     let cancelled = false
-    let receivedLiveSummary = false
-    let fallbackStarted = false
-    let fallbackTimer: ReturnType<typeof setTimeout> | null = null
     const refreshHomeRealtimeSnapshot = (data: SummaryData) => {
       const now = monotonicNowMs()
       if (!shouldRefreshHomeRealtimeSnapshot(homeRealtimeLastUpdatedAtRef.current, now, homeRealtimeMountedAtRef.current)) return
@@ -498,8 +453,6 @@ export function App() {
       setHomeRealtimeSnapshot(homeRealtimeSnapshotForNodes(data.nodes))
     }
     const applySummaryData = (data: SummaryData, source: 'http' | 'ws') => {
-      if (source === 'http' && receivedLiveSummary) return
-      if (source === 'ws') receivedLiveSummary = true
       const storedAt = Date.now()
       rememberSummary(data, storedAt)
       summaryRef.current = data
@@ -508,34 +461,20 @@ export function App() {
         setState({ kind: 'ready', data, storedAt, stale: false })
       }
     }
-    const startSummaryFallback = (reason?: string) => {
-      if (fallbackStarted) return
-      fallbackStarted = true
-      fetchSummary()
-        .then((data) => applySummaryData(data, 'http'))
-        .catch((error: unknown) => {
-          if (cancelled) return
-          const message = error instanceof Error ? error.message : (reason ?? 'summary request failed')
-          setState((current) => (current.kind === 'ready' ? { ...current, stale: true } : { kind: 'error', message }))
-        })
-    }
-    const stopSummaryStream = subscribeSummary(
-      (data) => applySummaryData(data, 'ws'),
-      (error) => {
-        if (!cancelled) startSummaryFallback(error.message)
+    const stopLiveSummary = startResilientLiveData<SummaryData>({
+      subscribe: subscribeSummary,
+      fetch: fetchSummary,
+      applyData: applySummaryData,
+      initialFallbackDelayMs: detailHttpFallbackDelayMs,
+      onError: (error) => {
+        if (cancelled) return
+        const message = error instanceof Error ? error.message : 'summary request failed'
+        setState((current) => (current.kind === 'ready' ? { ...current, stale: true } : { kind: 'error', message }))
       },
-    )
-    if (!stopSummaryStream) {
-      startSummaryFallback('live websocket unavailable')
-    } else {
-      fallbackTimer = setTimeout(() => {
-        if (shouldStartHttpFallback(fallbackStarted, receivedLiveSummary)) startSummaryFallback('live websocket timeout')
-      }, detailHttpFallbackDelayMs)
-    }
+    })
     return () => {
       cancelled = true
-      if (fallbackTimer) clearTimeout(fallbackTimer)
-      stopSummaryStream?.()
+      stopLiveSummary()
     }
   }, [])
 
@@ -586,53 +525,33 @@ export function App() {
     } else {
       setLatencyState((current) => (current.kind === 'ready' && current.data.nodeId === route.nodeId ? current : { kind: 'loading' }))
     }
-    let receivedLiveLatency = false
-    let fallbackStarted = false
-    let fallbackTimer: ReturnType<typeof setTimeout> | null = null
     const applyLatencyData = (data: NodeLatencyData, source: 'http' | 'ws') => {
-      if (source === 'http' && receivedLiveLatency) return
-      if (source === 'ws') receivedLiveLatency = true
       nodeLatencyCacheRef.current.set(cacheKey, data)
       rememberDetailData(nodeLatencyCachePrefix, route.nodeId, nodeLatencyRange, data)
       if (!cancelled) setLatencyState({ kind: 'ready', data, freshness: { stale: false, storedAt: Date.now(), source } })
     }
-    const startLatencyFallback = (reason?: string) => {
-      if (fallbackStarted) return
-      fallbackStarted = true
-      fetchNodeLatency(route.nodeId, nodeLatencyRange, rangeRequiresAdmin(nodeLatencyRange) ? adminToken : undefined)
-        .then((data) => applyLatencyData(data, 'http'))
-        .catch((error: unknown) => {
-          if (cancelled) return
-          const unauthorized = isHTTPUnauthorizedError(error)
-          if (unauthorized) {
-            clearStoredAdminToken()
-            setAdminToken('')
-            setAdminAuthState({ kind: 'error', message: '登录已过期，请重新登录。' })
-          }
-          const message = unauthorized ? '登录已过期，请重新登录。' : error instanceof Error ? error.message : (reason ?? 'latency request failed')
-          setLatencyState((current) => (current.kind === 'ready'
-            ? { ...current, freshness: { ...current.freshness, stale: true }, warning: unauthorized ? `${message} · 数据已过期 · 最后更新 ${formatCacheTimestamp(current.freshness?.storedAt ?? 0)}` : `数据已过期 · 最后更新 ${formatCacheTimestamp(current.freshness?.storedAt ?? 0)}` }
-            : { kind: 'error', message }))
-        })
-    }
     const useLiveStream = !rangeRequiresAdmin(nodeLatencyRange)
-    const stopLatencyStream = useLiveStream ? subscribeNodeLatency(
-      route.nodeId,
-      nodeLatencyRange,
-      (data) => applyLatencyData(data, 'ws'),
-      (error) => startLatencyFallback(error.message),
-    ) : null
-    if (!stopLatencyStream) {
-      startLatencyFallback(useLiveStream ? 'live websocket unavailable' : undefined)
-    } else {
-      fallbackTimer = setTimeout(() => {
-        if (shouldStartHttpFallback(fallbackStarted, receivedLiveLatency)) startLatencyFallback('live websocket timeout')
-      }, detailHttpFallbackDelayMs)
-    }
+    const stopLatencyStream = startResilientLiveData<NodeLatencyData>({
+      subscribe: useLiveStream ? (onData, onError, onStatus) => subscribeNodeLatency(route.nodeId, nodeLatencyRange, onData, onError, onStatus) : null,
+      fetch: (signal) => fetchNodeLatency(route.nodeId, nodeLatencyRange, rangeRequiresAdmin(nodeLatencyRange) ? adminToken : undefined, signal),
+      applyData: applyLatencyData,
+      initialFallbackDelayMs: detailHttpFallbackDelayMs,
+      onError: (error) => {
+        if (cancelled) return
+        const unauthorized = isHTTPUnauthorizedError(error)
+        if (unauthorized) {
+          clearStoredAdminToken()
+          setAdminToken('')
+          setAdminAuthState({ kind: 'error', message: '登录已过期，请重新登录。' })
+        }
+        setLatencyState((current) => (current.kind === 'ready'
+          ? { ...current, freshness: { ...current.freshness, stale: true } }
+          : { kind: 'error', message: unauthorized ? '登录已过期，请重新登录。' : error instanceof Error ? error.message : 'latency request failed' }))
+      },
+    })
     return () => {
       cancelled = true
-      if (fallbackTimer) clearTimeout(fallbackTimer)
-      stopLatencyStream?.()
+      stopLatencyStream()
     }
   }, [route, nodeLatencyRange, adminToken])
 
@@ -658,53 +577,33 @@ export function App() {
     } else {
       setStateHistoryState({ kind: 'loading' })
     }
-    let receivedLiveState = false
-    let fallbackStarted = false
-    let fallbackTimer: ReturnType<typeof setTimeout> | null = null
     const applyStateData = (data: NodeStateData, source: 'http' | 'ws') => {
-      if (source === 'http' && receivedLiveState) return
-      if (source === 'ws') receivedLiveState = true
       nodeStateCacheRef.current.set(cacheKey, data)
       rememberDetailData(nodeStateCachePrefix, route.nodeId, stateRange, data)
       if (!cancelled) setStateHistoryState({ kind: 'ready', data, freshness: { stale: false, storedAt: Date.now(), source } })
     }
-    const startStateFallback = (reason?: string) => {
-      if (fallbackStarted) return
-      fallbackStarted = true
-      fetchNodeState(route.nodeId, stateRange, rangeRequiresAdmin(stateRange) ? adminToken : undefined)
-        .then((data) => applyStateData(data, 'http'))
-        .catch((error: unknown) => {
-          if (cancelled) return
-          const unauthorized = isHTTPUnauthorizedError(error)
-          if (unauthorized) {
-            clearStoredAdminToken()
-            setAdminToken('')
-            setAdminAuthState({ kind: 'error', message: '登录已过期，请重新登录。' })
-          }
-          const message = unauthorized ? '登录已过期，请重新登录。' : error instanceof Error ? error.message : (reason ?? 'state request failed')
-          setStateHistoryState((current) => (current.kind === 'ready'
-            ? { ...current, freshness: { ...current.freshness, stale: true }, warning: unauthorized ? `${message} · 数据已过期 · 最后更新 ${formatCacheTimestamp(current.freshness?.storedAt ?? 0)}` : `数据已过期 · 最后更新 ${formatCacheTimestamp(current.freshness?.storedAt ?? 0)}` }
-            : { kind: 'error', message }))
-        })
-    }
     const useLiveStream = !rangeRequiresAdmin(stateRange)
-    const stopStateStream = useLiveStream ? subscribeNodeState(
-      route.nodeId,
-      stateRange,
-      (data) => applyStateData(data, 'ws'),
-      (error) => startStateFallback(error.message),
-    ) : null
-    if (!stopStateStream) {
-      startStateFallback(useLiveStream ? 'live websocket unavailable' : undefined)
-    } else {
-      fallbackTimer = setTimeout(() => {
-        if (shouldStartHttpFallback(fallbackStarted, receivedLiveState)) startStateFallback('live websocket timeout')
-      }, detailHttpFallbackDelayMs)
-    }
+    const stopStateStream = startResilientLiveData<NodeStateData>({
+      subscribe: useLiveStream ? (onData, onError, onStatus) => subscribeNodeState(route.nodeId, stateRange, onData, onError, onStatus) : null,
+      fetch: (signal) => fetchNodeState(route.nodeId, stateRange, rangeRequiresAdmin(stateRange) ? adminToken : undefined, signal),
+      applyData: applyStateData,
+      initialFallbackDelayMs: detailHttpFallbackDelayMs,
+      onError: (error) => {
+        if (cancelled) return
+        const unauthorized = isHTTPUnauthorizedError(error)
+        if (unauthorized) {
+          clearStoredAdminToken()
+          setAdminToken('')
+          setAdminAuthState({ kind: 'error', message: '登录已过期，请重新登录。' })
+        }
+        setStateHistoryState((current) => (current.kind === 'ready'
+          ? { ...current, freshness: { ...current.freshness, stale: true } }
+          : { kind: 'error', message: unauthorized ? '登录已过期，请重新登录。' : error instanceof Error ? error.message : 'state request failed' }))
+      },
+    })
     return () => {
       cancelled = true
-      if (fallbackTimer) clearTimeout(fallbackTimer)
-      stopStateStream?.()
+      stopStateStream()
     }
   }, [route, stateRange, adminToken])
 
@@ -741,53 +640,33 @@ export function App() {
     } else {
       setServiceLatencyState({ kind: 'loading' })
     }
-    let receivedLiveLatency = false
-    let fallbackStarted = false
-    let fallbackTimer: ReturnType<typeof setTimeout> | null = null
     const applyServiceLatencyData = (data: ServiceLatencyData, source: 'http' | 'ws') => {
-      if (source === 'http' && receivedLiveLatency) return
-      if (source === 'ws') receivedLiveLatency = true
       serviceLatencyCacheRef.current.set(cacheKey, data)
       rememberDetailData(serviceLatencyCachePrefix, route.targetId, serviceLatencyRange, data)
       if (!cancelled) setServiceLatencyState({ kind: 'ready', data, freshness: { stale: false, storedAt: Date.now(), source } })
     }
-    const startServiceLatencyFallback = (reason?: string) => {
-      if (fallbackStarted) return
-      fallbackStarted = true
-      fetchServiceLatency(route.targetId, serviceLatencyRange, rangeRequiresAdmin(serviceLatencyRange) ? adminToken : undefined)
-        .then((data) => applyServiceLatencyData(data, 'http'))
-        .catch((error: unknown) => {
-          if (cancelled) return
-          const unauthorized = isHTTPUnauthorizedError(error)
-          if (unauthorized) {
-            clearStoredAdminToken()
-            setAdminToken('')
-            setAdminAuthState({ kind: 'error', message: '登录已过期，请重新登录。' })
-          }
-          const message = unauthorized ? '登录已过期，请重新登录。' : error instanceof Error ? error.message : (reason ?? 'service latency request failed')
-          setServiceLatencyState((current) => (current.kind === 'ready'
-            ? { ...current, freshness: { ...current.freshness, stale: true }, warning: unauthorized ? `${message} · 数据已过期 · 最后更新 ${formatCacheTimestamp(current.freshness?.storedAt ?? 0)}` : `数据已过期 · 最后更新 ${formatCacheTimestamp(current.freshness?.storedAt ?? 0)}` }
-            : { kind: 'error', message }))
-        })
-    }
     const useLiveStream = !rangeRequiresAdmin(serviceLatencyRange)
-    const stopServiceLatencyStream = useLiveStream ? subscribeServiceLatency(
-      route.targetId,
-      serviceLatencyRange,
-      (data) => applyServiceLatencyData(data, 'ws'),
-      (error) => startServiceLatencyFallback(error.message),
-    ) : null
-    if (!stopServiceLatencyStream) {
-      startServiceLatencyFallback(useLiveStream ? 'live websocket unavailable' : undefined)
-    } else {
-      fallbackTimer = setTimeout(() => {
-        if (shouldStartHttpFallback(fallbackStarted, receivedLiveLatency)) startServiceLatencyFallback('live websocket timeout')
-      }, detailHttpFallbackDelayMs)
-    }
+    const stopServiceLatencyStream = startResilientLiveData<ServiceLatencyData>({
+      subscribe: useLiveStream ? (onData, onError, onStatus) => subscribeServiceLatency(route.targetId, serviceLatencyRange, onData, onError, onStatus) : null,
+      fetch: (signal) => fetchServiceLatency(route.targetId, serviceLatencyRange, rangeRequiresAdmin(serviceLatencyRange) ? adminToken : undefined, signal),
+      applyData: applyServiceLatencyData,
+      initialFallbackDelayMs: detailHttpFallbackDelayMs,
+      onError: (error) => {
+        if (cancelled) return
+        const unauthorized = isHTTPUnauthorizedError(error)
+        if (unauthorized) {
+          clearStoredAdminToken()
+          setAdminToken('')
+          setAdminAuthState({ kind: 'error', message: '登录已过期，请重新登录。' })
+        }
+        setServiceLatencyState((current) => (current.kind === 'ready'
+          ? { ...current, freshness: { ...current.freshness, stale: true } }
+          : { kind: 'error', message: unauthorized ? '登录已过期，请重新登录。' : error instanceof Error ? error.message : 'service latency request failed' }))
+      },
+    })
     return () => {
       cancelled = true
-      if (fallbackTimer) clearTimeout(fallbackTimer)
-      stopServiceLatencyStream?.()
+      stopServiceLatencyStream()
     }
   }, [route, serviceLatencyRange, adminToken])
 
@@ -809,59 +688,61 @@ export function App() {
 
     let cancelled = false
     let loadedOnce = false
-    const loadAdminNodes = () => {
+    const loadAdminNodes = async (signal?: AbortSignal) => {
+      const mutationSnapshot = adminMutationEpochRef.current.snapshot()
       if (!loadedOnce) setAdminState({ kind: 'loading' })
-      fetchAdminNodes(adminToken)
-        .then((nodesData) => {
-          loadedOnce = true
-          if (!cancelled) {
-            setAdminState((current) => ({
-              kind: 'ready',
-              account: current.kind === 'ready' ? current.account : { username: 'admin' },
-              nodes: nodesData.nodes,
-              targets: current.kind === 'ready' ? current.targets : [],
-              notificationChannels: current.kind === 'ready' ? current.notificationChannels : [],
-              alertRules: current.kind === 'ready' ? current.alertRules : [],
-            }))
-          }
-          return Promise.allSettled([fetchAdminSettings(adminToken), fetchAdminAccount(adminToken), fetchAdminProbeTargets(adminToken), fetchAdminNotificationChannels(adminToken), fetchAdminAlertRules(adminToken)])
-        })
-        .then((results) => {
-          if (!results || cancelled) return
-          const [settingsResult, accountResult, targetsResult, channelsResult, alertRulesResult] = results
-          const unauthorizedResult = results.find((result) => result.status === 'rejected' && isAdminUnauthorizedError(result.reason))
-          if (unauthorizedResult) {
-            clearStoredAdminToken()
-            setAdminToken('')
-            setAdminAuthState({ kind: 'error', message: '登录已过期，请重新登录。' })
-            setAdminState({ kind: 'idle' })
-            return
-          }
-          if (settingsResult.status === 'fulfilled') setSettings(settingsResult.value)
-          setAdminState((current) => current.kind === 'ready' ? {
-            ...current,
-            account: accountResult.status === 'fulfilled' ? accountResult.value : current.account,
-            targets: targetsResult.status === 'fulfilled' ? targetsResult.value.targets : current.targets,
-            notificationChannels: channelsResult.status === 'fulfilled' ? channelsResult.value.channels : current.notificationChannels,
-            alertRules: alertRulesResult.status === 'fulfilled' ? alertRulesResult.value.rules : current.alertRules,
-          } : current)
-        })
-        .catch((error: unknown) => {
-          loadedOnce = true
-          if (cancelled) return
-          if (isAdminUnauthorizedError(error)) {
-            clearStoredAdminToken()
-            setAdminToken('')
-            setAdminAuthState({ kind: 'error', message: '登录已过期，请重新登录。' })
-            setAdminState({ kind: 'idle' })
-            return
-          }
-          setAdminState({ kind: 'error', message: error instanceof Error ? error.message : 'unknown error' })
-        })
+      try {
+        const nodesData = await fetchAdminNodes(adminToken, signal)
+        loadedOnce = true
+        if (cancelled || signal?.aborted || !adminMutationEpochRef.current.isCurrent(mutationSnapshot)) return
+        setAdminState((current) => ({
+          kind: 'ready',
+          account: current.kind === 'ready' ? current.account : { username: 'admin' },
+          nodes: nodesData.nodes,
+          targets: current.kind === 'ready' ? current.targets : [],
+          notificationChannels: current.kind === 'ready' ? current.notificationChannels : [],
+          alertRules: current.kind === 'ready' ? current.alertRules : [],
+        }))
+        const results = await Promise.allSettled([
+          fetchAdminSettings(adminToken, signal),
+          fetchAdminAccount(adminToken, signal),
+          fetchAdminProbeTargets(adminToken, signal),
+          fetchAdminNotificationChannels(adminToken, signal),
+          fetchAdminAlertRules(adminToken, signal),
+        ])
+        if (cancelled || signal?.aborted || !adminMutationEpochRef.current.isCurrent(mutationSnapshot)) return
+        const [settingsResult, accountResult, targetsResult, channelsResult, alertRulesResult] = results
+        const unauthorizedResult = results.find((result) => result.status === 'rejected' && isAdminUnauthorizedError(result.reason))
+        if (unauthorizedResult) {
+          clearStoredAdminToken()
+          setAdminToken('')
+          setAdminAuthState({ kind: 'error', message: '登录已过期，请重新登录。' })
+          setAdminState({ kind: 'idle' })
+          return
+        }
+        if (settingsResult.status === 'fulfilled') setSettings(settingsResult.value)
+        setAdminState((current) => current.kind === 'ready' ? {
+          ...current,
+          account: accountResult.status === 'fulfilled' ? accountResult.value : current.account,
+          targets: targetsResult.status === 'fulfilled' ? targetsResult.value.targets : current.targets,
+          notificationChannels: channelsResult.status === 'fulfilled' ? channelsResult.value.channels : current.notificationChannels,
+          alertRules: alertRulesResult.status === 'fulfilled' ? alertRulesResult.value.rules : current.alertRules,
+        } : current)
+      } catch (error: unknown) {
+        loadedOnce = true
+        if (cancelled || signal?.aborted || (error instanceof DOMException && error.name === 'AbortError')) return
+        if (isAdminUnauthorizedError(error)) {
+          clearStoredAdminToken()
+          setAdminToken('')
+          setAdminAuthState({ kind: 'error', message: '登录已过期，请重新登录。' })
+          setAdminState({ kind: 'idle' })
+          return
+        }
+        setAdminState({ kind: 'error', message: error instanceof Error ? error.message : 'unknown error' })
+      }
     }
 
-    loadAdminNodes()
-    const stopRefresh = startLiveRefresh(loadAdminNodes)
+    const stopRefresh = startLiveRefresh(loadAdminNodes, { immediate: true, timeoutMs: 10_000 })
     return () => {
       cancelled = true
       stopRefresh()
@@ -907,6 +788,7 @@ export function App() {
 
   const updateAdminAccountDetails = (username: string, currentPassword: string, newPassword: string): Promise<void> => {
     if (adminToken === '') return Promise.reject(new Error('missing admin token'))
+    adminMutationEpochRef.current.invalidate()
     return updateAdminAccount(adminToken, username, currentPassword, newPassword)
       .then((session) => {
         rememberAdminToken(session.token)
@@ -921,6 +803,7 @@ export function App() {
 
   const createAdminNodeDetails = (input: AdminNodeCreateInput): Promise<AdminNode> => {
     if (adminToken === '') return Promise.reject(new Error('missing admin token'))
+    adminMutationEpochRef.current.invalidate()
     return createAdminNode(adminToken, input)
       .then((createdNode) => {
         setAdminState((current) => {
@@ -948,6 +831,7 @@ export function App() {
 
   const updateAdminNodeDetails = (nodeId: string, input: AdminNodeUpdateInput): Promise<void> => {
     if (adminToken === '') return Promise.reject(new Error('missing admin token'))
+    adminMutationEpochRef.current.invalidate()
     return updateAdminNode(adminToken, nodeId, input)
       .then((updatedNode) => {
         setAdminState((current) => {
@@ -968,6 +852,7 @@ export function App() {
 
   const deleteAdminNodeDetails = (nodeId: string): Promise<void> => {
     if (adminToken === '') return Promise.reject(new Error('missing admin token'))
+    adminMutationEpochRef.current.invalidate()
     return deleteAdminNode(adminToken, nodeId)
       .then(() => {
         setAdminState((current) => {
@@ -990,6 +875,7 @@ export function App() {
 
   const createAdminProbeTargetDetails = (input: AdminProbeTargetInput): Promise<void> => {
     if (adminToken === '') return Promise.reject(new Error('missing admin token'))
+    adminMutationEpochRef.current.invalidate()
     return createAdminProbeTarget(adminToken, input)
       .then((createdTarget) => {
         setAdminState((current) => {
@@ -1007,6 +893,7 @@ export function App() {
 
   const updateAdminProbeTargetDetails = (targetId: string, input: AdminProbeTargetUpdateInput): Promise<void> => {
     if (adminToken === '') return Promise.reject(new Error('missing admin token'))
+    adminMutationEpochRef.current.invalidate()
     return updateAdminProbeTarget(adminToken, targetId, input)
       .then((updatedTarget) => {
         setAdminState((current) => {
@@ -1024,6 +911,7 @@ export function App() {
 
   const deleteAdminProbeTargetDetails = (targetId: string): Promise<void> => {
     if (adminToken === '') return Promise.reject(new Error('missing admin token'))
+    adminMutationEpochRef.current.invalidate()
     return deleteAdminProbeTarget(adminToken, targetId)
       .then(() => {
         setAdminState((current) => {
@@ -1039,6 +927,7 @@ export function App() {
 
   const createAdminNotificationChannelDetails = (input: AdminNotificationChannelCreateInput): Promise<void> => {
     if (adminToken === '') return Promise.reject(new Error('missing admin token'))
+    adminMutationEpochRef.current.invalidate()
     return createAdminNotificationChannel(adminToken, input)
       .then((createdChannel) => {
         setAdminState((current) => {
@@ -1056,6 +945,7 @@ export function App() {
 
   const updateAdminNotificationChannelDetails = (channelId: string, input: AdminNotificationChannelUpdateInput): Promise<void> => {
     if (adminToken === '') return Promise.reject(new Error('missing admin token'))
+    adminMutationEpochRef.current.invalidate()
     return updateAdminNotificationChannel(adminToken, channelId, input)
       .then((updatedChannel) => {
         setAdminState((current) => {
@@ -1073,6 +963,7 @@ export function App() {
 
   const deleteAdminNotificationChannelDetails = (channelId: string): Promise<void> => {
     if (adminToken === '') return Promise.reject(new Error('missing admin token'))
+    adminMutationEpochRef.current.invalidate()
     return deleteAdminNotificationChannel(adminToken, channelId)
       .then(() => {
         setAdminState((current) => {
@@ -1095,13 +986,9 @@ export function App() {
 
   const updateAdminAlertRuleDetails = (ruleId: string, input: AdminAlertRuleUpdateInput): Promise<void> => {
     if (adminToken === '') return Promise.reject(new Error('missing admin token'))
+    adminMutationEpochRef.current.invalidate()
     const updateRule = () => updateAdminAlertRule(adminToken, ruleId, input)
-    const currentRule = adminState.kind === 'ready' ? adminState.alertRules.find((rule) => rule.id === ruleId) : undefined
-    const notificationEventType = currentRule?.notificationEventType ?? ruleId
-    const ruleRequest = input.enabled === true
-      ? updateAdminNotificationType(adminToken, notificationEventType, true).then(updateRule, updateRule)
-      : updateRule()
-    return ruleRequest
+    return updateRule()
       .then((updatedRule) => {
         setAdminState((current) => {
           if (current.kind === 'ready') {
@@ -1121,6 +1008,7 @@ export function App() {
 
   const updateAdminSettingsDetails = (input: AdminSettingsUpdateInput): Promise<void> => {
     if (adminToken === '') return Promise.reject(new Error('missing admin token'))
+    adminMutationEpochRef.current.invalidate()
     return updateAdminSettings(adminToken, input)
       .then((updatedSettings) => setSettings(updatedSettings))
       .catch((error: unknown) => {
@@ -1180,7 +1068,6 @@ export function App() {
   const downSpeed = currentRealtimeSnapshot.downSpeed
   const hasBackgroundImage = (effectiveSettings.desktopBackgroundUrl || effectiveSettings.backgroundUrl || effectiveSettings.mobileBackgroundUrl).trim() !== ''
   const hasAdminToken = adminToken !== ''
-  const summaryDataNotice = state.kind === 'ready' ? freshnessNotice({ stale: Boolean(state.stale), storedAt: state.storedAt }) : undefined
 
   return (
     <main className="kulin-shell" data-theme={effectiveSettings.theme} data-background={hasBackgroundImage ? 'on' : 'off'} style={shellStyleForSettings(effectiveSettings)}>
@@ -1229,8 +1116,6 @@ export function App() {
           error={latencyState.kind === 'error' ? latencyState.message : undefined}
           stateLoading={stateHistoryState.kind === 'loading'}
           stateError={stateHistoryState.kind === 'error' ? stateHistoryState.message : undefined}
-          dataNotice={latencyState.kind === 'ready' ? freshnessNotice(latencyState.freshness, latencyState.warning) : undefined}
-          stateNotice={stateHistoryState.kind === 'ready' ? freshnessNotice(stateHistoryState.freshness, stateHistoryState.warning) : undefined}
           canUseExtendedRanges={hasAdminToken}
           onBack={navigateHome}
           onRangeChange={setNodeLatencyRange}
@@ -1250,7 +1135,6 @@ export function App() {
           range={serviceLatencyRange}
           loading={serviceLatencyState.kind === 'loading'}
           error={serviceLatencyState.kind === 'error' ? serviceLatencyState.message : undefined}
-          dataNotice={serviceLatencyState.kind === 'ready' ? freshnessNotice(serviceLatencyState.freshness, serviceLatencyState.warning) : undefined}
           canUseExtendedRanges={hasAdminToken}
           onBack={navigateHome}
           onRangeChange={setServiceLatencyRange}
@@ -1273,7 +1157,6 @@ export function App() {
             totalDown={totalDown}
             upSpeed={upSpeed}
             downSpeed={downSpeed}
-            dataStatus={summaryDataNotice}
             onHome={navigateHome}
             onAdmin={navigateAdmin}
             onThemeChange={setThemeMode}
@@ -1299,7 +1182,6 @@ interface HomeOverviewPanelProps {
   totalDown: number
   upSpeed: number
   downSpeed: number
-  dataStatus?: string
 }
 
 interface DashboardHeaderProps {
@@ -1330,7 +1212,7 @@ export function HomeTopPanel({ settings = defaultSettings, onHome, onAdmin, onTh
   )
 }
 
-function ServiceDetail({ target, points, range, loading, error, dataNotice, canUseExtendedRanges = false, onBack, onRangeChange, topHeader }: { target: ServiceTarget; points: LatencyPoint[]; range: string; loading?: boolean; error?: string; dataNotice?: string; canUseExtendedRanges?: boolean; onBack: () => void; onRangeChange: (range: string) => void; topHeader?: ReactNode }) {
+function ServiceDetail({ target, points, range, loading, error, canUseExtendedRanges = false, onBack, onRangeChange, topHeader }: { target: ServiceTarget; points: LatencyPoint[]; range: string; loading?: boolean; error?: string; canUseExtendedRanges?: boolean; onBack: () => void; onRangeChange: (range: string) => void; topHeader?: ReactNode }) {
   const [peakCut, setPeakCut] = useState(false)
   const serviceRangeOptions = availableHistoryRanges(canUseExtendedRanges)
   const rangeLabel = serviceRangeOptions.find((option) => option.value === range)?.label ?? range
@@ -1377,7 +1259,6 @@ function ServiceDetail({ target, points, range, loading, error, dataNotice, canU
         </header>
         {loading && <div className="detail-state">正在读取服务延迟…</div>}
         {error && <div className="detail-state is-error">服务延迟读取失败：{error}</div>}
-        {!error && dataNotice && <div className="detail-state is-warning">{dataNotice}</div>}
         {!loading && !error && points.length === 0 && <div className="detail-state">暂无服务延迟历史</div>}
         {!loading && !error && points.length > 0 && (
           <LatencyChart points={points} title={`${target.name} 多节点延迟`} eyebrow={`${rangeLabel} · ${target.reportingNodeCount} 个节点`} compactHeader peakCut={peakCut} />
@@ -3054,7 +2935,7 @@ function AdminNotificationChannelEditModal({ channel, onUpdate, onTest, onClose 
             </label>
             <label>
               <span>Telegram Bot Token</span>
-              <input name="channel-credential" autoComplete="off" defaultValue={channel.credential ?? ''} />
+              <input name="channel-credential" autoComplete="new-password" placeholder={channel.credentialSet ? '留空则保留已保存 Token' : '请输入 Telegram Bot Token'} />
             </label>
             <label className="admin-node-toggle admin-channel-enabled-toggle">
               <input name="channel-enabled" type="checkbox" defaultChecked={channel.enabled} />
@@ -3110,7 +2991,7 @@ function AdminNotificationChannelCreateModal({ onCreate, onClose }: { onCreate: 
             </label>
             <label>
               <span>Telegram Bot Token</span>
-              <input name="new-channel-credential" autoComplete="off" placeholder="请输入 Telegram Bot Token" />
+              <input name="new-channel-credential" autoComplete="new-password" placeholder="请输入 Telegram Bot Token" />
             </label>
             <label className="admin-node-toggle admin-channel-enabled-toggle">
               <input name="new-channel-enabled" type="checkbox" defaultChecked />
@@ -3748,14 +3629,13 @@ function formatAdminDate(value?: string): string {
   return date.toLocaleString('zh-CN', { hour12: false })
 }
 
-export function HomeOverviewPanel({ totalCount, onlineCount, offlineCount: _offlineCount, totalUp, totalDown, upSpeed, downSpeed, dataStatus }: HomeOverviewPanelProps) {
+export function HomeOverviewPanel({ totalCount, onlineCount, offlineCount: _offlineCount, totalUp, totalDown, upSpeed, downSpeed }: HomeOverviewPanelProps) {
   const uploadRate = compactRateParts(upSpeed)
   const downloadRate = compactRateParts(downSpeed)
   return (
     <section className="home-summary" aria-label="server overview">
       <div className="home-summary__tile home-summary__status-line" aria-label="服务器在线摘要">
         <strong>{onlineCount} / {totalCount} 在线</strong>
-        {dataStatus && <span className="home-summary__data-status">{dataStatus}</span>}
       </div>
 
       <dl className="home-summary__tile home-summary__metric home-summary__metric--send" aria-label="traffic sent">

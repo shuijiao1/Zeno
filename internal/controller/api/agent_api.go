@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"errors"
 	"math"
 	"net/http"
 	"strings"
@@ -11,8 +12,10 @@ import (
 )
 
 const (
-	maxAgentProbeRounds          = 256
-	maxAgentProbeSamplesPerRound = 32
+	maxAgentProbeRounds          = maxProbeTargetsPerNode
+	maxAgentProbeSamplesPerRound = maxProbeTargetCount
+	maxAgentTimestampFutureSkew  = 5 * time.Minute
+	maxAgentTimestampPastSkew    = 10 * time.Minute
 )
 
 type agentStore interface {
@@ -24,11 +27,25 @@ type agentStore interface {
 	InsertAgentState(ctx context.Context, nodeID string, state AgentStateRequest) error
 }
 
-type preparedAgentProbeRound struct {
-	target  ProbeTarget
-	ts      time.Time
-	samples []probe.Sample
+type agentProbeBatchStore interface {
+	InsertAgentProbeResults(ctx context.Context, nodeID string, configVersion int64, rounds []preparedAgentProbeRound) error
 }
+
+type preparedAgentProbeRound struct {
+	targetID       string
+	targetType     string
+	target         ProbeTarget
+	ts             time.Time
+	idempotencyKey string
+	agentRoundID   string
+	payloadHash    string
+	samples        []probe.Sample
+}
+
+var (
+	errAgentProbeConfigStale    = errors.New("stale probe config")
+	errInvalidAgentProbeResults = errors.New("invalid agent probe results")
+)
 
 func (h *handler) handleAgentProbeTargets(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
@@ -86,30 +103,32 @@ func (h *handler) handleAgentProbeResults(w http.ResponseWriter, r *http.Request
 		writeError(w, http.StatusBadRequest, "too many rounds")
 		return
 	}
-
-	enabledTargets, err := store.EnabledProbeTargets(r.Context(), nodeID)
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, "internal error")
+	configVersion, validConfigVersion := request.effectiveConfigVersion()
+	if !validConfigVersion {
+		writeError(w, http.StatusBadRequest, "invalid config version")
 		return
-	}
-	targetsByID := make(map[string]ProbeTarget, len(enabledTargets))
-	for _, target := range enabledTargets {
-		targetsByID[target.ID] = target
 	}
 
 	prepared := make([]preparedAgentProbeRound, 0, len(request.Rounds))
 	for _, round := range request.Rounds {
-		target, exists := targetsByID[round.TargetID]
-		if !exists {
+		roundID := strings.TrimSpace(round.RoundID)
+		if roundID != "" && !validAgentProbeRoundID(roundID) {
+			writeError(w, http.StatusBadRequest, "invalid probe round id")
+			return
+		}
+		targetID := strings.TrimSpace(round.TargetID)
+		if targetID == "" {
 			writeError(w, http.StatusBadRequest, "unknown target")
 			return
 		}
-		if round.Type != "" && round.Type != target.Type {
-			writeError(w, http.StatusBadRequest, "target type mismatch")
-			return
-		}
+		targetType := strings.TrimSpace(round.Type)
 		if round.TS <= 0 {
 			writeError(w, http.StatusBadRequest, "invalid timestamp")
+			return
+		}
+		roundTS := time.Unix(round.TS, 0).UTC()
+		if !agentTimestampWithinSkew(roundTS, time.Now().UTC()) {
+			writeError(w, http.StatusBadRequest, "timestamp skew too large")
 			return
 		}
 		if len(round.Samples) > maxAgentProbeSamplesPerRound {
@@ -117,11 +136,21 @@ func (h *handler) handleAgentProbeResults(w http.ResponseWriter, r *http.Request
 			return
 		}
 		samples := make([]probe.Sample, 0, len(round.Samples))
+		seenSequences := make(map[int]struct{}, len(round.Samples))
 		for index, sample := range round.Samples {
 			seq := sample.Seq
 			if seq == 0 {
 				seq = index + 1
 			}
+			if seq < 1 {
+				writeError(w, http.StatusBadRequest, "invalid sample sequence")
+				return
+			}
+			if _, duplicate := seenSequences[seq]; duplicate {
+				writeError(w, http.StatusBadRequest, "duplicate sample sequence")
+				return
+			}
+			seenSequences[seq] = struct{}{}
 			latency := sample.LatencyMS
 			if latency != nil {
 				if math.IsNaN(*latency) || math.IsInf(*latency, 0) || *latency < 0 {
@@ -134,42 +163,48 @@ func (h *handler) handleAgentProbeResults(w http.ResponseWriter, r *http.Request
 				}
 				latency = &normalized
 			}
-			success := sample.Success
-			errorText := strings.TrimSpace(sample.Error)
-			if latency != nil {
-				effectiveTimeoutMS := target.TimeoutMS
-				if effectiveTimeoutMS <= 0 || effectiveTimeoutMS > int(localDrawableLatencyCap/time.Millisecond) {
-					effectiveTimeoutMS = int(localDrawableLatencyCap / time.Millisecond)
-				}
-				if *sample.LatencyMS > float64(effectiveTimeoutMS) {
-					success = false
-					errorText = "timeout"
-				}
-			}
-			samples = append(samples, probe.Sample{Seq: seq, Success: success, LatencyMS: latency, Error: errorText})
+			samples = append(samples, probe.Sample{Seq: seq, Success: sample.Success, LatencyMS: latency, Error: strings.TrimSpace(sample.Error)})
 		}
 		if len(samples) == 0 {
 			writeError(w, http.StatusBadRequest, "samples required")
 			return
 		}
-		prepared = append(prepared, preparedAgentProbeRound{target: target, ts: time.Unix(round.TS, 0).UTC(), samples: samples})
+		prepared = append(prepared, preparedAgentProbeRound{targetID: targetID, targetType: targetType, ts: roundTS, agentRoundID: roundID, samples: samples})
 	}
 
-	for _, round := range prepared {
-		if err := store.InsertProbeRound(r.Context(), nodeID, round.target, round.ts, round.samples); err != nil {
-			writeError(w, http.StatusBadRequest, "invalid probe round")
+	if batchStore, ok := store.(agentProbeBatchStore); ok {
+		if err := batchStore.InsertAgentProbeResults(r.Context(), nodeID, configVersion, prepared); err != nil {
+			if errors.Is(err, errAgentProbeConfigStale) {
+				writeJSON(w, http.StatusConflict, map[string]string{"error": "stale_probe_config"})
+				return
+			}
+			if errors.Is(err, errInvalidAgentProbeResults) {
+				writeError(w, http.StatusBadRequest, "invalid probe round")
+				return
+			}
+			writeError(w, http.StatusInternalServerError, "internal error")
 			return
 		}
+	} else {
+		writeError(w, http.StatusInternalServerError, "internal error")
+		return
 	}
 	h.publishSummary(r.Context())
 	h.publishNodeLatency(r.Context(), nodeID)
 	seenTargetIDs := map[string]struct{}{}
 	for _, round := range prepared {
-		if _, ok := seenTargetIDs[round.target.ID]; ok {
+		targetID := round.target.ID
+		if targetID == "" {
+			targetID = round.targetID
+		}
+		if targetID == "" {
 			continue
 		}
-		seenTargetIDs[round.target.ID] = struct{}{}
-		h.publishServiceLatency(r.Context(), round.target.ID)
+		if _, ok := seenTargetIDs[targetID]; ok {
+			continue
+		}
+		seenTargetIDs[targetID] = struct{}{}
+		h.publishServiceLatency(r.Context(), targetID)
 	}
 	writeJSON(w, http.StatusAccepted, map[string]any{"ok": true, "accepted": len(prepared)})
 }
@@ -225,7 +260,6 @@ func (h *handler) handleAgentHeartbeat(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	h.dispatchAgentStatusNotification(store, transition, heartbeatTS)
-	h.dispatchRenewalNotifications(store)
 	h.invalidateSummaryCache()
 	h.publishSummary(r.Context())
 	writeJSON(w, http.StatusAccepted, map[string]any{"ok": true})
@@ -256,7 +290,6 @@ func (h *handler) handleAgentHost(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "internal error")
 		return
 	}
-	h.dispatchRenewalNotifications(store)
 	h.invalidateSummaryCache()
 	h.publishSummary(r.Context())
 	writeJSON(w, http.StatusAccepted, map[string]any{"ok": true})
@@ -279,6 +312,11 @@ func (h *handler) handleAgentState(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid timestamp")
 		return
 	}
+	stateTS := time.Unix(request.TS, 0).UTC()
+	if !agentTimestampWithinSkew(stateTS, time.Now().UTC()) {
+		writeError(w, http.StatusBadRequest, "timestamp skew too large")
+		return
+	}
 	if request.CPUPercent < 0 || request.CPUPercent > 100 || optionalFloatNegative(request.Load1) || optionalFloatNegative(request.Load5) || optionalFloatNegative(request.Load15) || request.MemoryUsedBytes < 0 || request.MemoryTotalBytes < 0 || optionalIntNegative(request.SwapUsedBytes) || optionalIntNegative(request.SwapTotalBytes) || request.DiskUsedBytes < 0 || request.DiskTotalBytes < 0 || request.NetInTotalBytes < 0 || request.NetOutTotalBytes < 0 || request.NetInSpeedBps < 0 || request.NetOutSpeedBps < 0 || optionalIntNegative(request.ProcessCount) || optionalIntNegative(request.TCPConnectionCount) || request.UptimeSeconds < 0 {
 		writeError(w, http.StatusBadRequest, "invalid state values")
 		return
@@ -287,7 +325,6 @@ func (h *handler) handleAgentState(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "internal error")
 		return
 	}
-	stateTS := time.Unix(request.TS, 0).UTC()
 	if transitionStore, ok := store.(stateAlertRuleTransitionStore); ok {
 		transition, err := transitionStore.RecordAgentStateAlertRuleTransition(r.Context(), nodeID, stateTS, request)
 		if err != nil {
@@ -296,10 +333,32 @@ func (h *handler) handleAgentState(w http.ResponseWriter, r *http.Request) {
 		}
 		h.dispatchAgentStatusNotification(store, transition, stateTS)
 	}
-	h.dispatchRenewalNotifications(store)
 	h.publishSummary(r.Context())
 	h.publishNodeState(r.Context(), nodeID)
 	writeJSON(w, http.StatusAccepted, map[string]any{"ok": true})
+}
+
+func agentTimestampWithinSkew(ts, now time.Time) bool {
+	if ts.After(now.Add(maxAgentTimestampFutureSkew)) {
+		return false
+	}
+	if ts.Before(now.Add(-maxAgentTimestampPastSkew)) {
+		return false
+	}
+	return true
+}
+
+func validAgentProbeRoundID(value string) bool {
+	if len(value) == 0 || len(value) > 128 {
+		return false
+	}
+	for _, character := range value {
+		if (character >= 'a' && character <= 'z') || (character >= 'A' && character <= 'Z') || (character >= '0' && character <= '9') || character == '-' || character == '_' {
+			continue
+		}
+		return false
+	}
+	return true
 }
 
 func validAgentStatus(status string) bool {

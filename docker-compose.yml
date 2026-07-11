@@ -3,6 +3,14 @@ services:
     image: ${ZENO_IMAGE:-ghcr.io/shuijiao1/zeno:latest}
     container_name: ${ZENO_CONTAINER_NAME:-zeno}
     restart: unless-stopped
+    user: "${ZENO_UID:-10001}:${ZENO_GID:-10001}"
+    read_only: true
+    tmpfs:
+      - /tmp:size=512m,mode=1777
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
     environment:
       TZ: ${TZ:-Asia/Shanghai}
     ports:
@@ -15,4 +23,4 @@ services:
       interval: 30s
       timeout: 5s
       retries: 3
-      start_period: 10s
+      start_period: 5m

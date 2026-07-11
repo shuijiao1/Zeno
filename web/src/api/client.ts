@@ -219,7 +219,6 @@ interface ApiAdminNotificationChannel {
   id: string
   name: string
   destination: string
-  credential?: string
   credential_set: boolean
   enabled: boolean
   created_at: string
@@ -520,8 +519,8 @@ export async function fetchPublicSettings(): Promise<AdminSettings> {
   return normalizeSettings(await response.json() as ApiSettings)
 }
 
-export async function fetchSummary(): Promise<SummaryData> {
-  const response = await fetch('/api/public/v1/summary', { headers: { Accept: 'application/json' } })
+export async function fetchSummary(signal?: AbortSignal): Promise<SummaryData> {
+  const response = await fetch('/api/public/v1/summary', { signal, headers: { Accept: 'application/json' } })
   if (!response.ok) {
     throw new Error(`summary request failed: ${response.status}`)
   }
@@ -543,7 +542,6 @@ function subscribeLiveWebSocket<T>(path: string, normalize: (payload: unknown) =
   let socket: WebSocket | null = null
   let reconnectTimer: ReturnType<typeof setTimeout> | null = null
   let reconnectAttempts = 0
-  const maxReconnectAttempts = 30
 
   const clearReconnectTimer = () => {
     if (reconnectTimer !== null) {
@@ -557,12 +555,12 @@ function subscribeLiveWebSocket<T>(path: string, normalize: (payload: unknown) =
     onStatus?.(reconnectAttempts > 0 ? 'reconnecting' : 'connecting')
     socket = new WebSocket(liveWebSocketURL(path))
     socket.onopen = () => {
-      reconnectAttempts = 0
       onStatus?.('open')
     }
     socket.onmessage = (event) => {
       try {
         if (typeof event.data !== 'string') throw new Error('live websocket message must be text')
+        reconnectAttempts = 0
         onData(normalize(JSON.parse(event.data) as unknown))
       } catch (error) {
         onError?.(error instanceof Error ? error : new Error('live websocket parse failed'))
@@ -573,15 +571,10 @@ function subscribeLiveWebSocket<T>(path: string, normalize: (payload: unknown) =
     }
     socket.onclose = () => {
       if (closedByClient) return
-      if (reconnectAttempts >= maxReconnectAttempts) {
-        onStatus?.('closed')
-        onError?.(new Error('live websocket closed'))
-        return
-      }
       reconnectAttempts += 1
       onStatus?.('reconnecting')
       clearReconnectTimer()
-      reconnectTimer = setTimeout(connect, Math.min(1000 + reconnectAttempts * 250, 3000))
+      reconnectTimer = setTimeout(connect, Math.min(1000 + reconnectAttempts * 250, 30_000))
     }
   }
 
@@ -614,24 +607,24 @@ function optionalAdminHeaders(adminToken?: string): HeadersInit {
   return adminToken ? { Accept: 'application/json', 'X-Admin-Token': adminToken } : { Accept: 'application/json' }
 }
 
-export async function fetchNodeLatency(nodeId: string, range = '1h', adminToken?: string): Promise<NodeLatencyData> {
-  const response = await fetch(`/api/public/v1/nodes/${encodeURIComponent(nodeId)}/latency?range=${encodeURIComponent(range)}`, { headers: optionalAdminHeaders(adminToken) })
+export async function fetchNodeLatency(nodeId: string, range = '1h', adminToken?: string, signal?: AbortSignal): Promise<NodeLatencyData> {
+  const response = await fetch(`/api/public/v1/nodes/${encodeURIComponent(nodeId)}/latency?range=${encodeURIComponent(range)}`, { signal, headers: optionalAdminHeaders(adminToken) })
   if (!response.ok) {
     throw new Error(`latency request failed: ${response.status}`)
   }
   return normalizeNodeLatency(await response.json() as ApiLatencyResponse)
 }
 
-export async function fetchServiceLatency(targetId: string, range = '1h', adminToken?: string): Promise<ServiceLatencyData> {
-  const response = await fetch(`/api/public/v1/services/${encodeURIComponent(targetId)}/latency?range=${encodeURIComponent(range)}`, { headers: optionalAdminHeaders(adminToken) })
+export async function fetchServiceLatency(targetId: string, range = '1h', adminToken?: string, signal?: AbortSignal): Promise<ServiceLatencyData> {
+  const response = await fetch(`/api/public/v1/services/${encodeURIComponent(targetId)}/latency?range=${encodeURIComponent(range)}`, { signal, headers: optionalAdminHeaders(adminToken) })
   if (!response.ok) {
     throw new Error(`service latency request failed: ${response.status}`)
   }
   return normalizeServiceLatency(await response.json() as ApiServiceLatencyResponse)
 }
 
-export async function fetchNodeState(nodeId: string, range = '1h', adminToken?: string): Promise<NodeStateData> {
-  const response = await fetch(`/api/public/v1/nodes/${encodeURIComponent(nodeId)}/state?range=${encodeURIComponent(range)}`, { headers: optionalAdminHeaders(adminToken) })
+export async function fetchNodeState(nodeId: string, range = '1h', adminToken?: string, signal?: AbortSignal): Promise<NodeStateData> {
+  const response = await fetch(`/api/public/v1/nodes/${encodeURIComponent(nodeId)}/state?range=${encodeURIComponent(range)}`, { signal, headers: optionalAdminHeaders(adminToken) })
   if (!response.ok) {
     throw new Error(`state request failed: ${response.status}`)
   }
@@ -654,8 +647,9 @@ export async function loginAdmin(username: string, password: string): Promise<Ad
   return { username: data.username, token: data.token }
 }
 
-export async function fetchAdminAccount(adminToken: string): Promise<AdminAccountData> {
+export async function fetchAdminAccount(adminToken: string, signal?: AbortSignal): Promise<AdminAccountData> {
   const response = await fetch('/api/admin/v1/account', {
+    signal,
     headers: {
       Accept: 'application/json',
       'X-Admin-Token': adminToken,
@@ -692,8 +686,9 @@ export async function updateAdminAccount(adminToken: string, username: string, c
   return { username: data.username, token: data.token }
 }
 
-export async function fetchAdminSettings(adminToken: string): Promise<AdminSettings> {
+export async function fetchAdminSettings(adminToken: string, signal?: AbortSignal): Promise<AdminSettings> {
   const response = await fetch('/api/admin/v1/settings', {
+    signal,
     headers: {
       Accept: 'application/json',
       'X-Admin-Token': adminToken,
@@ -723,8 +718,9 @@ export async function updateAdminSettings(adminToken: string, input: AdminSettin
   return normalizeSettings(data.settings)
 }
 
-export async function fetchAdminNodes(adminToken: string): Promise<AdminNodesData> {
+export async function fetchAdminNodes(adminToken: string, signal?: AbortSignal): Promise<AdminNodesData> {
   const response = await fetch('/api/admin/v1/nodes', {
+    signal,
     headers: {
       Accept: 'application/json',
       'X-Admin-Token': adminToken,
@@ -736,8 +732,9 @@ export async function fetchAdminNodes(adminToken: string): Promise<AdminNodesDat
   return normalizeAdminNodes(await response.json() as ApiAdminNodesResponse)
 }
 
-export async function fetchAdminProbeTargets(adminToken: string): Promise<AdminProbeTargetsData> {
+export async function fetchAdminProbeTargets(adminToken: string, signal?: AbortSignal): Promise<AdminProbeTargetsData> {
   const response = await fetch('/api/admin/v1/probe-targets', {
+    signal,
     headers: {
       Accept: 'application/json',
       'X-Admin-Token': adminToken,
@@ -749,8 +746,9 @@ export async function fetchAdminProbeTargets(adminToken: string): Promise<AdminP
   return normalizeAdminProbeTargets(await response.json() as ApiAdminProbeTargetsResponse)
 }
 
-export async function fetchAdminNotificationChannels(adminToken: string): Promise<AdminNotificationChannelsData> {
+export async function fetchAdminNotificationChannels(adminToken: string, signal?: AbortSignal): Promise<AdminNotificationChannelsData> {
   const response = await fetch('/api/admin/v1/notification-channels', {
+    signal,
     headers: {
       Accept: 'application/json',
       'X-Admin-Token': adminToken,
@@ -762,8 +760,9 @@ export async function fetchAdminNotificationChannels(adminToken: string): Promis
   return normalizeAdminNotificationChannels(await response.json() as ApiAdminNotificationChannelsResponse)
 }
 
-export async function fetchAdminAlertRules(adminToken: string): Promise<AdminAlertRulesData> {
+export async function fetchAdminAlertRules(adminToken: string, signal?: AbortSignal): Promise<AdminAlertRulesData> {
   const response = await fetch('/api/admin/v1/alert-rules', {
+    signal,
     headers: {
       Accept: 'application/json',
       'X-Admin-Token': adminToken,
@@ -1446,7 +1445,6 @@ function normalizeAdminNotificationChannel(channel: ApiAdminNotificationChannel)
     id: channel.id,
     name: channel.name,
     destination: channel.destination,
-    credential: channel.credential ?? '',
     credentialSet: channel.credential_set,
     enabled: channel.enabled,
     createdAt: channel.created_at,

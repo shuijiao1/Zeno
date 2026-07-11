@@ -35,7 +35,8 @@ func (s *SQLiteStore) AdminLogin(ctx context.Context, username, password, fallba
 	if err != nil {
 		return AdminSession{}, err
 	}
-	if strings.TrimSpace(username) != account.Username || !s.adminPasswordMatches(ctx, password, fallbackHash) {
+	passwordOK := s.adminPasswordMatches(ctx, password, fallbackHash)
+	if strings.TrimSpace(username) != account.Username || !passwordOK {
 		return AdminSession{}, errInvalidAdminLogin
 	}
 	token, err := randomToken()

@@ -10,6 +10,8 @@ CONTAINER_NAME="${ZENO_CONTAINER_NAME:-}"
 TZ_VALUE="${TZ:-}"
 BACKUP_DIR=""
 HAD_EXISTING_INSTALL=0
+ZENO_UID=10001
+ZENO_GID=10001
 
 fail() {
   echo "错误: $*" >&2
@@ -40,7 +42,8 @@ read_env_value() {
 
 validate_image_reference() {
   local image="$1"
-  if [[ "$image" != *@sha256:* && "$image" != *:* ]]; then
+  local image_name="${image##*/}"
+  if [[ "$image" != *@sha256:* && "$image_name" != *:* ]]; then
     fail "ZENO_IMAGE 必须明确 tag 或 digest，不能使用隐式 latest: ${image}"
   fi
 }
@@ -72,12 +75,24 @@ compose_cmd() {
 }
 
 set_data_permissions() {
-  [ -d "$INSTALL_DIR/data" ] && chmod 700 "$INSTALL_DIR/data"
-  [ -d "$INSTALL_DIR/secrets" ] && chmod 700 "$INSTALL_DIR/secrets"
-  local db_file
-  for db_file in "$INSTALL_DIR"/data/*.db "$INSTALL_DIR"/data/*.db-wal "$INSTALL_DIR"/data/*.db-shm; do
-    [ -e "$db_file" ] || continue
-    chmod 600 "$db_file" || true
+  # The official image runs as the fixed unprivileged zeno user. Migrate
+  # existing root-owned bind mounts before any check/start so upgrades do not
+  # fail with SQLite or secret permission errors.
+  if [ -d "$INSTALL_DIR/data" ]; then
+    chown -R "$ZENO_UID:$ZENO_GID" "$INSTALL_DIR/data"
+    chmod 700 "$INSTALL_DIR/data"
+  fi
+  if [ -d "$INSTALL_DIR/secrets" ]; then
+    chown -R "$ZENO_UID:$ZENO_GID" "$INSTALL_DIR/secrets"
+    chmod 700 "$INSTALL_DIR/secrets"
+  fi
+  local private_file
+  for private_file in \
+    "$INSTALL_DIR"/data/*.db "$INSTALL_DIR"/data/*.db-wal "$INSTALL_DIR"/data/*.db-shm \
+    "$INSTALL_DIR"/secrets/*; do
+    [ -e "$private_file" ] || continue
+    chown "$ZENO_UID:$ZENO_GID" "$private_file" || true
+    chmod 600 "$private_file" || true
   done
 }
 
@@ -158,6 +173,14 @@ services:
     image: ${ZENO_IMAGE:?ZENO_IMAGE must be an explicit tag or digest}
     container_name: ${ZENO_CONTAINER_NAME:-zeno}
     restart: unless-stopped
+    user: "${ZENO_UID:-10001}:${ZENO_GID:-10001}"
+    read_only: true
+    tmpfs:
+      - /tmp:size=512m,mode=1777
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
     environment:
       TZ: ${TZ:-Asia/Shanghai}
     ports:
@@ -170,7 +193,7 @@ services:
       interval: 30s
       timeout: 5s
       retries: 3
-      start_period: 10s
+      start_period: 5m
 EOF_COMPOSE
 }
 
@@ -238,6 +261,8 @@ ZENO_IMAGE=${IMAGE}
 ZENO_CONTAINER_NAME=${CONTAINER_NAME}
 ZENO_HOST_PORT=${HOST_PORT}
 TZ=${TZ_VALUE}
+ZENO_UID=${ZENO_UID}
+ZENO_GID=${ZENO_GID}
 EOF_ENV
 chmod 600 "$INSTALL_DIR/.env"
 write_compose_file

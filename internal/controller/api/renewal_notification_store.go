@@ -9,15 +9,90 @@ import (
 	"time"
 )
 
+type renewalNotificationCandidate struct {
+	event notificationEvent
+	mark  string
+}
+
 func (s *SQLiteStore) PendingRenewalNotifications(ctx context.Context, now time.Time) ([]notificationEvent, error) {
-	today := dateOnlyUTC(now)
-	markDay := today.Format("2006-01-02")
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return nil, err
 	}
 	defer rollbackUnlessCommitted(tx)
+	candidates, err := renewalNotificationCandidatesTx(ctx, tx, now, true)
+	if err != nil {
+		return nil, err
+	}
+	if err := tx.Commit(); err != nil {
+		return nil, err
+	}
+	tx = nil
+	events := make([]notificationEvent, 0, len(candidates))
+	for _, candidate := range candidates {
+		events = append(events, candidate.event)
+	}
+	return events, nil
+}
 
+// QueueDueRenewalNotifications claims due renewal reminders and their outbox
+// deliveries in one SQLite transaction. The notification_event_marks primary
+// key is the stable idempotency key, so concurrent scanners or a crash between
+// claim and delivery creation cannot produce duplicate reminders.
+func (s *SQLiteStore) QueueDueRenewalNotifications(ctx context.Context, now time.Time) (int, error) {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return 0, err
+	}
+	defer rollbackUnlessCommitted(tx)
+
+	channels, err := enabledNotificationChannelsTx(ctx, tx)
+	if err != nil {
+		return 0, err
+	}
+	if len(channels) == 0 {
+		if err := tx.Commit(); err != nil {
+			return 0, err
+		}
+		tx = nil
+		return 0, nil
+	}
+	candidates, err := renewalNotificationCandidatesTx(ctx, tx, now, true)
+	if err != nil {
+		return 0, err
+	}
+	nowUnix := now.UTC().Unix()
+	queued := 0
+	for _, candidate := range candidates {
+		result, err := tx.ExecContext(ctx, `
+			INSERT OR IGNORE INTO notification_event_marks (event_type, node_id, mark, created_at)
+			VALUES ('renewal_due', ?, ?, ?)
+		`, candidate.event.NodeID, candidate.mark, nowUnix)
+		if err != nil {
+			return 0, err
+		}
+		claimed, err := result.RowsAffected()
+		if err != nil {
+			return 0, err
+		}
+		if claimed == 0 {
+			continue
+		}
+		if err := insertNotificationDeliveriesTx(ctx, tx, candidate.event, channels, nowUnix); err != nil {
+			return 0, err
+		}
+		queued += len(channels)
+	}
+	if err := tx.Commit(); err != nil {
+		return 0, err
+	}
+	tx = nil
+	return queued, nil
+}
+
+func renewalNotificationCandidatesTx(ctx context.Context, tx *sql.Tx, now time.Time, skipClaimed bool) ([]renewalNotificationCandidate, error) {
+	today := dateOnlyUTC(now)
+	markDay := today.Format("2006-01-02")
 	rows, err := tx.QueryContext(ctx, `
 		SELECT id, display_name, expiry_date, expiry_permanent, billing_cycle
 		FROM nodes
@@ -29,24 +104,41 @@ func (s *SQLiteStore) PendingRenewalNotifications(ctx context.Context, now time.
 	}
 	defer rows.Close()
 
-	events := make([]notificationEvent, 0)
+	type renewalNode struct {
+		id              string
+		displayName     string
+		expiryDate      string
+		expiryPermanent int
+		billingCycle    sql.NullString
+	}
+	nodes := make([]renewalNode, 0)
 	for rows.Next() {
-		var nodeID, displayName, expiryDate string
-		var expiryPermanent int
-		var billingCycle sql.NullString
-		if err := rows.Scan(&nodeID, &displayName, &expiryDate, &expiryPermanent, &billingCycle); err != nil {
+		var node renewalNode
+		if err := rows.Scan(&node.id, &node.displayName, &node.expiryDate, &node.expiryPermanent, &node.billingCycle); err != nil {
 			return nil, err
 		}
-		if expiryPermanent != 0 {
+		nodes = append(nodes, node)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+
+	label, _ := adminNotificationTypeLabel("renewal_due")
+	candidates := make([]renewalNotificationCandidate, 0)
+	for _, node := range nodes {
+		if node.expiryPermanent != 0 {
 			continue
 		}
-		dueDate, ok := renewalNotificationDueDate(expiryDate, billingCycle, now)
+		dueDate, ok := renewalNotificationDueDate(node.expiryDate, node.billingCycle, now)
 		if !ok {
 			continue
 		}
 		dueDateText := dueDate.Format("2006-01-02")
 		daysRemaining := int(math.Ceil(dueDate.Sub(today).Hours() / 24))
-		rules, err := alertRulesForMetrics(ctx, tx, nodeID, map[string]bool{"expiry_days": true})
+		rules, err := alertRulesForMetrics(ctx, tx, node.id, map[string]bool{"expiry_days": true})
 		if err != nil {
 			return nil, err
 		}
@@ -54,34 +146,30 @@ func (s *SQLiteStore) PendingRenewalNotifications(ctx context.Context, now time.
 			continue
 		}
 		mark := renewalNotificationMark(markDay, dueDateText)
-		var exists int
-		err = tx.QueryRowContext(ctx, `
-			SELECT 1 FROM notification_event_marks
-			WHERE event_type = 'renewal_due' AND node_id = ? AND mark = ?
-		`, nodeID, mark).Scan(&exists)
-		if err == nil {
-			continue
+		if skipClaimed {
+			var exists int
+			err = tx.QueryRowContext(ctx, `
+				SELECT 1 FROM notification_event_marks
+				WHERE event_type = 'renewal_due' AND node_id = ? AND mark = ?
+			`, node.id, mark).Scan(&exists)
+			if err == nil {
+				continue
+			}
+			if err != sql.ErrNoRows {
+				return nil, err
+			}
 		}
-		if err != sql.ErrNoRows {
-			return nil, err
-		}
-		events = append(events, notificationEvent{
+		candidates = append(candidates, renewalNotificationCandidate{event: notificationEvent{
 			EventType: "renewal_due",
-			NodeID:    nodeID,
-			NodeName:  displayName,
+			Label:     label,
+			NodeID:    node.id,
+			NodeName:  node.displayName,
 			Status:    "renewal_due",
 			TS:        now.UTC().Format(time.RFC3339),
 			Detail:    formatRenewalNotificationDetail(daysRemaining, dueDateText),
-		})
+		}, mark: mark})
 	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	if err := tx.Commit(); err != nil {
-		return nil, err
-	}
-	tx = nil
-	return events, nil
+	return candidates, nil
 }
 
 func renewalNotificationDueDate(rawDate string, billingCycle sql.NullString, now time.Time) (time.Time, bool) {
@@ -126,6 +214,9 @@ func renewalRulesMatch(rules []AdminAlertRule, daysRemaining float64) bool {
 }
 
 func renewalNotificationMark(day, expiryDate string) string {
+	// Stable historical idempotency key: one reminder per node, scan day, and
+	// effective due date. Keep the shape unchanged so upgrades preserve existing
+	// notification_event_marks de-duplication rows.
 	return strings.TrimSpace(day) + ":" + strings.TrimSpace(expiryDate)
 }
 

@@ -20,7 +20,22 @@ const (
 	adminPasswordArgonTime     = 3
 	adminPasswordArgonThreads  = 2
 	adminPasswordArgonKeyLen   = 32
+
+	adminPasswordArgonMaxMemoryKB  = 64 * 1024
+	adminPasswordArgonMaxTime      = 4
+	adminPasswordArgonMaxThreads   = 4
+	adminPasswordArgonMaxKeyLen    = 64
+	adminPasswordArgonMaxSaltBytes = 64
+	adminPasswordArgonMaxParallel  = 2
+	adminPasswordArgonMaxQueued    = 8
 )
+
+var (
+	adminArgon2Slots      = make(chan struct{}, adminPasswordArgonMaxParallel)
+	adminArgon2Admissions = make(chan struct{}, adminPasswordArgonMaxQueued)
+)
+
+const dummyAdminPasswordHash = "argon2id:v=19:m=65536:t=3:p=2:emVuby1kdW1teS1zYWx0:MfaHhKQHaOt+QsALfIOerW4EtUmf5zKMiHhxvflHstY"
 
 func hashAgentToken(token string) string {
 	sum := sha256.Sum256([]byte(token))
@@ -52,8 +67,27 @@ func hashAdminPassword(password string) (string, error) {
 	if _, err := rand.Read(salt); err != nil {
 		return "", err
 	}
-	hash := argon2.IDKey([]byte(strings.TrimSpace(password)), salt, adminPasswordArgonTime, adminPasswordArgonMemoryKB, adminPasswordArgonThreads, adminPasswordArgonKeyLen)
+	hash := deriveAdminArgon2ID([]byte(strings.TrimSpace(password)), salt, adminPasswordArgonTime, adminPasswordArgonMemoryKB, adminPasswordArgonThreads, adminPasswordArgonKeyLen)
 	return fmt.Sprintf("argon2id:v=19:m=%d:t=%d:p=%d:%s:%s", adminPasswordArgonMemoryKB, adminPasswordArgonTime, adminPasswordArgonThreads, base64.RawStdEncoding.EncodeToString(salt), base64.RawStdEncoding.EncodeToString(hash)), nil
+}
+
+func reserveAdminArgon2Request() (func(), bool) {
+	select {
+	case adminArgon2Admissions <- struct{}{}:
+		return func() { <-adminArgon2Admissions }, true
+	default:
+		return nil, false
+	}
+}
+
+func deriveAdminArgon2ID(password, salt []byte, timeCost uint32, memoryKB uint32, threads uint8, keyLen uint32) []byte {
+	adminArgon2Slots <- struct{}{}
+	defer func() { <-adminArgon2Slots }()
+	return argon2.IDKey(password, salt, timeCost, memoryKB, threads, keyLen)
+}
+
+func consumeDummyAdminPasswordKDF(password string) {
+	_ = adminArgon2PasswordMatches(dummyAdminPasswordHash, password)
 }
 
 func hashAdminPasswordWithSalt(password, salt string) string {
@@ -67,26 +101,26 @@ func adminArgon2PasswordMatches(storedHash, password string) bool {
 		return false
 	}
 	memoryKB, ok := parseKDFParam(parts[2], "m")
-	if !ok {
+	if !ok || memoryKB > adminPasswordArgonMaxMemoryKB {
 		return false
 	}
 	timeCost, ok := parseKDFParam(parts[3], "t")
-	if !ok {
+	if !ok || timeCost > adminPasswordArgonMaxTime {
 		return false
 	}
 	threads, ok := parseKDFParam(parts[4], "p")
-	if !ok || threads == 0 || threads > 255 {
+	if !ok || threads == 0 || threads > adminPasswordArgonMaxThreads {
 		return false
 	}
 	salt, err := base64.RawStdEncoding.DecodeString(parts[5])
-	if err != nil {
+	if err != nil || len(salt) == 0 || len(salt) > adminPasswordArgonMaxSaltBytes {
 		return false
 	}
 	expected, err := base64.RawStdEncoding.DecodeString(parts[6])
-	if err != nil || len(expected) == 0 {
+	if err != nil || len(expected) == 0 || len(expected) > adminPasswordArgonMaxKeyLen {
 		return false
 	}
-	computed := argon2.IDKey([]byte(strings.TrimSpace(password)), salt, uint32(timeCost), uint32(memoryKB), uint8(threads), uint32(len(expected)))
+	computed := deriveAdminArgon2ID([]byte(strings.TrimSpace(password)), salt, uint32(timeCost), uint32(memoryKB), uint8(threads), uint32(len(expected)))
 	return subtle.ConstantTimeCompare(expected, computed) == 1
 }
 
@@ -116,6 +150,7 @@ func validAdminUsername(username string) bool {
 func adminPasswordMatches(storedHash, fallbackHash, password string) bool {
 	password = strings.TrimSpace(password)
 	if password == "" {
+		consumeDummyAdminPasswordKDF(password)
 		return false
 	}
 	storedHash = strings.TrimSpace(storedHash)
@@ -131,9 +166,17 @@ func adminPasswordMatches(storedHash, fallbackHash, password string) bool {
 		return subtle.ConstantTimeCompare([]byte(storedHash), []byte(computed)) == 1
 	}
 	if storedHash != "" {
-		return adminTokenMatches(storedHash, password)
+		matched := adminTokenMatches(storedHash, password)
+		if !matched {
+			consumeDummyAdminPasswordKDF(password)
+		}
+		return matched
 	}
-	return adminTokenMatches(fallbackHash, password)
+	matched := adminTokenMatches(fallbackHash, password)
+	if !matched {
+		consumeDummyAdminPasswordKDF(password)
+	}
+	return matched
 }
 
 func (s *SQLiteStore) AuthorizeAgent(ctx context.Context, nodeID, token string) (bool, error) {

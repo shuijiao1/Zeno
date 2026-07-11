@@ -35,6 +35,7 @@ sudo ZENO_IMAGE=ghcr.io/shuijiao1/zeno:latest bash install.sh
 cd /opt/zeno
 sed -i 's#^ZENO_IMAGE=.*#ZENO_IMAGE=ghcr.io/shuijiao1/zeno:<target-version>#' .env
 docker compose pull
+chown -R 10001:10001 data secrets
 docker compose up -d
 curl -fsS http://127.0.0.1:18980/ready
 ```
@@ -63,6 +64,7 @@ cp -a backups/install-YYYYmmdd-HHMMSS/data ./
 cp -a backups/install-YYYYmmdd-HHMMSS/secrets ./
 chmod 700 data secrets
 chmod 600 data/*.db data/*.db-wal data/*.db-shm secrets/* 2>/dev/null || true
+chown -R 10001:10001 data secrets
 docker compose up -d
 ```
 
@@ -83,4 +85,4 @@ curl -fsS http://127.0.0.1:18980/ready
 curl -fsS http://127.0.0.1:18980/api/public/v1/summary
 ```
 
-期望：容器 healthy，`/health` 返回轻量存活状态，`/ready` 验证 SQLite 可读写，Public summary 能返回节点列表。
+期望：容器 healthy，`/health` 返回轻量存活状态，`/ready` 只读验证 SQLite 连接和必要 schema，Public summary 能返回节点列表。

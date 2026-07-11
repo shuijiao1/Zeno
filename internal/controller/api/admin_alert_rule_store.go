@@ -107,18 +107,14 @@ func (s *SQLiteStore) ensureDefaultAlertRules(ctx context.Context) error {
 	if err := s.migrateResourceAlertRuleDurationToFiveMinutes(ctx); err != nil {
 		return err
 	}
+	if err := s.migrateNotificationTypesToAlertRules(ctx); err != nil {
+		return err
+	}
 	return nil
 }
 
 func (s *SQLiteStore) migrateDefaultAlertRuleDurations(ctx context.Context) error {
 	now := time.Now().UTC().Unix()
-	if _, err := s.db.ExecContext(ctx, `
-		UPDATE alert_rules
-		SET threshold = 30, updated_at = ?
-		WHERE id = 'node_offline' AND threshold = 180
-	`, now); err != nil {
-		return err
-	}
 	const migrationKey = "alert_default_durations_v2_migrated"
 	var marker string
 	migrated := true
@@ -131,31 +127,19 @@ func (s *SQLiteStore) migrateDefaultAlertRuleDurations(ctx context.Context) erro
 	if migrated {
 		return nil
 	}
-	resourceOldSecs := []int{30, 300}
-	diskOldSecs := []int{30, 300, 600}
-	updates := []struct {
-		id      string
-		oldSecs []int
-	}{
-		{id: "cpu_high", oldSecs: resourceOldSecs},
-		{id: "memory_high", oldSecs: resourceOldSecs},
-		{id: "disk_high", oldSecs: diskOldSecs},
-		{id: "node_offline", oldSecs: []int{180}},
-	}
-	for _, update := range updates {
-		newSec := 30
-		if update.id == "cpu_high" || update.id == "memory_high" || update.id == "disk_high" {
-			newSec = 60
-		}
-		for _, oldSec := range update.oldSecs {
-			if _, err := s.db.ExecContext(ctx, `
-				UPDATE alert_rules
-				SET duration_sec = ?, updated_at = ?
-				WHERE id = ? AND duration_sec = ?
-			`, newSec, now, update.id, oldSec); err != nil {
-				return err
-			}
-		}
+	// Only untouched legacy defaults are migrated. Resource-rule defaults are
+	// handled directly by migrateResourceAlertRuleDurationToFiveMinutes below;
+	// avoiding an intermediate 60s value prevents same-second marker ambiguity.
+	if _, err := s.db.ExecContext(ctx, `
+		UPDATE alert_rules
+		SET threshold = CASE WHEN threshold = 180 THEN 30 ELSE threshold END,
+		    duration_sec = CASE WHEN duration_sec = 180 THEN 30 ELSE duration_sec END,
+		    updated_at = ?
+		WHERE id = 'node_offline'
+		  AND updated_at = created_at
+		  AND (threshold = 180 OR duration_sec = 180)
+	`, now); err != nil {
+		return err
 	}
 	if _, err := s.db.ExecContext(ctx, `
 			INSERT INTO settings (key, value, updated_at)
@@ -165,6 +149,79 @@ func (s *SQLiteStore) migrateDefaultAlertRuleDurations(ctx context.Context) erro
 		return err
 	}
 	return nil
+}
+
+func (s *SQLiteStore) migrateNotificationTypesToAlertRules(ctx context.Context) error {
+	const migrationKey = "notification_types_alert_rules_migrated"
+	var marker string
+	if err := s.db.QueryRowContext(ctx, `SELECT value FROM settings WHERE key = ?`, migrationKey).Scan(&marker); err != nil {
+		if err != sql.ErrNoRows {
+			return err
+		}
+	} else {
+		return nil
+	}
+	rows, err := s.db.QueryContext(ctx, `SELECT event_type, enabled, updated_at FROM notification_types`)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+	type legacyNotificationType struct {
+		eventType string
+		enabled   int
+		updatedAt int64
+	}
+	legacyTypes := []legacyNotificationType{}
+	for rows.Next() {
+		var legacy legacyNotificationType
+		if err := rows.Scan(&legacy.eventType, &legacy.enabled, &legacy.updatedAt); err != nil {
+			return err
+		}
+		legacy.eventType = strings.TrimSpace(legacy.eventType)
+		if legacy.eventType != "" {
+			legacyTypes = append(legacyTypes, legacy)
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return err
+	}
+	if err := rows.Close(); err != nil {
+		return err
+	}
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	now := time.Now().UTC().Unix()
+	for _, legacy := range legacyTypes {
+		if _, ok := adminNotificationTypeLabel(legacy.eventType); !ok {
+			continue
+		}
+		if _, err := tx.ExecContext(ctx, `
+			UPDATE alert_rules
+			SET enabled = ?, updated_at = ?
+			WHERE notification_event_type = ?
+			  AND (
+			    updated_at = created_at
+			    OR updated_at < ?
+			    OR updated_at IN (
+			      SELECT updated_at FROM settings
+			      WHERE key IN ('alert_default_durations_v2_migrated', 'resource_alert_duration_5m_migrated')
+			    )
+			  )
+		`, sqliteBoolInt(legacy.enabled != 0), now, legacy.eventType, legacy.updatedAt); err != nil {
+			return err
+		}
+	}
+	if _, err := tx.ExecContext(ctx, `
+		INSERT INTO settings (key, value, updated_at)
+		VALUES (?, '1', ?)
+		ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at
+	`, migrationKey, now); err != nil {
+		return err
+	}
+	return tx.Commit()
 }
 
 func (s *SQLiteStore) migrateResourceAlertRuleDurationToFiveMinutes(ctx context.Context) error {
@@ -182,7 +239,17 @@ func (s *SQLiteStore) migrateResourceAlertRuleDurationToFiveMinutes(ctx context.
 		if _, err := s.db.ExecContext(ctx, `
 			UPDATE alert_rules
 			SET duration_sec = 300, updated_at = ?
-			WHERE id = ? AND duration_sec = 60
+			WHERE id = ?
+			  AND duration_sec IN (30, 60, 600)
+			  AND (
+			    updated_at = created_at
+			    OR (
+			      duration_sec = 60
+			      AND updated_at IN (
+			        SELECT updated_at FROM settings WHERE key = 'alert_default_durations_v2_migrated'
+			      )
+			    )
+			  )
 		`, now, ruleID); err != nil {
 			return err
 		}

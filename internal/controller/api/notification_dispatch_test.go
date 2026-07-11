@@ -81,9 +81,6 @@ func TestDispatchAgentStatusNotificationDedupesActiveWarningsUntilRecovery(t *te
 	if _, err := store.CreateAdminNotificationChannel(ctx, AdminNotificationChannelCreateRequest{ID: "ops-telegram", Name: "Ops Telegram", Destination: "7579942307", Credential: "telegram-bot-credential-value", Enabled: &enabled}); err != nil {
 		t.Fatalf("create notification channel: %v", err)
 	}
-	if _, err := store.UpdateAdminNotificationType(ctx, "probe_unhealthy", AdminNotificationTypeUpdateRequest{Enabled: &enabled}); err != nil {
-		t.Fatalf("enable notification type: %v", err)
-	}
 
 	telegram := newTelegramTestCapture(t)
 	h := &handler{store: store, notificationSender: newHTTPNotificationSender(telegram.server.Client(), telegram.server.URL), liveHub: newLiveUpdateHub(), presence: newAgentPresenceManager()}
@@ -172,6 +169,54 @@ func TestNotificationOutboxPersistsFailureAndRetriesAfterRestart(t *testing.T) {
 	}
 	if state != "delivered" || attempts != 2 || lastError != "" {
 		t.Fatalf("delivered row = state %q attempts %d error %q", state, attempts, lastError)
+	}
+}
+
+func TestRenewalNotificationOutboxRetriesWithoutLosingRenewalMessage(t *testing.T) {
+	store, err := OpenSQLiteStore(filepath.Join(t.TempDir(), "zeno.db"))
+	if err != nil {
+		t.Fatalf("open sqlite store: %v", err)
+	}
+	defer store.Close()
+	ctx := context.Background()
+	if err := store.SeedPreviewData(ctx, PreviewSeedOptions{NodeID: "hytron", DisplayName: "Hytron", CountryCode: "HK", AgentToken: "token"}); err != nil {
+		t.Fatalf("seed preview data: %v", err)
+	}
+	enabled := true
+	channel, err := store.CreateAdminNotificationChannel(ctx, AdminNotificationChannelCreateRequest{ID: "ops", Name: "Ops", Destination: "7579942307", Credential: "super-secret-bot-token", Enabled: &enabled})
+	if err != nil {
+		t.Fatalf("create notification channel: %v", err)
+	}
+	event := notificationEvent{EventType: "renewal_due", Label: "续费", NodeID: "hytron", NodeName: "Hytron", Status: "renewal_due", TS: time.Now().UTC().Format(time.RFC3339), Detail: "还有 3 天到期，2026-07-14"}
+	queued, err := store.QueueNotificationEvent(ctx, event, []notificationDispatchChannel{{ID: channel.ID, Name: channel.Name, Destination: channel.Destination, Credential: "super-secret-bot-token", Type: "telegram"}})
+	if err != nil || !queued {
+		t.Fatalf("queue renewal event = %v, %v", queued, err)
+	}
+
+	failing := &handler{store: store, notificationSender: failingNotificationSender{}}
+	failing.dispatchPendingNotificationDeliveries(ctx)
+	if _, err := store.db.ExecContext(ctx, `UPDATE notification_deliveries SET next_attempt_at = 0 WHERE event_type = 'renewal_due'`); err != nil {
+		t.Fatalf("make renewal delivery retryable: %v", err)
+	}
+
+	telegram := newTelegramTestCapture(t)
+	restarted := &handler{store: store, notificationSender: newHTTPNotificationSender(telegram.server.Client(), telegram.server.URL)}
+	restarted.dispatchPendingNotificationDeliveries(ctx)
+	_, forms, captureErrors := telegram.waitForCalls(t, 1)
+	if len(captureErrors) != 0 || len(forms) != 1 {
+		t.Fatalf("renewal retry calls=%d errors=%v", len(forms), captureErrors)
+	}
+	messageText := decodedTelegramText(forms[0])
+	if !strings.Contains(messageText, "⚠️[到期]") || !strings.Contains(messageText, "3 天后") || !strings.Contains(messageText, "2026-7-14") {
+		t.Fatalf("renewal retry text = %q", messageText)
+	}
+	var state string
+	var attempts int
+	if err := store.db.QueryRowContext(ctx, `SELECT state, attempts FROM notification_deliveries WHERE event_type = 'renewal_due' ORDER BY id DESC LIMIT 1`).Scan(&state, &attempts); err != nil {
+		t.Fatalf("read renewal delivery: %v", err)
+	}
+	if state != "delivered" || attempts != 2 {
+		t.Fatalf("renewal delivery state=%q attempts=%d, want delivered/2", state, attempts)
 	}
 }
 

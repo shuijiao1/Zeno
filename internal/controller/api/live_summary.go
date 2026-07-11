@@ -122,6 +122,9 @@ const (
 	summaryCacheHTTPFreshFor    = 30 * time.Second
 	summaryCacheIdleRefreshFor  = 15 * time.Second
 	summaryCacheBackgroundDelay = 350 * time.Millisecond
+	detailCacheFreshFor         = 3 * time.Second
+	websocketWriteTimeout       = 5 * time.Second
+	websocketReadTimeout        = 75 * time.Second
 )
 
 func (h *handler) handleSummaryWebSocket(w http.ResponseWriter, r *http.Request) {
@@ -129,6 +132,12 @@ func (h *handler) handleSummaryWebSocket(w http.ResponseWriter, r *http.Request)
 		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
 		return
 	}
+	release, ok := h.publicWSGate.acquire()
+	if !ok {
+		writeError(w, http.StatusTooManyRequests, "too many websocket connections")
+		return
+	}
+	defer release()
 	initial, cached := h.cachedSummaryJSON(0)
 	if !cached {
 		var err error
@@ -146,6 +155,12 @@ func (h *handler) handleSummaryWebSocket(w http.ResponseWriter, r *http.Request)
 }
 
 func (h *handler) handleNodeStateWebSocket(w http.ResponseWriter, r *http.Request, nodeID string, window latencyWindow) {
+	release, ok := h.publicWSGate.acquire()
+	if !ok {
+		writeError(w, http.StatusTooManyRequests, "too many websocket connections")
+		return
+	}
+	defer release()
 	payload, err := h.nodeStateJSON(r.Context(), nodeID, window)
 	if err != nil {
 		writeStoreError(w, err)
@@ -156,6 +171,12 @@ func (h *handler) handleNodeStateWebSocket(w http.ResponseWriter, r *http.Reques
 }
 
 func (h *handler) handleNodeLatencyWebSocket(w http.ResponseWriter, r *http.Request, nodeID string, window latencyWindow) {
+	release, ok := h.publicWSGate.acquire()
+	if !ok {
+		writeError(w, http.StatusTooManyRequests, "too many websocket connections")
+		return
+	}
+	defer release()
 	payload, err := h.nodeLatencyJSON(r.Context(), nodeID, window)
 	if err != nil {
 		writeStoreError(w, err)
@@ -166,6 +187,12 @@ func (h *handler) handleNodeLatencyWebSocket(w http.ResponseWriter, r *http.Requ
 }
 
 func (h *handler) handleServiceLatencyWebSocket(w http.ResponseWriter, r *http.Request, targetID string, window latencyWindow) {
+	release, ok := h.publicWSGate.acquire()
+	if !ok {
+		writeError(w, http.StatusTooManyRequests, "too many websocket connections")
+		return
+	}
+	defer release()
 	payload, err := h.serviceLatencyJSON(r.Context(), targetID, window)
 	if err != nil {
 		writeStoreError(w, err)
@@ -183,6 +210,13 @@ func (h *handler) handleLiveJSONWebSocket(w http.ResponseWriter, r *http.Request
 	}
 	defer conn.Close()
 	conn.EnableWriteCompression(true)
+	refreshReadDeadline := func() error {
+		return conn.SetReadDeadline(time.Now().Add(websocketReadTimeout))
+	}
+	if err := refreshReadDeadline(); err != nil {
+		return
+	}
+	conn.SetPongHandler(func(string) error { return refreshReadDeadline() })
 
 	done := make(chan struct{})
 	go func() {
@@ -192,10 +226,13 @@ func (h *handler) handleLiveJSONWebSocket(w http.ResponseWriter, r *http.Request
 			if _, _, err := conn.NextReader(); err != nil {
 				return
 			}
+			if err := refreshReadDeadline(); err != nil {
+				return
+			}
 		}
 	}()
 
-	if err := conn.WriteMessage(websocket.TextMessage, initial); err != nil {
+	if err := writeWebSocketMessage(conn, websocket.TextMessage, initial); err != nil {
 		return
 	}
 	ping := time.NewTicker(25 * time.Second)
@@ -210,15 +247,34 @@ func (h *handler) handleLiveJSONWebSocket(w http.ResponseWriter, r *http.Request
 			if !ok {
 				return
 			}
-			if err := conn.WriteMessage(websocket.TextMessage, payload); err != nil {
+			if err := writeWebSocketMessage(conn, websocket.TextMessage, payload); err != nil {
 				return
 			}
 		case <-ping.C:
-			if err := conn.WriteControl(websocket.PingMessage, []byte{}, time.Now().Add(5*time.Second)); err != nil {
+			if err := writeWebSocketControl(conn, websocket.PingMessage, []byte{}, websocketWriteTimeout); err != nil {
 				return
 			}
 		}
 	}
+}
+
+func writeWebSocketMessage(conn *websocket.Conn, messageType int, payload []byte) error {
+	if err := conn.SetWriteDeadline(time.Now().Add(websocketWriteTimeout)); err != nil {
+		return err
+	}
+	err := conn.WriteMessage(messageType, payload)
+	clearErr := conn.SetWriteDeadline(time.Time{})
+	if err != nil {
+		return err
+	}
+	return clearErr
+}
+
+func writeWebSocketControl(conn *websocket.Conn, messageType int, payload []byte, timeout time.Duration) error {
+	if timeout <= 0 {
+		timeout = websocketWriteTimeout
+	}
+	return conn.WriteControl(messageType, payload, time.Now().Add(timeout))
 }
 
 func (h *handler) summaryJSON(ctx context.Context) ([]byte, error) {
@@ -235,27 +291,36 @@ func (h *handler) summaryJSON(ctx context.Context) ([]byte, error) {
 }
 
 func (h *handler) nodeStateJSON(ctx context.Context, nodeID string, window latencyWindow) ([]byte, error) {
-	state, err := h.store.NodeState(ctx, nodeID, window)
-	if err != nil {
-		return nil, err
-	}
-	return json.Marshal(state)
+	key := nodeStateLiveTopic(nodeID, window.Name)
+	return h.detailCache.get(ctx, key, detailCacheFreshFor, func() ([]byte, error) {
+		state, err := h.store.NodeState(ctx, nodeID, window)
+		if err != nil {
+			return nil, err
+		}
+		return json.Marshal(state)
+	})
 }
 
 func (h *handler) nodeLatencyJSON(ctx context.Context, nodeID string, window latencyWindow) ([]byte, error) {
-	latency, err := h.store.NodeLatency(ctx, nodeID, window)
-	if err != nil {
-		return nil, err
-	}
-	return json.Marshal(latency)
+	key := nodeLatencyLiveTopic(nodeID, window.Name)
+	return h.detailCache.get(ctx, key, detailCacheFreshFor, func() ([]byte, error) {
+		latency, err := h.store.NodeLatency(ctx, nodeID, window)
+		if err != nil {
+			return nil, err
+		}
+		return json.Marshal(latency)
+	})
 }
 
 func (h *handler) serviceLatencyJSON(ctx context.Context, targetID string, window latencyWindow) ([]byte, error) {
-	latency, err := h.store.ServiceTargetLatency(ctx, targetID, window)
-	if err != nil {
-		return nil, err
-	}
-	return json.Marshal(latency)
+	key := serviceLatencyLiveTopic(targetID, window.Name)
+	return h.detailCache.get(ctx, key, detailCacheFreshFor, func() ([]byte, error) {
+		latency, err := h.store.ServiceTargetLatency(ctx, targetID, window)
+		if err != nil {
+			return nil, err
+		}
+		return json.Marshal(latency)
+	})
 }
 
 func (h *handler) publishSummary(_ context.Context) {
@@ -417,7 +482,13 @@ func (h *handler) publishNodeState(ctx context.Context, nodeID string) {
 		if !h.liveHub.hasClients(topic) {
 			continue
 		}
-		payload, err := h.nodeStateJSON(ctx, nodeID, window)
+		payload, err := h.detailCache.refresh(topic, func() ([]byte, error) {
+			state, err := h.store.NodeState(ctx, nodeID, window)
+			if err != nil {
+				return nil, err
+			}
+			return json.Marshal(state)
+		})
 		if err == nil {
 			h.liveHub.publish(topic, payload)
 		}
@@ -437,7 +508,13 @@ func (h *handler) publishNodeLatency(ctx context.Context, nodeID string) {
 		if !h.liveHub.hasClients(topic) {
 			continue
 		}
-		payload, err := h.nodeLatencyJSON(ctx, nodeID, window)
+		payload, err := h.detailCache.refresh(topic, func() ([]byte, error) {
+			latency, err := h.store.NodeLatency(ctx, nodeID, window)
+			if err != nil {
+				return nil, err
+			}
+			return json.Marshal(latency)
+		})
 		if err == nil {
 			h.liveHub.publish(topic, payload)
 		}
@@ -457,7 +534,13 @@ func (h *handler) publishServiceLatency(ctx context.Context, targetID string) {
 		if !h.liveHub.hasClients(topic) {
 			continue
 		}
-		payload, err := h.serviceLatencyJSON(ctx, targetID, window)
+		payload, err := h.detailCache.refresh(topic, func() ([]byte, error) {
+			latency, err := h.store.ServiceTargetLatency(ctx, targetID, window)
+			if err != nil {
+				return nil, err
+			}
+			return json.Marshal(latency)
+		})
 		if err == nil {
 			h.liveHub.publish(topic, payload)
 		}

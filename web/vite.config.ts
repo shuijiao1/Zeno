@@ -7,6 +7,9 @@ const namePattern = buildId ? `assets/[name]-${buildId}-[hash]` : 'assets/[name]
 export default defineConfig({
   plugins: [react()],
   build: {
+    // Keep the bundled flag SVGs as lazy background assets. Inlining hundreds
+    // of small flags would inflate the critical CSS by several hundred KB.
+    assetsInlineLimit: 0,
     rollupOptions: {
       output: {
         entryFileNames: `${namePattern}.js`,

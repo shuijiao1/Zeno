@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"net/url"
 	"strings"
@@ -25,9 +26,8 @@ type notificationStatusMarkStore interface {
 	ClaimStatusNotification(ctx context.Context, event notificationEvent) (bool, error)
 }
 
-type renewalNotificationStore interface {
-	PendingRenewalNotifications(ctx context.Context, now time.Time) ([]notificationEvent, error)
-	MarkRenewalNotification(ctx context.Context, event notificationEvent, now time.Time) error
+type renewalNotificationQueueStore interface {
+	QueueDueRenewalNotifications(ctx context.Context, now time.Time) (int, error)
 }
 
 type notificationNodeSnapshot struct {
@@ -257,23 +257,6 @@ func (h *handler) dispatchNotificationEvent(store agentStore, event notification
 	return true
 }
 
-func (h *handler) dispatchRenewalNotifications(store agentStore) {
-	renewalStore, ok := store.(renewalNotificationStore)
-	if !ok || h.notificationSender == nil {
-		return
-	}
-	now := time.Now()
-	events, err := renewalStore.PendingRenewalNotifications(context.Background(), now)
-	if err != nil {
-		return
-	}
-	for _, event := range events {
-		if h.dispatchNotificationEvent(store, event) {
-			_ = renewalStore.MarkRenewalNotification(context.Background(), event, now)
-		}
-	}
-}
-
 func (h *handler) dispatchAgentStatusNotification(store agentStore, transition notificationStatusTransition, ts time.Time) {
 	eventType, ok := notificationEventTypeForStatusChange(transition.Previous.Status, transition.Current.Status)
 	if !ok || h.notificationSender == nil {
@@ -294,6 +277,39 @@ func (h *handler) dispatchAgentStatusNotification(store agentStore, transition n
 		Detail:         transition.Detail,
 	}
 	h.dispatchNotificationEvent(store, event)
+}
+
+func (h *handler) runRenewalNotificationScanner(ctx context.Context, interval time.Duration) {
+	if interval <= 0 {
+		return
+	}
+	h.queueDueRenewalNotifications(ctx, time.Now().UTC())
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case now := <-ticker.C:
+			h.queueDueRenewalNotifications(ctx, now.UTC())
+		}
+	}
+}
+
+func (h *handler) queueDueRenewalNotifications(ctx context.Context, now time.Time) int {
+	store, ok := h.store.(renewalNotificationQueueStore)
+	if !ok {
+		return 0
+	}
+	queued, err := store.QueueDueRenewalNotifications(ctx, now)
+	if err != nil {
+		log.Printf("renewal notification scan failed: %v", err)
+		return 0
+	}
+	if queued > 0 {
+		h.dispatchPendingNotificationDeliveries(ctx)
+	}
+	return queued
 }
 
 func shouldClaimStatusNotification(event notificationEvent) bool {
@@ -396,17 +412,6 @@ func (s *SQLiteStore) EnabledNotificationChannelsForEvent(ctx context.Context, e
 		return "", nil, err
 	}
 	if enabledRuleCount == 0 {
-		return label, nil, nil
-	}
-	var enabled int
-	err := s.db.QueryRowContext(ctx, `SELECT enabled FROM notification_types WHERE event_type = ?`, eventType).Scan(&enabled)
-	if errors.Is(err, sql.ErrNoRows) {
-		return label, nil, nil
-	}
-	if err != nil {
-		return "", nil, err
-	}
-	if enabled == 0 {
 		return label, nil, nil
 	}
 	rows, err := s.db.QueryContext(ctx, `

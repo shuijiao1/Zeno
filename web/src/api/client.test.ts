@@ -187,6 +187,36 @@ describe('subscribeSummary', () => {
     vi.useRealTimers()
   })
 
+  it('keeps reconnecting beyond the old 30 attempt ceiling', async () => {
+    vi.useFakeTimers()
+    const instances: any[] = []
+    class FakeWebSocket {
+      onopen: (() => void) | null = null
+      onclose: (() => void) | null = null
+      close = vi.fn(() => this.onclose?.())
+
+      constructor() {
+        instances.push(this)
+      }
+    }
+    Object.defineProperty(globalThis, 'WebSocket', { configurable: true, writable: true, value: FakeWebSocket })
+
+    const onError = vi.fn()
+    const unsubscribe = subscribeSummary(vi.fn(), onError)
+
+    for (let i = 0; i < 35; i += 1) {
+      instances[instances.length - 1].onopen?.()
+      instances[instances.length - 1].onclose?.()
+      await vi.advanceTimersByTimeAsync(30_000)
+    }
+
+    expect(instances.length).toBeGreaterThan(30)
+    expect(onError).not.toHaveBeenCalled()
+
+    unsubscribe?.()
+    vi.useRealTimers()
+  })
+
 })
 
 describe('detail websocket subscriptions', () => {
@@ -632,14 +662,13 @@ describe('normalizeAdminProbeTargets', () => {
 })
 
 describe('normalizeAdminNotifications', () => {
-  it('maps channels with editable credentials for admin forms', () => {
+  it('maps channels with write-only credential state for admin forms', () => {
     const channels = normalizeAdminNotificationChannels({
       channels: [
         {
           id: 'zeno-telegram',
           name: 'Zeno Telegram',
           destination: '7579942307',
-          credential: 'telegram-bot-token',
           credential_set: true,
           enabled: false,
           created_at: '2026-07-03T00:00:00Z',
@@ -649,7 +678,7 @@ describe('normalizeAdminNotifications', () => {
     })
 
     expect(channels.channels[0].credentialSet).toBe(true)
-    expect(channels.channels[0].credential).toBe('telegram-bot-token')
+    expect(channels.channels[0]).not.toHaveProperty('credential')
   })
 })
 

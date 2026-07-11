@@ -2,7 +2,10 @@ package api
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
+	"net"
 	"net/http"
 	"strings"
 )
@@ -51,36 +54,50 @@ func (h *handler) handleAdminLogin(w http.ResponseWriter, r *http.Request) {
 	if !decodeJSONBody(w, r, &request, adminJSONBodyLimit, true) {
 		return
 	}
-	key := adminLoginRateLimitKey(r, request.Username)
-	if h.loginLimiter != nil && !h.loginLimiter.allow(key) {
+	releaseArgon2, admitted := reserveAdminArgon2Request()
+	if !admitted {
 		writeError(w, http.StatusTooManyRequests, "too many attempts")
 		return
 	}
+	defer releaseArgon2()
+	accountKey := adminLoginRateLimitKey(r, request.Username)
+	ipKey := adminLoginIPRateLimitKey(r)
+	accountReservation := adminLoginReservation{}
+	ipReservation := adminLoginReservation{}
+	if h.loginLimiter != nil {
+		var reserved bool
+		ipReservation, reserved = h.loginLimiter.reserve(ipKey)
+		if !reserved {
+			writeError(w, http.StatusTooManyRequests, "too many attempts")
+			return
+		}
+		accountReservation, reserved = h.loginLimiter.reserve(accountKey)
+		if !reserved {
+			writeError(w, http.StatusTooManyRequests, "too many attempts")
+			return
+		}
+	}
+	loginSucceeded := false
+	defer func() {
+		accountReservation.release(loginSucceeded)
+		ipReservation.release(loginSucceeded)
+	}()
 	if authStore, ok := h.store.(adminAuthStore); ok {
 		session, err := authStore.AdminLogin(r.Context(), request.Username, request.Password, h.adminTokenHash)
 		if err != nil {
-			if h.loginLimiter != nil {
-				h.loginLimiter.recordFailure(key)
-			}
 			writeError(w, http.StatusUnauthorized, "unauthorized")
 			return
 		}
-		if h.loginLimiter != nil {
-			h.loginLimiter.recordSuccess(key)
-		}
+		loginSucceeded = true
 		writeJSON(w, http.StatusOK, AdminLoginResponse(session))
 		return
 	}
-	if strings.TrimSpace(request.Username) != "admin" || !adminTokenMatches(h.adminTokenHash, request.Password) {
-		if h.loginLimiter != nil {
-			h.loginLimiter.recordFailure(key)
-		}
+	passwordOK := adminPasswordMatches("", h.adminTokenHash, request.Password)
+	if strings.TrimSpace(request.Username) != "admin" || !passwordOK {
 		writeError(w, http.StatusUnauthorized, "unauthorized")
 		return
 	}
-	if h.loginLimiter != nil {
-		h.loginLimiter.recordSuccess(key)
-	}
+	loginSucceeded = true
 	writeJSON(w, http.StatusOK, AdminLoginResponse{Username: "admin", Token: strings.TrimSpace(request.Password)})
 }
 
@@ -184,7 +201,7 @@ func (h *handler) handleAdminProbeTargets(w http.ResponseWriter, r *http.Request
 			writeAdminError(w, err)
 			return
 		}
-		h.bumpProbeConfigAndNotify(r.Context())
+		h.notifyProbeConfigChanged(r.Context())
 		h.publishSummaryNow(r.Context())
 		writeJSON(w, http.StatusCreated, AdminProbeTargetResponse{Target: target})
 	default:
@@ -212,7 +229,7 @@ func (h *handler) handleAdminProbeTargetResource(w http.ResponseWriter, r *http.
 			writeAdminError(w, err)
 			return
 		}
-		h.bumpProbeConfigAndNotify(r.Context())
+		h.notifyProbeConfigChanged(r.Context())
 		h.publishSummaryNow(r.Context())
 		w.WriteHeader(http.StatusNoContent)
 		return
@@ -226,7 +243,7 @@ func (h *handler) handleAdminProbeTargetResource(w http.ResponseWriter, r *http.
 		writeAdminError(w, err)
 		return
 	}
-	h.bumpProbeConfigAndNotify(r.Context())
+	h.notifyProbeConfigChanged(r.Context())
 	h.publishSummaryNow(r.Context())
 	writeJSON(w, http.StatusOK, AdminProbeTargetResponse{Target: target})
 }
@@ -397,15 +414,72 @@ func (h *handler) authorizeExtendedHistoryRequest(w http.ResponseWriter, r *http
 	return false
 }
 
+func adminLoginIPRateLimitKey(r *http.Request) string {
+	return "ip:" + clientIPForRateLimit(r)
+}
+
 func adminLoginRateLimitKey(r *http.Request, username string) string {
-	remote := strings.TrimSpace(r.RemoteAddr)
-	if host, _, ok := strings.Cut(remote, ":"); ok && host != "" {
-		remote = host
+	remote := clientIPForRateLimit(r)
+	// Keep attacker-controlled usernames out of the limiter map. Login bodies can
+	// be tens of KiB, while the digest is fixed-size and preserves exact keys.
+	usernameDigest := sha256.Sum256([]byte(strings.ToLower(strings.TrimSpace(username))))
+	return remote + ":" + hex.EncodeToString(usernameDigest[:])
+}
+
+func clientIPForRateLimit(r *http.Request) string {
+	remoteIP := parseRemoteIP(r.RemoteAddr)
+	if remoteIP != nil && trustedForwardingProxy(remoteIP) {
+		if forwarded := forwardedClientIP(r.Header.Get("X-Forwarded-For")); forwarded != nil {
+			return forwarded.String()
+		}
+		if realIP := net.ParseIP(strings.TrimSpace(r.Header.Get("X-Real-IP"))); realIP != nil {
+			return realIP.String()
+		}
 	}
-	return strings.ToLower(remote + ":" + strings.TrimSpace(username))
+	if remoteIP != nil {
+		return remoteIP.String()
+	}
+	return strings.TrimSpace(r.RemoteAddr)
+}
+
+func parseRemoteIP(remoteAddr string) net.IP {
+	remoteAddr = strings.TrimSpace(remoteAddr)
+	if remoteAddr == "" {
+		return nil
+	}
+	if host, _, err := net.SplitHostPort(remoteAddr); err == nil {
+		return net.ParseIP(strings.Trim(host, "[]"))
+	}
+	return net.ParseIP(strings.Trim(remoteAddr, "[]"))
+}
+
+func forwardedClientIP(value string) net.IP {
+	parts := strings.Split(value, ",")
+	// A reverse proxy appends the address of its direct peer. Use the rightmost
+	// valid value so an untrusted client cannot choose the limiter key by
+	// prepending its own X-Forwarded-For entry. Multi-proxy deployments without
+	// an explicit trusted-proxy list may aggregate at the nearest proxy, which is
+	// safer than accepting a spoofable client address.
+	for index := len(parts) - 1; index >= 0; index-- {
+		if ip := net.ParseIP(strings.TrimSpace(parts[index])); ip != nil {
+			return ip
+		}
+	}
+	return nil
+}
+
+func trustedForwardingProxy(ip net.IP) bool {
+	// The official deployment binds Controller to 127.0.0.1 and proxies from the
+	// same host. Treating every RFC1918 peer as a proxy would let any LAN client
+	// spoof X-Forwarded-For and bypass the per-IP login limiter.
+	return ip.IsLoopback()
 }
 
 func writeAdminError(w http.ResponseWriter, err error) {
+	if errors.Is(err, errNotificationTypeGone) {
+		writeError(w, http.StatusGone, "notification type is managed by alert rules")
+		return
+	}
 	if errors.Is(err, errNodeNotFound) || errors.Is(err, errProbeTargetNotFound) || errors.Is(err, errNotificationChannelNotFound) || errors.Is(err, errNotificationTypeNotFound) || errors.Is(err, errAlertRuleNotFound) {
 		writeError(w, http.StatusNotFound, "not found")
 		return

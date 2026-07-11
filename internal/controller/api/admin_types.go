@@ -25,6 +25,7 @@ var (
 	errNotificationChannelAlreadyExists     = errors.New("notification channel already exists")
 	errInvalidAdminNotificationTypeWrite    = errors.New("invalid admin notification type write")
 	errNotificationTypeNotFound             = errors.New("notification type not found")
+	errNotificationTypeGone                 = errors.New("notification type compatibility endpoint gone")
 	errInvalidAdminAlertRuleUpdate          = errors.New("invalid admin alert rule update")
 	errAlertRuleNotFound                    = errors.New("alert rule not found")
 )
@@ -485,7 +486,7 @@ func (request *AdminProbeTargetCreateRequest) normalize() error {
 	normalizedType, ok := normalizeAdminProbeTargetType(request.Type)
 	request.Type = normalizedType
 	request.Address = strings.TrimSpace(request.Address)
-	if request.Name == "" || request.Address == "" || !ok || request.Count <= 0 || request.TimeoutMS <= 0 || request.IntervalSec <= 0 {
+	if request.Name == "" || request.Address == "" || !ok || !validProbeTargetResourceConfig(request.Count, request.TimeoutMS, request.IntervalSec) {
 		return errInvalidAdminTargetWrite
 	}
 	if request.DisplayOrder < 0 {
@@ -583,19 +584,19 @@ func (request *AdminProbeTargetUpdateRequest) normalize() error {
 	}
 	if request.Count != nil {
 		changed = true
-		if *request.Count <= 0 {
+		if *request.Count < 1 || *request.Count > maxProbeTargetCount {
 			return errInvalidAdminTargetWrite
 		}
 	}
 	if request.TimeoutMS != nil {
 		changed = true
-		if *request.TimeoutMS <= 0 {
+		if *request.TimeoutMS < minProbeTargetTimeoutMS || *request.TimeoutMS > maxProbeTargetTimeoutMS {
 			return errInvalidAdminTargetWrite
 		}
 	}
 	if request.IntervalSec != nil {
 		changed = true
-		if *request.IntervalSec <= 0 {
+		if *request.IntervalSec < minProbeTargetIntervalSec || *request.IntervalSec > maxProbeTargetIntervalSec {
 			return errInvalidAdminTargetWrite
 		}
 	}
@@ -746,12 +747,16 @@ func (request *AdminNotificationChannelUpdateRequest) normalize() error {
 		request.Destination = &trimmed
 	}
 	if request.Credential != nil {
-		changed = true
 		trimmed := strings.TrimSpace(*request.Credential)
 		if trimmed == "" {
-			return errInvalidAdminNotificationChannelWrite
+			// Notification credentials are write-only. Treat an explicitly blank
+			// PATCH credential the same as an omitted credential so admin forms can
+			// leave the field empty without clearing or exposing the stored token.
+			request.Credential = nil
+		} else {
+			changed = true
+			request.Credential = &trimmed
 		}
-		request.Credential = &trimmed
 	}
 	if request.Enabled != nil {
 		changed = true
@@ -839,7 +844,7 @@ type AdminNotificationChannel struct {
 	ID            string `json:"id"`
 	Name          string `json:"name"`
 	Destination   string `json:"destination"`
-	Credential    string `json:"credential,omitempty"`
+	Credential    string `json:"-"`
 	CredentialSet bool   `json:"credential_set"`
 	Enabled       bool   `json:"enabled"`
 	CreatedAt     string `json:"created_at"`

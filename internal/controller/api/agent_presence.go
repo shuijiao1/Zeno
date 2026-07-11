@@ -26,11 +26,13 @@ func newAgentPresenceManager() *agentPresenceManager {
 	return &agentPresenceManager{sessions: map[string]*agentPresenceSession{}, seen: map[string]bool{}}
 }
 
+const agentPresenceSendQueueLimit = 2
+
 func (m *agentPresenceManager) connect(nodeID string) *agentPresenceSession {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.nextID++
-	session := &agentPresenceSession{nodeID: nodeID, id: m.nextID, send: make(chan []byte, 8), done: make(chan struct{})}
+	session := &agentPresenceSession{nodeID: nodeID, id: m.nextID, send: make(chan []byte, agentPresenceSendQueueLimit), done: make(chan struct{})}
 	if previous := m.sessions[nodeID]; previous != nil {
 		close(previous.done)
 	}
@@ -199,6 +201,12 @@ func (h *handler) handleAgentPresenceWebSocket(w http.ResponseWriter, r *http.Re
 		return
 	}
 	_ = store
+	release, ok := h.agentWSGate.acquire()
+	if !ok {
+		writeError(w, http.StatusTooManyRequests, "too many websocket connections")
+		return
+	}
+	defer release()
 	conn, err := summaryWebSocketUpgrader.Upgrade(w, r, nil)
 	if err != nil {
 		return
@@ -208,7 +216,9 @@ func (h *handler) handleAgentPresenceWebSocket(w http.ResponseWriter, r *http.Re
 	refreshReadDeadline := func() error {
 		return conn.SetReadDeadline(time.Now().Add(75 * time.Second))
 	}
-	_ = refreshReadDeadline()
+	if err := refreshReadDeadline(); err != nil {
+		return
+	}
 	conn.SetPongHandler(func(string) error {
 		return refreshReadDeadline()
 	})
@@ -235,7 +245,9 @@ func (h *handler) handleAgentPresenceWebSocket(w http.ResponseWriter, r *http.Re
 			if err != nil {
 				return
 			}
-			_ = refreshReadDeadline()
+			if err := refreshReadDeadline(); err != nil {
+				return
+			}
 			var message agentPresenceClientMessage
 			if err := json.NewDecoder(reader).Decode(&message); err != nil {
 				continue
@@ -252,16 +264,16 @@ func (h *handler) handleAgentPresenceWebSocket(w http.ResponseWriter, r *http.Re
 		case <-r.Context().Done():
 			return
 		case <-session.done:
-			_ = conn.WriteControl(websocketCloseMessage, []byte{}, time.Now().Add(2*time.Second))
+			_ = writeWebSocketControl(conn, websocketCloseMessage, []byte{}, 2*time.Second)
 			return
 		case <-readDone:
 			return
 		case payload := <-session.send:
-			if err := conn.WriteMessage(websocketTextMessage, payload); err != nil {
+			if err := writeWebSocketMessage(conn, websocketTextMessage, payload); err != nil {
 				return
 			}
 		case <-ping.C:
-			if err := conn.WriteControl(websocketPingMessage, []byte{}, time.Now().Add(5*time.Second)); err != nil {
+			if err := writeWebSocketControl(conn, websocketPingMessage, []byte{}, websocketWriteTimeout); err != nil {
 				return
 			}
 		}
@@ -296,12 +308,12 @@ const (
 	websocketPingMessage  = 9
 )
 
-func (h *handler) bumpProbeConfigAndNotify(ctx context.Context) {
+func (h *handler) notifyProbeConfigChanged(ctx context.Context) {
 	store, ok := h.store.(probeConfigVersionStore)
 	if !ok {
 		return
 	}
-	version, err := store.BumpProbeConfigVersion(ctx)
+	version, err := store.ProbeConfigVersion(ctx)
 	if err != nil {
 		return
 	}

@@ -25,6 +25,8 @@ RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -ldflags "-s -w" -o
 FROM debian:13.2-slim
 ARG VERSION=dev
 ARG REVISION=unknown
+ARG ZENO_UID=10001
+ARG ZENO_GID=10001
 LABEL org.opencontainers.image.title="Zeno" \
   org.opencontainers.image.description="Lightweight self-hosted server monitor" \
   org.opencontainers.image.source="https://github.com/shuijiao1/Zeno" \
@@ -32,11 +34,17 @@ LABEL org.opencontainers.image.title="Zeno" \
   org.opencontainers.image.revision="${REVISION}"
 RUN apt-get update \
   && apt-get install -y --no-install-recommends ca-certificates curl tzdata \
-  && rm -rf /var/lib/apt/lists/*
+  && rm -rf /var/lib/apt/lists/* \
+  && groupadd --system --gid "${ZENO_GID}" zeno \
+  && useradd --system --uid "${ZENO_UID}" --gid zeno --home-dir /opt/zeno --shell /usr/sbin/nologin zeno \
+  && mkdir -p /opt/zeno /data \
+  && chown -R zeno:zeno /opt/zeno /data
 WORKDIR /opt/zeno
 COPY --from=go-builder /out/zeno-controller /usr/local/bin/zeno-controller
 COPY --from=web-builder /src/web/dist /opt/zeno/web
+RUN chown -R zeno:zeno /opt/zeno/web /usr/local/bin/zeno-controller
 ENV TZ=Asia/Shanghai
 EXPOSE 18980
+USER zeno:zeno
 ENTRYPOINT ["/usr/local/bin/zeno-controller"]
 CMD ["-addr", "0.0.0.0:18980", "-web-dir", "/opt/zeno/web", "-db", "/data/zeno.db", "-admin-token-file", "/run/secrets/zeno_admin_token", "-agent-token-file", "/run/secrets/zeno_agent_token"]

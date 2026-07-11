@@ -74,10 +74,10 @@ Public API 只返回展示所需数据：
 ## 通知渠道凭据
 
 - 通知渠道写入时可以提交 Telegram Bot Token。
-- 已登录 Admin 的通知渠道管理响应会返回已保存的 Telegram Bot Token，便于编辑弹窗回显；公共 API、通知正文、测试发送结果和错误记录不返回凭据原文。
+- 已登录 Admin 的通知渠道管理响应也不返回已保存的 Telegram Bot Token；只返回 `credential_set` 表示是否已配置。后台编辑弹窗的 Token 输入框留空时保留原值，输入新值才覆盖。
 - 渠道凭据不进入 URL query string，不写入日志，不放到 Telegram 汇报里。
 - 通知 payload body 不包含渠道凭据。
-- Telegram Bot Token 只用于 Telegram API 请求路径和已登录 Admin 的渠道编辑回显，不进入通知正文或测试发送结果。
+- Telegram Bot Token 只用于 Telegram API 请求路径，不进入 Admin JSON 响应、通知正文或测试发送结果。
 - 通知发送失败不阻塞 Agent 心跳、状态和探测数据写入，避免通知渠道故障拖垮采集入口。
 - SQLite 文件权限仍是第一道边界；后续如加入专用服务用户，应继续限制 DB 读取权限。
 

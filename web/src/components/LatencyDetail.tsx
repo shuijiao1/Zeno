@@ -17,8 +17,6 @@ interface LatencyDetailProps {
   error?: string
   stateLoading?: boolean
   stateError?: string
-  dataNotice?: string
-  stateNotice?: string
   canUseExtendedRanges?: boolean
   onBack: () => void
   onRangeChange: (range: string) => void
@@ -34,10 +32,8 @@ export function LatencyDetail({
   stateRange = '1h',
   loading = false,
   error,
-  dataNotice,
   stateLoading = false,
   stateError,
-  stateNotice,
   canUseExtendedRanges = false,
   onBack,
   onRangeChange,
@@ -132,7 +128,6 @@ export function LatencyDetail({
 
         {showLatencySkeleton && <LatencyLoadingSkeleton />}
         {error && <div className="detail-state is-error">网络延迟读取失败：{error}</div>}
-        {!error && dataNotice && <div className="detail-state is-warning">{dataNotice}</div>}
 
         {!showLatencySkeleton && !error && hasLatencyData && (
           <>
@@ -172,7 +167,6 @@ export function LatencyDetail({
         onRangeChange={onStateRangeChange}
         loading={stateLoading}
         error={stateError}
-        notice={stateNotice}
         canUseExtendedRanges={canUseExtendedRanges}
       />
     </div>

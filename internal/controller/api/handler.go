@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strings"
 	"sync"
@@ -22,6 +23,7 @@ type HandlerOptions struct {
 	NotificationClient           *http.Client
 	TelegramAPIBaseURL           string
 	StaleOfflineScanInterval     time.Duration
+	RenewalNotificationInterval  time.Duration
 	HistoryRetentionInterval     time.Duration
 	NotificationDispatchInterval time.Duration
 	BackgroundContext            context.Context
@@ -36,12 +38,15 @@ type handler struct {
 	loginLimiter         *adminLoginLimiter
 	liveHub              *liveUpdateHub
 	presence             *agentPresenceManager
+	publicWSGate         *websocketGate
+	agentWSGate          *websocketGate
 	summaryPublishMu     sync.Mutex
 	summaryPublishTimer  *time.Timer
 	summaryLastPublished time.Time
 	summaryCacheMu       sync.RWMutex
 	summaryCache         []byte
 	summaryCacheUpdated  time.Time
+	detailCache          *detailJSONCache
 	backgroundCtx        context.Context
 	backgroundCancel     context.CancelFunc
 	backgroundWG         sync.WaitGroup
@@ -75,46 +80,86 @@ type adminLoginLimiter struct {
 type adminLoginAttempt struct {
 	Count       int
 	FirstSeenAt time.Time
+	LastSeenAt  time.Time
 	LockedUntil time.Time
+}
+
+type adminLoginReservation struct {
+	limiter *adminLoginLimiter
+	key     string
 }
 
 const (
 	adminLoginWindow       = 15 * time.Minute
 	adminLoginLockDuration = 10 * time.Minute
 	adminLoginMaxFailures  = 5
+	adminLoginMaxEntries   = 4096
 )
 
 func newAdminLoginLimiter() *adminLoginLimiter {
 	return &adminLoginLimiter{attempts: map[string]adminLoginAttempt{}}
 }
 
-func (limiter *adminLoginLimiter) allow(key string) bool {
+func (limiter *adminLoginLimiter) reserve(key string) (adminLoginReservation, bool) {
 	now := time.Now()
 	limiter.mu.Lock()
 	defer limiter.mu.Unlock()
+	limiter.pruneLocked(now)
 	attempt := limiter.attempts[key]
 	if !attempt.LockedUntil.IsZero() && now.Before(attempt.LockedUntil) {
-		return false
+		return adminLoginReservation{}, false
 	}
-	if !attempt.FirstSeenAt.IsZero() && now.Sub(attempt.FirstSeenAt) > adminLoginWindow {
-		delete(limiter.attempts, key)
-	}
-	return true
-}
-
-func (limiter *adminLoginLimiter) recordFailure(key string) {
-	now := time.Now()
-	limiter.mu.Lock()
-	defer limiter.mu.Unlock()
-	attempt := limiter.attempts[key]
 	if attempt.FirstSeenAt.IsZero() || now.Sub(attempt.FirstSeenAt) > adminLoginWindow {
 		attempt = adminLoginAttempt{FirstSeenAt: now}
 	}
 	attempt.Count++
+	attempt.LastSeenAt = now
 	if attempt.Count >= adminLoginMaxFailures {
 		attempt.LockedUntil = now.Add(adminLoginLockDuration)
 	}
 	limiter.attempts[key] = attempt
+	return adminLoginReservation{limiter: limiter, key: key}, true
+}
+
+func (reservation adminLoginReservation) release(success bool) {
+	if reservation.limiter == nil || reservation.key == "" || !success {
+		return
+	}
+	reservation.limiter.recordSuccess(reservation.key)
+}
+
+func (limiter *adminLoginLimiter) pruneLocked(now time.Time) {
+	oldestKey := ""
+	oldestSeen := now
+	for key, attempt := range limiter.attempts {
+		lastSeen := attempt.LastSeenAt
+		if lastSeen.IsZero() {
+			lastSeen = attempt.FirstSeenAt
+		}
+		if (!attempt.LockedUntil.IsZero() && now.After(attempt.LockedUntil.Add(adminLoginWindow))) || (attempt.LockedUntil.IsZero() && !attempt.FirstSeenAt.IsZero() && now.Sub(attempt.FirstSeenAt) > adminLoginWindow) {
+			delete(limiter.attempts, key)
+			continue
+		}
+		if oldestKey == "" || lastSeen.Before(oldestSeen) {
+			oldestKey = key
+			oldestSeen = lastSeen
+		}
+	}
+	for len(limiter.attempts) > adminLoginMaxEntries && oldestKey != "" {
+		delete(limiter.attempts, oldestKey)
+		oldestKey = ""
+		oldestSeen = now
+		for key, attempt := range limiter.attempts {
+			lastSeen := attempt.LastSeenAt
+			if lastSeen.IsZero() {
+				lastSeen = attempt.FirstSeenAt
+			}
+			if oldestKey == "" || lastSeen.Before(oldestSeen) {
+				oldestKey = key
+				oldestSeen = lastSeen
+			}
+		}
+	}
 }
 
 func (limiter *adminLoginLimiter) recordSuccess(key string) {
@@ -122,6 +167,45 @@ func (limiter *adminLoginLimiter) recordSuccess(key string) {
 	defer limiter.mu.Unlock()
 	delete(limiter.attempts, key)
 }
+
+type websocketGate struct {
+	mu      sync.Mutex
+	current int
+	max     int
+}
+
+func newWebSocketGate(max int) *websocketGate {
+	return &websocketGate{max: max}
+}
+
+func (gate *websocketGate) acquire() (func(), bool) {
+	if gate == nil || gate.max <= 0 {
+		return func() {}, true
+	}
+	gate.mu.Lock()
+	defer gate.mu.Unlock()
+	if gate.current >= gate.max {
+		return nil, false
+	}
+	gate.current++
+	released := false
+	return func() {
+		gate.mu.Lock()
+		defer gate.mu.Unlock()
+		if released {
+			return
+		}
+		released = true
+		if gate.current > 0 {
+			gate.current--
+		}
+	}, true
+}
+
+const (
+	publicWebSocketMaxConnections = 128
+	agentWebSocketMaxConnections  = 256
+)
 
 func NewHandler(options ...HandlerOptions) http.Handler {
 	opts := HandlerOptions{}
@@ -146,11 +230,17 @@ func NewHandler(options ...HandlerOptions) http.Handler {
 		loginLimiter:       newAdminLoginLimiter(),
 		liveHub:            newLiveUpdateHub(),
 		presence:           newAgentPresenceManager(),
+		publicWSGate:       newWebSocketGate(publicWebSocketMaxConnections),
+		agentWSGate:        newWebSocketGate(agentWebSocketMaxConnections),
+		detailCache:        newDetailJSONCache(),
 		backgroundCtx:      backgroundCtx,
 		backgroundCancel:   backgroundCancel,
 	}
 	if opts.StaleOfflineScanInterval > 0 {
 		h.startBackground(func(ctx context.Context) { h.runStaleAgentOfflineScanner(ctx, opts.StaleOfflineScanInterval) })
+	}
+	if opts.RenewalNotificationInterval > 0 {
+		h.startBackground(func(ctx context.Context) { h.runRenewalNotificationScanner(ctx, opts.RenewalNotificationInterval) })
 	}
 	if opts.HistoryRetentionInterval > 0 {
 		h.startBackground(func(ctx context.Context) { h.runHistoryRetention(ctx, opts.HistoryRetentionInterval) })
@@ -251,8 +341,12 @@ func withSecurityHeaders(next http.Handler) http.Handler {
 		w.Header().Set("X-Frame-Options", "DENY")
 		w.Header().Set("Referrer-Policy", "no-referrer")
 		w.Header().Set("Permissions-Policy", "camera=(), microphone=(), geolocation=()")
-		if strings.HasPrefix(r.URL.Path, "/api/admin/") {
+		w.Header().Set("Content-Security-Policy", "default-src 'self'; base-uri 'self'; object-src 'none'; frame-ancestors 'none'; form-action 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' https: data:; font-src 'self' https: data:; connect-src 'self'")
+		if strings.HasPrefix(r.URL.Path, "/api/admin/") || strings.TrimSpace(r.Header.Get("X-Admin-Token")) != "" {
 			w.Header().Set("Cache-Control", "no-store")
+		}
+		if strings.TrimSpace(r.Header.Get("X-Admin-Token")) != "" {
+			w.Header().Add("Vary", "X-Admin-Token")
 		}
 		next.ServeHTTP(w, r)
 	})
@@ -285,12 +379,12 @@ func (h *handler) handlePublicServiceResource(w http.ResponseWriter, r *http.Req
 		h.handleServiceLatencyWebSocket(w, r, parts[0], window)
 		return
 	}
-	response, err := h.store.ServiceTargetLatency(r.Context(), parts[0], window)
+	payload, err := h.serviceLatencyJSON(r.Context(), parts[0], window)
 	if err != nil {
 		writeStoreError(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, response)
+	writeRawJSON(w, http.StatusOK, payload)
 }
 
 func handleHealth(w http.ResponseWriter, r *http.Request) {
@@ -427,12 +521,12 @@ func (h *handler) handlePublicNodeResource(w http.ResponseWriter, r *http.Reques
 			h.handleNodeLatencyWebSocket(w, r, nodeID, window)
 			return
 		}
-		response, err := h.store.NodeLatency(r.Context(), nodeID, window)
+		payload, err := h.nodeLatencyJSON(r.Context(), nodeID, window)
 		if err != nil {
 			writeStoreError(w, err)
 			return
 		}
-		writeJSON(w, http.StatusOK, response)
+		writeRawJSON(w, http.StatusOK, payload)
 	case "state":
 		window, ok := resolveStateWindow(rangeName)
 		if !ok {
@@ -446,12 +540,12 @@ func (h *handler) handlePublicNodeResource(w http.ResponseWriter, r *http.Reques
 			h.handleNodeStateWebSocket(w, r, nodeID, window)
 			return
 		}
-		response, err := h.store.NodeState(r.Context(), nodeID, window)
+		payload, err := h.nodeStateJSON(r.Context(), nodeID, window)
 		if err != nil {
 			writeStoreError(w, err)
 			return
 		}
-		writeJSON(w, http.StatusOK, response)
+		writeRawJSON(w, http.StatusOK, payload)
 	default:
 		writeError(w, http.StatusNotFound, "not found")
 	}
@@ -494,13 +588,21 @@ func handleStatic(staticDir string) http.HandlerFunc {
 	}
 }
 
+var fingerprintedAssetName = regexp.MustCompile(`-[A-Za-z0-9_-]{8}\.[A-Za-z0-9]+$`)
+
 func setStaticCacheHeader(w http.ResponseWriter, cleanPath string) {
 	if cleanPath == "/index.html" || cleanPath == "/" {
 		w.Header().Set("Cache-Control", "no-store")
 		return
 	}
 	if strings.HasPrefix(cleanPath, "/assets/") {
-		w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
+		if fingerprintedAssetName.MatchString(filepath.Base(cleanPath)) {
+			w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
+		} else {
+			// Public assets such as the favicon and OS logos keep stable names and
+			// must be revalidated across releases.
+			w.Header().Set("Cache-Control", "public, max-age=300, must-revalidate")
+		}
 	}
 }
 
@@ -528,6 +630,12 @@ func writeJSON(w http.ResponseWriter, status int, value any) {
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	w.WriteHeader(status)
 	_ = json.NewEncoder(w).Encode(value)
+}
+
+func writeRawJSON(w http.ResponseWriter, status int, payload []byte) {
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	w.WriteHeader(status)
+	_, _ = w.Write(payload)
 }
 
 func writeError(w http.ResponseWriter, status int, message string) {

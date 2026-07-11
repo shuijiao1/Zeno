@@ -58,6 +58,13 @@ func TestReadyEndpointChecksSQLiteStore(t *testing.T) {
 	if !body["ok"] {
 		t.Fatalf("ready ok = false, want true")
 	}
+	var writes int
+	if err := store.db.QueryRowContext(context.Background(), `SELECT COUNT(*) FROM readiness_probe`).Scan(&writes); err != nil {
+		t.Fatalf("count readiness writes: %v", err)
+	}
+	if writes != 0 {
+		t.Fatalf("ready endpoint wrote %d rows, want read-only readiness check", writes)
+	}
 }
 
 func TestSecurityHeadersAndAdminNoStore(t *testing.T) {
@@ -76,8 +83,25 @@ func TestSecurityHeadersAndAdminNoStore(t *testing.T) {
 	if got := recorder.Header().Get("Referrer-Policy"); got != "no-referrer" {
 		t.Fatalf("Referrer-Policy = %q, want no-referrer", got)
 	}
+	if got := recorder.Header().Get("Content-Security-Policy"); !strings.Contains(got, "script-src 'self'") || !strings.Contains(got, "frame-ancestors 'none'") || !strings.Contains(got, "connect-src 'self'") || strings.Contains(got, "connect-src ws: wss:") {
+		t.Fatalf("Content-Security-Policy = %q, want restrictive script/frame/connect policy", got)
+	}
 	if got := recorder.Header().Get("Cache-Control"); got != "no-store" {
 		t.Fatalf("Cache-Control = %q, want no-store for admin API", got)
+	}
+}
+
+func TestCredentialedPublicResponseIsNotCacheable(t *testing.T) {
+	handler := NewHandler()
+	recorder := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodGet, "/api/public/v1/summary", nil)
+	request.Header.Set("X-Admin-Token", "session-token")
+	handler.ServeHTTP(recorder, request)
+	if got := recorder.Header().Get("Cache-Control"); got != "no-store" {
+		t.Fatalf("Cache-Control = %q, want no-store for credentialed public API", got)
+	}
+	if got := recorder.Header().Values("Vary"); len(got) == 0 || !strings.Contains(strings.Join(got, ","), "X-Admin-Token") {
+		t.Fatalf("Vary = %q, want X-Admin-Token", got)
 	}
 }
 
@@ -745,6 +769,9 @@ func TestStaticWebFallbackServesIndexForDashboardRoutes(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(dir, "assets", "app.js"), []byte("console.log('asset')"), 0o644); err != nil {
 		t.Fatalf("write asset: %v", err)
 	}
+	if err := os.WriteFile(filepath.Join(dir, "assets", "app-AbCd1234.js"), []byte("console.log('hashed')"), 0o644); err != nil {
+		t.Fatalf("write hashed asset: %v", err)
+	}
 
 	handler := NewHandler(HandlerOptions{StaticDir: dir})
 
@@ -756,8 +783,14 @@ func TestStaticWebFallbackServesIndexForDashboardRoutes(t *testing.T) {
 	if !strings.Contains(assetRecorder.Body.String(), "asset") {
 		t.Fatalf("asset body = %q, want asset content", assetRecorder.Body.String())
 	}
-	if got := assetRecorder.Header().Get("Cache-Control"); got != "public, max-age=31536000, immutable" {
-		t.Fatalf("asset cache-control = %q, want immutable asset cache", got)
+	if got := assetRecorder.Header().Get("Cache-Control"); got != "public, max-age=300, must-revalidate" {
+		t.Fatalf("asset cache-control = %q, want short cache for stable filename", got)
+	}
+
+	hashedRecorder := httptest.NewRecorder()
+	handler.ServeHTTP(hashedRecorder, httptest.NewRequest(http.MethodGet, "/assets/app-AbCd1234.js", nil))
+	if got := hashedRecorder.Header().Get("Cache-Control"); got != "public, max-age=31536000, immutable" {
+		t.Fatalf("hashed asset cache-control = %q, want immutable asset cache", got)
 	}
 
 	spaRecorder := httptest.NewRecorder()

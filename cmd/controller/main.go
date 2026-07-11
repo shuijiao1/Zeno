@@ -52,6 +52,7 @@ func buildController(config handlerConfig) (*controllerRuntime, error) {
 		store = opened
 		options.Store = store
 		options.StaleOfflineScanInterval = 5 * time.Second
+		options.RenewalNotificationInterval = time.Hour
 		options.HistoryRetentionInterval = time.Hour
 		options.NotificationDispatchInterval = 5 * time.Second
 		cleanupHandlers = append(cleanupHandlers, func(context.Context) error { return store.Close() })

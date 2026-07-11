@@ -1,7 +1,6 @@
 import { afterEach, describe, expect, it } from 'vitest'
 import { extractSafeCustomCSS } from './customCode'
 import { availableHistoryRanges, coerceHistoryRange } from './historyRange'
-import { shouldStartHttpFallback } from './liveFallback'
 import { loadStoredSummary, rememberSummary, summaryFreshTtlMs } from './summaryCache'
 import type { SummaryData } from '../api/client'
 
@@ -42,12 +41,6 @@ describe('realtime reliability helpers', () => {
     } finally {
       restore()
     }
-  })
-
-  it('starts HTTP fallback only when no WS frame arrived yet and no fallback is running', () => {
-    expect(shouldStartHttpFallback(false, false)).toBe(true)
-    expect(shouldStartHttpFallback(true, false)).toBe(false)
-    expect(shouldStartHttpFallback(false, true)).toBe(false)
   })
 
   it('limits unauthenticated history ranges to realtime and one day', () => {

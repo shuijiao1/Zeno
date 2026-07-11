@@ -392,7 +392,7 @@ func (s *SQLiteStore) InsertAgentState(ctx context.Context, nodeID string, state
 		return err
 	}
 	month := billingPeriodKey(sampleTS, monthlyResetDay)
-	if err := upsertMonthlyTraffic(ctx, tx, nodeID, month, billingMode, state.NetInTotalBytes, state.NetOutTotalBytes, now); err != nil {
+	if err := upsertMonthlyTraffic(ctx, tx, nodeID, month, billingMode, state.NetInTotalBytes, state.NetOutTotalBytes, sampleTS.Unix(), now); err != nil {
 		return err
 	}
 
@@ -437,22 +437,25 @@ func normalizeAgentCountryCode(value string) string {
 	return trimmed
 }
 
-func upsertMonthlyTraffic(ctx context.Context, tx *sql.Tx, nodeID, month, billingMode string, inTotal, outTotal int64, now int64) error {
-	var previousIn, previousOut sql.NullInt64
+func upsertMonthlyTraffic(ctx context.Context, tx *sql.Tx, nodeID, month, billingMode string, inTotal, outTotal, sampleTS, now int64) error {
+	var previousIn, previousOut, lastSampleTS sql.NullInt64
 	err := tx.QueryRowContext(ctx, `
-		SELECT last_in_total_bytes, last_out_total_bytes
+		SELECT last_in_total_bytes, last_out_total_bytes, last_sample_ts
 		FROM traffic_monthly
 		WHERE node_id = ? AND month = ?
-	`, nodeID, month).Scan(&previousIn, &previousOut)
+	`, nodeID, month).Scan(&previousIn, &previousOut, &lastSampleTS)
 	if err == sql.ErrNoRows {
 		_, err = tx.ExecContext(ctx, `
-			INSERT INTO traffic_monthly (node_id, month, in_bytes, out_bytes, billable_bytes, last_in_total_bytes, last_out_total_bytes, updated_at)
-			VALUES (?, ?, 0, 0, 0, ?, ?, ?)
-		`, nodeID, month, inTotal, outTotal, now)
+			INSERT INTO traffic_monthly (node_id, month, in_bytes, out_bytes, billable_bytes, last_in_total_bytes, last_out_total_bytes, last_sample_ts, updated_at)
+			VALUES (?, ?, 0, 0, 0, ?, ?, ?, ?)
+		`, nodeID, month, inTotal, outTotal, sampleTS, now)
 		return err
 	}
 	if err != nil {
 		return err
+	}
+	if lastSampleTS.Valid && sampleTS <= lastSampleTS.Int64 {
+		return nil
 	}
 
 	deltaIn := nonNegativeDelta(previousIn, inTotal)
@@ -465,9 +468,10 @@ func upsertMonthlyTraffic(ctx context.Context, tx *sql.Tx, nodeID, month, billin
 		    billable_bytes = billable_bytes + ?,
 		    last_in_total_bytes = ?,
 		    last_out_total_bytes = ?,
+		    last_sample_ts = ?,
 		    updated_at = ?
 		WHERE node_id = ? AND month = ?
-	`, deltaIn, deltaOut, billable, inTotal, outTotal, now, nodeID, month)
+	`, deltaIn, deltaOut, billable, inTotal, outTotal, sampleTS, now, nodeID, month)
 	return err
 }
 

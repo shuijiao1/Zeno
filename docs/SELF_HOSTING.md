@@ -136,7 +136,7 @@ curl -fsS http://127.0.0.1:18980/api/public/v1/summary
 
 期望看到：
 
-- `/health` 返回轻量存活状态；`/ready` 验证 SQLite 可读写。
+- `/health` 返回轻量存活状态；`/ready` 只读验证 SQLite 连接和必要 schema，不会为每次探测制造 WAL 写入。
 - Controller 是 `active`，Agent 服务在目标节点正常运行。
 - Zeno-Agent 日志出现上报 host/state/probe target 的记录。
 - Public summary 中新服务器从 `no_data` 变为 `online` 或 `warning`。
@@ -174,9 +174,10 @@ bash <(curl -fsSL https://zeno.shuijiao.de)
 脚本行为：
 
 - 默认部署到 `/opt/zeno`。
+- Controller 容器以固定非 root 用户 `10001:10001` 运行，并启用只读根文件系统、`no-new-privileges` 和 capability drop；安装器会把既有 `data/`、`secrets/` 安全迁移为该 UID/GID 可访问，手写 Compose 时也必须保持相同所有权。
 - 默认监听 `127.0.0.1:18980`。
 - 重复执行时会保留现有 data/secrets，并在改写配置前备份 `.env`、`docker-compose.yml`、`data`、`secrets` 到 `/opt/zeno/backups/install-YYYYmmdd-HHMMSS/`。
 - 如果已有 `.env`，未显式传入的 `ZENO_IMAGE`、`ZENO_HOST_PORT`、`ZENO_CONTAINER_NAME`、`TZ` 会沿用旧值。
-- `/health` 未通过时会打印 `docker compose ps` 和最近日志，并提示备份目录。
+- `/ready` 未通过时会打印 `docker compose ps` 和最近日志，并提示备份目录。
 
 详细升级和回滚见 [`UPGRADE.md`](UPGRADE.md)。

@@ -118,7 +118,7 @@ docker compose up -d
 Health check:
 
 ```bash
-curl -fsS http://127.0.0.1:18980/health
+curl -fsS http://127.0.0.1:18980/ready
 ```
 
 ---
@@ -127,6 +127,7 @@ curl -fsS http://127.0.0.1:18980/health
 
 - SQLite database: `/opt/zeno/data/zeno.db`.
 - Admin and Agent tokens: `/opt/zeno/secrets/`, expected to stay `600`.
+- The official Compose stack runs as non-root UID/GID `10001:10001`; `data/` and `secrets/` must be owned by that UID/GID, and the installer migrates existing directories automatically.
 - Back up `/opt/zeno/data` and `/opt/zeno/secrets` regularly.
 - Keep the Controller bound locally and expose it through an HTTPS reverse proxy.
 - See [`docs/SECURITY.md`](docs/SECURITY.md) for public deployment, token rotation and security boundaries.

@@ -235,8 +235,8 @@ CREATE TABLE notification_deliveries (
 
 ```
 
-`credential` 不通过 Admin API 响应返回。
-通知事件与 incident 去重标记在同一事务中写入 outbox；发送失败按退避策略最多
+`credential` 不通过 Admin API 响应返回；`notification_types` 仅保留旧 API 兼容，发送开关以 `alert_rules.enabled` 为准。
+通知事件与 incident/续费按日去重标记在同一事务中写入 outbox；发送失败按退避策略最多
 尝试 5 次，Controller 重启后继续处理。投递历史只保存净化后的错误，不保存 Bot
 Token 或请求 URL。
 

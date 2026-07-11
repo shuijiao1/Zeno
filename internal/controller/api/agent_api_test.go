@@ -5,6 +5,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"fmt"
 	"io"
 	"math"
 	"net/http"
@@ -69,6 +70,9 @@ func TestAgentProbeTargetsReturnsEnabledTargetsAfterAuth(t *testing.T) {
 	}
 	if len(response.Targets) != len(DefaultPreviewProbeTargets()) {
 		t.Fatalf("targets len = %d, want %d", len(response.Targets), len(DefaultPreviewProbeTargets()))
+	}
+	if response.Version <= 0 {
+		t.Fatalf("probe config version = %d, want positive version", response.Version)
 	}
 	if response.Targets[0].ID == "" || response.Targets[0].Name == "" || response.Targets[0].Address == "" {
 		t.Fatalf("first target missing required public agent fields: %+v", response.Targets[0])
@@ -152,6 +156,193 @@ func TestAgentProbeResultsAcceptsSamplesAndUpdatesPublicLatency(t *testing.T) {
 	}
 }
 
+func TestAgentProbeResultsRejectsStaleConfigVersionWithoutPartialWrite(t *testing.T) {
+	store, err := OpenSQLiteStore(filepath.Join(t.TempDir(), "zeno.db"))
+	if err != nil {
+		t.Fatalf("open sqlite store: %v", err)
+	}
+	defer store.Close()
+	ctx := context.Background()
+	if err := store.SeedPreviewData(ctx, PreviewSeedOptions{NodeID: "hytron", DisplayName: "Hytron", CountryCode: "HK", AgentToken: "test-agent-token"}); err != nil {
+		t.Fatalf("seed preview data: %v", err)
+	}
+	version, err := store.ProbeConfigVersion(ctx)
+	if err != nil {
+		t.Fatalf("probe config version: %v", err)
+	}
+	handler := NewHandler(HandlerOptions{Store: store})
+	post := func(payload string) *httptest.ResponseRecorder {
+		t.Helper()
+		recorder := httptest.NewRecorder()
+		request := httptest.NewRequest(http.MethodPost, "/api/agent/v1/probe-results", strings.NewReader(payload))
+		request.Header.Set("X-Node-ID", "hytron")
+		request.Header.Set("Authorization", "Bearer test-agent-token")
+		request.Header.Set("Content-Type", "application/json")
+		handler.ServeHTTP(recorder, request)
+		return recorder
+	}
+	now := time.Now().UTC().Truncate(time.Second).Unix()
+	currentPayload := `{"config_version":` + strconv.FormatInt(version, 10) + `,"rounds":[{"round_id":"current-version-a","target_id":"google-dns","ts":` + strconv.FormatInt(now, 10) + `,"type":"tcping","samples":[{"seq":1,"success":true,"latency_ms":12.5}]}]}`
+	if recorder := post(currentPayload); recorder.Code != http.StatusAccepted {
+		t.Fatalf("current version status = %d, want 202; body=%s", recorder.Code, recorder.Body.String())
+	}
+	var roundsBefore, samplesBefore int
+	if err := store.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM probe_rounds`).Scan(&roundsBefore); err != nil {
+		t.Fatalf("count rounds before stale write: %v", err)
+	}
+	if err := store.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM probe_samples`).Scan(&samplesBefore); err != nil {
+		t.Fatalf("count samples before stale write: %v", err)
+	}
+	if roundsBefore != 1 || samplesBefore != 1 {
+		t.Fatalf("initial accepted write counts rounds/samples=%d/%d, want 1/1", roundsBefore, samplesBefore)
+	}
+	displayOrder := 99
+	if _, err := store.UpdateAdminProbeTarget(ctx, "google-dns", AdminProbeTargetUpdateRequest{DisplayOrder: &displayOrder}); err != nil {
+		t.Fatalf("commit probe config mutation: %v", err)
+	}
+	newVersion, err := store.ProbeConfigVersion(ctx)
+	if err != nil {
+		t.Fatalf("probe config version after mutation: %v", err)
+	}
+	if newVersion == version {
+		t.Fatalf("probe config mutation committed without bumping version %d", newVersion)
+	}
+	stalePayload := `{"config_version":` + strconv.FormatInt(version, 10) + `,"rounds":[` +
+		`{"round_id":"stale-version-a","target_id":"google-dns","ts":` + strconv.FormatInt(now+1, 10) + `,"type":"tcping","samples":[{"seq":1,"success":true,"latency_ms":13.5}]},` +
+		`{"round_id":"stale-version-b","target_id":"cloudflare-dns","ts":` + strconv.FormatInt(now+1, 10) + `,"type":"tcping","samples":[{"seq":1,"success":true,"latency_ms":14.5}]}` +
+		`]}`
+	staleRecorder := post(stalePayload)
+	if staleRecorder.Code != http.StatusConflict {
+		t.Fatalf("stale version status = %d, want 409; body=%s", staleRecorder.Code, staleRecorder.Body.String())
+	}
+	if !strings.Contains(staleRecorder.Body.String(), "stale_probe_config") {
+		t.Fatalf("stale response body = %s, want recognizable stale_probe_config error", staleRecorder.Body.String())
+	}
+	var roundsAfter, samplesAfter int
+	if err := store.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM probe_rounds`).Scan(&roundsAfter); err != nil {
+		t.Fatalf("count rounds after stale write: %v", err)
+	}
+	if err := store.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM probe_samples`).Scan(&samplesAfter); err != nil {
+		t.Fatalf("count samples after stale write: %v", err)
+	}
+	if roundsAfter != roundsBefore || samplesAfter != samplesBefore {
+		t.Fatalf("stale batch wrote partial rows rounds/samples %d/%d -> %d/%d", roundsBefore, samplesBefore, roundsAfter, samplesAfter)
+	}
+	// The previous Agent build used top-level "version". Keep that rolling-upgrade
+	// alias version-checked too, rather than silently treating it as legacy zero.
+	futurePayload := `{"version":999999,"rounds":[{"round_id":"future-version-a","target_id":"google-dns","ts":` + strconv.FormatInt(now+2, 10) + `,"type":"tcping","samples":[{"seq":1,"success":true,"latency_ms":15.0}]}]}`
+	if recorder := post(futurePayload); recorder.Code != http.StatusConflict {
+		t.Fatalf("future version status = %d, want 409; body=%s", recorder.Code, recorder.Body.String())
+	}
+	if err := store.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM probe_rounds`).Scan(&roundsAfter); err != nil {
+		t.Fatalf("count rounds after future-version write: %v", err)
+	}
+	if roundsAfter != roundsBefore {
+		t.Fatalf("future-version batch wrote rounds %d -> %d", roundsBefore, roundsAfter)
+	}
+	currentAgainPayload := `{"config_version":` + strconv.FormatInt(newVersion, 10) + `,"rounds":[{"round_id":"current-version-b","target_id":"cloudflare-dns","ts":` + strconv.FormatInt(now+2, 10) + `,"type":"tcping","samples":[{"seq":1,"success":true,"latency_ms":15.5}]}]}`
+	if recorder := post(currentAgainPayload); recorder.Code != http.StatusAccepted {
+		t.Fatalf("new current version status = %d, want 202; body=%s", recorder.Code, recorder.Body.String())
+	}
+}
+
+func TestAgentProbeResultsVersionZeroUsesCurrentConfigValidationAtomically(t *testing.T) {
+	store, err := OpenSQLiteStore(filepath.Join(t.TempDir(), "zeno.db"))
+	if err != nil {
+		t.Fatalf("open sqlite store: %v", err)
+	}
+	defer store.Close()
+	ctx := context.Background()
+	if err := store.SeedPreviewData(ctx, PreviewSeedOptions{NodeID: "hytron", DisplayName: "Hytron", CountryCode: "HK", AgentToken: "test-agent-token"}); err != nil {
+		t.Fatalf("seed preview data: %v", err)
+	}
+	count := 1
+	if _, err := store.UpdateAdminProbeTarget(ctx, "google-dns", AdminProbeTargetUpdateRequest{Count: &count}); err != nil {
+		t.Fatalf("shrink google-dns count: %v", err)
+	}
+	handler := NewHandler(HandlerOptions{Store: store})
+	post := func(payload string) *httptest.ResponseRecorder {
+		t.Helper()
+		recorder := httptest.NewRecorder()
+		request := httptest.NewRequest(http.MethodPost, "/api/agent/v1/probe-results", strings.NewReader(payload))
+		request.Header.Set("X-Node-ID", "hytron")
+		request.Header.Set("Authorization", "Bearer test-agent-token")
+		request.Header.Set("Content-Type", "application/json")
+		handler.ServeHTTP(recorder, request)
+		return recorder
+	}
+	now := time.Now().UTC().Truncate(time.Second).Unix()
+	rejectedLegacyPayload := `{"config_version":0,"rounds":[` +
+		`{"round_id":"legacy-zero-valid-first","target_id":"cloudflare-dns","ts":` + strconv.FormatInt(now, 10) + `,"type":"tcping","samples":[{"seq":1,"success":true,"latency_ms":11.5}]},` +
+		`{"round_id":"legacy-zero-too-many","target_id":"google-dns","ts":` + strconv.FormatInt(now, 10) + `,"type":"tcping","samples":[{"seq":1,"success":true,"latency_ms":12.5},{"seq":2,"success":true,"latency_ms":13.5}]}` +
+		`]}`
+	if recorder := post(rejectedLegacyPayload); recorder.Code != http.StatusBadRequest {
+		t.Fatalf("legacy config_version=0 invalid current target status = %d, want 400; body=%s", recorder.Code, recorder.Body.String())
+	}
+	var rounds int
+	if err := store.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM probe_rounds`).Scan(&rounds); err != nil {
+		t.Fatalf("count rounds after rejected legacy zero batch: %v", err)
+	}
+	if rounds != 0 {
+		t.Fatalf("legacy config_version=0 invalid batch wrote %d rounds, want 0", rounds)
+	}
+	acceptedLegacyPayload := `{"config_version":0,"rounds":[{"round_id":"legacy-zero-current-valid","target_id":"google-dns","ts":` + strconv.FormatInt(now+1, 10) + `,"type":"tcping","samples":[{"seq":1,"success":true,"latency_ms":12.5}]}]}`
+	if recorder := post(acceptedLegacyPayload); recorder.Code != http.StatusAccepted {
+		t.Fatalf("legacy config_version=0 current-valid status = %d, want 202; body=%s", recorder.Code, recorder.Body.String())
+	}
+}
+
+func TestAdminProbeTargetMutationsBumpProbeConfigVersionInStoreTransaction(t *testing.T) {
+	store, err := OpenSQLiteStore(filepath.Join(t.TempDir(), "zeno.db"))
+	if err != nil {
+		t.Fatalf("open sqlite store: %v", err)
+	}
+	defer store.Close()
+	ctx := context.Background()
+	if err := store.SeedPreviewData(ctx, PreviewSeedOptions{NodeID: "hytron", DisplayName: "Hytron", CountryCode: "HK", AgentToken: "test-agent-token"}); err != nil {
+		t.Fatalf("seed preview data: %v", err)
+	}
+	version, err := store.ProbeConfigVersion(ctx)
+	if err != nil {
+		t.Fatalf("initial probe config version: %v", err)
+	}
+	assertBumped := func(action string) {
+		t.Helper()
+		current, err := store.ProbeConfigVersion(ctx)
+		if err != nil {
+			t.Fatalf("probe config version after %s: %v", action, err)
+		}
+		if current <= version {
+			t.Fatalf("probe config version after %s = %d, want > %d", action, current, version)
+		}
+		version = current
+	}
+	port := 443
+	if _, err := store.CreateAdminProbeTarget(ctx, AdminProbeTargetCreateRequest{
+		ID:          "version-bump-target",
+		Name:        "Version Bump Target",
+		Type:        "tcping",
+		Address:     "203.0.113.10",
+		Port:        adminOptionalInt64{Set: true, Valid: true, Value: int64(port)},
+		Count:       1,
+		TimeoutMS:   minProbeTargetTimeoutMS,
+		IntervalSec: minProbeTargetIntervalSec,
+		Assignments: []AdminProbeTargetAssignmentUpdate{{NodeID: "hytron", Enabled: true}},
+	}); err != nil {
+		t.Fatalf("create probe target: %v", err)
+	}
+	assertBumped("create")
+	displayOrder := 123
+	if _, err := store.UpdateAdminProbeTarget(ctx, "version-bump-target", AdminProbeTargetUpdateRequest{DisplayOrder: &displayOrder}); err != nil {
+		t.Fatalf("update probe target: %v", err)
+	}
+	assertBumped("update")
+	if err := store.DeleteAdminProbeTarget(ctx, "version-bump-target"); err != nil {
+		t.Fatalf("delete probe target: %v", err)
+	}
+	assertBumped("delete")
+}
+
 func TestAgentProbeResultsStoresLatencyWithoutProbeAlertNotification(t *testing.T) {
 	store, err := OpenSQLiteStore(filepath.Join(t.TempDir(), "zeno.db"))
 	if err != nil {
@@ -167,9 +358,6 @@ func TestAgentProbeResultsStoresLatencyWithoutProbeAlertNotification(t *testing.
 	enabled := true
 	if _, err := store.CreateAdminNotificationChannel(ctx, AdminNotificationChannelCreateRequest{ID: "ops-telegram", Name: "Ops Telegram", Destination: "7579942307", Credential: "telegram-bot-credential-value", Enabled: &enabled}); err != nil {
 		t.Fatalf("create notification channel: %v", err)
-	}
-	if _, err := store.UpdateAdminNotificationType(ctx, "probe_unhealthy", AdminNotificationTypeUpdateRequest{Enabled: &enabled}); err != nil {
-		t.Fatalf("enable probe_unhealthy notification type: %v", err)
 	}
 	zeroDuration := 0
 	if _, err := store.UpdateAdminAlertRule(ctx, "cpu_high", AdminAlertRuleUpdateRequest{DurationSec: &zeroDuration}); err != nil {
@@ -276,12 +464,12 @@ func TestAgentProbeResultsCapsOverFiveSecondSamplesAndCountsTimeoutLoss(t *testi
 	}
 }
 
-func TestLocalProbeObservationHasHardFiveSecondCap(t *testing.T) {
+func TestLocalProbeObservationUsesConfiguredTimeoutWithHardFiveSecondCap(t *testing.T) {
 	if got := localLatencyObservationTimeout(12 * time.Second); got != 5*time.Second {
 		t.Fatalf("observation timeout = %s, want 5s", got)
 	}
-	if got := localLatencyObservationTimeout(500 * time.Millisecond); got != 5*time.Second {
-		t.Fatalf("short target observation timeout = %s, want 5s to retain measured slow timeout latency", got)
+	if got := localLatencyObservationTimeout(500 * time.Millisecond); got != 500*time.Millisecond {
+		t.Fatalf("short target observation timeout = %s, want configured timeout", got)
 	}
 }
 
@@ -368,9 +556,6 @@ func TestAgentStateResourceRuleMarksWarningAndDispatchesProbeUnhealthy(t *testin
 	enabled := true
 	if _, err := store.CreateAdminNotificationChannel(ctx, AdminNotificationChannelCreateRequest{ID: "ops-telegram", Name: "Ops Telegram", Destination: "7579942307", Credential: "telegram-bot-credential-value", Enabled: &enabled}); err != nil {
 		t.Fatalf("create notification channel: %v", err)
-	}
-	if _, err := store.UpdateAdminNotificationType(ctx, "probe_unhealthy", AdminNotificationTypeUpdateRequest{Enabled: &enabled}); err != nil {
-		t.Fatalf("enable probe_unhealthy notification type: %v", err)
 	}
 	zeroDuration := 0
 	if _, err := store.UpdateAdminAlertRule(ctx, "cpu_high", AdminAlertRuleUpdateRequest{DurationSec: &zeroDuration}); err != nil {
@@ -513,6 +698,155 @@ func TestAgentProbeResultsRejectsUnknownTarget(t *testing.T) {
 	}
 	if rounds != 0 {
 		t.Fatalf("probe rounds = %d, want no partial insert for unknown target", rounds)
+	}
+}
+
+func TestAgentProbeResultsDeduplicateExactRetriesButKeepDistinctRoundsInSameSecond(t *testing.T) {
+	store, err := OpenSQLiteStore(filepath.Join(t.TempDir(), "zeno.db"))
+	if err != nil {
+		t.Fatalf("open sqlite store: %v", err)
+	}
+	defer store.Close()
+	ctx := context.Background()
+	if err := store.SeedPreviewData(ctx, PreviewSeedOptions{NodeID: "hytron", DisplayName: "Hytron", CountryCode: "HK", AgentToken: "test-agent-token"}); err != nil {
+		t.Fatalf("seed preview data: %v", err)
+	}
+
+	ts := strconv.FormatInt(time.Now().UTC().Unix(), 10)
+	payload := []byte(`{"rounds":[{"round_id":"round-a","target_id":"google-dns","ts":` + ts + `,"type":"tcping","samples":[{"seq":1,"success":true,"latency_ms":12.5},{"seq":2,"success":true,"latency_ms":13.5}]}]}`)
+	post := func(payload []byte) {
+		t.Helper()
+		recorder := httptest.NewRecorder()
+		request := httptest.NewRequest(http.MethodPost, "/api/agent/v1/probe-results", bytes.NewReader(payload))
+		request.Header.Set("X-Node-ID", "hytron")
+		request.Header.Set("Authorization", "Bearer test-agent-token")
+		request.Header.Set("Content-Type", "application/json")
+		NewHandler(HandlerOptions{Store: store}).ServeHTTP(recorder, request)
+		if recorder.Code != http.StatusAccepted {
+			t.Fatalf("status = %d, want 202; body=%s", recorder.Code, recorder.Body.String())
+		}
+	}
+	for attempt := 0; attempt < 2; attempt++ {
+		post(payload)
+	}
+	distinctPayload := []byte(`{"rounds":[{"round_id":"round-b","target_id":"google-dns","ts":` + ts + `,"type":"tcping","samples":[{"seq":1,"success":true,"latency_ms":12.5},{"seq":2,"success":true,"latency_ms":13.5}]}]}`)
+	post(distinctPayload)
+	conflictingPayload := []byte(`{"rounds":[{"round_id":"round-a","target_id":"google-dns","ts":` + strconv.FormatInt(time.Now().UTC().Add(time.Second).Unix(), 10) + `,"type":"tcping","samples":[{"seq":1,"success":true,"latency_ms":22.5}]}]}`)
+	conflictRecorder := httptest.NewRecorder()
+	conflictRequest := httptest.NewRequest(http.MethodPost, "/api/agent/v1/probe-results", bytes.NewReader(conflictingPayload))
+	conflictRequest.Header.Set("X-Node-ID", "hytron")
+	conflictRequest.Header.Set("Authorization", "Bearer test-agent-token")
+	conflictRequest.Header.Set("Content-Type", "application/json")
+	NewHandler(HandlerOptions{Store: store}).ServeHTTP(conflictRecorder, conflictRequest)
+	if conflictRecorder.Code != http.StatusInternalServerError {
+		t.Fatalf("conflicting reuse status = %d, want 500; body=%s", conflictRecorder.Code, conflictRecorder.Body.String())
+	}
+	var rounds, samples int
+	if err := store.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM probe_rounds`).Scan(&rounds); err != nil {
+		t.Fatalf("count probe rounds: %v", err)
+	}
+	if err := store.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM probe_samples`).Scan(&samples); err != nil {
+		t.Fatalf("count probe samples: %v", err)
+	}
+	if rounds != 2 || samples != 4 {
+		t.Fatalf("probe retry/same-second distinct payload stored rounds=%d samples=%d, want 2/4", rounds, samples)
+	}
+}
+
+func TestAgentProbeResultsRejectsTimestampSkewAndDuplicateSequence(t *testing.T) {
+	store, err := OpenSQLiteStore(filepath.Join(t.TempDir(), "zeno.db"))
+	if err != nil {
+		t.Fatalf("open sqlite store: %v", err)
+	}
+	defer store.Close()
+	if err := store.SeedPreviewData(context.Background(), PreviewSeedOptions{NodeID: "hytron", DisplayName: "Hytron", CountryCode: "HK", AgentToken: "test-agent-token"}); err != nil {
+		t.Fatalf("seed preview data: %v", err)
+	}
+
+	tests := []struct {
+		name    string
+		payload string
+	}{
+		{name: "future timestamp", payload: `{"rounds":[{"target_id":"google-dns","ts":` + strconv.FormatInt(time.Now().UTC().Add(6*time.Minute).Unix(), 10) + `,"type":"tcping","samples":[{"seq":1,"success":true,"latency_ms":12.5}]}]}`},
+		{name: "duplicate sequence", payload: `{"rounds":[{"target_id":"google-dns","ts":` + strconv.FormatInt(time.Now().UTC().Unix(), 10) + `,"type":"tcping","samples":[{"seq":1,"success":true,"latency_ms":12.5},{"seq":1,"success":true,"latency_ms":13.5}]}]}`},
+		{name: "invalid round id", payload: `{"rounds":[{"round_id":"bad id!","target_id":"google-dns","ts":` + strconv.FormatInt(time.Now().UTC().Unix(), 10) + `,"type":"tcping","samples":[{"seq":1,"success":true,"latency_ms":12.5}]}]}`},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			recorder := httptest.NewRecorder()
+			request := httptest.NewRequest(http.MethodPost, "/api/agent/v1/probe-results", strings.NewReader(tc.payload))
+			request.Header.Set("X-Node-ID", "hytron")
+			request.Header.Set("Authorization", "Bearer test-agent-token")
+			request.Header.Set("Content-Type", "application/json")
+			NewHandler(HandlerOptions{Store: store}).ServeHTTP(recorder, request)
+			if recorder.Code != http.StatusBadRequest {
+				t.Fatalf("status = %d, want 400; body=%s", recorder.Code, recorder.Body.String())
+			}
+		})
+	}
+	var rounds int
+	if err := store.db.QueryRowContext(context.Background(), `SELECT COUNT(*) FROM probe_rounds`).Scan(&rounds); err != nil {
+		t.Fatalf("count probe rounds: %v", err)
+	}
+	if rounds != 0 {
+		t.Fatalf("probe rounds = %d, want no writes for invalid batches", rounds)
+	}
+}
+
+func TestAgentProbeResultsRejectsProbeResourceLimitOverages(t *testing.T) {
+	store, err := OpenSQLiteStore(filepath.Join(t.TempDir(), "zeno.db"))
+	if err != nil {
+		t.Fatalf("open sqlite store: %v", err)
+	}
+	defer store.Close()
+	ctx := context.Background()
+	if err := store.SeedPreviewData(ctx, PreviewSeedOptions{NodeID: "hytron", DisplayName: "Hytron", CountryCode: "HK", AgentToken: "test-agent-token"}); err != nil {
+		t.Fatalf("seed preview data: %v", err)
+	}
+	handler := NewHandler(HandlerOptions{Store: store})
+	post := func(payload string) int {
+		t.Helper()
+		recorder := httptest.NewRecorder()
+		request := httptest.NewRequest(http.MethodPost, "/api/agent/v1/probe-results", strings.NewReader(payload))
+		request.Header.Set("X-Node-ID", "hytron")
+		request.Header.Set("Authorization", "Bearer test-agent-token")
+		request.Header.Set("Content-Type", "application/json")
+		handler.ServeHTTP(recorder, request)
+		return recorder.Code
+	}
+	now := time.Now().UTC().Unix()
+	fourSamples := `[{"seq":1,"success":true,"latency_ms":1},{"seq":2,"success":true,"latency_ms":2},{"seq":3,"success":true,"latency_ms":3},{"seq":4,"success":true,"latency_ms":4}]`
+	if got := post(`{"rounds":[{"target_id":"google-dns","ts":` + strconv.FormatInt(now, 10) + `,"type":"tcping","samples":` + fourSamples + `}]}`); got != http.StatusBadRequest {
+		t.Fatalf("status for samples above target count=%d, want 400", got)
+	}
+
+	count := 32
+	timeoutMS := 100
+	intervalSec := 5
+	if _, err := store.UpdateAdminProbeTarget(ctx, "google-dns", AdminProbeTargetUpdateRequest{Count: &count, TimeoutMS: &timeoutMS, IntervalSec: &intervalSec}); err != nil {
+		t.Fatalf("raise google-dns probe count for max-sample test: %v", err)
+	}
+	samples := make([]string, 0, maxProbeTargetCount+1)
+	for seq := 1; seq <= maxProbeTargetCount+1; seq++ {
+		samples = append(samples, fmt.Sprintf(`{"seq":%d,"success":true,"latency_ms":1}`, seq))
+	}
+	if got := post(`{"rounds":[{"target_id":"google-dns","ts":` + strconv.FormatInt(now, 10) + `,"type":"tcping","samples":[` + strings.Join(samples, ",") + `]}]}`); got != http.StatusBadRequest {
+		t.Fatalf("status for samples above hard count=%d, want 400", got)
+	}
+
+	rounds := make([]string, 0, maxAgentProbeRounds+1)
+	for index := 0; index < maxAgentProbeRounds+1; index++ {
+		rounds = append(rounds, `{"target_id":"google-dns","ts":`+strconv.FormatInt(now, 10)+`,"type":"tcping","samples":[{"seq":1,"success":true,"latency_ms":1}]}`)
+	}
+	if got := post(`{"rounds":[` + strings.Join(rounds, ",") + `]}`); got != http.StatusBadRequest {
+		t.Fatalf("status for rounds above target cap=%d, want 400", got)
+	}
+	var written int
+	if err := store.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM probe_rounds`).Scan(&written); err != nil {
+		t.Fatalf("count probe rounds after rejected overages: %v", err)
+	}
+	if written != 0 {
+		t.Fatalf("probe rounds written after rejected overages=%d, want 0", written)
 	}
 }
 
@@ -995,7 +1329,7 @@ func TestAgentHeartbeatNotificationFailureDoesNotRejectHeartbeat(t *testing.T) {
 	}
 }
 
-func TestAgentHeartbeatDispatchesRenewalDueNotificationOncePerDay(t *testing.T) {
+func TestRenewalNotificationScannerDispatchesDueNotificationOncePerDay(t *testing.T) {
 	store, err := OpenSQLiteStore(filepath.Join(t.TempDir(), "zeno.db"))
 	if err != nil {
 		t.Fatalf("open sqlite store: %v", err)
@@ -1005,7 +1339,8 @@ func TestAgentHeartbeatDispatchesRenewalDueNotificationOncePerDay(t *testing.T) 
 	if err := store.SeedPreviewData(ctx, PreviewSeedOptions{NodeID: "hytron", DisplayName: "Hytron", CountryCode: "HK", AgentToken: "test-agent-token"}); err != nil {
 		t.Fatalf("seed preview data: %v", err)
 	}
-	expiryDate := time.Now().UTC().Add(3 * 24 * time.Hour).Format("2006-01-02")
+	now := time.Now().UTC().Truncate(time.Second)
+	expiryDate := now.Add(3 * 24 * time.Hour).Format("2006-01-02")
 	if _, err := store.UpdateAdminNode(ctx, "hytron", AdminNodeUpdateRequest{ExpiryDate: &expiryDate}); err != nil {
 		t.Fatalf("set expiry date: %v", err)
 	}
@@ -1013,17 +1348,15 @@ func TestAgentHeartbeatDispatchesRenewalDueNotificationOncePerDay(t *testing.T) 
 	if _, err := store.CreateAdminNotificationChannel(ctx, AdminNotificationChannelCreateRequest{ID: "ops-telegram", Name: "Ops Telegram", Destination: "7579942307", Credential: "telegram-bot-credential-value", Enabled: &enabled}); err != nil {
 		t.Fatalf("create notification channel: %v", err)
 	}
-	if _, err := store.UpdateAdminNotificationType(ctx, "renewal_due", AdminNotificationTypeUpdateRequest{Enabled: &enabled}); err != nil {
-		t.Fatalf("enable renewal_due notification type: %v", err)
-	}
 	if _, err := store.UpdateAdminAlertRule(ctx, "renewal_due", AdminAlertRuleUpdateRequest{Enabled: &enabled}); err != nil {
 		t.Fatalf("enable renewal_due alert rule: %v", err)
 	}
 
 	telegram := newTelegramTestCapture(t)
-	handler := NewHandler(telegram.handlerOptions(store))
-	now := time.Now().UTC().Truncate(time.Second)
-	postAgentHeartbeat(t, handler, now.Unix(), "online")
+	h := &handler{store: store, notificationSender: newHTTPNotificationSender(telegram.server.Client(), telegram.server.URL)}
+	if queued := h.queueDueRenewalNotifications(ctx, now); queued != 1 {
+		t.Fatalf("first renewal scan queued %d deliveries, want 1", queued)
+	}
 	paths, forms, errors := telegram.waitForCalls(t, 1)
 	if len(errors) != 0 {
 		t.Fatalf("telegram handler errors = %+v", errors)
@@ -1037,17 +1370,37 @@ func TestAgentHeartbeatDispatchesRenewalDueNotificationOncePerDay(t *testing.T) 
 	}
 	assertTelegramFormsDoNotLeakCredential(t, forms, "telegram-bot-credential-value")
 
-	postAgentHeartbeat(t, handler, now.Add(time.Minute).Unix(), "online")
+	if queued := h.queueDueRenewalNotifications(ctx, now.Add(time.Minute)); queued != 0 {
+		t.Fatalf("same-day duplicate renewal scan queued %d deliveries, want 0", queued)
+	}
 	paths, forms, errors = telegram.waitForCalls(t, 1)
 	if len(errors) != 0 {
-		t.Fatalf("telegram handler errors after duplicate heartbeat = %+v", errors)
+		t.Fatalf("telegram handler errors after duplicate scan = %+v", errors)
 	}
 	if len(paths) != 1 || len(forms) != 1 {
-		t.Fatalf("telegram calls after duplicate heartbeat paths=%+v forms=%+v, want still one renewal notification", paths, forms)
+		t.Fatalf("telegram calls after duplicate scan paths=%+v forms=%+v, want still one renewal notification", paths, forms)
+	}
+
+	if queued := h.queueDueRenewalNotifications(ctx, now.Add(24*time.Hour)); queued != 1 {
+		t.Fatalf("next-day renewal scan queued %d deliveries, want 1", queued)
+	}
+	var deliveryCount int
+	if err := store.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM notification_deliveries WHERE event_type = 'renewal_due'`).Scan(&deliveryCount); err != nil {
+		t.Fatalf("count renewal deliveries after next-day scan: %v", err)
+	}
+	if deliveryCount != 2 {
+		t.Fatalf("renewal delivery count after next-day scan = %d, want 2 daily deliveries", deliveryCount)
+	}
+	var markCount int
+	if err := store.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM notification_event_marks WHERE event_type = 'renewal_due'`).Scan(&markCount); err != nil {
+		t.Fatalf("count renewal marks after next-day scan: %v", err)
+	}
+	if markCount != 2 {
+		t.Fatalf("renewal mark count after next-day scan = %d, want 2 daily marks", markCount)
 	}
 }
 
-func TestAgentHeartbeatDispatchesRenewalDueNotificationForRecurringBillingCycle(t *testing.T) {
+func TestRenewalNotificationScannerDispatchesRecurringBillingCycle(t *testing.T) {
 	store, err := OpenSQLiteStore(filepath.Join(t.TempDir(), "zeno.db"))
 	if err != nil {
 		t.Fatalf("open sqlite store: %v", err)
@@ -1069,17 +1422,16 @@ func TestAgentHeartbeatDispatchesRenewalDueNotificationForRecurringBillingCycle(
 	if _, err := store.CreateAdminNotificationChannel(ctx, AdminNotificationChannelCreateRequest{ID: "ops-telegram", Name: "Ops Telegram", Destination: "7579942307", Credential: "telegram-bot-credential-value", Enabled: &enabled}); err != nil {
 		t.Fatalf("create notification channel: %v", err)
 	}
-	if _, err := store.UpdateAdminNotificationType(ctx, "renewal_due", AdminNotificationTypeUpdateRequest{Enabled: &enabled}); err != nil {
-		t.Fatalf("enable renewal_due notification type: %v", err)
-	}
 	threshold := 1.0
 	if _, err := store.UpdateAdminAlertRule(ctx, "renewal_due", AdminAlertRuleUpdateRequest{Enabled: &enabled, Threshold: &threshold}); err != nil {
 		t.Fatalf("enable renewal_due alert rule: %v", err)
 	}
 
 	telegram := newTelegramTestCapture(t)
-	handler := NewHandler(telegram.handlerOptions(store))
-	postAgentHeartbeat(t, handler, now.Unix(), "online")
+	h := &handler{store: store, notificationSender: newHTTPNotificationSender(telegram.server.Client(), telegram.server.URL)}
+	if queued := h.queueDueRenewalNotifications(ctx, now); queued != 1 {
+		t.Fatalf("recurring renewal scan queued %d deliveries, want 1", queued)
+	}
 	paths, forms, errors := telegram.waitForCalls(t, 1)
 	if len(errors) != 0 {
 		t.Fatalf("telegram handler errors = %+v", errors)
@@ -1094,6 +1446,226 @@ func TestAgentHeartbeatDispatchesRenewalDueNotificationForRecurringBillingCycle(
 	}
 	if strings.Contains(messageText, finalExpiryDate) || strings.Contains(messageText, formatRenewalMessageDate(finalExpiryDate)) {
 		t.Fatalf("telegram text %q used final expiry date %s, want recurring billing date %s", messageText, finalExpiryDate, cycleDueText)
+	}
+}
+
+func TestAgentHeartbeatHostAndStateDoNotDispatchRenewalDueNotification(t *testing.T) {
+	tests := []struct {
+		name string
+		path string
+		body func(time.Time) map[string]any
+	}{
+		{
+			name: "heartbeat",
+			path: "/api/agent/v1/heartbeat",
+			body: func(now time.Time) map[string]any {
+				return map[string]any{"ts": now.Unix(), "status": "online", "agent_version": "agent-test"}
+			},
+		},
+		{
+			name: "host",
+			path: "/api/agent/v1/host",
+			body: func(time.Time) map[string]any {
+				return map[string]any{"hostname": "hytron", "os_name": "Linux", "arch": "amd64", "cpu_cores": 2, "memory_total_bytes": 1024, "disk_total_bytes": 2048}
+			},
+		},
+		{
+			name: "state",
+			path: "/api/agent/v1/state",
+			body: func(now time.Time) map[string]any {
+				return map[string]any{"ts": now.Unix(), "cpu_percent": 10, "memory_used_bytes": 512, "memory_total_bytes": 1024, "disk_used_bytes": 1024, "disk_total_bytes": 2048, "net_in_total_bytes": 100, "net_out_total_bytes": 200, "net_in_speed_bps": 1, "net_out_speed_bps": 2, "uptime_seconds": 60}
+			},
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			store, err := OpenSQLiteStore(filepath.Join(t.TempDir(), "zeno.db"))
+			if err != nil {
+				t.Fatalf("open sqlite store: %v", err)
+			}
+			defer store.Close()
+			ctx := context.Background()
+			if err := store.SeedPreviewData(ctx, PreviewSeedOptions{NodeID: "hytron", DisplayName: "Hytron", CountryCode: "HK", AgentToken: "test-agent-token"}); err != nil {
+				t.Fatalf("seed preview data: %v", err)
+			}
+			expiryDate := time.Now().UTC().Add(3 * 24 * time.Hour).Format("2006-01-02")
+			if _, err := store.UpdateAdminNode(ctx, "hytron", AdminNodeUpdateRequest{ExpiryDate: &expiryDate}); err != nil {
+				t.Fatalf("set expiry date: %v", err)
+			}
+			enabled := true
+			if _, err := store.CreateAdminNotificationChannel(ctx, AdminNotificationChannelCreateRequest{ID: "ops-telegram", Name: "Ops Telegram", Destination: "7579942307", Credential: "telegram-bot-credential-value", Enabled: &enabled}); err != nil {
+				t.Fatalf("create notification channel: %v", err)
+			}
+			if _, err := store.UpdateAdminAlertRule(ctx, "renewal_due", AdminAlertRuleUpdateRequest{Enabled: &enabled}); err != nil {
+				t.Fatalf("enable renewal rule: %v", err)
+			}
+
+			telegram := newTelegramTestCapture(t)
+			now := time.Now().UTC().Truncate(time.Second)
+			payload, err := json.Marshal(tc.body(now))
+			if err != nil {
+				t.Fatalf("marshal request: %v", err)
+			}
+			recorder := httptest.NewRecorder()
+			request := httptest.NewRequest(http.MethodPost, tc.path, bytes.NewReader(payload))
+			request.Header.Set("X-Node-ID", "hytron")
+			request.Header.Set("Authorization", "Bearer test-agent-token")
+			request.Header.Set("Content-Type", "application/json")
+			NewHandler(telegram.handlerOptions(store)).ServeHTTP(recorder, request)
+			if recorder.Code != http.StatusAccepted {
+				t.Fatalf("status = %d, want 202; body=%s", recorder.Code, recorder.Body.String())
+			}
+			_, forms, captureErrors := telegram.waitForCalls(t, 0)
+			if len(captureErrors) != 0 || len(forms) != 0 {
+				t.Fatalf("renewal calls=%d errors=%v forms=%v, want no high-frequency renewal dispatch", len(forms), captureErrors, forms)
+			}
+		})
+	}
+}
+
+func TestRenewalNotificationScheduledScannerRunsIndependently(t *testing.T) {
+	store, err := OpenSQLiteStore(filepath.Join(t.TempDir(), "zeno.db"))
+	if err != nil {
+		t.Fatalf("open sqlite store: %v", err)
+	}
+	defer store.Close()
+	ctx := context.Background()
+	if err := store.SeedPreviewData(ctx, PreviewSeedOptions{NodeID: "hytron", DisplayName: "Hytron", CountryCode: "HK", AgentToken: "test-agent-token"}); err != nil {
+		t.Fatalf("seed preview data: %v", err)
+	}
+	expiryDate := time.Now().UTC().Add(3 * 24 * time.Hour).Format("2006-01-02")
+	if _, err := store.UpdateAdminNode(ctx, "hytron", AdminNodeUpdateRequest{ExpiryDate: &expiryDate}); err != nil {
+		t.Fatalf("set expiry date: %v", err)
+	}
+	enabled := true
+	if _, err := store.CreateAdminNotificationChannel(ctx, AdminNotificationChannelCreateRequest{ID: "ops-telegram", Name: "Ops Telegram", Destination: "7579942307", Credential: "telegram-bot-credential-value", Enabled: &enabled}); err != nil {
+		t.Fatalf("create notification channel: %v", err)
+	}
+	if _, err := store.UpdateAdminAlertRule(ctx, "renewal_due", AdminAlertRuleUpdateRequest{Enabled: &enabled}); err != nil {
+		t.Fatalf("enable renewal rule: %v", err)
+	}
+
+	telegram := newTelegramTestCapture(t)
+	backgroundCtx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	httpHandler := NewHandler(HandlerOptions{Store: store, NotificationClient: telegram.server.Client(), TelegramAPIBaseURL: telegram.server.URL, RenewalNotificationInterval: 10 * time.Millisecond, BackgroundContext: backgroundCtx})
+	if cleanup, ok := httpHandler.(interface{ Cleanup(context.Context) error }); ok {
+		t.Cleanup(func() {
+			shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), time.Second)
+			defer shutdownCancel()
+			_ = cleanup.Cleanup(shutdownCtx)
+		})
+	}
+	_, forms, errors := telegram.waitForCalls(t, 1)
+	if len(errors) != 0 || len(forms) != 1 || !strings.Contains(decodedTelegramText(forms[0]), "⚠️[到期]") {
+		t.Fatalf("scheduled renewal calls=%d errors=%v forms=%v", len(forms), errors, forms)
+	}
+}
+
+func TestQueueDueRenewalNotificationsDeduplicatesConcurrentScans(t *testing.T) {
+	store, err := OpenSQLiteStore(filepath.Join(t.TempDir(), "zeno.db"))
+	if err != nil {
+		t.Fatalf("open sqlite store: %v", err)
+	}
+	defer store.Close()
+	ctx := context.Background()
+	if err := store.SeedPreviewData(ctx, PreviewSeedOptions{NodeID: "hytron", DisplayName: "Hytron", CountryCode: "HK", AgentToken: "test-agent-token"}); err != nil {
+		t.Fatalf("seed preview data: %v", err)
+	}
+	now := time.Now().UTC().Truncate(time.Second)
+	expiryDate := now.Add(3 * 24 * time.Hour).Format("2006-01-02")
+	if _, err := store.UpdateAdminNode(ctx, "hytron", AdminNodeUpdateRequest{ExpiryDate: &expiryDate}); err != nil {
+		t.Fatalf("set expiry date: %v", err)
+	}
+	enabled := true
+	if _, err := store.CreateAdminNotificationChannel(ctx, AdminNotificationChannelCreateRequest{ID: "ops-telegram", Name: "Ops Telegram", Destination: "7579942307", Credential: "telegram-bot-credential-value", Enabled: &enabled}); err != nil {
+		t.Fatalf("create notification channel: %v", err)
+	}
+	if _, err := store.UpdateAdminAlertRule(ctx, "renewal_due", AdminAlertRuleUpdateRequest{Enabled: &enabled}); err != nil {
+		t.Fatalf("enable renewal rule: %v", err)
+	}
+
+	const workers = 8
+	start := make(chan struct{})
+	results := make(chan int, workers)
+	errs := make(chan error, workers)
+	var wg sync.WaitGroup
+	for i := 0; i < workers; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			<-start
+			queued, err := store.QueueDueRenewalNotifications(ctx, now)
+			if err != nil {
+				errs <- err
+				return
+			}
+			results <- queued
+		}()
+	}
+	close(start)
+	wg.Wait()
+	close(results)
+	close(errs)
+	for err := range errs {
+		t.Fatalf("concurrent renewal scan failed: %v", err)
+	}
+	queuedTotal := 0
+	for queued := range results {
+		queuedTotal += queued
+	}
+	if queuedTotal != 1 {
+		t.Fatalf("concurrent scans queued %d deliveries, want exactly 1", queuedTotal)
+	}
+	var deliveryCount int
+	if err := store.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM notification_deliveries WHERE event_type = 'renewal_due'`).Scan(&deliveryCount); err != nil {
+		t.Fatalf("count renewal deliveries: %v", err)
+	}
+	if deliveryCount != 1 {
+		t.Fatalf("renewal delivery count = %d, want 1", deliveryCount)
+	}
+	var markCount int
+	if err := store.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM notification_event_marks WHERE event_type = 'renewal_due'`).Scan(&markCount); err != nil {
+		t.Fatalf("count renewal marks: %v", err)
+	}
+	if markCount != 1 {
+		t.Fatalf("renewal mark count = %d, want 1", markCount)
+	}
+}
+
+func TestQueueDueRenewalNotificationsSkipsPermanentNode(t *testing.T) {
+	store, err := OpenSQLiteStore(filepath.Join(t.TempDir(), "zeno.db"))
+	if err != nil {
+		t.Fatalf("open sqlite store: %v", err)
+	}
+	defer store.Close()
+	ctx := context.Background()
+	if err := store.SeedPreviewData(ctx, PreviewSeedOptions{NodeID: "hytron", DisplayName: "Hytron", CountryCode: "HK", AgentToken: "test-agent-token"}); err != nil {
+		t.Fatalf("seed preview data: %v", err)
+	}
+	expiryDate := time.Now().UTC().Add(24 * time.Hour).Format("2006-01-02")
+	permanent := true
+	if _, err := store.UpdateAdminNode(ctx, "hytron", AdminNodeUpdateRequest{ExpiryDate: &expiryDate, ExpiryPermanent: &permanent}); err != nil {
+		t.Fatalf("set permanent expiry: %v", err)
+	}
+	enabled := true
+	if _, err := store.CreateAdminNotificationChannel(ctx, AdminNotificationChannelCreateRequest{ID: "ops-telegram", Name: "Ops Telegram", Destination: "7579942307", Credential: "telegram-bot-credential-value", Enabled: &enabled}); err != nil {
+		t.Fatalf("create notification channel: %v", err)
+	}
+	if _, err := store.UpdateAdminAlertRule(ctx, "renewal_due", AdminAlertRuleUpdateRequest{Enabled: &enabled}); err != nil {
+		t.Fatalf("enable renewal rule: %v", err)
+	}
+	if queued, err := store.QueueDueRenewalNotifications(ctx, time.Now().UTC()); err != nil {
+		t.Fatalf("queue permanent renewal notifications: %v", err)
+	} else if queued != 0 {
+		t.Fatalf("permanent renewal scan queued %d deliveries, want 0", queued)
+	}
+	var deliveryCount int
+	if err := store.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM notification_deliveries WHERE event_type = 'renewal_due'`).Scan(&deliveryCount); err != nil {
+		t.Fatalf("count renewal deliveries: %v", err)
+	}
+	if deliveryCount != 0 {
+		t.Fatalf("permanent renewal delivery count = %d, want 0", deliveryCount)
 	}
 }
 
@@ -1447,6 +2019,129 @@ func TestAgentStateSamplesDrivePublicSummaryAndMonthlyTrafficDeltas(t *testing.T
 	}
 	if samples != 2 {
 		t.Fatalf("state samples = %d, want 2", samples)
+	}
+}
+
+func TestAgentStateRejectsLargeClockSkewAndIgnoresOutOfOrderTrafficBaseline(t *testing.T) {
+	store, err := OpenSQLiteStore(filepath.Join(t.TempDir(), "zeno.db"))
+	if err != nil {
+		t.Fatalf("open sqlite store: %v", err)
+	}
+	defer store.Close()
+	ctx := context.Background()
+	if err := store.SeedPreviewData(ctx, PreviewSeedOptions{NodeID: "hytron", DisplayName: "Hytron", CountryCode: "HK", AgentToken: "test-agent-token"}); err != nil {
+		t.Fatalf("seed preview data: %v", err)
+	}
+
+	postState := func(ts int64, inTotal, outTotal int64, want int) {
+		t.Helper()
+		body := map[string]any{
+			"ts":                  ts,
+			"cpu_percent":         12.5,
+			"memory_used_bytes":   int64(3 * 1024 * 1024 * 1024),
+			"memory_total_bytes":  int64(8 * 1024 * 1024 * 1024),
+			"disk_used_bytes":     int64(40 * 1024 * 1024 * 1024),
+			"disk_total_bytes":    int64(160 * 1024 * 1024 * 1024),
+			"net_in_total_bytes":  inTotal,
+			"net_out_total_bytes": outTotal,
+			"net_in_speed_bps":    128.0,
+			"net_out_speed_bps":   256.0,
+			"uptime_seconds":      int64(3600),
+		}
+		payload, err := json.Marshal(body)
+		if err != nil {
+			t.Fatalf("marshal state body: %v", err)
+		}
+		recorder := httptest.NewRecorder()
+		request := httptest.NewRequest(http.MethodPost, "/api/agent/v1/state", bytes.NewReader(payload))
+		request.Header.Set("X-Node-ID", "hytron")
+		request.Header.Set("Authorization", "Bearer test-agent-token")
+		request.Header.Set("Content-Type", "application/json")
+		NewHandler(HandlerOptions{Store: store}).ServeHTTP(recorder, request)
+		if recorder.Code != want {
+			t.Fatalf("state status = %d, want %d; body=%s", recorder.Code, want, recorder.Body.String())
+		}
+	}
+
+	now := time.Now().UTC().Truncate(time.Second)
+	postState(now.Add(10*time.Minute).Unix(), 1_000, 1_000, http.StatusBadRequest)
+	postState(now.Unix(), 1_000, 1_000, http.StatusAccepted)
+	postState(now.Add(100*time.Second).Unix(), 2_000, 2_000, http.StatusAccepted)
+	postState(now.Add(50*time.Second).Unix(), 100, 100, http.StatusAccepted)
+	postState(now.Add(101*time.Second).Unix(), 2_100, 2_100, http.StatusAccepted)
+
+	var billable int64
+	if err := store.db.QueryRowContext(ctx, `SELECT billable_bytes FROM traffic_monthly WHERE node_id = 'hytron'`).Scan(&billable); err != nil {
+		t.Fatalf("query monthly billable: %v", err)
+	}
+	if billable != 2200 {
+		t.Fatalf("billable bytes = %d, want 2200 with out-of-order sample ignored as baseline", billable)
+	}
+}
+
+func TestTrafficLastSampleMigrationBackfillsLatestStateTimestamp(t *testing.T) {
+	store, err := OpenSQLiteStore(filepath.Join(t.TempDir(), "zeno.db"))
+	if err != nil {
+		t.Fatalf("open sqlite store: %v", err)
+	}
+	defer store.Close()
+	ctx := context.Background()
+	if err := store.SeedPreviewData(ctx, PreviewSeedOptions{NodeID: "hytron", DisplayName: "Hytron", CountryCode: "HK", AgentToken: "test-agent-token"}); err != nil {
+		t.Fatalf("seed preview data: %v", err)
+	}
+	now := time.Now().UTC().Truncate(time.Second)
+	for _, ts := range []int64{now.Add(-time.Minute).Unix(), now.Unix()} {
+		if _, err := store.db.ExecContext(ctx, `INSERT INTO state_samples (node_id, ts, cpu_percent) VALUES ('hytron', ?, 10)`, ts); err != nil {
+			t.Fatalf("insert historical state sample: %v", err)
+		}
+	}
+	month := billingPeriodKey(now, 1)
+	if _, err := store.db.ExecContext(ctx, `
+		INSERT INTO traffic_monthly (
+			node_id, month, in_bytes, out_bytes, billable_bytes,
+			last_in_total_bytes, last_out_total_bytes, last_sample_ts, updated_at
+		) VALUES ('hytron', ?, 250, 250, 500, 1000, 1000, NULL, ?)
+	`, month, now.Add(-2*time.Minute).Unix()); err != nil {
+		t.Fatalf("insert legacy traffic baseline: %v", err)
+	}
+	if err := store.ensureSchema(ctx); err != nil {
+		t.Fatalf("rerun schema migration: %v", err)
+	}
+	var lastSampleTS int64
+	if err := store.db.QueryRowContext(ctx, `SELECT last_sample_ts FROM traffic_monthly WHERE node_id = 'hytron' AND month = ?`, month).Scan(&lastSampleTS); err != nil {
+		t.Fatalf("read migrated last sample timestamp: %v", err)
+	}
+	if lastSampleTS != now.Unix() {
+		t.Fatalf("last_sample_ts = %d, want latest state timestamp %d", lastSampleTS, now.Unix())
+	}
+	baseState := AgentStateRequest{
+		CPUPercent:       10,
+		MemoryUsedBytes:  1,
+		MemoryTotalBytes: 2,
+		DiskUsedBytes:    1,
+		DiskTotalBytes:   2,
+		NetInTotalBytes:  100,
+		NetOutTotalBytes: 100,
+		NetInSpeedBps:    1,
+		NetOutSpeedBps:   1,
+		UptimeSeconds:    1,
+	}
+	baseState.TS = now.Add(-30 * time.Second).Unix()
+	if err := store.InsertAgentState(ctx, "hytron", baseState); err != nil {
+		t.Fatalf("insert delayed state: %v", err)
+	}
+	baseState.TS = now.Add(time.Second).Unix()
+	baseState.NetInTotalBytes = 1100
+	baseState.NetOutTotalBytes = 1100
+	if err := store.InsertAgentState(ctx, "hytron", baseState); err != nil {
+		t.Fatalf("insert current state: %v", err)
+	}
+	var billable int64
+	if err := store.db.QueryRowContext(ctx, `SELECT billable_bytes FROM traffic_monthly WHERE node_id = 'hytron' AND month = ?`, month).Scan(&billable); err != nil {
+		t.Fatalf("read billable traffic: %v", err)
+	}
+	if billable != 700 {
+		t.Fatalf("billable bytes = %d, want 700 after ignoring delayed baseline", billable)
 	}
 }
 

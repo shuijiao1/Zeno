@@ -2,7 +2,9 @@ package api
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
+	"fmt"
 	"math"
 	"net/http"
 	"net/http/httptest"
@@ -92,6 +94,179 @@ func TestSQLiteBackedHandlerReturnsPersistedLatencyInsteadOfMock(t *testing.T) {
 	}
 	if point.LossPercent != 0 {
 		t.Fatalf("loss_percent = %v, want 0", point.LossPercent)
+	}
+}
+
+func TestProbeRoundIdempotencyMigrationBackfillsLegacyRowsAndReplacesIndex(t *testing.T) {
+	databasePath := filepath.Join(t.TempDir(), "zeno.db")
+	store, err := OpenSQLiteStore(databasePath)
+	if err != nil {
+		t.Fatalf("open sqlite store: %v", err)
+	}
+	ctx := context.Background()
+	if err := store.SeedPreviewData(ctx, PreviewSeedOptions{NodeID: "hytron", DisplayName: "Hytron", CountryCode: "HK", AgentToken: "token"}); err != nil {
+		t.Fatalf("seed preview data: %v", err)
+	}
+	targets, err := store.EnabledProbeTargets(ctx, "hytron")
+	if err != nil || len(targets) == 0 {
+		t.Fatalf("list targets: targets=%d err=%v", len(targets), err)
+	}
+	var googleDNS ProbeTarget
+	for _, target := range targets {
+		if target.ID == "google-dns" {
+			googleDNS = target
+			break
+		}
+	}
+	if googleDNS.ID == "" {
+		t.Fatalf("google-dns target missing from seeded targets: %+v", targets)
+	}
+	if err := store.Close(); err != nil {
+		t.Fatalf("close initial store: %v", err)
+	}
+
+	rawDB, err := sql.Open("sqlite", databasePath)
+	if err != nil {
+		t.Fatalf("open raw sqlite: %v", err)
+	}
+	defer rawDB.Close()
+	if _, err := rawDB.ExecContext(ctx, `PRAGMA foreign_keys = ON`); err != nil {
+		t.Fatalf("enable raw foreign keys: %v", err)
+	}
+	if _, err := rawDB.ExecContext(ctx, `
+		DROP INDEX IF EXISTS idx_probe_rounds_idempotency;
+		DROP INDEX IF EXISTS idx_probe_rounds_node_target_ts;
+		DROP INDEX IF EXISTS idx_probe_rounds_node_ts;
+		DROP INDEX IF EXISTS idx_probe_rounds_target_ts;
+		DROP INDEX IF EXISTS idx_probe_rounds_ts_target_node;
+		DROP TABLE probe_samples;
+		DROP TABLE probe_rounds;
+		CREATE TABLE probe_rounds (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			node_id TEXT NOT NULL REFERENCES nodes(id),
+			target_id TEXT NOT NULL REFERENCES probe_targets(id),
+			ts INTEGER NOT NULL,
+			type TEXT NOT NULL,
+			sent INTEGER NOT NULL,
+			received INTEGER NOT NULL,
+			loss_percent REAL NOT NULL,
+			min_ms REAL,
+			avg_ms REAL,
+			median_ms REAL,
+			max_ms REAL,
+			stddev_ms REAL,
+			error TEXT
+		);
+		CREATE INDEX idx_probe_rounds_node_target_ts ON probe_rounds(node_id, target_id, ts);
+		CREATE INDEX idx_probe_rounds_node_ts ON probe_rounds(node_id, ts);
+		CREATE INDEX idx_probe_rounds_target_ts ON probe_rounds(target_id, ts);
+		CREATE TABLE probe_samples (
+			round_id INTEGER NOT NULL REFERENCES probe_rounds(id) ON DELETE CASCADE,
+			seq INTEGER NOT NULL,
+			success INTEGER NOT NULL,
+			latency_ms REAL,
+			error TEXT,
+			PRIMARY KEY (round_id, seq)
+		);
+	`); err != nil {
+		t.Fatalf("create true legacy probe schema: %v", err)
+	}
+	probeTS := time.Now().UTC().Truncate(time.Second)
+	legacyRounds := []struct {
+		latency float64
+		error   string
+	}{
+		{latency: 12.5},
+		{latency: 12.5},
+		{latency: 13.5},
+	}
+	for index, legacyRound := range legacyRounds {
+		result, err := rawDB.ExecContext(ctx, `
+			INSERT INTO probe_rounds (node_id, target_id, ts, type, sent, received, loss_percent, min_ms, avg_ms, median_ms, max_ms, stddev_ms, error)
+			VALUES ('hytron', 'google-dns', ?, 'tcping', 1, 1, 0, ?, ?, ?, ?, 0, NULL)
+		`, probeTS.Unix(), legacyRound.latency, legacyRound.latency, legacyRound.latency, legacyRound.latency)
+		if err != nil {
+			t.Fatalf("insert legacy round %d: %v", index+1, err)
+		}
+		roundID, err := result.LastInsertId()
+		if err != nil {
+			t.Fatalf("legacy round id %d: %v", index+1, err)
+		}
+		if _, err := rawDB.ExecContext(ctx, `INSERT INTO probe_samples (round_id, seq, success, latency_ms, error) VALUES (?, 1, 1, ?, NULL)`, roundID, legacyRound.latency); err != nil {
+			t.Fatalf("insert legacy sample %d: %v", index+1, err)
+		}
+	}
+	var beforeRounds, beforeSamples int
+	if err := rawDB.QueryRowContext(ctx, `SELECT COUNT(*) FROM probe_rounds`).Scan(&beforeRounds); err != nil {
+		t.Fatalf("count legacy rounds before migration: %v", err)
+	}
+	if err := rawDB.QueryRowContext(ctx, `SELECT COUNT(*) FROM probe_samples`).Scan(&beforeSamples); err != nil {
+		t.Fatalf("count legacy samples before migration: %v", err)
+	}
+	if beforeRounds != len(legacyRounds) || beforeSamples != len(legacyRounds) {
+		t.Fatalf("legacy fixture rows rounds/samples=%d/%d, want %d/%d", beforeRounds, beforeSamples, len(legacyRounds), len(legacyRounds))
+	}
+	if err := rawDB.Close(); err != nil {
+		t.Fatalf("close raw legacy sqlite: %v", err)
+	}
+
+	reopened, err := OpenSQLiteStore(databasePath)
+	if err != nil {
+		t.Fatalf("reopen migrated store: %v", err)
+	}
+	defer reopened.Close()
+	var afterRounds, afterSamples, distinctKeys, legacyKeyRows, payloadHashRows int
+	if err := reopened.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM probe_rounds`).Scan(&afterRounds); err != nil {
+		t.Fatalf("count migrated rounds: %v", err)
+	}
+	if err := reopened.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM probe_samples`).Scan(&afterSamples); err != nil {
+		t.Fatalf("count migrated samples: %v", err)
+	}
+	if afterRounds != beforeRounds || afterSamples != beforeSamples {
+		t.Fatalf("migrated rows rounds/samples=%d/%d, want preserved %d/%d", afterRounds, afterSamples, beforeRounds, beforeSamples)
+	}
+	if err := reopened.db.QueryRowContext(ctx, `SELECT COUNT(DISTINCT idempotency_key) FROM probe_rounds`).Scan(&distinctKeys); err != nil {
+		t.Fatalf("count migrated distinct keys: %v", err)
+	}
+	if distinctKeys != beforeRounds {
+		t.Fatalf("migrated distinct idempotency keys=%d, want one per legacy row %d", distinctKeys, beforeRounds)
+	}
+	if err := reopened.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM probe_rounds WHERE idempotency_key GLOB 'legacy:[0-9]*:*'`).Scan(&legacyKeyRows); err != nil {
+		t.Fatalf("count migrated legacy keys: %v", err)
+	}
+	if legacyKeyRows != beforeRounds {
+		t.Fatalf("migrated legacy key rows=%d, want %d", legacyKeyRows, beforeRounds)
+	}
+	if err := reopened.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM probe_rounds WHERE payload_hash <> ''`).Scan(&payloadHashRows); err != nil {
+		t.Fatalf("count migrated payload hashes: %v", err)
+	}
+	if payloadHashRows != beforeRounds {
+		t.Fatalf("migrated payload hash rows=%d, want %d", payloadHashRows, beforeRounds)
+	}
+	columns, err := sqliteIndexColumns(ctx, reopened.db, "idx_probe_rounds_idempotency")
+	if err != nil {
+		t.Fatalf("read migrated index: %v", err)
+	}
+	if !stringSlicesEqual(columns, []string{"node_id", "target_id", "ts", "type", "idempotency_key"}) {
+		t.Fatalf("migrated index columns = %v", columns)
+	}
+	agentColumns, err := sqliteIndexColumns(ctx, reopened.db, "idx_probe_rounds_agent_id")
+	if err != nil {
+		t.Fatalf("read agent round index: %v", err)
+	}
+	if !stringSlicesEqual(agentColumns, []string{"node_id", "agent_round_id"}) {
+		t.Fatalf("agent round index columns = %v", agentColumns)
+	}
+	samples := []probe.Sample{{Seq: 1, Success: true, LatencyMS: testF64(12.5)}}
+	if err := reopened.InsertProbeRound(ctx, "hytron", googleDNS, probeTS, samples); err != nil {
+		t.Fatalf("retry migrated probe round: %v", err)
+	}
+	var rounds int
+	if err := reopened.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM probe_rounds`).Scan(&rounds); err != nil {
+		t.Fatalf("count migrated rounds: %v", err)
+	}
+	if rounds != beforeRounds {
+		t.Fatalf("retry after migration stored %d rounds, want still-preserved %d", rounds, beforeRounds)
 	}
 }
 
@@ -577,6 +752,87 @@ func TestSeedPreviewDataIsIdempotentAndWiresHytronTargets(t *testing.T) {
 		if !seen[id] {
 			t.Fatalf("missing seeded preview target %q; seen=%v", id, seen)
 		}
+	}
+}
+
+func TestEnabledProbeTargetsBoundsLegacyUnsafeConfigForDownlinkAndCollector(t *testing.T) {
+	store, err := OpenSQLiteStore(filepath.Join(t.TempDir(), "zeno.db"))
+	if err != nil {
+		t.Fatalf("open sqlite store: %v", err)
+	}
+	defer store.Close()
+	ctx := context.Background()
+	if err := store.SeedPreviewData(ctx, PreviewSeedOptions{NodeID: "hytron", DisplayName: "Hytron", CountryCode: "HK"}); err != nil {
+		t.Fatalf("seed preview data: %v", err)
+	}
+	now := time.Now().UTC().Unix()
+	if _, err := store.db.ExecContext(ctx, `
+		INSERT INTO probe_targets (id, name, type, address, port, count, timeout_ms, interval_sec, display_order, enabled, created_at, updated_at)
+		VALUES ('unsafe-legacy', 'Unsafe Legacy', 'tcping', '203.0.113.1', 443, 100, 50000, 1, 5, 1, ?, ?)
+	`, now, now); err != nil {
+		t.Fatalf("insert unsafe legacy target: %v", err)
+	}
+	if _, err := store.db.ExecContext(ctx, `INSERT INTO node_probe_targets (node_id, target_id, enabled) VALUES ('hytron', 'unsafe-legacy', 1)`); err != nil {
+		t.Fatalf("assign unsafe legacy target: %v", err)
+	}
+	for index := 0; index < 40; index++ {
+		targetID := fmt.Sprintf("bulk-legacy-%02d", index)
+		if _, err := store.db.ExecContext(ctx, `
+			INSERT INTO probe_targets (id, name, type, address, port, count, timeout_ms, interval_sec, display_order, enabled, created_at, updated_at)
+			VALUES (?, ?, 'tcping', '203.0.113.2', 443, 1, 100, 5, ?, 1, ?, ?)
+		`, targetID, targetID, 100+index, now, now); err != nil {
+			t.Fatalf("insert bulk legacy target %d: %v", index, err)
+		}
+		if _, err := store.db.ExecContext(ctx, `INSERT INTO node_probe_targets (node_id, target_id, enabled) VALUES ('hytron', ?, 1)`, targetID); err != nil {
+			t.Fatalf("assign bulk legacy target %d: %v", index, err)
+		}
+	}
+
+	targets, err := store.EnabledProbeTargets(ctx, "hytron")
+	if err != nil {
+		t.Fatalf("enabled probe targets: %v", err)
+	}
+	if len(targets) != maxProbeTargetsPerNode {
+		t.Fatalf("enabled targets len=%d, want capped %d", len(targets), maxProbeTargetsPerNode)
+	}
+	var totalBudgetMS int64
+	seenUnsafe := false
+	for _, target := range targets {
+		if !validProbeTargetResourceConfig(target.Count, target.TimeoutMS, target.IntervalSec) {
+			t.Fatalf("target %s delivered unsafe config: %+v", target.ID, target)
+		}
+		totalBudgetMS += probeTargetRoundBudgetMS(target.Count, target.TimeoutMS)
+		if target.ID == "unsafe-legacy" {
+			seenUnsafe = true
+			if target.Count != 12 || target.TimeoutMS != maxProbeTargetTimeoutMS || target.IntervalSec != 60 {
+				t.Fatalf("unsafe legacy target sanitized to %+v, want count=12 timeout=5000 interval=60", target)
+			}
+		}
+	}
+	if !seenUnsafe {
+		t.Fatal("sanitized unsafe legacy target was not included in ordered downlink")
+	}
+	if totalBudgetMS > maxProbeNodeRoundBudgetMS {
+		t.Fatalf("downlink round budget=%dms, want <=%dms", totalBudgetMS, maxProbeNodeRoundBudgetMS)
+	}
+
+	collectedTargets := map[string]ProbeTarget{}
+	collector := NewLocalProbeCollector(store, LocalProbeCollectorOptions{
+		NodeID: "hytron",
+		Now:    func() time.Time { return time.Now().UTC().Truncate(time.Second) },
+		ProbeRunner: func(ctx context.Context, target ProbeTarget) ([]probe.Sample, error) {
+			collectedTargets[target.ID] = target
+			return []probe.Sample{{Seq: 1, Success: true, LatencyMS: testF64(1)}}, nil
+		},
+	})
+	if err := collector.CollectOnce(ctx); err != nil {
+		t.Fatalf("collect once with bounded targets: %v", err)
+	}
+	if len(collectedTargets) != len(targets) {
+		t.Fatalf("collector saw %d targets, want bounded downlink count %d", len(collectedTargets), len(targets))
+	}
+	if collectedTargets["unsafe-legacy"].Count != 12 {
+		t.Fatalf("collector received unsanitized unsafe target: %+v", collectedTargets["unsafe-legacy"])
 	}
 }
 

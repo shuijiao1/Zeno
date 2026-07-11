@@ -8,7 +8,6 @@ interface StateHistoryPanelProps {
   range: string
   loading?: boolean
   error?: string
-  notice?: string
   canUseExtendedRanges?: boolean
   onRangeChange?: (range: string) => void
 }
@@ -33,7 +32,7 @@ interface MetricConfig {
 
 const plotWidth = 640
 const plotHeight = 112
-export function StateHistoryPanel({ points, range, loading = false, error, notice, canUseExtendedRanges = false, onRangeChange = () => {} }: StateHistoryPanelProps) {
+export function StateHistoryPanel({ points, range, loading = false, error, canUseExtendedRanges = false, onRangeChange = () => {} }: StateHistoryPanelProps) {
   const stateRangeOptions = availableHistoryRanges(canUseExtendedRanges)
   const chartPoints = useMemo(() => downsampleStatePoints(points, range), [points, range])
   const sampleCount = chartPoints.length
@@ -128,7 +127,6 @@ export function StateHistoryPanel({ points, range, loading = false, error, notic
 
       {loading && <div className="detail-state">正在读取系统资源…</div>}
       {error && <div className="detail-state is-error">系统资源读取失败：{error}</div>}
-      {!error && notice && <div className="detail-state is-warning">{notice}</div>}
       {!loading && !error && sampleCount === 0 && <div className="detail-state">暂无系统资源历史</div>}
 
       {!loading && !error && sampleCount > 0 && (
