@@ -980,6 +980,7 @@ func TestAgentHeartbeatDispatchesEnabledTelegramChannel(t *testing.T) {
 	}
 
 	handler := NewHandler(HandlerOptions{Store: store, TelegramAPIBaseURL: telegramAPI.URL})
+	defer cleanupTestHandler(t, handler)
 	now := time.Now().UTC().Truncate(time.Second)
 	if _, err := store.db.ExecContext(ctx, `UPDATE nodes SET status = 'online', last_seen_at = ? WHERE id = 'hytron'`, now.Unix()); err != nil {
 		t.Fatalf("set fresh heartbeat: %v", err)
@@ -1029,7 +1030,6 @@ func TestAgentHeartbeatNotificationDeliveryDoesNotBlockResponse(t *testing.T) {
 		writeJSON(w, http.StatusOK, map[string]any{"ok": true})
 	}))
 	defer slowTelegram.Close()
-	defer close(release)
 	enabled := true
 	if _, err := store.CreateAdminNotificationChannel(ctx, AdminNotificationChannelCreateRequest{ID: "slow-telegram", Name: "Slow Telegram", Destination: "7579942307", Credential: "telegram-bot-credential-value", Enabled: &enabled}); err != nil {
 		t.Fatalf("create notification channel: %v", err)
@@ -1043,7 +1043,10 @@ func TestAgentHeartbeatNotificationDeliveryDoesNotBlockResponse(t *testing.T) {
 	if _, err := store.db.ExecContext(ctx, `UPDATE nodes SET status = 'online', last_seen_at = ? WHERE id = 'hytron'`, now.Unix()); err != nil {
 		t.Fatalf("set fresh heartbeat: %v", err)
 	}
-	postAgentHeartbeat(t, NewHandler(HandlerOptions{Store: store, NotificationClient: slowTelegram.Client(), TelegramAPIBaseURL: slowTelegram.URL}), now.Unix(), "offline")
+	httpHandler := NewHandler(HandlerOptions{Store: store, NotificationClient: slowTelegram.Client(), TelegramAPIBaseURL: slowTelegram.URL})
+	defer cleanupTestHandler(t, httpHandler)
+	defer close(release)
+	postAgentHeartbeat(t, httpHandler, now.Unix(), "offline")
 	elapsed := time.Since(started)
 	if elapsed > 150*time.Millisecond {
 		t.Fatalf("heartbeat response took %s, want notification delivery to be non-blocking", elapsed)
@@ -1316,7 +1319,9 @@ func TestAgentHeartbeatNotificationFailureDoesNotRejectHeartbeat(t *testing.T) {
 	if _, err := store.db.ExecContext(ctx, `UPDATE nodes SET status = 'online', last_seen_at = ? WHERE id = 'hytron'`, now.Unix()); err != nil {
 		t.Fatalf("set fresh heartbeat: %v", err)
 	}
-	recorder := postAgentHeartbeat(t, NewHandler(HandlerOptions{Store: store, TelegramAPIBaseURL: closedURL}), now.Unix(), "offline")
+	httpHandler := NewHandler(HandlerOptions{Store: store, TelegramAPIBaseURL: closedURL})
+	defer cleanupTestHandler(t, httpHandler)
+	recorder := postAgentHeartbeat(t, httpHandler, now.Unix(), "offline")
 	if recorder.Code != http.StatusAccepted {
 		t.Fatalf("heartbeat status = %d, want 202 even if notification send fails; body=%s", recorder.Code, recorder.Body.String())
 	}
@@ -1549,13 +1554,7 @@ func TestRenewalNotificationScheduledScannerRunsIndependently(t *testing.T) {
 	backgroundCtx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	httpHandler := NewHandler(HandlerOptions{Store: store, NotificationClient: telegram.server.Client(), TelegramAPIBaseURL: telegram.server.URL, RenewalNotificationInterval: 10 * time.Millisecond, BackgroundContext: backgroundCtx})
-	if cleanup, ok := httpHandler.(interface{ Cleanup(context.Context) error }); ok {
-		t.Cleanup(func() {
-			shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), time.Second)
-			defer shutdownCancel()
-			_ = cleanup.Cleanup(shutdownCtx)
-		})
-	}
+	defer cleanupTestHandler(t, httpHandler)
 	_, forms, errors := telegram.waitForCalls(t, 1)
 	if len(errors) != 0 || len(forms) != 1 || !strings.Contains(decodedTelegramText(forms[0]), "⚠️[到期]") {
 		t.Fatalf("scheduled renewal calls=%d errors=%v forms=%v", len(forms), errors, forms)
@@ -1682,6 +1681,19 @@ func postAgentHeartbeat(t *testing.T, handler http.Handler, ts int64, status str
 		t.Fatalf("heartbeat status = %d, want 202; body=%s", recorder.Code, recorder.Body.String())
 	}
 	return recorder
+}
+
+func cleanupTestHandler(t *testing.T, httpHandler http.Handler) {
+	t.Helper()
+	cleanup, ok := httpHandler.(interface{ Cleanup(context.Context) error })
+	if !ok {
+		return
+	}
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if err := cleanup.Cleanup(shutdownCtx); err != nil {
+		t.Errorf("cleanup handler: %v", err)
+	}
 }
 
 func postAgentState(t *testing.T, handle func(http.ResponseWriter, *http.Request), ts int64, cpuPercent float64) *httptest.ResponseRecorder {
