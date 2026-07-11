@@ -7,13 +7,15 @@ import (
 	"net/url"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	_ "modernc.org/sqlite"
 )
 
 type SQLiteStore struct {
-	db *sql.DB
+	db        *sql.DB
+	renewalMu sync.Mutex
 }
 
 const nodeHeartbeatOfflineAfter = 30 * time.Second

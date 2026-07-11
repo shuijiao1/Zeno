@@ -40,6 +40,13 @@ func (s *SQLiteStore) PendingRenewalNotifications(ctx context.Context, now time.
 // key is the stable idempotency key, so concurrent scanners or a crash between
 // claim and delivery creation cannot produce duplicate reminders.
 func (s *SQLiteStore) QueueDueRenewalNotifications(ctx context.Context, now time.Time) (int, error) {
+	// Serialize in-process scans before opening a deferred SQLite transaction.
+	// Otherwise concurrent readers can all try to upgrade to writers and one may
+	// fail immediately with SQLITE_BUSY despite busy_timeout. The database mark
+	// primary key remains the cross-process idempotency boundary.
+	s.renewalMu.Lock()
+	defer s.renewalMu.Unlock()
+
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return 0, err
