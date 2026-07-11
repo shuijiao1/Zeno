@@ -297,12 +297,9 @@ func insertProbeRoundTx(ctx context.Context, tx *sql.Tx, nodeID string, round pr
 	if agentRoundID != "" {
 		var existingTargetID, existingType, existingPayloadHash string
 		var existingTS int64
-		err := tx.QueryRowContext(ctx, `
-			SELECT target_id, ts, type, payload_hash
-			FROM probe_rounds
-			WHERE node_id = ? AND agent_round_id = ?
-			LIMIT 1
-		`, nodeID, agentRoundID).Scan(&existingTargetID, &existingTS, &existingType, &existingPayloadHash)
+		err := tx.QueryRowContext(ctx, agentProbeRoundLookupSQL,
+			nodeID, agentRoundID,
+		).Scan(&existingTargetID, &existingTS, &existingType, &existingPayloadHash)
 		if err != nil && err != sql.ErrNoRows {
 			return err
 		}
@@ -361,6 +358,16 @@ func insertProbeRoundTx(ctx context.Context, tx *sql.Tx, nodeID string, round pr
 	}
 	return nil
 }
+
+const agentProbeRoundLookupSQL = `
+			SELECT target_id, ts, type, payload_hash
+			FROM probe_rounds
+			WHERE node_id = ?
+			  AND agent_round_id = ?
+			  AND agent_round_id IS NOT NULL
+			  AND agent_round_id <> ''
+			LIMIT 1
+`
 
 func probeRoundIdempotencyKey(samples []probe.Sample) string {
 	digest := sha256.New()

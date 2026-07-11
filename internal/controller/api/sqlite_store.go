@@ -14,11 +14,22 @@ import (
 )
 
 type SQLiteStore struct {
-	db        *sql.DB
-	renewalMu sync.Mutex
+	db                       *sql.DB
+	renewalMu                sync.Mutex
+	summaryAggregateMu       sync.Mutex
+	summaryAggregateUpdated  time.Time
+	summaryAggregateHome     map[string]*LatencySummary
+	summaryAggregateServices []ServiceTarget
 }
 
-const nodeHeartbeatOfflineAfter = 30 * time.Second
+const (
+	nodeHeartbeatOfflineAfter = 30 * time.Second
+	// Node state remains live at the Agent cadence, while the expensive rolling
+	// 24-hour loss/reporting aggregates are reused briefly. Probe targets update
+	// on a much slower cadence, so rebuilding these scans every three seconds
+	// only burns CPU without materially improving freshness.
+	summaryAggregateFreshFor = 10 * time.Second
+)
 
 func OpenSQLiteStore(path string) (*SQLiteStore, error) {
 	dsn, err := sqliteDSN(path)
@@ -538,7 +549,7 @@ func (s *SQLiteStore) Summary(ctx context.Context) (SummaryResponse, error) {
 	if err != nil {
 		return SummaryResponse{}, err
 	}
-	homeSummaries, err := s.latestHomeLatencySummaries(ctx)
+	homeSummaries, services, err := s.summaryAggregates(ctx)
 	if err != nil {
 		return SummaryResponse{}, err
 	}
@@ -554,12 +565,27 @@ func (s *SQLiteStore) Summary(ctx context.Context) (SummaryResponse, error) {
 			nodes[index].LatencySummaries = []LatencySummary{}
 		}
 	}
+	return SummaryResponse{Nodes: nodes, Services: services, LatencyPoints: []LatencyPoint{}}, nil
+}
+
+func (s *SQLiteStore) summaryAggregates(ctx context.Context) (map[string]*LatencySummary, []ServiceTarget, error) {
+	s.summaryAggregateMu.Lock()
+	defer s.summaryAggregateMu.Unlock()
+	if !s.summaryAggregateUpdated.IsZero() && time.Since(s.summaryAggregateUpdated) < summaryAggregateFreshFor {
+		return s.summaryAggregateHome, s.summaryAggregateServices, nil
+	}
+	homeSummaries, err := s.latestHomeLatencySummaries(ctx)
+	if err != nil {
+		return nil, nil, err
+	}
 	services, err := s.serviceTargets(ctx)
 	if err != nil {
-		return SummaryResponse{}, err
+		return nil, nil, err
 	}
-
-	return SummaryResponse{Nodes: nodes, Services: services, LatencyPoints: []LatencyPoint{}}, nil
+	s.summaryAggregateHome = homeSummaries
+	s.summaryAggregateServices = services
+	s.summaryAggregateUpdated = time.Now()
+	return homeSummaries, services, nil
 }
 
 func (s *SQLiteStore) NodeLatency(ctx context.Context, nodeID string, window latencyWindow) (LatencyResponse, error) {

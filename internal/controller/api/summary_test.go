@@ -97,6 +97,25 @@ func TestSummaryQueryCountDoesNotGrowWithNodesOrServices(t *testing.T) {
 	if smallQueries != 5 {
 		t.Fatalf("summary query count = %d, want fixed 5 statements (nodes, home summaries, per-node summaries, service list, service summaries)", smallQueries)
 	}
+
+	largeCounter.reset()
+	if _, err := largeStore.Summary(ctx); err != nil {
+		t.Fatalf("cached large summary: %v", err)
+	}
+	if cachedQueries := largeCounter.count(); cachedQueries != 2 {
+		t.Fatalf("cached summary query count = %d, want only nodes and per-node latest summaries", cachedQueries)
+	}
+
+	largeStore.summaryAggregateMu.Lock()
+	largeStore.summaryAggregateUpdated = time.Now().Add(-summaryAggregateFreshFor)
+	largeStore.summaryAggregateMu.Unlock()
+	largeCounter.reset()
+	if _, err := largeStore.Summary(ctx); err != nil {
+		t.Fatalf("expired large summary: %v", err)
+	}
+	if expiredQueries := largeCounter.count(); expiredQueries != 5 {
+		t.Fatalf("expired summary query count = %d, want full 5 statements", expiredQueries)
+	}
 }
 
 func legacySummaryForTest(ctx context.Context, store *SQLiteStore) (SummaryResponse, error) {

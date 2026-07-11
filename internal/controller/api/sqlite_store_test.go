@@ -270,6 +270,36 @@ func TestProbeRoundIdempotencyMigrationBackfillsLegacyRowsAndReplacesIndex(t *te
 	}
 }
 
+func TestAgentProbeRoundLookupUsesPartialUniqueIndex(t *testing.T) {
+	store, err := OpenSQLiteStore(filepath.Join(t.TempDir(), "zeno.db"))
+	if err != nil {
+		t.Fatalf("open sqlite store: %v", err)
+	}
+	defer store.Close()
+
+	rows, err := store.db.QueryContext(context.Background(), "EXPLAIN QUERY PLAN "+agentProbeRoundLookupSQL, "node-a", "round-a")
+	if err != nil {
+		t.Fatalf("explain agent round lookup: %v", err)
+	}
+	defer rows.Close()
+	var plan []string
+	for rows.Next() {
+		var id, parent, unused int
+		var detail string
+		if err := rows.Scan(&id, &parent, &unused, &detail); err != nil {
+			t.Fatalf("scan query plan: %v", err)
+		}
+		plan = append(plan, detail)
+	}
+	if err := rows.Err(); err != nil {
+		t.Fatalf("read query plan: %v", err)
+	}
+	joined := strings.Join(plan, "\n")
+	if !strings.Contains(joined, "idx_probe_rounds_agent_id") {
+		t.Fatalf("agent round lookup plan does not use partial unique index:\n%s", joined)
+	}
+}
+
 func TestSQLiteBackedLatencyUsesKulinMinuteGridAndAverageDelay(t *testing.T) {
 	store, err := OpenSQLiteStore(filepath.Join(t.TempDir(), "zeno.db"))
 	if err != nil {
