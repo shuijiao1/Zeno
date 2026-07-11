@@ -383,6 +383,7 @@ func (conn *summaryCountingConn) BeginTx(ctx context.Context, opts driver.TxOpti
 	if beginner, ok := conn.Conn.(driver.ConnBeginTx); ok {
 		return beginner.BeginTx(ctx, opts)
 	}
+	//lint:ignore SA1019 The wrapper must preserve the database/sql driver fallback.
 	return conn.Conn.Begin()
 }
 
@@ -422,11 +423,13 @@ type summaryCountingStmt struct {
 
 func (stmt *summaryCountingStmt) Exec(args []driver.Value) (driver.Result, error) {
 	stmt.counter.add(stmt.query)
+	//lint:ignore SA1019 driver.Stmt requires this legacy compatibility method.
 	return stmt.Stmt.Exec(args)
 }
 
 func (stmt *summaryCountingStmt) Query(args []driver.Value) (driver.Rows, error) {
 	stmt.counter.add(stmt.query)
+	//lint:ignore SA1019 driver.Stmt requires this legacy compatibility method.
 	return stmt.Stmt.Query(args)
 }
 
@@ -435,6 +438,7 @@ func (stmt *summaryCountingStmt) ExecContext(ctx context.Context, args []driver.
 	if execer, ok := stmt.Stmt.(driver.StmtExecContext); ok {
 		return execer.ExecContext(ctx, args)
 	}
+	//lint:ignore SA1019 The wrapper must preserve the database/sql driver fallback.
 	return stmt.Stmt.Exec(namedValuesToValues(args))
 }
 
@@ -443,6 +447,7 @@ func (stmt *summaryCountingStmt) QueryContext(ctx context.Context, args []driver
 	if querier, ok := stmt.Stmt.(driver.StmtQueryContext); ok {
 		return querier.QueryContext(ctx, args)
 	}
+	//lint:ignore SA1019 The wrapper must preserve the database/sql driver fallback.
 	return stmt.Stmt.Query(namedValuesToValues(args))
 }
 
