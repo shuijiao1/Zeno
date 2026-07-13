@@ -113,6 +113,7 @@ func TestAdminSettingsRequiresTokenAndRejectsInvalidValues(t *testing.T) {
 		{name: "retired avatar field", body: `{"avatar_url":"/assets/avatar/custom.webp"}`},
 		{name: "agent controller URL with credentials", body: `{"agent_controller_url":"https://user:pass@example.com"}`},
 		{name: "agent controller URL with query", body: `{"agent_controller_url":"https://example.com/?token=1"}`},
+		{name: "remote agent controller URL over HTTP", body: `{"agent_controller_url":"http://example.com"}`},
 		{name: "agent controller URL unsupported scheme", body: `{"agent_controller_url":"javascript:alert(1)"}`},
 		{name: "javascript background", body: `{"background_url":"data:text/html,<script>alert(1)</script>"}`},
 		{name: "javascript desktop background", body: `{"desktop_background_url":"data:text/html,<script>alert(1)</script>"}`},
@@ -146,6 +147,28 @@ func TestAdminSettingsRequiresTokenAndRejectsInvalidValues(t *testing.T) {
 	}
 	if settings.SiteTitle != "Zeno" || settings.Theme != "system" {
 		t.Fatalf("invalid patches should not mutate defaults, got %+v", settings)
+	}
+}
+
+func TestValidAgentControllerURLRequiresHTTPSOutsideLoopback(t *testing.T) {
+	tests := []struct {
+		url  string
+		want bool
+	}{
+		{url: "https://zeno.example.com", want: true},
+		{url: "http://127.0.0.1:18980", want: true},
+		{url: "http://[::1]:18980", want: true},
+		{url: "http://localhost:18980", want: true},
+		{url: "http://zeno.example.com", want: false},
+		{url: "https://user:pass@zeno.example.com", want: false},
+		{url: "https://zeno.example.com/?token=secret", want: false},
+	}
+	for _, tc := range tests {
+		t.Run(tc.url, func(t *testing.T) {
+			if got := validAgentControllerURL(tc.url); got != tc.want {
+				t.Fatalf("validAgentControllerURL(%q) = %v, want %v", tc.url, got, tc.want)
+			}
+		})
 	}
 }
 

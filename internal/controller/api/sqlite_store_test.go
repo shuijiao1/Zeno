@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"math"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
@@ -17,6 +18,145 @@ import (
 )
 
 func testF64(v float64) *float64 { return &v }
+
+func TestOpenSQLiteStoreMigratesLegacyNotificationDeliveryLeaseColumnsBeforeIndex(t *testing.T) {
+	dbPath := filepath.Join(t.TempDir(), "zeno.db")
+	db, err := sql.Open("sqlite", dbPath)
+	if err != nil {
+		t.Fatalf("open legacy sqlite database: %v", err)
+	}
+	_, err = db.Exec(`
+		CREATE TABLE notification_deliveries (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			event_type TEXT NOT NULL,
+			label TEXT NOT NULL DEFAULT '',
+			node_id TEXT NOT NULL DEFAULT '',
+			node_name TEXT NOT NULL DEFAULT '',
+			previous_status TEXT NOT NULL DEFAULT '',
+			status TEXT NOT NULL DEFAULT '',
+			detail TEXT NOT NULL DEFAULT '',
+			channel_id TEXT NOT NULL,
+			channel_name TEXT NOT NULL DEFAULT '',
+			state TEXT NOT NULL DEFAULT 'pending',
+			attempts INTEGER NOT NULL DEFAULT 0,
+			next_attempt_at INTEGER NOT NULL,
+			last_error TEXT NOT NULL DEFAULT '',
+			created_at INTEGER NOT NULL,
+			updated_at INTEGER NOT NULL,
+			delivered_at INTEGER
+		)
+	`)
+	if err != nil {
+		_ = db.Close()
+		t.Fatalf("create legacy notification deliveries table: %v", err)
+	}
+	if err := db.Close(); err != nil {
+		t.Fatalf("close legacy sqlite database: %v", err)
+	}
+
+	store, err := OpenSQLiteStore(dbPath)
+	if err != nil {
+		t.Fatalf("migrate legacy sqlite store: %v", err)
+	}
+	defer store.Close()
+
+	ctx := context.Background()
+	for _, column := range []string{"lease_until", "claim_token"} {
+		exists, err := store.columnExists(ctx, "notification_deliveries", column)
+		if err != nil {
+			t.Fatalf("inspect migrated %s column: %v", column, err)
+		}
+		if !exists {
+			t.Fatalf("expected migrated %s column", column)
+		}
+	}
+	var indexCount int
+	if err := store.db.QueryRowContext(ctx, `
+		SELECT COUNT(*)
+		FROM sqlite_master
+		WHERE type = 'index' AND name = 'idx_notification_deliveries_claim'
+	`).Scan(&indexCount); err != nil {
+		t.Fatalf("inspect notification delivery claim index: %v", err)
+	}
+	if indexCount != 1 {
+		t.Fatalf("expected claim index after migration, got %d", indexCount)
+	}
+}
+
+func TestRecordAgentHeartbeatWaitsForConcurrentNodeWriter(t *testing.T) {
+	store, err := OpenSQLiteStore(filepath.Join(t.TempDir(), "zeno.db"))
+	if err != nil {
+		t.Fatalf("open sqlite store: %v", err)
+	}
+	defer store.Close()
+
+	now := time.Now().UTC().Unix()
+	if _, err := store.db.Exec(`
+		INSERT INTO nodes (id, display_name, token_hash, status, country_code, created_at, updated_at, last_seen_at)
+		VALUES ('heartbeat-lock-node', 'Heartbeat Lock Node', 'hash', 'online', 'HK', ?, ?, ?)
+	`, now, now, now); err != nil {
+		t.Fatalf("insert heartbeat lock node: %v", err)
+	}
+
+	blockingTx, err := store.db.BeginTx(context.Background(), nil)
+	if err != nil {
+		t.Fatalf("begin blocking writer: %v", err)
+	}
+	if _, err := blockingTx.Exec(`UPDATE nodes SET updated_at = updated_at WHERE id = 'heartbeat-lock-node'`); err != nil {
+		_ = blockingTx.Rollback()
+		t.Fatalf("reserve blocking writer: %v", err)
+	}
+
+	result := make(chan error, 1)
+	go func() {
+		_, err := store.RecordAgentHeartbeatTransition(context.Background(), "heartbeat-lock-node", time.Now().UTC(), "online", "v0.2.0")
+		result <- err
+	}()
+	time.Sleep(100 * time.Millisecond)
+	if err := blockingTx.Commit(); err != nil {
+		t.Fatalf("commit blocking writer: %v", err)
+	}
+
+	select {
+	case err := <-result:
+		if err != nil {
+			t.Fatalf("heartbeat should wait for concurrent writer: %v", err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("heartbeat did not resume after concurrent writer committed")
+	}
+}
+
+func TestNotificationAuthorityRequiresMatchingExternalKey(t *testing.T) {
+	dbPath := filepath.Join(t.TempDir(), "zeno.db")
+	store, err := OpenSQLiteStore(dbPath)
+	if err != nil {
+		t.Fatalf("open sqlite store: %v", err)
+	}
+	ctx := context.Background()
+	authorized, err := store.AuthorizeNotificationAuthority(ctx, "primary-secret")
+	if err != nil || !authorized {
+		t.Fatalf("bind primary notification authority: authorized=%v err=%v", authorized, err)
+	}
+	if err := store.Close(); err != nil {
+		t.Fatalf("close sqlite store: %v", err)
+	}
+
+	reopened, err := OpenSQLiteStore(dbPath)
+	if err != nil {
+		t.Fatalf("reopen sqlite store: %v", err)
+	}
+	defer reopened.Close()
+	if authorized, err := reopened.AuthorizeNotificationAuthority(ctx, "primary-secret"); err != nil || !authorized {
+		t.Fatalf("reauthorize matching key: authorized=%v err=%v", authorized, err)
+	}
+	if authorized, err := reopened.AuthorizeNotificationAuthority(ctx, "candidate-secret"); err != nil || authorized {
+		t.Fatalf("authorize copied DB with different key: authorized=%v err=%v", authorized, err)
+	}
+	if authorized, err := reopened.AuthorizeNotificationAuthority(ctx, ""); err != nil || authorized {
+		t.Fatalf("authorize copied DB without key: authorized=%v err=%v", authorized, err)
+	}
+}
 
 func TestSQLiteBackedHandlerReturnsPersistedLatencyInsteadOfMock(t *testing.T) {
 	store, err := OpenSQLiteStore(filepath.Join(t.TempDir(), "zeno.db"))
@@ -921,5 +1061,39 @@ func TestLocalProbeCollectorCollectOnceWritesRealRoundShape(t *testing.T) {
 	}
 	if sampleRows != len(targets)*3 {
 		t.Fatalf("probe sample rows = %d, want %d", sampleRows, len(targets)*3)
+	}
+}
+
+func TestRunLocalProbeUsesTargetTypeImplementations(t *testing.T) {
+	ctx := context.Background()
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("listen tcp: %v", err)
+	}
+	defer listener.Close()
+	go func() {
+		conn, err := listener.Accept()
+		if err == nil {
+			_ = conn.Close()
+		}
+	}()
+	tcpPort := listener.Addr().(*net.TCPAddr).Port
+	tcpSamples, err := RunLocalProbe(ctx, ProbeTarget{ID: "tcp", Type: "tcping", Address: "127.0.0.1", Port: &tcpPort, Count: 1, TimeoutMS: 1000, IntervalSec: 30})
+	if err != nil || len(tcpSamples) != 1 || !tcpSamples[0].Success {
+		t.Fatalf("tcp samples=%+v err=%v, want successful tcping", tcpSamples, err)
+	}
+
+	httpServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer httpServer.Close()
+	httpSamples, err := RunLocalProbe(ctx, ProbeTarget{ID: "http", Type: "http_get", Address: httpServer.URL, Count: 1, TimeoutMS: 1000, IntervalSec: 30})
+	if err != nil || len(httpSamples) != 1 || !httpSamples[0].Success {
+		t.Fatalf("http samples=%+v err=%v, want successful http_get", httpSamples, err)
+	}
+
+	parsed := parsePingLatencyMS("64 bytes from 127.0.0.1: icmp_seq=1 ttl=64 time=1.23 ms")
+	if parsed == nil || *parsed != 1.23 {
+		t.Fatalf("parsed ping latency = %v, want 1.23", parsed)
 	}
 }

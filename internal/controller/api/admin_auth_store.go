@@ -14,6 +14,8 @@ const (
 	adminSessionIdleTimeout     = 24 * time.Hour
 	adminSessionAbsoluteTimeout = 24 * time.Hour
 	adminSessionMaxActive       = 8
+	adminSessionLastSeenBucket  = 5 * time.Minute
+	adminSessionPruneInterval   = time.Minute
 )
 
 var (
@@ -55,24 +57,43 @@ func (s *SQLiteStore) AuthorizeAdminSession(ctx context.Context, token string) (
 		return false, nil
 	}
 	now := time.Now().UTC().Unix()
-	if err := s.pruneExpiredAdminSessions(ctx, now); err != nil {
+	if err := s.pruneExpiredAdminSessionsOccasionally(ctx, now); err != nil {
 		return false, err
 	}
-	result, err := s.db.ExecContext(ctx, `
-		UPDATE admin_sessions
-		SET last_seen_at = ?
+	var createdAt, lastSeenAt int64
+	if err := s.db.QueryRowContext(ctx, `
+		SELECT created_at, last_seen_at
+		FROM admin_sessions
 		WHERE token_hash = ?
-		  AND created_at > ?
-		  AND last_seen_at > ?
-	`, now, HashAdminToken(token), now-int64(adminSessionAbsoluteTimeout.Seconds()), now-int64(adminSessionIdleTimeout.Seconds()))
-	if err != nil {
+	`, HashAdminToken(token)).Scan(&createdAt, &lastSeenAt); err != nil {
+		if err == sql.ErrNoRows {
+			return false, nil
+		}
 		return false, err
 	}
-	affected, err := result.RowsAffected()
-	if err != nil {
-		return false, err
+	if createdAt <= now-int64(adminSessionAbsoluteTimeout.Seconds()) || lastSeenAt <= now-int64(adminSessionIdleTimeout.Seconds()) {
+		return false, nil
 	}
-	return affected > 0, nil
+	if lastSeenAt <= now-int64(adminSessionLastSeenBucket.Seconds()) {
+		result, err := s.db.ExecContext(ctx, `
+			UPDATE admin_sessions
+			SET last_seen_at = ?
+			WHERE token_hash = ?
+			  AND created_at > ?
+			  AND last_seen_at > ?
+		`, now, HashAdminToken(token), now-int64(adminSessionAbsoluteTimeout.Seconds()), now-int64(adminSessionIdleTimeout.Seconds()))
+		if err != nil {
+			return false, err
+		}
+		affected, err := result.RowsAffected()
+		if err != nil {
+			return false, err
+		}
+		if affected == 0 {
+			return false, nil
+		}
+	}
+	return true, nil
 }
 
 func (s *SQLiteStore) RevokeAdminSession(ctx context.Context, token string) error {
@@ -227,4 +248,16 @@ func (s *SQLiteStore) pruneExpiredAdminSessions(ctx context.Context, now int64) 
 		WHERE created_at <= ? OR last_seen_at <= ?
 	`, now-int64(adminSessionAbsoluteTimeout.Seconds()), now-int64(adminSessionIdleTimeout.Seconds()))
 	return err
+}
+
+func (s *SQLiteStore) pruneExpiredAdminSessionsOccasionally(ctx context.Context, now int64) error {
+	s.adminSessionPruneMu.Lock()
+	lastPruned := s.adminSessionLastPruned
+	if !lastPruned.IsZero() && time.Unix(now, 0).UTC().Sub(lastPruned) < adminSessionPruneInterval {
+		s.adminSessionPruneMu.Unlock()
+		return nil
+	}
+	s.adminSessionLastPruned = time.Unix(now, 0).UTC()
+	s.adminSessionPruneMu.Unlock()
+	return s.pruneExpiredAdminSessions(ctx, now)
 }

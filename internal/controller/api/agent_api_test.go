@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"math"
 	"net/http"
 	"net/http/httptest"
@@ -16,6 +17,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/shuijiao1/zeno/internal/shared/probe"
 )
 
 func TestAgentProbeTargetsRequiresBearerToken(t *testing.T) {
@@ -81,6 +84,82 @@ func TestAgentProbeTargetsReturnsEnabledTargetsAfterAuth(t *testing.T) {
 	if bytes.Contains(bytes.ToLower([]byte(raw)), []byte("token")) || bytes.Contains(bytes.ToLower([]byte(raw)), []byte("secret")) {
 		t.Fatalf("agent targets response leaked token/secret wording: %s", raw)
 	}
+}
+
+func TestAgentProbeTargetsVersionErrorReturns500InsteadOfZero(t *testing.T) {
+	handler := NewHandler(HandlerOptions{Store: probeTargetsVersionErrorStore{}})
+	recorder := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodGet, "/api/agent/v1/probe-targets", nil)
+	request.Header.Set("X-Node-ID", "hytron")
+	request.Header.Set("Authorization", "Bearer test-agent-token")
+
+	handler.ServeHTTP(recorder, request)
+
+	if recorder.Code != http.StatusInternalServerError {
+		t.Fatalf("status = %d, want 500 when config version lookup fails; body=%s", recorder.Code, recorder.Body.String())
+	}
+}
+
+func TestAgentInternalErrorsEmitStructuredSafeLog(t *testing.T) {
+	var logs bytes.Buffer
+	previousWriter := log.Writer()
+	log.SetOutput(&logs)
+	defer log.SetOutput(previousWriter)
+
+	handler := NewHandler(HandlerOptions{Store: agentAuthorizeErrorStore{}})
+	recorder := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodPost, "/api/agent/v1/heartbeat", strings.NewReader(`{"ts":1782990000,"status":"online"}`))
+	request.Header.Set("X-Node-ID", "hytron")
+	request.Header.Set("Authorization", "Bearer super-secret-token")
+	request.Header.Set("Content-Type", "application/json")
+
+	handler.ServeHTTP(recorder, request)
+
+	if recorder.Code != http.StatusInternalServerError {
+		t.Fatalf("status = %d, want 500; body=%s", recorder.Code, recorder.Body.String())
+	}
+	logText := logs.String()
+	for _, want := range []string{"agent_api_error", "endpoint=heartbeat", "node_id=hytron", "stage=authorize", "error=redacted"} {
+		if !strings.Contains(logText, want) {
+			t.Fatalf("log %q missing %q", logText, want)
+		}
+	}
+	if strings.Contains(logText, "super-secret-token") {
+		t.Fatalf("agent error log leaked token: %s", logText)
+	}
+}
+
+type probeTargetsVersionErrorStore struct{ mockStore }
+
+func (probeTargetsVersionErrorStore) AuthorizeAgent(context.Context, string, string) (bool, error) {
+	return true, nil
+}
+func (probeTargetsVersionErrorStore) EnabledProbeTargets(context.Context, string) ([]ProbeTarget, error) {
+	return []ProbeTarget{{ID: "target", Name: "Target", Type: "tcping", Address: "127.0.0.1", Port: intValue(80), Count: 1, TimeoutMS: 1000, IntervalSec: 30}}, nil
+}
+func (probeTargetsVersionErrorStore) ProbeConfigVersion(context.Context) (int64, error) {
+	return 0, fmt.Errorf("database unavailable")
+}
+func (probeTargetsVersionErrorStore) BumpProbeConfigVersion(context.Context) (int64, error) {
+	return 0, fmt.Errorf("database unavailable")
+}
+func (probeTargetsVersionErrorStore) InsertProbeRound(context.Context, string, ProbeTarget, time.Time, []probe.Sample) error {
+	return nil
+}
+func (probeTargetsVersionErrorStore) RecordAgentHeartbeat(context.Context, string, time.Time, string, string) error {
+	return nil
+}
+func (probeTargetsVersionErrorStore) UpsertAgentHost(context.Context, string, AgentHostRequest) error {
+	return nil
+}
+func (probeTargetsVersionErrorStore) InsertAgentState(context.Context, string, AgentStateRequest) error {
+	return nil
+}
+
+type agentAuthorizeErrorStore struct{ probeTargetsVersionErrorStore }
+
+func (agentAuthorizeErrorStore) AuthorizeAgent(context.Context, string, string) (bool, error) {
+	return false, fmt.Errorf("authorization failed for token super-secret-token")
 }
 
 func TestAgentProbeResultsAcceptsSamplesAndUpdatesPublicLatency(t *testing.T) {
@@ -349,6 +428,7 @@ func TestAgentProbeResultsStoresLatencyWithoutProbeAlertNotification(t *testing.
 		t.Fatalf("open sqlite store: %v", err)
 	}
 	defer store.Close()
+	enableTestNotificationCredentialEncryption(t, store)
 	ctx := context.Background()
 	if err := store.SeedPreviewData(ctx, PreviewSeedOptions{NodeID: "hytron", DisplayName: "Hytron", CountryCode: "HK", AgentToken: "test-agent-token"}); err != nil {
 		t.Fatalf("seed preview data: %v", err)
@@ -548,6 +628,7 @@ func TestAgentStateResourceRuleMarksWarningAndDispatchesProbeUnhealthy(t *testin
 		t.Fatalf("open sqlite store: %v", err)
 	}
 	defer store.Close()
+	enableTestNotificationCredentialEncryption(t, store)
 	ctx := context.Background()
 	if err := store.SeedPreviewData(ctx, PreviewSeedOptions{NodeID: "hytron", DisplayName: "Hytron", CountryCode: "HK", AgentToken: "test-agent-token"}); err != nil {
 		t.Fatalf("seed preview data: %v", err)
@@ -889,12 +970,13 @@ func TestAgentHeartbeatUpdatesNodeStatusAndLastSeen(t *testing.T) {
 	}
 }
 
-func TestAgentHeartbeatDispatchesEnabledTelegramOnNodeOfflineTransition(t *testing.T) {
+func TestAgentHeartbeatOfflineStatusIsFreshLivenessNotOfflineTransition(t *testing.T) {
 	store, err := OpenSQLiteStore(filepath.Join(t.TempDir(), "zeno.db"))
 	if err != nil {
 		t.Fatalf("open sqlite store: %v", err)
 	}
 	defer store.Close()
+	enableTestNotificationCredentialEncryption(t, store)
 	ctx := context.Background()
 	if err := store.SeedPreviewData(ctx, PreviewSeedOptions{NodeID: "hytron", DisplayName: "Hytron", CountryCode: "HK", AgentToken: "test-agent-token"}); err != nil {
 		t.Fatalf("seed preview data: %v", err)
@@ -921,25 +1003,29 @@ func TestAgentHeartbeatDispatchesEnabledTelegramOnNodeOfflineTransition(t *testi
 	}
 	postAgentHeartbeat(t, handler, now.Unix(), "offline")
 
-	paths, forms, errors := telegram.waitForCalls(t, 1)
+	paths, forms, errors := telegram.waitForCalls(t, 0)
 	if len(errors) != 0 {
 		t.Fatalf("telegram handler errors = %+v", errors)
 	}
-	if len(paths) != 1 || paths[0] != "/bottelegram-bot-credential-value/sendMessage" {
-		t.Fatalf("telegram paths = %+v, want one sendMessage request", paths)
+	if len(paths) != 0 || len(forms) != 0 {
+		t.Fatalf("telegram calls paths=%+v forms=%+v, want no offline notification from a received heartbeat", paths, forms)
 	}
-	if len(forms) != 1 || !strings.Contains(forms[0], "chat_id=7579942307") || !strings.Contains(forms[0], "%E7%A6%BB%E7%BA%BF") {
-		t.Fatalf("telegram forms = %+v, want offline text", forms)
+	var status string
+	if err := store.db.QueryRowContext(ctx, `SELECT status FROM nodes WHERE id = 'hytron'`).Scan(&status); err != nil {
+		t.Fatalf("query node status: %v", err)
 	}
-	assertTelegramFormsDoNotLeakCredential(t, forms, "telegram-bot-credential-value")
+	if status != "online" {
+		t.Fatalf("status after offline heartbeat = %q, want online liveness", status)
+	}
 }
 
-func TestAgentHeartbeatDispatchesEnabledTelegramChannel(t *testing.T) {
+func TestAgentHeartbeatOfflineStatusDoesNotDrainTelegramChannel(t *testing.T) {
 	store, err := OpenSQLiteStore(filepath.Join(t.TempDir(), "zeno.db"))
 	if err != nil {
 		t.Fatalf("open sqlite store: %v", err)
 	}
 	defer store.Close()
+	enableTestNotificationCredentialEncryption(t, store)
 	ctx := context.Background()
 	if err := store.SeedPreviewData(ctx, PreviewSeedOptions{NodeID: "hytron", DisplayName: "Hytron", CountryCode: "HK", AgentToken: "test-agent-token"}); err != nil {
 		t.Fatalf("seed preview data: %v", err)
@@ -990,7 +1076,7 @@ func TestAgentHeartbeatDispatchesEnabledTelegramChannel(t *testing.T) {
 	waitUntil(t, time.Second, func() bool {
 		captureMu.Lock()
 		defer captureMu.Unlock()
-		return len(telegramPaths)+len(telegramErrors) == 1
+		return len(telegramPaths)+len(telegramErrors) == 0
 	})
 	captureMu.Lock()
 	capturedPaths := append([]string(nil), telegramPaths...)
@@ -1000,23 +1086,18 @@ func TestAgentHeartbeatDispatchesEnabledTelegramChannel(t *testing.T) {
 	if len(capturedErrors) != 0 {
 		t.Fatalf("telegram handler errors = %+v", capturedErrors)
 	}
-	if len(capturedPaths) != 1 || capturedPaths[0] != "/bottelegram-bot-credential-value/sendMessage" {
-		t.Fatalf("telegram paths = %+v, want sendMessage path with bot credential", capturedPaths)
-	}
-	if len(capturedForms) != 1 || !strings.Contains(capturedForms[0], "chat_id=7579942307") || !strings.Contains(capturedForms[0], "%E7%A6%BB%E7%BA%BF") {
-		t.Fatalf("telegram form = %+v, want chat id and offline text", capturedForms)
-	}
-	if strings.Contains(capturedForms[0], "telegram-bot-credential-value") {
-		t.Fatalf("telegram form leaked credential: %s", capturedForms[0])
+	if len(capturedPaths) != 0 || len(capturedForms) != 0 {
+		t.Fatalf("telegram calls paths=%+v forms=%+v, want none", capturedPaths, capturedForms)
 	}
 }
 
-func TestAgentHeartbeatNotificationDeliveryDoesNotBlockResponse(t *testing.T) {
+func TestStaleOfflineNotificationDeliveryDoesNotBlockScanner(t *testing.T) {
 	store, err := OpenSQLiteStore(filepath.Join(t.TempDir(), "zeno.db"))
 	if err != nil {
 		t.Fatalf("open sqlite store: %v", err)
 	}
 	defer store.Close()
+	enableTestNotificationCredentialEncryption(t, store)
 	ctx := context.Background()
 	if err := store.SeedPreviewData(ctx, PreviewSeedOptions{NodeID: "hytron", DisplayName: "Hytron", CountryCode: "HK", AgentToken: "test-agent-token"}); err != nil {
 		t.Fatalf("seed preview data: %v", err)
@@ -1039,17 +1120,18 @@ func TestAgentHeartbeatNotificationDeliveryDoesNotBlockResponse(t *testing.T) {
 	}
 
 	started := time.Now()
-	now := time.Now().UTC().Truncate(time.Second)
-	if _, err := store.db.ExecContext(ctx, `UPDATE nodes SET status = 'online', last_seen_at = ? WHERE id = 'hytron'`, now.Unix()); err != nil {
-		t.Fatalf("set fresh heartbeat: %v", err)
+	staleSeen := time.Now().UTC().Add(-nodeHeartbeatOfflineAfter - time.Second)
+	if _, err := store.db.ExecContext(ctx, `UPDATE nodes SET status = 'online', last_seen_at = ? WHERE id = 'hytron'`, staleSeen.Unix()); err != nil {
+		t.Fatalf("set stale heartbeat: %v", err)
 	}
 	httpHandler := NewHandler(HandlerOptions{Store: store, NotificationClient: slowTelegram.Client(), TelegramAPIBaseURL: slowTelegram.URL})
 	defer cleanupTestHandler(t, httpHandler)
 	defer close(release)
-	postAgentHeartbeat(t, httpHandler, now.Unix(), "offline")
+	h := httpHandler.(*handler)
+	h.dispatchStaleAgentOfflineChecks(ctx)
 	elapsed := time.Since(started)
 	if elapsed > 150*time.Millisecond {
-		t.Fatalf("heartbeat response took %s, want notification delivery to be non-blocking", elapsed)
+		t.Fatalf("stale scan took %s, want notification delivery to be non-blocking", elapsed)
 	}
 	select {
 	case <-called:
@@ -1064,6 +1146,7 @@ func TestStaleAgentOfflineCheckDispatchesWhenPublicStatusExpires(t *testing.T) {
 		t.Fatalf("open sqlite store: %v", err)
 	}
 	defer store.Close()
+	enableTestNotificationCredentialEncryption(t, store)
 	ctx := context.Background()
 	if err := store.SeedPreviewData(ctx, PreviewSeedOptions{NodeID: "hytron", DisplayName: "Hytron", CountryCode: "HK", AgentToken: "test-agent-token"}); err != nil {
 		t.Fatalf("seed preview data: %v", err)
@@ -1154,6 +1237,7 @@ func TestAgentHeartbeatDoesNotDispatchRecoveryAfterStaleHeartbeatOffline(t *test
 		t.Fatalf("open sqlite store: %v", err)
 	}
 	defer store.Close()
+	enableTestNotificationCredentialEncryption(t, store)
 	ctx := context.Background()
 	if err := store.SeedPreviewData(ctx, PreviewSeedOptions{NodeID: "hytron", DisplayName: "Hytron", CountryCode: "HK", AgentToken: "test-agent-token"}); err != nil {
 		t.Fatalf("seed preview data: %v", err)
@@ -1188,6 +1272,7 @@ func TestAgentStateDispatchesRecoveryAfterPersistedOffline(t *testing.T) {
 		t.Fatalf("open sqlite store: %v", err)
 	}
 	defer store.Close()
+	enableTestNotificationCredentialEncryption(t, store)
 	ctx := context.Background()
 	if err := store.SeedPreviewData(ctx, PreviewSeedOptions{NodeID: "hytron", DisplayName: "Hytron", CountryCode: "HK", AgentToken: "test-agent-token"}); err != nil {
 		t.Fatalf("seed preview data: %v", err)
@@ -1259,7 +1344,7 @@ func TestAgentHeartbeatTransitionTreatsReceivedHeartbeatAsFreshLiveness(t *testi
 	}
 }
 
-func TestAgentHeartbeatTransitionDispatchesOfflineOnExplicitOfflineStatus(t *testing.T) {
+func TestAgentHeartbeatTransitionTreatsExplicitOfflineAsOnlineLiveness(t *testing.T) {
 	store, err := OpenSQLiteStore(filepath.Join(t.TempDir(), "zeno.db"))
 	if err != nil {
 		t.Fatalf("open sqlite store: %v", err)
@@ -1278,21 +1363,22 @@ func TestAgentHeartbeatTransitionDispatchesOfflineOnExplicitOfflineStatus(t *tes
 	if err != nil {
 		t.Fatalf("record heartbeat transition: %v", err)
 	}
-	if transition.Previous.Status != "online" || transition.Current.Status != "offline" {
-		t.Fatalf("transition = %+v, want online -> offline public statuses", transition)
+	if transition.Previous.Status != "online" || transition.Current.Status != "online" {
+		t.Fatalf("transition = %+v, want online -> online liveness", transition)
 	}
 	eventType, ok := notificationEventTypeForStatusChange(transition.Previous.Status, transition.Current.Status)
-	if !ok || eventType != "node_offline" {
-		t.Fatalf("event type = %q ok=%v, want node_offline", eventType, ok)
+	if ok || eventType != "" {
+		t.Fatalf("event type = %q ok=%v, want no offline event", eventType, ok)
 	}
 }
 
-func TestAgentHeartbeatNotificationFailureDoesNotRejectHeartbeat(t *testing.T) {
+func TestAgentHeartbeatOfflineCompatibilityDoesNotRejectHeartbeat(t *testing.T) {
 	store, err := OpenSQLiteStore(filepath.Join(t.TempDir(), "zeno.db"))
 	if err != nil {
 		t.Fatalf("open sqlite store: %v", err)
 	}
 	defer store.Close()
+	enableTestNotificationCredentialEncryption(t, store)
 	ctx := context.Background()
 	if err := store.SeedPreviewData(ctx, PreviewSeedOptions{NodeID: "hytron", DisplayName: "Hytron", CountryCode: "HK", AgentToken: "test-agent-token"}); err != nil {
 		t.Fatalf("seed preview data: %v", err)
@@ -1323,18 +1409,18 @@ func TestAgentHeartbeatNotificationFailureDoesNotRejectHeartbeat(t *testing.T) {
 	defer cleanupTestHandler(t, httpHandler)
 	recorder := postAgentHeartbeat(t, httpHandler, now.Unix(), "offline")
 	if recorder.Code != http.StatusAccepted {
-		t.Fatalf("heartbeat status = %d, want 202 even if notification send fails; body=%s", recorder.Code, recorder.Body.String())
+		t.Fatalf("heartbeat status = %d, want 202 for legacy offline status; body=%s", recorder.Code, recorder.Body.String())
 	}
 	var status string
 	if err := store.db.QueryRowContext(ctx, `SELECT status FROM nodes WHERE id = 'hytron'`).Scan(&status); err != nil {
 		t.Fatalf("query node status: %v", err)
 	}
-	if status != "offline" {
-		t.Fatalf("stored node status = %q, want heartbeat status persisted despite notification failure", status)
+	if status != "online" {
+		t.Fatalf("stored node status = %q, want legacy offline heartbeat normalized to online", status)
 	}
 }
 
-func TestRenewalNotificationScannerDispatchesDueNotificationOncePerDay(t *testing.T) {
+func TestAgentStateIdempotencyAndRateLimit(t *testing.T) {
 	store, err := OpenSQLiteStore(filepath.Join(t.TempDir(), "zeno.db"))
 	if err != nil {
 		t.Fatalf("open sqlite store: %v", err)
@@ -1344,7 +1430,91 @@ func TestRenewalNotificationScannerDispatchesDueNotificationOncePerDay(t *testin
 	if err := store.SeedPreviewData(ctx, PreviewSeedOptions{NodeID: "hytron", DisplayName: "Hytron", CountryCode: "HK", AgentToken: "test-agent-token"}); err != nil {
 		t.Fatalf("seed preview data: %v", err)
 	}
-	now := time.Now().UTC().Truncate(time.Second)
+	handler := NewHandler(HandlerOptions{Store: store})
+	defer cleanupTestHandler(t, handler)
+	post := func(body map[string]any) *httptest.ResponseRecorder {
+		t.Helper()
+		payload, err := json.Marshal(body)
+		if err != nil {
+			t.Fatalf("marshal state: %v", err)
+		}
+		recorder := httptest.NewRecorder()
+		request := httptest.NewRequest(http.MethodPost, "/api/agent/v1/state", bytes.NewReader(payload))
+		request.Header.Set("X-Node-ID", "hytron")
+		request.Header.Set("Authorization", "Bearer test-agent-token")
+		request.Header.Set("Content-Type", "application/json")
+		handler.ServeHTTP(recorder, request)
+		return recorder
+	}
+	base := map[string]any{
+		"sample_id":           "state-sample-1",
+		"ts":                  time.Now().UTC().Truncate(time.Second).Unix(),
+		"cpu_percent":         12.5,
+		"memory_used_bytes":   int64(4 * 1024),
+		"memory_total_bytes":  int64(8 * 1024),
+		"disk_used_bytes":     int64(40 * 1024),
+		"disk_total_bytes":    int64(160 * 1024),
+		"net_in_total_bytes":  int64(1_000_000),
+		"net_out_total_bytes": int64(2_000_000),
+		"net_in_speed_bps":    2048.5,
+		"net_out_speed_bps":   1024.25,
+		"uptime_seconds":      int64(3600),
+	}
+	if recorder := post(base); recorder.Code != http.StatusAccepted || !strings.Contains(recorder.Body.String(), `"accepted":true`) {
+		t.Fatalf("first state status=%d body=%s, want accepted", recorder.Code, recorder.Body.String())
+	}
+	if recorder := post(base); recorder.Code != http.StatusAccepted || !strings.Contains(recorder.Body.String(), `"accepted":false`) {
+		t.Fatalf("duplicate state status=%d body=%s, want idempotent no-op", recorder.Code, recorder.Body.String())
+	}
+	conflicting := cloneMap(base)
+	conflicting["cpu_percent"] = 22.5
+	if recorder := post(conflicting); recorder.Code != http.StatusBadRequest {
+		t.Fatalf("conflicting state id status=%d body=%s, want 400", recorder.Code, recorder.Body.String())
+	}
+	rateLimited := cloneMap(base)
+	rateLimited["sample_id"] = "state-sample-2"
+	rateLimited["ts"] = base["ts"].(int64)
+	if recorder := post(rateLimited); recorder.Code != http.StatusAccepted || !strings.Contains(recorder.Body.String(), `"accepted":false`) {
+		t.Fatalf("rate-limited state status=%d body=%s, want accepted=false", recorder.Code, recorder.Body.String())
+	}
+	olderButImmediate := cloneMap(base)
+	olderButImmediate["sample_id"] = "state-sample-older"
+	olderButImmediate["ts"] = base["ts"].(int64) - 1
+	olderButImmediate["cpu_percent"] = 13.5
+	if recorder := post(olderButImmediate); recorder.Code != http.StatusAccepted || !strings.Contains(recorder.Body.String(), `"accepted":false`) {
+		t.Fatalf("older immediate state status=%d body=%s, want monotonic sample limit", recorder.Code, recorder.Body.String())
+	}
+	var samples int
+	if err := store.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM state_samples`).Scan(&samples); err != nil {
+		t.Fatalf("count state samples: %v", err)
+	}
+	if samples != 1 {
+		t.Fatalf("state samples=%d, want only first accepted row", samples)
+	}
+}
+
+func cloneMap(input map[string]any) map[string]any {
+	copy := make(map[string]any, len(input))
+	for key, value := range input {
+		copy[key] = value
+	}
+	return copy
+}
+
+func TestRenewalNotificationScannerDispatchesDueNotificationOncePerDay(t *testing.T) {
+	store, err := OpenSQLiteStore(filepath.Join(t.TempDir(), "zeno.db"))
+	if err != nil {
+		t.Fatalf("open sqlite store: %v", err)
+	}
+	defer store.Close()
+	enableTestNotificationCredentialEncryption(t, store)
+	ctx := context.Background()
+	if err := store.SeedPreviewData(ctx, PreviewSeedOptions{NodeID: "hytron", DisplayName: "Hytron", CountryCode: "HK", AgentToken: "test-agent-token"}); err != nil {
+		t.Fatalf("seed preview data: %v", err)
+	}
+	// Anchor at the current UTC day's start so the "same day" assertion below
+	// cannot cross a calendar boundary and the outbox due time is never future.
+	now := dateOnlyUTC(time.Now().UTC())
 	expiryDate := now.Add(3 * 24 * time.Hour).Format("2006-01-02")
 	if _, err := store.UpdateAdminNode(ctx, "hytron", AdminNodeUpdateRequest{ExpiryDate: &expiryDate}); err != nil {
 		t.Fatalf("set expiry date: %v", err)
@@ -1411,6 +1581,7 @@ func TestRenewalNotificationScannerDispatchesRecurringBillingCycle(t *testing.T)
 		t.Fatalf("open sqlite store: %v", err)
 	}
 	defer store.Close()
+	enableTestNotificationCredentialEncryption(t, store)
 	ctx := context.Background()
 	if err := store.SeedPreviewData(ctx, PreviewSeedOptions{NodeID: "hytron", DisplayName: "Sharon", CountryCode: "HK", AgentToken: "test-agent-token"}); err != nil {
 		t.Fatalf("seed preview data: %v", err)
@@ -1489,6 +1660,7 @@ func TestAgentHeartbeatHostAndStateDoNotDispatchRenewalDueNotification(t *testin
 				t.Fatalf("open sqlite store: %v", err)
 			}
 			defer store.Close()
+			enableTestNotificationCredentialEncryption(t, store)
 			ctx := context.Background()
 			if err := store.SeedPreviewData(ctx, PreviewSeedOptions{NodeID: "hytron", DisplayName: "Hytron", CountryCode: "HK", AgentToken: "test-agent-token"}); err != nil {
 				t.Fatalf("seed preview data: %v", err)
@@ -1534,6 +1706,7 @@ func TestRenewalNotificationScheduledScannerRunsIndependently(t *testing.T) {
 		t.Fatalf("open sqlite store: %v", err)
 	}
 	defer store.Close()
+	enableTestNotificationCredentialEncryption(t, store)
 	ctx := context.Background()
 	if err := store.SeedPreviewData(ctx, PreviewSeedOptions{NodeID: "hytron", DisplayName: "Hytron", CountryCode: "HK", AgentToken: "test-agent-token"}); err != nil {
 		t.Fatalf("seed preview data: %v", err)
@@ -1567,6 +1740,7 @@ func TestQueueDueRenewalNotificationsDeduplicatesConcurrentScans(t *testing.T) {
 		t.Fatalf("open sqlite store: %v", err)
 	}
 	defer store.Close()
+	enableTestNotificationCredentialEncryption(t, store)
 	ctx := context.Background()
 	if err := store.SeedPreviewData(ctx, PreviewSeedOptions{NodeID: "hytron", DisplayName: "Hytron", CountryCode: "HK", AgentToken: "test-agent-token"}); err != nil {
 		t.Fatalf("seed preview data: %v", err)
@@ -1638,6 +1812,7 @@ func TestQueueDueRenewalNotificationsSkipsPermanentNode(t *testing.T) {
 		t.Fatalf("open sqlite store: %v", err)
 	}
 	defer store.Close()
+	enableTestNotificationCredentialEncryption(t, store)
 	ctx := context.Background()
 	if err := store.SeedPreviewData(ctx, PreviewSeedOptions{NodeID: "hytron", DisplayName: "Hytron", CountryCode: "HK", AgentToken: "test-agent-token"}); err != nil {
 		t.Fatalf("seed preview data: %v", err)

@@ -3,6 +3,8 @@ package api
 import (
 	"context"
 	"encoding/json"
+	"errors"
+	"log"
 	"net/http"
 	"sync"
 	"time"
@@ -19,11 +21,10 @@ type agentPresenceManager struct {
 	mu       sync.Mutex
 	nextID   uint64
 	sessions map[string]*agentPresenceSession
-	seen     map[string]bool
 }
 
 func newAgentPresenceManager() *agentPresenceManager {
-	return &agentPresenceManager{sessions: map[string]*agentPresenceSession{}, seen: map[string]bool{}}
+	return &agentPresenceManager{sessions: map[string]*agentPresenceSession{}}
 }
 
 const agentPresenceSendQueueLimit = 2
@@ -37,7 +38,6 @@ func (m *agentPresenceManager) connect(nodeID string) *agentPresenceSession {
 		close(previous.done)
 	}
 	m.sessions[nodeID] = session
-	m.seen[nodeID] = true
 	return session
 }
 
@@ -122,6 +122,10 @@ type agentPresenceClientMessage struct {
 	Version int64  `json:"version,omitempty"`
 }
 
+type probeConfigAppliedStore interface {
+	RecordProbeConfigApplied(ctx context.Context, nodeID string, version int64, now time.Time) error
+}
+
 type staleAgentOfflineStore interface {
 	agentStore
 	StaleAgentOfflineNodeIDs(ctx context.Context, now time.Time) ([]string, error)
@@ -200,7 +204,6 @@ func (h *handler) handleAgentPresenceWebSocket(w http.ResponseWriter, r *http.Re
 	if !ok {
 		return
 	}
-	_ = store
 	release, ok := h.agentWSGate.acquire()
 	if !ok {
 		writeError(w, http.StatusTooManyRequests, "too many websocket connections")
@@ -252,8 +255,19 @@ func (h *handler) handleAgentPresenceWebSocket(w http.ResponseWriter, r *http.Re
 			if err := json.NewDecoder(reader).Decode(&message); err != nil {
 				continue
 			}
-			// config_applied is intentionally accepted as an acknowledgement only.
-			// The authoritative probe configuration still lives behind the HTTP API.
+			if message.Type != "config_applied" {
+				continue
+			}
+			ackStore, ok := store.(probeConfigAppliedStore)
+			if !ok {
+				continue
+			}
+			if err := ackStore.RecordProbeConfigApplied(r.Context(), nodeID, message.Version, time.Now().UTC()); err != nil {
+				if !errors.Is(err, errProbeConfigAckInvalid) {
+					log.Printf("agent_presence_ack_error endpoint=presence node_id=%s stage=config_applied error=%s", safeLogToken(nodeID), sanitizeAgentAPIError(err))
+				}
+				continue
+			}
 		}
 	}()
 

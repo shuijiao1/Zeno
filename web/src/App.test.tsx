@@ -172,12 +172,13 @@ const settings: AdminSettings = {
   updatedAt: '2026-07-04T12:00:00Z',
 }
 
-function renderAdmin(section: 'nodes' | 'targets' | 'notifications' | 'account' | 'settings' = 'nodes') {
+function renderAdmin(section: 'nodes' | 'targets' | 'notifications' | 'account' | 'settings' = 'nodes', authState: { kind: 'idle' } | { kind: 'loading' } | { kind: 'error'; message: string } = { kind: 'idle' }) {
   return renderToStaticMarkup(
     <AdminDashboard
       onHome={() => {}}
       settings={settings}
       hasAdminToken
+      authState={authState}
       initialSection={section}
       adminState={{
         kind: 'ready',
@@ -211,6 +212,7 @@ describe('HomeTopPanel', () => {
   it('recognizes expired admin session API responses', () => {
     expect(isAdminUnauthorizedError(new Error('admin nodes request failed: 401'))).toBe(true)
     expect(isAdminUnauthorizedError(new Error('admin settings update failed: 401'))).toBe(true)
+    expect(isAdminUnauthorizedError(new Error('admin logout failed: 401'))).toBe(true)
     expect(isAdminUnauthorizedError(new Error('admin nodes request failed: 500'))).toBe(false)
     expect(isAdminUnauthorizedError(new Error('missing admin token'))).toBe(false)
   })
@@ -370,6 +372,15 @@ describe('AdminDashboard', () => {
     expect(html).toContain('服务器列表')
     expect(html).toContain('Hytron')
     expect(html).not.toContain('admin-overview-panel')
+  })
+
+  it('keeps the logged-in dashboard visible and shows logout failures', () => {
+    const html = renderAdmin('nodes', { kind: 'error', message: '退出失败：admin logout failed: 500' })
+
+    expect(html).toContain('nav-logout-button')
+    expect(html).toContain('退出失败：admin logout failed: 500')
+    expect(html).toContain('admin-section-nav')
+    expect(html).toContain('服务器列表')
   })
 
   it('renders account settings as a dedicated account page', () => {

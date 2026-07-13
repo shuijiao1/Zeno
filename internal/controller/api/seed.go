@@ -161,6 +161,27 @@ func (s *SQLiteStore) EnabledProbeTargets(ctx context.Context, nodeID string) ([
 	return enabledProbeTargetsQuery(ctx, s.db, nodeID)
 }
 
+func (s *SQLiteStore) EnabledProbeTargetsWithConfigVersion(ctx context.Context, nodeID string) ([]ProbeTarget, int64, error) {
+	tx, err := s.db.BeginTx(ctx, &sql.TxOptions{ReadOnly: true})
+	if err != nil {
+		return nil, 0, err
+	}
+	defer rollbackUnlessCommitted(tx)
+	var version int64
+	if err := tx.QueryRowContext(ctx, `SELECT version FROM probe_config_meta WHERE id = 1`).Scan(&version); err != nil {
+		return nil, 0, err
+	}
+	targets, err := enabledProbeTargetsTx(ctx, tx, nodeID)
+	if err != nil {
+		return nil, 0, err
+	}
+	if err := tx.Commit(); err != nil {
+		return nil, 0, err
+	}
+	tx = nil
+	return targets, version, nil
+}
+
 func enabledProbeTargetsTx(ctx context.Context, tx *sql.Tx, nodeID string) ([]ProbeTarget, error) {
 	return enabledProbeTargetsQuery(ctx, tx, nodeID)
 }

@@ -21,4 +21,33 @@ describe('mutation epoch', () => {
     expect(epoch.isCurrent(first)).toBe(false)
     expect(epoch.isCurrent(second)).toBe(true)
   })
+
+  it('rejects refreshes launched while a mutation is pending', () => {
+    const epoch = createMutationEpoch()
+    const finishMutation = epoch.beginMutation()
+    const duringMutationRefresh = epoch.snapshot()
+
+    expect(epoch.isCurrent(duringMutationRefresh)).toBe(false)
+
+    finishMutation()
+
+    expect(epoch.isCurrent(duringMutationRefresh)).toBe(false)
+    expect(epoch.isCurrent(epoch.snapshot())).toBe(true)
+  })
+
+  it('keeps concurrent mutation windows stale until all mutations finish', () => {
+    const epoch = createMutationEpoch()
+    const finishFirst = epoch.beginMutation()
+    const finishSecond = epoch.beginMutation()
+    const betweenMutations = epoch.snapshot()
+
+    finishFirst()
+
+    expect(epoch.isCurrent(betweenMutations)).toBe(false)
+
+    finishSecond()
+
+    expect(epoch.isCurrent(betweenMutations)).toBe(false)
+    expect(epoch.isCurrent(epoch.snapshot())).toBe(true)
+  })
 })

@@ -4,7 +4,7 @@
 # upgrades. The GitHub Docker workflow emits provenance and SBOM attestations for
 # every published image.
 
-FROM node:24.16.0-bookworm-slim AS web-builder
+FROM --platform=$BUILDPLATFORM node:24.16.0-bookworm-slim AS web-builder
 WORKDIR /src/web
 COPY web/package*.json ./
 RUN npm ci
@@ -13,14 +13,16 @@ ARG VERSION=dev
 ENV VITE_BUILD_ID=${VERSION}
 RUN npm run build
 
-FROM golang:1.25.12-bookworm AS go-builder
+FROM --platform=$BUILDPLATFORM golang:1.25.12-bookworm AS go-builder
 WORKDIR /src
 COPY go.mod go.sum ./
 RUN go mod download
 COPY . ./
 COPY --from=web-builder /src/web/dist ./web/dist
 ARG VERSION=dev
-RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -ldflags "-s -w" -o /out/zeno-controller ./cmd/controller
+ARG TARGETOS=linux
+ARG TARGETARCH=amd64
+RUN CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} go build -trimpath -ldflags "-s -w" -o /out/zeno-controller ./cmd/controller
 
 FROM debian:13.2-slim
 ARG VERSION=dev
@@ -33,7 +35,7 @@ LABEL org.opencontainers.image.title="Zeno" \
   org.opencontainers.image.version="${VERSION}" \
   org.opencontainers.image.revision="${REVISION}"
 RUN apt-get update \
-  && apt-get install -y --no-install-recommends ca-certificates curl tzdata \
+  && apt-get install -y --no-install-recommends ca-certificates curl iputils-ping tzdata \
   && rm -rf /var/lib/apt/lists/* \
   && groupadd --system --gid "${ZENO_GID}" zeno \
   && useradd --system --uid "${ZENO_UID}" --gid zeno --home-dir /opt/zeno --shell /usr/sbin/nologin zeno \
@@ -47,4 +49,4 @@ ENV TZ=Asia/Shanghai
 EXPOSE 18980
 USER zeno:zeno
 ENTRYPOINT ["/usr/local/bin/zeno-controller"]
-CMD ["-addr", "0.0.0.0:18980", "-web-dir", "/opt/zeno/web", "-db", "/data/zeno.db", "-admin-token-file", "/run/secrets/zeno_admin_token", "-agent-token-file", "/run/secrets/zeno_agent_token"]
+CMD ["-addr", "0.0.0.0:18980", "-web-dir", "/opt/zeno/web", "-db", "/data/zeno.db", "-admin-token-file", "/run/secrets/zeno_admin_token", "-agent-token-file", "/run/secrets/zeno_agent_token", "-notification-authority-key-file", "/run/secrets/zeno_notification_authority"]

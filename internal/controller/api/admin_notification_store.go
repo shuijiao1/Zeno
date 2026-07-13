@@ -62,10 +62,14 @@ func (s *SQLiteStore) CreateAdminNotificationChannel(ctx context.Context, create
 		enabled = 0
 	}
 	now := time.Now().UTC().Unix()
+	credential, err := s.encryptNotificationCredentialForStorage(channelID, "telegram", create.Credential)
+	if err != nil {
+		return AdminNotificationChannel{}, err
+	}
 	result, err := s.db.ExecContext(ctx, `
 		INSERT OR IGNORE INTO notification_channels (id, name, destination, credential, enabled, created_at, updated_at)
 		VALUES (?, ?, ?, ?, ?, ?, ?)
-	`, channelID, create.Name, create.Destination, create.Credential, enabled, now, now)
+	`, channelID, create.Name, create.Destination, credential, enabled, now, now)
 	if err != nil {
 		return AdminNotificationChannel{}, err
 	}
@@ -105,8 +109,12 @@ func (s *SQLiteStore) UpdateAdminNotificationChannel(ctx context.Context, channe
 		args = append(args, *update.Destination)
 	}
 	if update.Credential != nil {
+		credential, err := s.encryptNotificationCredentialForStorage(channelID, "telegram", *update.Credential)
+		if err != nil {
+			return AdminNotificationChannel{}, err
+		}
 		sets = append(sets, "credential = ?")
-		args = append(args, *update.Credential)
+		args = append(args, credential)
 	}
 	if update.Enabled != nil {
 		sets = append(sets, "enabled = ?")
@@ -165,20 +173,26 @@ func (s *SQLiteStore) AdminNotificationDispatchChannel(ctx context.Context, chan
 		return notificationDispatchChannel{}, errNotificationChannelNotFound
 	}
 	var channel notificationDispatchChannel
+	var storedCredential string
 	if err := s.db.QueryRowContext(ctx, `
 		SELECT id, name, destination, credential
 		FROM notification_channels
 		WHERE id = ? AND enabled = 1
-	`, channelID).Scan(&channel.ID, &channel.Name, &channel.Destination, &channel.Credential); err != nil {
+	`, channelID).Scan(&channel.ID, &channel.Name, &channel.Destination, &storedCredential); err != nil {
 		if err == sql.ErrNoRows {
 			return notificationDispatchChannel{}, errNotificationChannelNotFound
 		}
 		return notificationDispatchChannel{}, err
 	}
-	if strings.TrimSpace(channel.Credential) == "" {
+	credential, err := s.decryptNotificationCredentialFromStorage(channel.ID, "telegram", storedCredential)
+	if err != nil {
+		return notificationDispatchChannel{}, err
+	}
+	if strings.TrimSpace(credential) == "" {
 		return notificationDispatchChannel{}, errInvalidAdminNotificationChannelWrite
 	}
 	channel.Type = "telegram"
+	channel.Credential = credential
 	return channel, nil
 }
 

@@ -286,10 +286,19 @@ func validAgentControllerURL(value string) bool {
 	if err != nil || parsed.Host == "" {
 		return false
 	}
-	if parsed.Scheme != "http" && parsed.Scheme != "https" {
+	if parsed.Scheme != "https" && !(parsed.Scheme == "http" && loopbackURLHost(parsed.Hostname())) {
 		return false
 	}
 	return parsed.User == nil && parsed.RawQuery == "" && parsed.Fragment == ""
+}
+
+func loopbackURLHost(host string) bool {
+	host = strings.TrimSpace(strings.Trim(host, "[]"))
+	if strings.EqualFold(host, "localhost") {
+		return true
+	}
+	ip := net.ParseIP(host)
+	return ip != nil && ip.IsLoopback()
 }
 
 func normalizeAdminNodeDate(value string) (string, error) {
@@ -515,6 +524,9 @@ func (request *AdminProbeTargetCreateRequest) normalize() error {
 	if request.Type == "http_get" && !validHTTPGetTargetAddress(request.Address) {
 		return errInvalidAdminTargetWrite
 	}
+	if request.Type == "ping" && !validPingTargetAddress(request.Address) {
+		return errInvalidAdminTargetWrite
+	}
 	if request.Port.Set && request.Port.Valid {
 		return errInvalidAdminTargetWrite
 	}
@@ -652,6 +664,11 @@ func validHTTPGetTargetAddress(address string) bool {
 		return false
 	}
 	return parsed.Scheme == "http" || parsed.Scheme == "https"
+}
+
+func validPingTargetAddress(address string) bool {
+	address = strings.TrimSpace(address)
+	return address != "" && !strings.HasPrefix(address, "-")
 }
 
 func validPort(port int64) bool {

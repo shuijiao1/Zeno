@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"time"
 )
 
@@ -10,6 +11,8 @@ type probeConfigVersionStore interface {
 	BumpProbeConfigVersion(ctx context.Context) (int64, error)
 	ProbeConfigVersion(ctx context.Context) (int64, error)
 }
+
+var errProbeConfigAckInvalid = errors.New("invalid probe config ack")
 
 func (s *SQLiteStore) BumpProbeConfigVersion(ctx context.Context) (int64, error) {
 	if _, err := s.db.ExecContext(ctx, bumpProbeConfigVersionSQL, time.Now().UTC().Unix()); err != nil {
@@ -39,4 +42,63 @@ func (s *SQLiteStore) ProbeConfigVersion(ctx context.Context) (int64, error) {
 		return 0, err
 	}
 	return version, nil
+}
+
+func (s *SQLiteStore) RecordProbeConfigApplied(ctx context.Context, nodeID string, version int64, now time.Time) error {
+	if version <= 0 {
+		return errProbeConfigAckInvalid
+	}
+	return s.withAgentWrite(ctx, func(ctx context.Context) error {
+		return s.recordProbeConfigAppliedOnce(ctx, nodeID, version, now)
+	})
+}
+
+func (s *SQLiteStore) recordProbeConfigAppliedOnce(ctx context.Context, nodeID string, version int64, now time.Time) error {
+	if version <= 0 {
+		return errProbeConfigAckInvalid
+	}
+	nowUnix := now.UTC().Unix()
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer rollbackUnlessCommitted(tx)
+	var currentVersion int64
+	if err := tx.QueryRowContext(ctx, `SELECT version FROM probe_config_meta WHERE id = 1`).Scan(&currentVersion); err != nil {
+		return err
+	}
+	if version > currentVersion {
+		return errProbeConfigAckInvalid
+	}
+	result, err := tx.ExecContext(ctx, `
+		UPDATE nodes
+		SET probe_config_applied_version = CASE
+		      WHEN COALESCE(probe_config_applied_version, 0) <= ? THEN ?
+		      ELSE probe_config_applied_version
+		    END,
+		    probe_config_applied_at = CASE
+		      WHEN COALESCE(probe_config_applied_version, 0) <= ? THEN ?
+		      ELSE probe_config_applied_at
+		    END,
+		    updated_at = CASE
+		      WHEN COALESCE(probe_config_applied_version, 0) <= ? THEN ?
+		      ELSE updated_at
+		    END
+		WHERE id = ? AND disabled = 0
+	`, version, version, version, nowUnix, version, nowUnix, nodeID)
+	if err != nil {
+		return err
+	}
+	affected, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if affected == 0 {
+		return errNodeNotFound
+	}
+	if err := tx.Commit(); err != nil {
+		return err
+	}
+	tx = nil
+	return nil
 }

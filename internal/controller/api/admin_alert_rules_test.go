@@ -363,6 +363,7 @@ func TestNotificationDispatchRequiresEnabledAlertRuleForEvent(t *testing.T) {
 		t.Fatalf("open sqlite store: %v", err)
 	}
 	defer store.Close()
+	enableTestNotificationCredentialEncryption(t, store)
 	ctx := context.Background()
 	enabled := true
 	if _, err := store.CreateAdminNotificationChannel(ctx, AdminNotificationChannelCreateRequest{ID: "ops-telegram", Name: "Ops Telegram", Destination: "7579942307", Credential: "dispatch-credential-value", Enabled: &enabled}); err != nil {
@@ -562,6 +563,7 @@ func TestNotificationDispatchRespectsAlertRuleNodeScope(t *testing.T) {
 		t.Fatalf("open sqlite store: %v", err)
 	}
 	defer store.Close()
+	enableTestNotificationCredentialEncryption(t, store)
 	ctx := context.Background()
 	if err := store.SeedPreviewData(ctx, PreviewSeedOptions{NodeID: "hytron", DisplayName: "Hytron", CountryCode: "HK", AgentToken: "test-agent-token"}); err != nil {
 		t.Fatalf("seed preview data: %v", err)

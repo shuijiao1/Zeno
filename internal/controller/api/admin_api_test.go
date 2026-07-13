@@ -75,6 +75,10 @@ func TestAdminLoginCreatesSessionAndPasswordUpdateInvalidatesOldPassword(t *test
 	if err := store.SeedPreviewData(context.Background(), PreviewSeedOptions{NodeID: "hytron", DisplayName: "Hytron", CountryCode: "HK", AgentToken: "test-agent-token"}); err != nil {
 		t.Fatalf("seed preview data: %v", err)
 	}
+	publicURL := "https://zeno.example.com"
+	if _, err := store.UpdateAdminSettings(context.Background(), AdminSettingsUpdateRequest{AgentControllerURL: &publicURL}); err != nil {
+		t.Fatalf("set agent controller URL: %v", err)
+	}
 	handler := NewHandler(HandlerOptions{Store: store, AdminTokenHash: HashAdminToken("admin-pass")})
 
 	loginRecorder := httptest.NewRecorder()
@@ -712,7 +716,7 @@ func TestAdminNodeCreateAddsEditableNodeWithoutReturningSecrets(t *testing.T) {
 	}
 }
 
-func TestAdminNodeInstallCommandReusesStoredCredentialAndUsesRequestHost(t *testing.T) {
+func TestAdminNodeInstallCommandReusesStoredCredential(t *testing.T) {
 	store, err := OpenSQLiteStore(filepath.Join(t.TempDir(), "zeno.db"))
 	if err != nil {
 		t.Fatalf("open sqlite store: %v", err)
@@ -721,6 +725,10 @@ func TestAdminNodeInstallCommandReusesStoredCredentialAndUsesRequestHost(t *test
 	ctx := context.Background()
 	if err := store.SeedPreviewData(ctx, PreviewSeedOptions{NodeID: "hytron", DisplayName: "Hytron", CountryCode: "HK", AgentToken: "old-agent-token"}); err != nil {
 		t.Fatalf("seed preview data: %v", err)
+	}
+	publicURL := "https://probe.example.com"
+	if _, err := store.UpdateAdminSettings(ctx, AdminSettingsUpdateRequest{AgentControllerURL: &publicURL}); err != nil {
+		t.Fatalf("set agent controller URL: %v", err)
 	}
 
 	recorder := httptest.NewRecorder()
@@ -783,6 +791,31 @@ func TestAdminNodeInstallCommandReusesStoredCredentialAndUsesRequestHost(t *test
 	}
 	if !allowed {
 		t.Fatalf("generated credential should authorize agent")
+	}
+}
+
+func TestAdminNodeInstallCommandRejectsUnconfiguredRemoteHost(t *testing.T) {
+	store, err := OpenSQLiteStore(filepath.Join(t.TempDir(), "zeno.db"))
+	if err != nil {
+		t.Fatalf("open sqlite store: %v", err)
+	}
+	defer store.Close()
+	if err := store.SeedPreviewData(context.Background(), PreviewSeedOptions{NodeID: "hytron", DisplayName: "Hytron", AgentToken: "old-agent-token"}); err != nil {
+		t.Fatalf("seed preview data: %v", err)
+	}
+
+	recorder := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodPost, "/api/admin/v1/nodes/hytron/install-command", nil)
+	request.Host = "attacker.example"
+	request.Header.Set("X-Forwarded-Proto", "https")
+	request.Header.Set("X-Admin-Token", "admin-pass")
+	NewHandler(HandlerOptions{Store: store, AdminTokenHash: HashAdminToken("admin-pass")}).ServeHTTP(recorder, request)
+
+	if recorder.Code != http.StatusConflict {
+		t.Fatalf("status = %d, want 409; body=%s", recorder.Code, recorder.Body.String())
+	}
+	if strings.Contains(recorder.Body.String(), "old-agent-token") || strings.Contains(recorder.Body.String(), "attacker.example") {
+		t.Fatalf("rejected response leaked credential or untrusted host: %s", recorder.Body.String())
 	}
 }
 
@@ -1701,6 +1734,7 @@ func TestAdminProbeTargetWritesRejectUnauthorizedUnknownAndInvalidRequests(t *te
 	}{
 		{name: "create missing token", method: http.MethodPost, path: "/api/admin/v1/probe-targets", body: `{"name":"A","type":"tcping","address":"example.com","port":443,"count":3,"timeout_ms":1000,"interval_sec":30}`, wantStatus: http.StatusUnauthorized},
 		{name: "create blank name", method: http.MethodPost, path: "/api/admin/v1/probe-targets", body: `{"name":"   ","type":"tcping","address":"example.com","port":443,"count":3,"timeout_ms":1000,"interval_sec":30}`, adminToken: "admin-pass", wantStatus: http.StatusBadRequest},
+		{name: "create ping option-looking address", method: http.MethodPost, path: "/api/admin/v1/probe-targets", body: `{"name":"A","type":"ping","address":"-f","count":3,"timeout_ms":1000,"interval_sec":30}`, adminToken: "admin-pass", wantStatus: http.StatusBadRequest},
 		{name: "create bad port", method: http.MethodPost, path: "/api/admin/v1/probe-targets", body: `{"name":"A","type":"tcping","address":"example.com","port":70000,"count":3,"timeout_ms":1000,"interval_sec":30}`, adminToken: "admin-pass", wantStatus: http.StatusBadRequest},
 		{name: "create count above resource cap", method: http.MethodPost, path: "/api/admin/v1/probe-targets", body: `{"name":"A","type":"tcping","address":"example.com","port":443,"count":33,"timeout_ms":1000,"interval_sec":60}`, adminToken: "admin-pass", wantStatus: http.StatusBadRequest},
 		{name: "create timeout below resource floor", method: http.MethodPost, path: "/api/admin/v1/probe-targets", body: `{"name":"A","type":"tcping","address":"example.com","port":443,"count":3,"timeout_ms":50,"interval_sec":30}`, adminToken: "admin-pass", wantStatus: http.StatusBadRequest},
@@ -1845,6 +1879,7 @@ func TestAdminNotificationChannelsAreTelegramOnlyAndDoNotExposeChannelType(t *te
 		t.Fatalf("open sqlite store: %v", err)
 	}
 	defer store.Close()
+	enableTestNotificationCredentialEncryption(t, store)
 	handler := NewHandler(HandlerOptions{Store: store, AdminTokenHash: HashAdminToken("admin-pass")})
 
 	createRecorder := httptest.NewRecorder()
@@ -1895,6 +1930,7 @@ func TestAdminNotificationChannelsCreateListAndPatchHideStoredCredentials(t *tes
 		t.Fatalf("open sqlite store: %v", err)
 	}
 	defer store.Close()
+	enableTestNotificationCredentialEncryption(t, store)
 	ctx := context.Background()
 	handler := NewHandler(HandlerOptions{Store: store, AdminTokenHash: HashAdminToken("admin-pass")})
 
@@ -2014,6 +2050,7 @@ func TestAdminNotificationChannelTestSendsTelegramAndReturnsSanitizedDelivery(t 
 		t.Fatalf("open sqlite store: %v", err)
 	}
 	defer store.Close()
+	enableTestNotificationCredentialEncryption(t, store)
 	ctx := context.Background()
 	var receivedPath string
 	var receivedForm string
@@ -2075,12 +2112,37 @@ func TestAdminNotificationChannelTestSendsTelegramAndReturnsSanitizedDelivery(t 
 	}
 }
 
+func TestAdminNotificationChannelTestIsBlockedWithoutNotificationAuthority(t *testing.T) {
+	store, err := OpenSQLiteStore(filepath.Join(t.TempDir(), "zeno.db"))
+	if err != nil {
+		t.Fatalf("open sqlite store: %v", err)
+	}
+	defer store.Close()
+	enableTestNotificationCredentialEncryption(t, store)
+	enabled := true
+	channel, err := store.CreateAdminNotificationChannel(context.Background(), AdminNotificationChannelCreateRequest{
+		ID: "candidate-telegram", Name: "Candidate Telegram", Destination: "7579942307", Credential: "telegram-bot-secret-value", Enabled: &enabled,
+	})
+	if err != nil {
+		t.Fatalf("create notification channel: %v", err)
+	}
+	handler := NewHandler(HandlerOptions{Store: store, AdminTokenHash: HashAdminToken("admin-pass"), DisableNotifications: true})
+	recorder := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodPost, "/api/admin/v1/notification-channels/"+channel.ID+"/test", nil)
+	request.Header.Set("X-Admin-Token", "admin-pass")
+	handler.ServeHTTP(recorder, request)
+	if recorder.Code != http.StatusConflict {
+		t.Fatalf("disabled notification test status=%d want=%d body=%s", recorder.Code, http.StatusConflict, recorder.Body.String())
+	}
+}
+
 func TestAdminNotificationChannelTestRespectsChannelEnabledState(t *testing.T) {
 	store, err := OpenSQLiteStore(filepath.Join(t.TempDir(), "zeno.db"))
 	if err != nil {
 		t.Fatalf("open sqlite store: %v", err)
 	}
 	defer store.Close()
+	enableTestNotificationCredentialEncryption(t, store)
 	ctx := context.Background()
 	enabled := false
 	channel, err := store.CreateAdminNotificationChannel(ctx, AdminNotificationChannelCreateRequest{
@@ -2109,6 +2171,7 @@ func TestAdminNotificationChannelDeleteRemovesChannelWithoutCredentialLeak(t *te
 		t.Fatalf("open sqlite store: %v", err)
 	}
 	defer store.Close()
+	enableTestNotificationCredentialEncryption(t, store)
 	ctx := context.Background()
 	enabled := true
 	channel, err := store.CreateAdminNotificationChannel(ctx, AdminNotificationChannelCreateRequest{

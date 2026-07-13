@@ -2,7 +2,11 @@ package api
 
 import (
 	"context"
+	"crypto/sha256"
+	"crypto/subtle"
 	"database/sql"
+	"encoding/hex"
+	"errors"
 	"fmt"
 	"net/url"
 	"path/filepath"
@@ -10,16 +14,21 @@ import (
 	"sync"
 	"time"
 
-	_ "modernc.org/sqlite"
+	moderncsqlite "modernc.org/sqlite"
 )
 
 type SQLiteStore struct {
-	db                       *sql.DB
-	renewalMu                sync.Mutex
-	summaryAggregateMu       sync.Mutex
-	summaryAggregateUpdated  time.Time
-	summaryAggregateHome     map[string]*LatencySummary
-	summaryAggregateServices []ServiceTarget
+	db                           *sql.DB
+	agentWriteMu                 sync.Mutex
+	renewalMu                    sync.Mutex
+	adminSessionPruneMu          sync.Mutex
+	adminSessionLastPruned       time.Time
+	notificationCredentialMu     sync.RWMutex
+	notificationCredentialCipher *notificationCredentialCipher
+	summaryAggregateMu           sync.Mutex
+	summaryAggregateUpdated      time.Time
+	summaryAggregateHome         map[string]*LatencySummary
+	summaryAggregateServices     []ServiceTarget
 }
 
 const (
@@ -29,7 +38,111 @@ const (
 	// on a much slower cadence, so rebuilding these scans every three seconds
 	// only burns CPU without materially improving freshness.
 	summaryAggregateFreshFor = 10 * time.Second
+	// Agent HTTP clients use a 30s total timeout. Keep server-side SQLite busy
+	// recovery below that budget even when an individual SQLite call consumes the
+	// configured 5s busy_timeout before returning SQLITE_BUSY.
+	sqliteAgentWriteTimeout  = 25 * time.Second
+	sqliteBusyRetryFor       = 20 * time.Second
+	sqliteBusyRetryInitial   = 25 * time.Millisecond
+	sqliteBusyRetryMax       = 250 * time.Millisecond
+	sqliteAgentWriteLockPoll = 10 * time.Millisecond
 )
+
+func (s *SQLiteStore) withAgentWrite(ctx context.Context, operation func(context.Context) error) error {
+	writeCtx, cancel := context.WithTimeout(ctx, sqliteAgentWriteTimeout)
+	defer cancel()
+
+	unlock, err := s.lockAgentWrite(writeCtx)
+	if err != nil {
+		return err
+	}
+	defer unlock()
+
+	return retrySQLiteBusy(writeCtx, func() error {
+		if err := writeCtx.Err(); err != nil {
+			return err
+		}
+		return operation(writeCtx)
+	})
+}
+
+func (s *SQLiteStore) lockAgentWrite(ctx context.Context) (func(), error) {
+	if s.agentWriteMu.TryLock() {
+		return s.agentWriteMu.Unlock, nil
+	}
+
+	ticker := time.NewTicker(sqliteAgentWriteLockPoll)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		case <-ticker.C:
+			if s.agentWriteMu.TryLock() {
+				return s.agentWriteMu.Unlock, nil
+			}
+		}
+	}
+}
+
+func retrySQLiteBusy(ctx context.Context, operation func() error) error {
+	started := time.Now()
+	delay := sqliteBusyRetryInitial
+	for {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		err := operation()
+		if err == nil || !isSQLiteBusyError(err) {
+			return err
+		}
+		if ctxErr := ctx.Err(); ctxErr != nil {
+			return ctxErr
+		}
+
+		remaining := sqliteBusyRetryFor - time.Since(started)
+		if remaining <= 0 {
+			return err
+		}
+		sleepFor := delay
+		if sleepFor > remaining {
+			sleepFor = remaining
+		}
+		timer := time.NewTimer(sleepFor)
+		select {
+		case <-ctx.Done():
+			if !timer.Stop() {
+				select {
+				case <-timer.C:
+				default:
+				}
+			}
+			return ctx.Err()
+		case <-timer.C:
+		}
+		if delay < sqliteBusyRetryMax {
+			delay *= 2
+			if delay > sqliteBusyRetryMax {
+				delay = sqliteBusyRetryMax
+			}
+		}
+	}
+}
+
+func isSQLiteBusyError(err error) bool {
+	if err == nil {
+		return false
+	}
+	var sqliteErr *moderncsqlite.Error
+	if errors.As(err, &sqliteErr) {
+		switch sqliteErr.Code() & 0xff {
+		case 5, 6: // SQLITE_BUSY or SQLITE_LOCKED, including extended result codes.
+			return true
+		}
+	}
+	message := strings.ToLower(err.Error())
+	return strings.Contains(message, "sqlite_busy") || strings.Contains(message, "database is locked") || strings.Contains(message, "database table is locked")
+}
 
 func OpenSQLiteStore(path string) (*SQLiteStore, error) {
 	dsn, err := sqliteDSN(path)
@@ -73,6 +186,33 @@ func sqliteDSN(path string) (string, error) {
 
 func (s *SQLiteStore) Close() error {
 	return s.db.Close()
+}
+
+// AuthorizeNotificationAuthority binds notification delivery to an external
+// secret that is deliberately not stored in SQLite. Copying the production DB
+// therefore cannot copy permission to send through its Telegram channels.
+func (s *SQLiteStore) AuthorizeNotificationAuthority(ctx context.Context, authorityKey string) (bool, error) {
+	authorityKey = strings.TrimSpace(authorityKey)
+	if authorityKey == "" {
+		return false, nil
+	}
+	sum := sha256.Sum256([]byte(authorityKey))
+	fingerprint := hex.EncodeToString(sum[:])
+	nowUnix := time.Now().UTC().Unix()
+	if _, err := s.db.ExecContext(ctx, `
+		INSERT OR IGNORE INTO settings (key, value, updated_at)
+		VALUES ('internal.notification_authority_fingerprint', ?, ?)
+	`, fingerprint, nowUnix); err != nil {
+		return false, err
+	}
+	var stored string
+	if err := s.db.QueryRowContext(ctx, `SELECT value FROM settings WHERE key = 'internal.notification_authority_fingerprint'`).Scan(&stored); err != nil {
+		return false, err
+	}
+	if len(stored) != len(fingerprint) {
+		return false, nil
+	}
+	return subtle.ConstantTimeCompare([]byte(stored), []byte(fingerprint)) == 1, nil
 }
 
 func (s *SQLiteStore) Ready(ctx context.Context) error {
@@ -137,6 +277,9 @@ func (s *SQLiteStore) ensureSchema(ctx context.Context) error {
 			billing_mode TEXT NOT NULL DEFAULT 'both',
 			monthly_quota_bytes INTEGER,
 			monthly_reset_day INTEGER NOT NULL DEFAULT 1,
+			billing_traffic_epoch INTEGER NOT NULL DEFAULT 0,
+			probe_config_applied_version INTEGER NOT NULL DEFAULT 0,
+			probe_config_applied_at INTEGER,
 			disabled INTEGER NOT NULL DEFAULT 0,
 			created_at INTEGER NOT NULL,
 			updated_at INTEGER NOT NULL,
@@ -161,6 +304,9 @@ func (s *SQLiteStore) ensureSchema(ctx context.Context) error {
 		`CREATE TABLE IF NOT EXISTS state_samples (
 			id INTEGER PRIMARY KEY AUTOINCREMENT,
 			node_id TEXT NOT NULL REFERENCES nodes(id),
+			sample_id TEXT,
+			payload_hash TEXT NOT NULL DEFAULT '',
+			received_at INTEGER NOT NULL DEFAULT 0,
 			ts INTEGER NOT NULL,
 			cpu_percent REAL,
 			load1 REAL,
@@ -185,13 +331,17 @@ func (s *SQLiteStore) ensureSchema(ctx context.Context) error {
 		`CREATE TABLE IF NOT EXISTS traffic_monthly (
 			node_id TEXT NOT NULL REFERENCES nodes(id),
 			month TEXT NOT NULL,
+			billing_epoch INTEGER NOT NULL DEFAULT 0,
+			reset_day INTEGER NOT NULL DEFAULT 1,
+			billing_mode TEXT NOT NULL DEFAULT 'both',
 			in_bytes INTEGER NOT NULL DEFAULT 0,
 			out_bytes INTEGER NOT NULL DEFAULT 0,
 			billable_bytes INTEGER NOT NULL DEFAULT 0,
 			last_in_total_bytes INTEGER,
 			last_out_total_bytes INTEGER,
+			last_sample_ts INTEGER,
 			updated_at INTEGER NOT NULL,
-			PRIMARY KEY (node_id, month)
+			PRIMARY KEY (node_id, month, billing_epoch)
 		);`,
 		`CREATE TABLE IF NOT EXISTS probe_targets (
 			id TEXT PRIMARY KEY,
@@ -322,6 +472,8 @@ func (s *SQLiteStore) ensureSchema(ctx context.Context) error {
 			attempts INTEGER NOT NULL DEFAULT 0,
 			next_attempt_at INTEGER NOT NULL,
 			last_error TEXT NOT NULL DEFAULT '',
+			lease_until INTEGER NOT NULL DEFAULT 0,
+			claim_token TEXT NOT NULL DEFAULT '',
 			created_at INTEGER NOT NULL,
 			updated_at INTEGER NOT NULL,
 			delivered_at INTEGER
@@ -350,6 +502,9 @@ func (s *SQLiteStore) ensureSchema(ctx context.Context) error {
 		return err
 	}
 	stateSampleColumns := map[string]string{
+		"sample_id":            "TEXT",
+		"payload_hash":         "TEXT NOT NULL DEFAULT ''",
+		"received_at":          "INTEGER NOT NULL DEFAULT 0",
 		"load1":                "REAL",
 		"load5":                "REAL",
 		"load15":               "REAL",
@@ -364,6 +519,9 @@ func (s *SQLiteStore) ensureSchema(ctx context.Context) error {
 			return err
 		}
 	}
+	if err := s.ensureStateSampleIdempotency(ctx); err != nil {
+		return err
+	}
 	if err := s.ensureColumn(ctx, "probe_rounds", "idempotency_key", "TEXT NOT NULL DEFAULT ''"); err != nil {
 		return err
 	}
@@ -377,33 +535,54 @@ func (s *SQLiteStore) ensureSchema(ctx context.Context) error {
 		return err
 	}
 	nodeColumns := map[string]string{
-		"install_token":        "TEXT",
-		"home_probe_target_id": "TEXT",
-		"expiry_date":          "TEXT",
-		"expiry_permanent":     "INTEGER NOT NULL DEFAULT 0",
-		"billing_cycle":        "TEXT",
-		"display_order":        "INTEGER NOT NULL DEFAULT 0",
-		"public_ipv4":          "TEXT",
-		"public_ipv6":          "TEXT",
+		"install_token":                "TEXT",
+		"home_probe_target_id":         "TEXT",
+		"expiry_date":                  "TEXT",
+		"expiry_permanent":             "INTEGER NOT NULL DEFAULT 0",
+		"billing_cycle":                "TEXT",
+		"billing_mode":                 "TEXT NOT NULL DEFAULT 'both'",
+		"monthly_quota_bytes":          "INTEGER",
+		"monthly_reset_day":            "INTEGER NOT NULL DEFAULT 1",
+		"billing_traffic_epoch":        "INTEGER NOT NULL DEFAULT 0",
+		"probe_config_applied_version": "INTEGER NOT NULL DEFAULT 0",
+		"probe_config_applied_at":      "INTEGER",
+		"disabled":                     "INTEGER NOT NULL DEFAULT 0",
+		"display_order":                "INTEGER NOT NULL DEFAULT 0",
+		"public_ipv4":                  "TEXT",
+		"public_ipv6":                  "TEXT",
+		"last_seen_at":                 "INTEGER",
 	}
 	for column, columnType := range nodeColumns {
 		if err := s.ensureColumn(ctx, "nodes", column, columnType); err != nil {
 			return err
 		}
 	}
+	notificationDeliveryColumns := map[string]string{
+		"lease_until": "INTEGER NOT NULL DEFAULT 0",
+		"claim_token": "TEXT NOT NULL DEFAULT ''",
+	}
+	for column, columnType := range notificationDeliveryColumns {
+		if err := s.ensureColumn(ctx, "notification_deliveries", column, columnType); err != nil {
+			return err
+		}
+	}
+	// Existing databases predate the lease columns. Build the claim index only
+	// after both columns have been added; otherwise CREATE INDEX aborts startup
+	// before the migration can run.
+	if _, err := s.db.ExecContext(ctx, `
+		CREATE INDEX IF NOT EXISTS idx_notification_deliveries_claim
+		ON notification_deliveries(state, next_attempt_at, lease_until, id)
+	`); err != nil {
+		return err
+	}
+	if err := s.migrateTrafficMonthlySchema(ctx); err != nil {
+		return err
+	}
 	probeTargetColumns := map[string]string{
 		"display_order": "INTEGER NOT NULL DEFAULT 0",
 	}
 	for column, columnType := range probeTargetColumns {
 		if err := s.ensureColumn(ctx, "probe_targets", column, columnType); err != nil {
-			return err
-		}
-	}
-	trafficMonthlyColumns := map[string]string{
-		"last_sample_ts": "INTEGER",
-	}
-	for column, columnType := range trafficMonthlyColumns {
-		if err := s.ensureColumn(ctx, "traffic_monthly", column, columnType); err != nil {
 			return err
 		}
 	}
@@ -501,6 +680,163 @@ func (s *SQLiteStore) ensureColumn(ctx context.Context, table, column, columnTyp
 	}
 	_, err = s.db.ExecContext(ctx, fmt.Sprintf("ALTER TABLE %s ADD COLUMN %s %s", table, column, columnType))
 	return err
+}
+
+func (s *SQLiteStore) ensureStateSampleIdempotency(ctx context.Context) error {
+	if _, err := s.db.ExecContext(ctx, `
+		CREATE UNIQUE INDEX IF NOT EXISTS idx_state_samples_node_sample_id
+		ON state_samples(node_id, sample_id)
+		WHERE sample_id IS NOT NULL AND sample_id <> ''
+	`); err != nil {
+		return err
+	}
+	if _, err := s.db.ExecContext(ctx, `
+		CREATE INDEX IF NOT EXISTS idx_state_samples_node_received
+		ON state_samples(node_id, received_at DESC, id DESC)
+	`); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (s *SQLiteStore) migrateTrafficMonthlySchema(ctx context.Context) error {
+	columns, err := s.tableColumns(ctx, "traffic_monthly")
+	if err != nil {
+		return err
+	}
+	pkIncludesEpoch, err := s.primaryKeyIncludes(ctx, "traffic_monthly", "billing_epoch")
+	if err != nil {
+		return err
+	}
+	requiresRebuild := !pkIncludesEpoch || !columns["billing_epoch"] || !columns["reset_day"] || !columns["billing_mode"] || !columns["last_sample_ts"]
+	if !requiresRebuild {
+		return nil
+	}
+
+	billingEpochExpr := "0"
+	if columns["billing_epoch"] {
+		billingEpochExpr = "COALESCE(billing_epoch, 0)"
+	}
+	resetDayExpr := "COALESCE((SELECT n.monthly_reset_day FROM nodes n WHERE n.id = traffic_monthly.node_id), 1)"
+	if columns["reset_day"] {
+		resetDayExpr = "COALESCE(reset_day, " + resetDayExpr + ")"
+	}
+	billingModeExpr := "COALESCE((SELECT n.billing_mode FROM nodes n WHERE n.id = traffic_monthly.node_id), 'both')"
+	if columns["billing_mode"] {
+		billingModeExpr = "COALESCE(NULLIF(TRIM(billing_mode), ''), " + billingModeExpr + ")"
+	}
+	lastSampleExpr := "NULL"
+	if columns["last_sample_ts"] {
+		lastSampleExpr = "last_sample_ts"
+	}
+
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer rollbackUnlessCommitted(tx)
+	if _, err := tx.ExecContext(ctx, `DROP TABLE IF EXISTS traffic_monthly_new`); err != nil {
+		return err
+	}
+	if _, err := tx.ExecContext(ctx, `
+		CREATE TABLE traffic_monthly_new (
+			node_id TEXT NOT NULL REFERENCES nodes(id),
+			month TEXT NOT NULL,
+			billing_epoch INTEGER NOT NULL DEFAULT 0,
+			reset_day INTEGER NOT NULL DEFAULT 1,
+			billing_mode TEXT NOT NULL DEFAULT 'both',
+			in_bytes INTEGER NOT NULL DEFAULT 0,
+			out_bytes INTEGER NOT NULL DEFAULT 0,
+			billable_bytes INTEGER NOT NULL DEFAULT 0,
+			last_in_total_bytes INTEGER,
+			last_out_total_bytes INTEGER,
+			last_sample_ts INTEGER,
+			updated_at INTEGER NOT NULL,
+			PRIMARY KEY (node_id, month, billing_epoch)
+		)
+	`); err != nil {
+		return err
+	}
+	insertSQL := fmt.Sprintf(`
+		INSERT OR REPLACE INTO traffic_monthly_new (
+			node_id, month, billing_epoch, reset_day, billing_mode,
+			in_bytes, out_bytes, billable_bytes, last_in_total_bytes,
+			last_out_total_bytes, last_sample_ts, updated_at
+		)
+		SELECT node_id, month, %s, %s, %s,
+		       in_bytes, out_bytes, billable_bytes, last_in_total_bytes,
+		       last_out_total_bytes, %s, updated_at
+		FROM traffic_monthly
+	`, billingEpochExpr, resetDayExpr, billingModeExpr, lastSampleExpr)
+	if _, err := tx.ExecContext(ctx, insertSQL); err != nil {
+		return err
+	}
+	if _, err := tx.ExecContext(ctx, `DROP TABLE traffic_monthly`); err != nil {
+		return err
+	}
+	if _, err := tx.ExecContext(ctx, `ALTER TABLE traffic_monthly_new RENAME TO traffic_monthly`); err != nil {
+		return err
+	}
+	if err := tx.Commit(); err != nil {
+		return err
+	}
+	tx = nil
+	return nil
+}
+
+func (s *SQLiteStore) tableColumns(ctx context.Context, table string) (map[string]bool, error) {
+	if !safeSQLIdentifier(table) {
+		return nil, fmt.Errorf("invalid schema identifier")
+	}
+	rows, err := s.db.QueryContext(ctx, fmt.Sprintf("PRAGMA table_info(%s)", table))
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	columns := map[string]bool{}
+	for rows.Next() {
+		var cid int
+		var name, dataType string
+		var notNull int
+		var defaultValue any
+		var primaryKey int
+		if err := rows.Scan(&cid, &name, &dataType, &notNull, &defaultValue, &primaryKey); err != nil {
+			return nil, err
+		}
+		columns[name] = true
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return columns, nil
+}
+
+func (s *SQLiteStore) primaryKeyIncludes(ctx context.Context, table, column string) (bool, error) {
+	if !safeSQLIdentifier(table) || !safeSQLIdentifier(column) {
+		return false, fmt.Errorf("invalid schema identifier")
+	}
+	rows, err := s.db.QueryContext(ctx, fmt.Sprintf("PRAGMA table_info(%s)", table))
+	if err != nil {
+		return false, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var cid int
+		var name, dataType string
+		var notNull int
+		var defaultValue any
+		var primaryKey int
+		if err := rows.Scan(&cid, &name, &dataType, &notNull, &defaultValue, &primaryKey); err != nil {
+			return false, err
+		}
+		if name == column && primaryKey > 0 {
+			return true, nil
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return false, err
+	}
+	return false, nil
 }
 
 func (s *SQLiteStore) columnExists(ctx context.Context, table, column string) (bool, error) {
@@ -1135,7 +1471,7 @@ func validAdminProbeTargetForType(targetType string, address string, port sql.Nu
 	case "tcping":
 		return port.Valid && validPort(port.Int64)
 	case "ping":
-		return !port.Valid
+		return !port.Valid && validPingTargetAddress(address)
 	case "http_get":
 		return !port.Valid && validHTTPGetTargetAddress(address)
 	default:
@@ -1170,6 +1506,8 @@ func (s *SQLiteStore) UpdateAdminNode(ctx context.Context, nodeID string, update
 
 	sets := make([]string, 0, 12)
 	args := make([]any, 0, 13)
+	billingRebaseConditions := make([]string, 0, 2)
+	billingRebaseArgs := make([]any, 0, 2)
 	if update.DisplayName != nil {
 		sets = append(sets, "display_name = ?")
 		args = append(args, *update.DisplayName)
@@ -1201,10 +1539,14 @@ func (s *SQLiteStore) UpdateAdminNode(ctx context.Context, nodeID string, update
 	if update.BillingMode != nil {
 		sets = append(sets, "billing_mode = ?")
 		args = append(args, *update.BillingMode)
+		billingRebaseConditions = append(billingRebaseConditions, "COALESCE(billing_mode, '') <> ?")
+		billingRebaseArgs = append(billingRebaseArgs, *update.BillingMode)
 	}
 	if update.MonthlyResetDay != nil {
 		sets = append(sets, "monthly_reset_day = ?")
 		args = append(args, *update.MonthlyResetDay)
+		billingRebaseConditions = append(billingRebaseConditions, "COALESCE(monthly_reset_day, 1) <> ?")
+		billingRebaseArgs = append(billingRebaseArgs, *update.MonthlyResetDay)
 	}
 	if update.DisplayOrder != nil {
 		sets = append(sets, "display_order = ?")
@@ -1233,6 +1575,10 @@ func (s *SQLiteStore) UpdateAdminNode(ctx context.Context, nodeID string, update
 		} else {
 			args = append(args, 0)
 		}
+	}
+	if len(billingRebaseConditions) > 0 {
+		sets = append(sets, "billing_traffic_epoch = billing_traffic_epoch + CASE WHEN "+strings.Join(billingRebaseConditions, " OR ")+" THEN 1 ELSE 0 END")
+		args = append(args, billingRebaseArgs...)
 	}
 	if len(sets) == 0 {
 		return AdminNode{}, errInvalidAdminNodeUpdate
@@ -1264,8 +1610,13 @@ func (s *SQLiteStore) nodes(ctx context.Context) ([]Node, error) {
 		         SELECT tm.billable_bytes
 		         FROM traffic_monthly tm
 		         WHERE tm.node_id = n.id
+		           AND tm.billing_epoch = COALESCE(n.billing_traffic_epoch, 0)
 		           AND tm.month = CASE
-		             WHEN CAST(strftime('%d', 'now') AS INTEGER) < n.monthly_reset_day THEN strftime('%Y-%m', 'now', '-1 month')
+		             WHEN CAST(strftime('%d', 'now') AS INTEGER) < CASE
+		               WHEN (CASE WHEN COALESCE(n.monthly_reset_day, 1) BETWEEN 1 AND 31 THEN n.monthly_reset_day ELSE 1 END) > CAST(strftime('%d', date('now', 'start of month', '+1 month', '-1 day')) AS INTEGER)
+		               THEN CAST(strftime('%d', date('now', 'start of month', '+1 month', '-1 day')) AS INTEGER)
+		               ELSE (CASE WHEN COALESCE(n.monthly_reset_day, 1) BETWEEN 1 AND 31 THEN n.monthly_reset_day ELSE 1 END)
+		             END THEN strftime('%Y-%m', date('now', 'start of month', '-1 day'))
 		             ELSE strftime('%Y-%m', 'now')
 		           END
 		       ) AS billable_bytes,
@@ -2297,16 +2648,19 @@ func nextBillingCycleDate(rawDate string, cycleMonths int, now time.Time) (time.
 		return time.Time{}, false
 	}
 	today := dateOnlyUTC(now)
+	finalDate = dateOnlyUTC(finalDate)
 	if finalDate.Before(today) {
 		return finalDate, true
 	}
 	nextDate := finalDate
+	offsetMonths := 0
 	for {
-		previous := addMonthsClampedUTC(nextDate, -cycleMonths)
+		previous := addMonthsFromAnchorClampedUTC(finalDate, offsetMonths-cycleMonths)
 		if previous.Before(today) {
 			break
 		}
 		nextDate = previous
+		offsetMonths -= cycleMonths
 	}
 	return nextDate, true
 }
@@ -2331,7 +2685,12 @@ func dateOnlyUTC(value time.Time) time.Time {
 
 func addMonthsClampedUTC(value time.Time, months int) time.Time {
 	value = dateOnlyUTC(value)
-	year, month, day := value.Date()
+	return addMonthsFromAnchorClampedUTC(value, months)
+}
+
+func addMonthsFromAnchorClampedUTC(anchor time.Time, months int) time.Time {
+	anchor = dateOnlyUTC(anchor)
+	year, month, day := anchor.Date()
 	totalMonths := year*12 + int(month) - 1 + months
 	newYear := totalMonths / 12
 	newMonth := time.Month(totalMonths%12 + 1)

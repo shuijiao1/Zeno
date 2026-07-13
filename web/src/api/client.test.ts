@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { createAdminNode, createAdminNotificationChannel, createAdminProbeTarget, deleteAdminNode, deleteAdminNotificationChannel, deleteAdminProbeTarget, fetchAdminAccount, fetchAdminAlertRules, fetchAdminNodes, fetchAdminNotificationChannels, fetchAdminProbeTargets, fetchAdminSettings, fetchPublicSettings, fetchServiceLatency, loginAdmin, logoutAdmin, normalizeAdminAlertRules, normalizeAdminNodes, normalizeAdminNotificationChannels, normalizeAdminProbeTargets, normalizeSettings, normalizeNodeLatency, normalizeNodeState, normalizeServiceLatency, normalizeSummary, requestAdminNodeInstallCommand, subscribeNodeLatency, subscribeNodeState, subscribeServiceLatency, subscribeSummary, testAdminNotificationChannel, updateAdminAccount, updateAdminAlertRule, updateAdminNode, updateAdminNotificationChannel, updateAdminNotificationType, updateAdminProbeTarget, updateAdminSettings } from './client'
+import { createAdminNode, createAdminNotificationChannel, createAdminProbeTarget, deleteAdminNode, deleteAdminNotificationChannel, deleteAdminProbeTarget, fetchAdminAccount, fetchAdminAlertRules, fetchAdminNodes, fetchAdminNotificationChannels, fetchAdminProbeTargets, fetchAdminSettings, fetchPublicSettings, fetchServiceLatency, loginAdmin, logoutAdmin, normalizeAdminAlertRules, normalizeAdminNodes, normalizeAdminNotificationChannels, normalizeAdminProbeTargets, normalizeSettings, normalizeNodeLatency, normalizeNodeState, normalizeServiceLatency, normalizeSummary, requestAdminNodeInstallCommand, subscribeNodeLatency, subscribeNodeState, subscribeServiceLatency, subscribeSummary, testAdminNotificationChannel, updateAdminAccount, updateAdminAlertRule, updateAdminNode, updateAdminNotificationChannel, updateAdminProbeTarget, updateAdminSettings } from './client'
 
 describe('normalizeSummary', () => {
   it('maps controller snake_case JSON into frontend camelCase models', () => {
@@ -809,6 +809,24 @@ describe('admin auth client', () => {
       headers: { 'X-Admin-Token': 'account-session-token' },
     })
   })
+
+  it('rejects failed logout responses instead of reporting a local logout success', async () => {
+    const fetchMock = vi.fn(async () => new Response(null, { status: 500 }))
+    globalThis.fetch = fetchMock as unknown as typeof fetch
+
+    await expect(logoutAdmin('account-session-token')).rejects.toThrow('admin logout failed: 500')
+    expect(fetchMock).toHaveBeenCalledWith('/api/admin/v1/logout', {
+      method: 'POST',
+      headers: { 'X-Admin-Token': 'account-session-token' },
+    })
+  })
+
+  it('surfaces logout 401s so the UI can run the expired-session cleanup path', async () => {
+    const fetchMock = vi.fn(async () => new Response(null, { status: 401 }))
+    globalThis.fetch = fetchMock as unknown as typeof fetch
+
+    await expect(logoutAdmin('expired-session-token')).rejects.toThrow('admin logout failed: 401')
+  })
 })
 
 describe('fetchSettings', () => {
@@ -1561,11 +1579,8 @@ describe('notification writes', () => {
       enabled: true,
     })
     const updated = await updateAdminNotificationChannel('admin-pass', 'zeno-telegram', { enabled: false })
-    const notificationType = await updateAdminNotificationType('admin-pass', 'node_offline', true)
-
     expect(created.credentialSet).toBe(true)
     expect(updated.enabled).toBe(false)
-    expect(notificationType.enabled).toBe(true)
     expect(fetchMock).toHaveBeenNthCalledWith(1, '/api/admin/v1/notification-channels', {
       method: 'POST',
       headers: {
@@ -1588,15 +1603,6 @@ describe('notification writes', () => {
         'X-Admin-Token': 'admin-pass',
       },
       body: JSON.stringify({ enabled: false }),
-    })
-    expect(fetchMock).toHaveBeenNthCalledWith(3, '/api/admin/v1/notification-types/node_offline', {
-      method: 'PATCH',
-      headers: {
-        Accept: 'application/json',
-        'Content-Type': 'application/json',
-        'X-Admin-Token': 'admin-pass',
-      },
-      body: JSON.stringify({ enabled: true }),
     })
     const calls = fetchMock.mock.calls as unknown as Array<[RequestInfo | URL, RequestInit?]>
     expect(String(calls[0]?.[0])).not.toContain('telegram-bot-secret')

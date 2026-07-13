@@ -1,8 +1,13 @@
 package main
 
 import (
+	"bytes"
 	"context"
+	"encoding/base64"
+	"encoding/hex"
 	"flag"
+	"fmt"
+	"io"
 	"log"
 	"net/http"
 	"os"
@@ -16,14 +21,17 @@ import (
 )
 
 type handlerConfig struct {
-	DBPath          string
-	WebDir          string
-	SeedPreview     bool
-	NodeID          string
-	AgentToken      string
-	AdminToken      string
-	AgentBinaryPath string
-	AgentVersion    string
+	DBPath                    string
+	WebDir                    string
+	SeedPreview               bool
+	NodeID                    string
+	AgentToken                string
+	AdminToken                string
+	AgentBinaryPath           string
+	AgentVersion              string
+	DisableNotifications      bool
+	NotificationAuthorityKey  string
+	NotificationCredentialKey []byte
 }
 
 type controllerRuntime struct {
@@ -38,7 +46,11 @@ func buildController(config handlerConfig) (*controllerRuntime, error) {
 		backgroundCancel()
 		return nil
 	}}
-	options := api.HandlerOptions{StaticDir: config.WebDir, AgentBinaryPath: config.AgentBinaryPath, AgentVersion: config.AgentVersion, BackgroundContext: backgroundCtx}
+	options := api.HandlerOptions{
+		StaticDir: config.WebDir, AgentBinaryPath: config.AgentBinaryPath, AgentVersion: config.AgentVersion,
+		BackgroundContext:    backgroundCtx,
+		DisableNotifications: config.DisableNotifications,
+	}
 	if strings.TrimSpace(config.AdminToken) != "" {
 		options.AdminTokenHash = api.HashAdminToken(config.AdminToken)
 	}
@@ -50,7 +62,29 @@ func buildController(config handlerConfig) (*controllerRuntime, error) {
 			return nil, err
 		}
 		store = opened
+		if len(config.NotificationCredentialKey) > 0 {
+			if err := store.ConfigureNotificationCredentialEncryption(context.Background(), config.NotificationCredentialKey); err != nil {
+				_ = store.Close()
+				backgroundCancel()
+				return nil, err
+			}
+		} else if err := store.RequireNotificationCredentialKeyForExistingCredentials(context.Background()); err != nil {
+			_ = store.Close()
+			backgroundCancel()
+			return nil, err
+		}
+		authorized, err := store.AuthorizeNotificationAuthority(context.Background(), config.NotificationAuthorityKey)
+		if err != nil {
+			_ = store.Close()
+			backgroundCancel()
+			return nil, err
+		}
+		if !authorized {
+			config.DisableNotifications = true
+			log.Printf("notification delivery disabled: external authority key is missing or does not match this database")
+		}
 		options.Store = store
+		options.DisableNotifications = config.DisableNotifications
 		options.StaleOfflineScanInterval = 5 * time.Second
 		options.RenewalNotificationInterval = time.Hour
 		options.HistoryRetentionInterval = time.Hour
@@ -106,6 +140,80 @@ func readAgentToken(tokenValue, tokenFile string) (string, error) {
 	return readSecret(tokenValue, tokenFile)
 }
 
+func readNotificationCredentialKeyFile(keyFile string) ([]byte, error) {
+	keyFile = strings.TrimSpace(keyFile)
+	if keyFile == "" {
+		return nil, nil
+	}
+	info, err := os.Lstat(keyFile)
+	if err != nil {
+		return nil, fmt.Errorf("notification key file unavailable")
+	}
+	if info.Mode()&os.ModeSymlink != 0 {
+		return nil, fmt.Errorf("notification key file must be a regular file")
+	}
+	if !info.Mode().IsRegular() {
+		return nil, fmt.Errorf("notification key file must be a regular file")
+	}
+	if info.Mode().Perm()&0o077 != 0 {
+		return nil, fmt.Errorf("notification key file permissions are too open")
+	}
+	file, err := os.Open(keyFile)
+	if err != nil {
+		return nil, fmt.Errorf("notification key file unavailable")
+	}
+	defer file.Close()
+	openedInfo, err := file.Stat()
+	if err != nil || !openedInfo.Mode().IsRegular() || !os.SameFile(info, openedInfo) {
+		return nil, fmt.Errorf("notification key file changed while opening")
+	}
+	if openedInfo.Mode().Perm()&0o077 != 0 {
+		return nil, fmt.Errorf("notification key file permissions are too open")
+	}
+	content, err := io.ReadAll(io.LimitReader(file, 1025))
+	if err != nil {
+		return nil, fmt.Errorf("notification key file unavailable")
+	}
+	if len(content) > 1024 {
+		return nil, fmt.Errorf("notification key file is too large")
+	}
+	key, err := parseNotificationCredentialKey(content)
+	if err != nil {
+		return nil, err
+	}
+	return key, nil
+}
+
+func parseNotificationCredentialKey(content []byte) ([]byte, error) {
+	if len(content) == notificationCredentialKeySize {
+		key := make([]byte, notificationCredentialKeySize)
+		copy(key, content)
+		return key, nil
+	}
+	raw := bytes.TrimRight(content, "\r\n")
+	if len(raw) == notificationCredentialKeySize {
+		key := make([]byte, notificationCredentialKeySize)
+		copy(key, raw)
+		return key, nil
+	}
+	text := strings.TrimSpace(string(content))
+	if text == "" {
+		return nil, fmt.Errorf("notification key file is empty")
+	}
+	if decoded, err := hex.DecodeString(text); err == nil && len(decoded) == notificationCredentialKeySize {
+		return decoded, nil
+	}
+	for _, encoding := range []*base64.Encoding{base64.RawURLEncoding, base64.URLEncoding, base64.RawStdEncoding, base64.StdEncoding} {
+		decoded, err := encoding.DecodeString(text)
+		if err == nil && len(decoded) == notificationCredentialKeySize {
+			return decoded, nil
+		}
+	}
+	return nil, fmt.Errorf("notification key file must contain a 32-byte key")
+}
+
+const notificationCredentialKeySize = 32
+
 func main() {
 	addr := flag.String("addr", "127.0.0.1:18980", "controller listen address")
 	webDir := flag.String("web-dir", "", "optional built web dashboard directory")
@@ -119,6 +227,8 @@ func main() {
 	adminTokenFile := flag.String("admin-token-file", "", "file containing the admin API token")
 	agentBinaryPath := flag.String("agent-binary", "", "optional Zeno agent linux/amd64 binary path served for dashboard install commands")
 	agentVersion := flag.String("agent-version", "", "optional version string inserted into generated agent install commands")
+	notificationAuthorityKeyFile := flag.String("notification-authority-key-file", "", "file containing the external notification authority key")
+	notificationCredentialKeyFile := flag.String("notification-credential-key-file", "", "file containing the external notification credential encryption key")
 	probeInterval := flag.Duration("probe-interval", time.Minute, "controller-local probe collection interval")
 	checkDB := flag.Bool("check-db", false, "run SQLite schema setup and PRAGMA quick_check, then exit")
 	flag.Parse()
@@ -141,8 +251,21 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
+	notificationAuthorityKey, err := readSecret("", *notificationAuthorityKeyFile)
+	if err != nil {
+		log.Fatal(err)
+	}
+	credentialKeyFile := strings.TrimSpace(*notificationCredentialKeyFile)
+	if credentialKeyFile == "" {
+		credentialKeyFile = strings.TrimSpace(os.Getenv("ZENO_NOTIFICATION_CREDENTIAL_KEY_FILE"))
+	}
+	notificationCredentialKey, err := readNotificationCredentialKeyFile(credentialKeyFile)
+	if err != nil {
+		log.Fatal(err)
+	}
 
-	runtime, err := buildController(handlerConfig{DBPath: *dbPath, WebDir: *webDir, SeedPreview: *seedPreview, NodeID: *nodeID, AgentToken: token, AdminToken: adminSecret, AgentBinaryPath: *agentBinaryPath, AgentVersion: *agentVersion})
+	disableNotifications := strings.EqualFold(strings.TrimSpace(os.Getenv("ZENO_NOTIFICATIONS_DISABLED")), "true") || strings.TrimSpace(os.Getenv("ZENO_NOTIFICATIONS_DISABLED")) == "1"
+	runtime, err := buildController(handlerConfig{DBPath: *dbPath, WebDir: *webDir, SeedPreview: *seedPreview, NodeID: *nodeID, AgentToken: token, AdminToken: adminSecret, AgentBinaryPath: *agentBinaryPath, AgentVersion: *agentVersion, DisableNotifications: disableNotifications, NotificationAuthorityKey: notificationAuthorityKey, NotificationCredentialKey: notificationCredentialKey})
 	if err != nil {
 		log.Fatal(err)
 	}

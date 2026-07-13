@@ -84,6 +84,10 @@ func (h *handler) handleAdminNotificationChannelTest(w http.ResponseWriter, r *h
 	if !ok {
 		return
 	}
+	if h.notificationSender == nil {
+		writeError(w, http.StatusConflict, "notification delivery disabled")
+		return
+	}
 	channel, err := store.AdminNotificationDispatchChannel(r.Context(), channelID)
 	if err != nil {
 		writeAdminError(w, err)

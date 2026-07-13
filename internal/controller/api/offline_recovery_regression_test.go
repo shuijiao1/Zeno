@@ -17,6 +17,7 @@ func openOfflineRecoveryTestStore(t *testing.T) *SQLiteStore {
 		t.Fatalf("open sqlite store: %v", err)
 	}
 	t.Cleanup(func() { _ = store.Close() })
+	enableTestNotificationCredentialEncryption(t, store)
 	if err := store.SeedPreviewData(context.Background(), PreviewSeedOptions{NodeID: "hytron", DisplayName: "Hytron", CountryCode: "HK", AgentToken: "test-agent-token"}); err != nil {
 		t.Fatalf("seed preview data: %v", err)
 	}
@@ -178,7 +179,7 @@ func TestStaleOfflineScannerWaitsForStartupGrace(t *testing.T) {
 	if _, err := store.db.ExecContext(ctx, `UPDATE nodes SET status = 'online', last_seen_at = ? WHERE id = 'hytron'`, staleSeen); err != nil {
 		t.Fatalf("set stale node: %v", err)
 	}
-	h := &handler{store: store, liveHub: newLiveUpdateHub(), presence: newAgentPresenceManager()}
+	h := &handler{store: store, liveHub: newLiveUpdateHub(), presence: newAgentPresenceManager(), notificationSender: &countingNotificationSender{}}
 	go h.runStaleAgentOfflineScannerWithGrace(ctx, 5*time.Millisecond, 80*time.Millisecond)
 
 	time.Sleep(25 * time.Millisecond)

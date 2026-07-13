@@ -188,10 +188,6 @@ function compactBytes(value: number): string {
   return `${amount} ${units[unit]}`
 }
 
-function compactRate(value: number): string {
-  return `${compactBytes(value)}/s`
-}
-
 function compactRateParts(value: number): { value: string; unit: string } {
   const [amount, unit = 'B'] = compactBytes(value).split(' ')
   return { value: amount, unit: `${unit}/s` }
@@ -426,9 +422,10 @@ export function App() {
 
   useEffect(() => {
     let cancelled = false
+    const settingsSnapshot = adminMutationEpochRef.current.snapshot()
     fetchPublicSettings()
       .then((loadedSettings) => {
-        if (!cancelled) setSettings(loadedSettings)
+        if (!cancelled && adminMutationEpochRef.current.isCurrent(settingsSnapshot)) setSettings(loadedSettings)
       })
       .catch(() => {})
     return () => {
@@ -690,6 +687,7 @@ export function App() {
     let loadedOnce = false
     const loadAdminNodes = async (signal?: AbortSignal) => {
       const mutationSnapshot = adminMutationEpochRef.current.snapshot()
+      if (!adminMutationEpochRef.current.isCurrent(mutationSnapshot)) return
       if (!loadedOnce) setAdminState({ kind: 'loading' })
       try {
         const nodesData = await fetchAdminNodes(adminToken, signal)
@@ -765,60 +763,78 @@ export function App() {
       })
   }
 
-  const clearAdminToken = () => {
-    if (adminToken !== '') {
-      logoutAdmin(adminToken).catch(() => {})
-    }
+  const clearAdminSession = () => {
     clearStoredAdminToken()
     setAdminToken('')
-    setAdminAuthState({ kind: 'idle' })
     setAdminState({ kind: 'idle' })
+  }
+
+  const clearAdminToken = () => {
+    if (adminToken === '') {
+      clearAdminSession()
+      setAdminAuthState({ kind: 'idle' })
+      return
+    }
+    const finishMutation = adminMutationEpochRef.current.beginMutation()
+    setAdminAuthState({ kind: 'loading' })
+    logoutAdmin(adminToken)
+      .then(() => {
+        clearAdminSession()
+        setAdminAuthState({ kind: 'idle' })
+      })
+      .catch((error: unknown) => {
+        if (isAdminUnauthorizedError(error)) {
+          clearAdminSession()
+          setAdminAuthState({ kind: 'error', message: '登录已过期，请重新登录。' })
+          return
+        }
+        setAdminAuthState({ kind: 'error', message: error instanceof Error ? `退出失败：${error.message}` : '退出失败' })
+      })
+      .finally(finishMutation)
   }
 
   const handleAdminRequestError = (error: unknown) => {
     if (isAdminUnauthorizedError(error)) {
-      clearStoredAdminToken()
-      setAdminToken('')
+      clearAdminSession()
       setAdminAuthState({ kind: 'error', message: '登录已过期，请重新登录。' })
-      setAdminState({ kind: 'idle' })
       return
     }
     setAdminState({ kind: 'error', message: error instanceof Error ? error.message : 'unknown error' })
   }
 
-  const updateAdminAccountDetails = (username: string, currentPassword: string, newPassword: string): Promise<void> => {
+  const runAdminMutation = <T, R = void>(operation: () => Promise<T>, applyResult: (value: T) => R): Promise<R> => {
     if (adminToken === '') return Promise.reject(new Error('missing admin token'))
-    adminMutationEpochRef.current.invalidate()
-    return updateAdminAccount(adminToken, username, currentPassword, newPassword)
-      .then((session) => {
-        rememberAdminToken(session.token)
-        setAdminToken(session.token)
-        setAdminState((current) => current.kind === 'ready' ? { ...current, account: { username: session.username } } : current)
-      })
+    const finishMutation = adminMutationEpochRef.current.beginMutation()
+    return operation()
+      .then((value) => applyResult(value))
       .catch((error: unknown) => {
         handleAdminRequestError(error)
         throw error
       })
+      .finally(finishMutation)
   }
 
-  const createAdminNodeDetails = (input: AdminNodeCreateInput): Promise<AdminNode> => {
-    if (adminToken === '') return Promise.reject(new Error('missing admin token'))
-    adminMutationEpochRef.current.invalidate()
-    return createAdminNode(adminToken, input)
-      .then((createdNode) => {
-        setAdminState((current) => {
-          if (current.kind === 'ready') {
-            return { ...current, nodes: sortAdminNodes([...current.nodes, createdNode]) }
-          }
-          return { kind: 'ready', account: { username: 'admin' }, nodes: [createdNode], targets: [], notificationChannels: [], alertRules: [] }
-        })
-        return createdNode
+  const updateAdminAccountDetails = (username: string, currentPassword: string, newPassword: string): Promise<void> => runAdminMutation(
+    () => updateAdminAccount(adminToken, username, currentPassword, newPassword),
+    (session) => {
+      rememberAdminToken(session.token)
+      setAdminToken(session.token)
+      setAdminState((current) => current.kind === 'ready' ? { ...current, account: { username: session.username } } : current)
+    },
+  )
+
+  const createAdminNodeDetails = (input: AdminNodeCreateInput): Promise<AdminNode> => runAdminMutation(
+    () => createAdminNode(adminToken, input),
+    (createdNode) => {
+      setAdminState((current) => {
+        if (current.kind === 'ready') {
+          return { ...current, nodes: sortAdminNodes([...current.nodes, createdNode]) }
+        }
+        return { kind: 'ready', account: { username: 'admin' }, nodes: [createdNode], targets: [], notificationChannels: [], alertRules: [] }
       })
-      .catch((error: unknown) => {
-        handleAdminRequestError(error)
-        throw error
-      })
-  }
+      return createdNode
+    },
+  )
 
   const requestAdminInstallCommand = (nodeId: string): Promise<AdminNodeInstallCommand> => {
     if (adminToken === '') return Promise.reject(new Error('missing admin token'))
@@ -829,153 +845,105 @@ export function App() {
       })
   }
 
-  const updateAdminNodeDetails = (nodeId: string, input: AdminNodeUpdateInput): Promise<void> => {
-    if (adminToken === '') return Promise.reject(new Error('missing admin token'))
-    adminMutationEpochRef.current.invalidate()
-    return updateAdminNode(adminToken, nodeId, input)
-      .then((updatedNode) => {
-        setAdminState((current) => {
-          if (current.kind === 'ready') {
-            return {
-              ...current,
-              nodes: sortAdminNodes(current.nodes.map((node) => node.id === updatedNode.id ? updatedNode : node)),
-            }
-          }
-          return { kind: 'ready', account: { username: 'admin' }, nodes: [updatedNode], targets: [], notificationChannels: [], alertRules: [] }
-        })
-      })
-      .catch((error: unknown) => {
-        handleAdminRequestError(error)
-        throw error
-      })
-  }
-
-  const deleteAdminNodeDetails = (nodeId: string): Promise<void> => {
-    if (adminToken === '') return Promise.reject(new Error('missing admin token'))
-    adminMutationEpochRef.current.invalidate()
-    return deleteAdminNode(adminToken, nodeId)
-      .then(() => {
-        setAdminState((current) => {
-          if (current.kind !== 'ready') return current
+  const updateAdminNodeDetails = (nodeId: string, input: AdminNodeUpdateInput): Promise<void> => runAdminMutation(
+    () => updateAdminNode(adminToken, nodeId, input),
+    (updatedNode) => {
+      setAdminState((current) => {
+        if (current.kind === 'ready') {
           return {
             ...current,
-            nodes: current.nodes.filter((node) => node.id !== nodeId),
-            targets: current.targets.map((target) => ({
-              ...target,
-              assignments: target.assignments.filter((assignment) => assignment.nodeId !== nodeId),
-            })),
+            nodes: sortAdminNodes(current.nodes.map((node) => node.id === updatedNode.id ? updatedNode : node)),
           }
-        })
+        }
+        return { kind: 'ready', account: { username: 'admin' }, nodes: [updatedNode], targets: [], notificationChannels: [], alertRules: [] }
       })
-      .catch((error: unknown) => {
-        handleAdminRequestError(error)
-        throw error
-      })
-  }
+    },
+  )
 
-  const createAdminProbeTargetDetails = (input: AdminProbeTargetInput): Promise<void> => {
-    if (adminToken === '') return Promise.reject(new Error('missing admin token'))
-    adminMutationEpochRef.current.invalidate()
-    return createAdminProbeTarget(adminToken, input)
-      .then((createdTarget) => {
-        setAdminState((current) => {
-          if (current.kind === 'ready') {
-            return { ...current, targets: sortAdminProbeTargets([...current.targets, createdTarget]) }
-          }
-          return { kind: 'ready', account: { username: 'admin' }, nodes: [], targets: [createdTarget], notificationChannels: [], alertRules: [] }
-        })
+  const deleteAdminNodeDetails = (nodeId: string): Promise<void> => runAdminMutation(
+    () => deleteAdminNode(adminToken, nodeId),
+    () => {
+      setAdminState((current) => {
+        if (current.kind !== 'ready') return current
+        return {
+          ...current,
+          nodes: current.nodes.filter((node) => node.id !== nodeId),
+          targets: current.targets.map((target) => ({
+            ...target,
+            assignments: target.assignments.filter((assignment) => assignment.nodeId !== nodeId),
+          })),
+        }
       })
-      .catch((error: unknown) => {
-        handleAdminRequestError(error)
-        throw error
-      })
-  }
+    },
+  )
 
-  const updateAdminProbeTargetDetails = (targetId: string, input: AdminProbeTargetUpdateInput): Promise<void> => {
-    if (adminToken === '') return Promise.reject(new Error('missing admin token'))
-    adminMutationEpochRef.current.invalidate()
-    return updateAdminProbeTarget(adminToken, targetId, input)
-      .then((updatedTarget) => {
-        setAdminState((current) => {
-          if (current.kind === 'ready') {
-            return { ...current, targets: sortAdminProbeTargets(current.targets.map((target) => target.id === updatedTarget.id ? updatedTarget : target)) }
-          }
-          return { kind: 'ready', account: { username: 'admin' }, nodes: [], targets: [updatedTarget], notificationChannels: [], alertRules: [] }
-        })
+  const createAdminProbeTargetDetails = (input: AdminProbeTargetInput): Promise<void> => runAdminMutation(
+    () => createAdminProbeTarget(adminToken, input),
+    (createdTarget) => {
+      setAdminState((current) => {
+        if (current.kind === 'ready') {
+          return { ...current, targets: sortAdminProbeTargets([...current.targets, createdTarget]) }
+        }
+        return { kind: 'ready', account: { username: 'admin' }, nodes: [], targets: [createdTarget], notificationChannels: [], alertRules: [] }
       })
-      .catch((error: unknown) => {
-        handleAdminRequestError(error)
-        throw error
-      })
-  }
+    },
+  )
 
-  const deleteAdminProbeTargetDetails = (targetId: string): Promise<void> => {
-    if (adminToken === '') return Promise.reject(new Error('missing admin token'))
-    adminMutationEpochRef.current.invalidate()
-    return deleteAdminProbeTarget(adminToken, targetId)
-      .then(() => {
-        setAdminState((current) => {
-          if (current.kind !== 'ready') return current
-          return { ...current, targets: current.targets.filter((target) => target.id !== targetId) }
-        })
+  const updateAdminProbeTargetDetails = (targetId: string, input: AdminProbeTargetUpdateInput): Promise<void> => runAdminMutation(
+    () => updateAdminProbeTarget(adminToken, targetId, input),
+    (updatedTarget) => {
+      setAdminState((current) => {
+        if (current.kind === 'ready') {
+          return { ...current, targets: sortAdminProbeTargets(current.targets.map((target) => target.id === updatedTarget.id ? updatedTarget : target)) }
+        }
+        return { kind: 'ready', account: { username: 'admin' }, nodes: [], targets: [updatedTarget], notificationChannels: [], alertRules: [] }
       })
-      .catch((error: unknown) => {
-        handleAdminRequestError(error)
-        throw error
-      })
-  }
+    },
+  )
 
-  const createAdminNotificationChannelDetails = (input: AdminNotificationChannelCreateInput): Promise<void> => {
-    if (adminToken === '') return Promise.reject(new Error('missing admin token'))
-    adminMutationEpochRef.current.invalidate()
-    return createAdminNotificationChannel(adminToken, input)
-      .then((createdChannel) => {
-        setAdminState((current) => {
-          if (current.kind === 'ready') {
-            return { ...current, notificationChannels: [...current.notificationChannels, createdChannel] }
-          }
-          return { kind: 'ready', account: { username: 'admin' }, nodes: [], targets: [], notificationChannels: [createdChannel], alertRules: [] }
-        })
+  const deleteAdminProbeTargetDetails = (targetId: string): Promise<void> => runAdminMutation(
+    () => deleteAdminProbeTarget(adminToken, targetId),
+    () => {
+      setAdminState((current) => {
+        if (current.kind !== 'ready') return current
+        return { ...current, targets: current.targets.filter((target) => target.id !== targetId) }
       })
-      .catch((error: unknown) => {
-        handleAdminRequestError(error)
-        throw error
-      })
-  }
+    },
+  )
 
-  const updateAdminNotificationChannelDetails = (channelId: string, input: AdminNotificationChannelUpdateInput): Promise<void> => {
-    if (adminToken === '') return Promise.reject(new Error('missing admin token'))
-    adminMutationEpochRef.current.invalidate()
-    return updateAdminNotificationChannel(adminToken, channelId, input)
-      .then((updatedChannel) => {
-        setAdminState((current) => {
-          if (current.kind === 'ready') {
-            return { ...current, notificationChannels: current.notificationChannels.map((channel) => channel.id === updatedChannel.id ? updatedChannel : channel) }
-          }
-          return { kind: 'ready', account: { username: 'admin' }, nodes: [], targets: [], notificationChannels: [updatedChannel], alertRules: [] }
-        })
+  const createAdminNotificationChannelDetails = (input: AdminNotificationChannelCreateInput): Promise<void> => runAdminMutation(
+    () => createAdminNotificationChannel(adminToken, input),
+    (createdChannel) => {
+      setAdminState((current) => {
+        if (current.kind === 'ready') {
+          return { ...current, notificationChannels: [...current.notificationChannels, createdChannel] }
+        }
+        return { kind: 'ready', account: { username: 'admin' }, nodes: [], targets: [], notificationChannels: [createdChannel], alertRules: [] }
       })
-      .catch((error: unknown) => {
-        handleAdminRequestError(error)
-        throw error
-      })
-  }
+    },
+  )
 
-  const deleteAdminNotificationChannelDetails = (channelId: string): Promise<void> => {
-    if (adminToken === '') return Promise.reject(new Error('missing admin token'))
-    adminMutationEpochRef.current.invalidate()
-    return deleteAdminNotificationChannel(adminToken, channelId)
-      .then(() => {
-        setAdminState((current) => {
-          if (current.kind !== 'ready') return current
-          return { ...current, notificationChannels: current.notificationChannels.filter((channel) => channel.id !== channelId) }
-        })
+  const updateAdminNotificationChannelDetails = (channelId: string, input: AdminNotificationChannelUpdateInput): Promise<void> => runAdminMutation(
+    () => updateAdminNotificationChannel(adminToken, channelId, input),
+    (updatedChannel) => {
+      setAdminState((current) => {
+        if (current.kind === 'ready') {
+          return { ...current, notificationChannels: current.notificationChannels.map((channel) => channel.id === updatedChannel.id ? updatedChannel : channel) }
+        }
+        return { kind: 'ready', account: { username: 'admin' }, nodes: [], targets: [], notificationChannels: [updatedChannel], alertRules: [] }
       })
-      .catch((error: unknown) => {
-        handleAdminRequestError(error)
-        throw error
+    },
+  )
+
+  const deleteAdminNotificationChannelDetails = (channelId: string): Promise<void> => runAdminMutation(
+    () => deleteAdminNotificationChannel(adminToken, channelId),
+    () => {
+      setAdminState((current) => {
+        if (current.kind !== 'ready') return current
+        return { ...current, notificationChannels: current.notificationChannels.filter((channel) => channel.id !== channelId) }
       })
-  }
+    },
+  )
 
   const testAdminNotificationChannelDetails = (channelId: string) => {
     if (adminToken === '') return
@@ -984,38 +952,25 @@ export function App() {
       .catch(handleAdminRequestError)
   }
 
-  const updateAdminAlertRuleDetails = (ruleId: string, input: AdminAlertRuleUpdateInput): Promise<void> => {
-    if (adminToken === '') return Promise.reject(new Error('missing admin token'))
-    adminMutationEpochRef.current.invalidate()
-    const updateRule = () => updateAdminAlertRule(adminToken, ruleId, input)
-    return updateRule()
-      .then((updatedRule) => {
-        setAdminState((current) => {
-          if (current.kind === 'ready') {
-            return {
-              ...current,
-              alertRules: current.alertRules.map((rule) => rule.id === updatedRule.id ? updatedRule : rule),
-            }
+  const updateAdminAlertRuleDetails = (ruleId: string, input: AdminAlertRuleUpdateInput): Promise<void> => runAdminMutation(
+    () => updateAdminAlertRule(adminToken, ruleId, input),
+    (updatedRule) => {
+      setAdminState((current) => {
+        if (current.kind === 'ready') {
+          return {
+            ...current,
+            alertRules: current.alertRules.map((rule) => rule.id === updatedRule.id ? updatedRule : rule),
           }
-          return { kind: 'ready', account: { username: 'admin' }, nodes: [], targets: [], notificationChannels: [], alertRules: [updatedRule] }
-        })
+        }
+        return { kind: 'ready', account: { username: 'admin' }, nodes: [], targets: [], notificationChannels: [], alertRules: [updatedRule] }
       })
-      .catch((error: unknown) => {
-        handleAdminRequestError(error)
-        throw error
-      })
-  }
+    },
+  )
 
-  const updateAdminSettingsDetails = (input: AdminSettingsUpdateInput): Promise<void> => {
-    if (adminToken === '') return Promise.reject(new Error('missing admin token'))
-    adminMutationEpochRef.current.invalidate()
-    return updateAdminSettings(adminToken, input)
-      .then((updatedSettings) => setSettings(updatedSettings))
-      .catch((error: unknown) => {
-        handleAdminRequestError(error)
-        throw error
-      })
-  }
+  const updateAdminSettingsDetails = (input: AdminSettingsUpdateInput): Promise<void> => runAdminMutation(
+    () => updateAdminSettings(adminToken, input),
+    (updatedSettings) => setSettings(updatedSettings),
+  )
 
   const navigateHome = () => {
     blurActiveElement()
@@ -1490,6 +1445,7 @@ export function AdminDashboard({
             </div>
 
             {adminState.kind === 'loading' && showAdminLoading && <div className="admin-state-card">加载中…</div>}
+            {authState.kind === 'error' && <div className="admin-state-card is-error">{authState.message}</div>}
             {adminState.kind === 'error' && <div className="admin-state-card is-error">Admin API 读取失败：{adminState.message}</div>}
 
             {adminState.kind === 'ready' && activeSection === 'nodes' && (

@@ -2,7 +2,10 @@ package api
 
 import (
 	"context"
+	"crypto/sha256"
 	"database/sql"
+	"encoding/hex"
+	"encoding/json"
 	"net"
 	"strings"
 	"time"
@@ -14,14 +17,32 @@ func (s *SQLiteStore) RecordAgentHeartbeat(ctx context.Context, nodeID string, t
 }
 
 func (s *SQLiteStore) RecordAgentHeartbeatTransition(ctx context.Context, nodeID string, ts time.Time, status, agentVersion string) (notificationStatusTransition, error) {
+	var transition notificationStatusTransition
+	err := s.withAgentWrite(ctx, func(ctx context.Context) error {
+		var err error
+		transition, err = s.recordAgentHeartbeatTransitionOnce(ctx, nodeID, ts, status, agentVersion)
+		return err
+	})
+	return transition, err
+}
+
+func (s *SQLiteStore) recordAgentHeartbeatTransitionOnce(ctx context.Context, nodeID string, ts time.Time, status, agentVersion string) (notificationStatusTransition, error) {
 	now := time.Now().UTC()
 	nowUnix := now.Unix()
 	seenAt := nowUnix
+	status = normalizeHeartbeatStatus(status)
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return notificationStatusTransition{}, err
 	}
 	defer rollbackUnlessCommitted(tx)
+	// Acquire SQLite's write reservation before taking the read snapshot. A
+	// deferred read-then-write transaction can lose an upgrade race against a
+	// concurrent state report and return SQLITE_BUSY immediately even with a
+	// busy timeout configured.
+	if err := lockAgentNodeWriteTx(ctx, tx, nodeID); err != nil {
+		return notificationStatusTransition{}, err
+	}
 
 	var previous notificationNodeSnapshot
 	var storedStatus string
@@ -58,9 +79,11 @@ func (s *SQLiteStore) RecordAgentHeartbeatTransition(ctx context.Context, nodeID
 	}
 	if _, err := tx.ExecContext(ctx, `
 		UPDATE nodes
-		SET status = ?, last_seen_at = ?, updated_at = ?
+		SET status = ?,
+		    last_seen_at = CASE WHEN last_seen_at IS NULL OR last_seen_at <= ? THEN ? ELSE last_seen_at END,
+		    updated_at = CASE WHEN updated_at <= ? THEN ? ELSE updated_at END
 		WHERE id = ? AND disabled = 0
-	`, nextStatus, seenAt, nowUnix, nodeID); err != nil {
+	`, nextStatus, seenAt, seenAt, nowUnix, nowUnix, nodeID); err != nil {
 		return notificationStatusTransition{}, err
 	}
 	current.Status = storedNodeStatusForNotification(nextStatus)
@@ -87,6 +110,9 @@ func (s *SQLiteStore) RecordAgentHeartbeatTransition(ctx context.Context, nodeID
 			return notificationStatusTransition{}, err
 		}
 	}
+	if err := queueStatusTransitionNotificationTx(ctx, tx, notificationStatusTransition{Previous: previous, Current: current}, now); err != nil {
+		return notificationStatusTransition{}, err
+	}
 
 	if err := tx.Commit(); err != nil {
 		return notificationStatusTransition{}, err
@@ -101,6 +127,16 @@ func (s *SQLiteStore) RecordAgentPresenceOnlineTransition(ctx context.Context, n
 
 func (s *SQLiteStore) RecordAgentPresenceOfflineTransition(ctx context.Context, nodeID string, ts time.Time) (notificationStatusTransition, error) {
 	return s.recordAgentPresenceTransition(ctx, nodeID, ts, "offline")
+}
+
+func (s *SQLiteStore) recordAgentPresenceTransition(ctx context.Context, nodeID string, ts time.Time, status string) (notificationStatusTransition, error) {
+	var transition notificationStatusTransition
+	err := s.withAgentWrite(ctx, func(ctx context.Context) error {
+		var err error
+		transition, err = s.recordAgentPresenceTransitionOnce(ctx, nodeID, ts, status)
+		return err
+	})
+	return transition, err
 }
 
 func (s *SQLiteStore) StaleAgentOfflineNodeIDs(ctx context.Context, now time.Time) ([]string, error) {
@@ -146,6 +182,17 @@ func (s *SQLiteStore) StaleAgentOfflineNodeIDs(ctx context.Context, now time.Tim
 }
 
 func (s *SQLiteStore) RecordStaleAgentOfflineTransition(ctx context.Context, nodeID string, now time.Time) (notificationStatusTransition, bool, error) {
+	var transition notificationStatusTransition
+	var changed bool
+	err := s.withAgentWrite(ctx, func(ctx context.Context) error {
+		var err error
+		transition, changed, err = s.recordStaleAgentOfflineTransitionOnce(ctx, nodeID, now)
+		return err
+	})
+	return transition, changed, err
+}
+
+func (s *SQLiteStore) recordStaleAgentOfflineTransitionOnce(ctx context.Context, nodeID string, now time.Time) (notificationStatusTransition, bool, error) {
 	var offlineDurationSec sql.NullInt64
 	if err := s.db.QueryRowContext(ctx, `
 		SELECT COALESCE((
@@ -168,6 +215,9 @@ func (s *SQLiteStore) RecordStaleAgentOfflineTransition(ctx context.Context, nod
 		return notificationStatusTransition{}, false, err
 	}
 	defer rollbackUnlessCommitted(tx)
+	if err := lockAgentNodeWriteTx(ctx, tx, nodeID); err != nil {
+		return notificationStatusTransition{}, false, err
+	}
 
 	var previous notificationNodeSnapshot
 	var storedStatus string
@@ -221,15 +271,19 @@ func (s *SQLiteStore) RecordStaleAgentOfflineTransition(ctx context.Context, nod
 	`, nodeID, nowUnix, nowUnix, nowUnix); err != nil {
 		return notificationStatusTransition{}, false, err
 	}
+	current := notificationNodeSnapshot{ID: previous.ID, DisplayName: previous.DisplayName, Status: "offline", PublicIPv4: previous.PublicIPv4}
+	transition := notificationStatusTransition{Previous: previous, Current: current}
+	if err := queueStatusTransitionNotificationTx(ctx, tx, transition, now); err != nil {
+		return notificationStatusTransition{}, false, err
+	}
 	if err := tx.Commit(); err != nil {
 		return notificationStatusTransition{}, false, err
 	}
 	tx = nil
-	current := notificationNodeSnapshot{ID: previous.ID, DisplayName: previous.DisplayName, Status: "offline", PublicIPv4: previous.PublicIPv4}
-	return notificationStatusTransition{Previous: previous, Current: current}, true, nil
+	return transition, true, nil
 }
 
-func (s *SQLiteStore) recordAgentPresenceTransition(ctx context.Context, nodeID string, ts time.Time, status string) (notificationStatusTransition, error) {
+func (s *SQLiteStore) recordAgentPresenceTransitionOnce(ctx context.Context, nodeID string, ts time.Time, status string) (notificationStatusTransition, error) {
 	now := time.Now().UTC()
 	nowUnix := now.Unix()
 	tx, err := s.db.BeginTx(ctx, nil)
@@ -237,6 +291,9 @@ func (s *SQLiteStore) recordAgentPresenceTransition(ctx context.Context, nodeID 
 		return notificationStatusTransition{}, err
 	}
 	defer rollbackUnlessCommitted(tx)
+	if err := lockAgentNodeWriteTx(ctx, tx, nodeID); err != nil {
+		return notificationStatusTransition{}, err
+	}
 
 	var previous notificationNodeSnapshot
 	var storedStatus string
@@ -257,9 +314,11 @@ func (s *SQLiteStore) recordAgentPresenceTransition(ctx context.Context, nodeID 
 	}
 	if _, err := tx.ExecContext(ctx, `
 		UPDATE nodes
-		SET status = ?, last_seen_at = ?, updated_at = ?
+		SET status = ?,
+		    last_seen_at = CASE WHEN last_seen_at IS NULL OR last_seen_at <= ? THEN ? ELSE last_seen_at END,
+		    updated_at = CASE WHEN updated_at <= ? THEN ? ELSE updated_at END
 		WHERE id = ? AND disabled = 0
-	`, nextStatus, nowUnix, nowUnix, nodeID); err != nil {
+	`, nextStatus, nowUnix, nowUnix, nowUnix, nowUnix, nodeID); err != nil {
 		return notificationStatusTransition{}, err
 	}
 	if status == "online" {
@@ -304,12 +363,21 @@ func storedNodeStatusForNotification(status string) string {
 }
 
 func (s *SQLiteStore) UpsertAgentHost(ctx context.Context, nodeID string, host AgentHostRequest) error {
+	return s.withAgentWrite(ctx, func(ctx context.Context) error {
+		return s.upsertAgentHostOnce(ctx, nodeID, host)
+	})
+}
+
+func (s *SQLiteStore) upsertAgentHostOnce(ctx context.Context, nodeID string, host AgentHostRequest) error {
 	now := time.Now().UTC().Unix()
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return err
 	}
 	defer rollbackUnlessCommitted(tx)
+	if err := lockAgentNodeWriteTx(ctx, tx, nodeID); err != nil {
+		return err
+	}
 
 	if _, err := tx.ExecContext(ctx, `
 		INSERT INTO host_info (
@@ -341,13 +409,13 @@ func (s *SQLiteStore) UpsertAgentHost(ctx context.Context, nodeID string, host A
 	if _, err := tx.ExecContext(ctx, `
 		UPDATE nodes
 		SET status = CASE WHEN status IN ('warning', 'offline') THEN status ELSE 'online' END,
-		    last_seen_at = ?,
-		    updated_at = ?,
+		    last_seen_at = CASE WHEN last_seen_at IS NULL OR last_seen_at <= ? THEN ? ELSE last_seen_at END,
+		    updated_at = CASE WHEN updated_at <= ? THEN ? ELSE updated_at END,
 		    public_ipv4 = CASE WHEN ? <> '' THEN ? ELSE public_ipv4 END,
 		    public_ipv6 = CASE WHEN ? <> '' THEN ? ELSE public_ipv6 END,
 		    country_code = CASE WHEN ? <> '' THEN ? ELSE country_code END
 		WHERE id = ? AND disabled = 0
-	`, now, now, publicIPv4, publicIPv4, publicIPv6, publicIPv6, countryCode, countryCode, nodeID); err != nil {
+	`, now, now, now, now, publicIPv4, publicIPv4, publicIPv6, publicIPv6, countryCode, countryCode, nodeID); err != nil {
 		return err
 	}
 
@@ -359,40 +427,23 @@ func (s *SQLiteStore) UpsertAgentHost(ctx context.Context, nodeID string, host A
 }
 
 func (s *SQLiteStore) InsertAgentState(ctx context.Context, nodeID string, state AgentStateRequest) error {
-	now := time.Now().UTC().Unix()
-	sampleTS := time.Unix(state.TS, 0).UTC()
+	return s.withAgentWrite(ctx, func(ctx context.Context) error {
+		return s.insertAgentStateOnce(ctx, nodeID, state)
+	})
+}
+
+func (s *SQLiteStore) insertAgentStateOnce(ctx context.Context, nodeID string, state AgentStateRequest) error {
+	now := time.Now().UTC()
+	nowUnix := now.Unix()
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return err
 	}
 	defer rollbackUnlessCommitted(tx)
-
-	if _, err := tx.ExecContext(ctx, `
-		INSERT INTO state_samples (
-			node_id, ts, cpu_percent, load1, load5, load15,
-			memory_used_bytes, memory_total_bytes, swap_used_bytes, swap_total_bytes,
-			disk_used_bytes, disk_total_bytes, net_in_total_bytes, net_out_total_bytes,
-			net_in_speed_bps, net_out_speed_bps, process_count, tcp_connection_count, udp_connection_count, uptime_seconds
-		)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-	`, nodeID, state.TS, state.CPUPercent, state.Load1, state.Load5, state.Load15, state.MemoryUsedBytes, state.MemoryTotalBytes, state.SwapUsedBytes, state.SwapTotalBytes, state.DiskUsedBytes, state.DiskTotalBytes, state.NetInTotalBytes, state.NetOutTotalBytes, state.NetInSpeedBps, state.NetOutSpeedBps, state.ProcessCount, state.TCPConnectionCount, state.UDPConnectionCount, state.UptimeSeconds); err != nil {
+	if _, err := insertAgentStateSampleTx(ctx, tx, nodeID, state, now, false); err != nil {
 		return err
 	}
-	if _, err := tx.ExecContext(ctx, `
-		UPDATE nodes
-		SET status = CASE WHEN status IN ('warning', 'offline') THEN status ELSE 'online' END, last_seen_at = ?, updated_at = ?
-		WHERE id = ? AND disabled = 0
-	`, now, now, nodeID); err != nil {
-		return err
-	}
-
-	var billingMode string
-	var monthlyResetDay int
-	if err := tx.QueryRowContext(ctx, `SELECT billing_mode, monthly_reset_day FROM nodes WHERE id = ? AND disabled = 0`, nodeID).Scan(&billingMode, &monthlyResetDay); err != nil {
-		return err
-	}
-	month := billingPeriodKey(sampleTS, monthlyResetDay)
-	if err := upsertMonthlyTraffic(ctx, tx, nodeID, month, billingMode, state.NetInTotalBytes, state.NetOutTotalBytes, sampleTS.Unix(), now); err != nil {
+	if err := updateAgentLivenessOnlyTx(ctx, tx, nodeID, nowUnix); err != nil {
 		return err
 	}
 
@@ -401,6 +452,201 @@ func (s *SQLiteStore) InsertAgentState(ctx context.Context, nodeID string, state
 	}
 	tx = nil
 	return nil
+}
+
+func (s *SQLiteStore) RecordAgentStateReport(ctx context.Context, nodeID string, state AgentStateRequest) (bool, notificationStatusTransition, error) {
+	var accepted bool
+	var transition notificationStatusTransition
+	err := s.withAgentWrite(ctx, func(ctx context.Context) error {
+		var err error
+		accepted, transition, err = s.recordAgentStateReportOnce(ctx, nodeID, state)
+		return err
+	})
+	return accepted, transition, err
+}
+
+func (s *SQLiteStore) recordAgentStateReportOnce(ctx context.Context, nodeID string, state AgentStateRequest) (bool, notificationStatusTransition, error) {
+	now := time.Now().UTC()
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return false, notificationStatusTransition{}, err
+	}
+	defer rollbackUnlessCommitted(tx)
+
+	accepted, err := insertAgentStateSampleTx(ctx, tx, nodeID, state, now, true)
+	if err != nil {
+		return false, notificationStatusTransition{}, err
+	}
+	if !accepted {
+		if err := updateAgentLivenessOnlyTx(ctx, tx, nodeID, now.Unix()); err != nil {
+			return false, notificationStatusTransition{}, err
+		}
+		if err := tx.Commit(); err != nil {
+			return false, notificationStatusTransition{}, err
+		}
+		tx = nil
+		return false, notificationStatusTransition{}, nil
+	}
+
+	transition, err := recordAgentStateAlertRuleTransitionTx(ctx, tx, nodeID, time.Unix(state.TS, 0).UTC(), state)
+	if err != nil {
+		return false, notificationStatusTransition{}, err
+	}
+	if err := queueStatusTransitionNotificationTx(ctx, tx, transition, time.Unix(state.TS, 0).UTC()); err != nil {
+		return false, notificationStatusTransition{}, err
+	}
+	if err := tx.Commit(); err != nil {
+		return false, notificationStatusTransition{}, err
+	}
+	tx = nil
+	return true, transition, nil
+}
+
+func insertAgentStateSampleTx(ctx context.Context, tx *sql.Tx, nodeID string, state AgentStateRequest, receivedAt time.Time, enforceRateLimit bool) (bool, error) {
+	receivedUnix := receivedAt.UTC().Unix()
+	sampleTS := time.Unix(state.TS, 0).UTC()
+	sampleID := strings.TrimSpace(state.effectiveSampleID())
+	if sampleID != "" && !validAgentStateSampleID(sampleID) {
+		return false, errInvalidAgentStateReport
+	}
+	payloadHash, err := agentStatePayloadHash(state)
+	if err != nil {
+		return false, errInvalidAgentStateReport
+	}
+	if err := lockAgentNodeWriteTx(ctx, tx, nodeID); err != nil {
+		return false, err
+	}
+	if sampleID != "" {
+		var existingHash string
+		err := tx.QueryRowContext(ctx, `
+			SELECT payload_hash FROM state_samples
+			WHERE node_id = ? AND sample_id = ?
+			LIMIT 1
+		`, nodeID, sampleID).Scan(&existingHash)
+		if err != nil && err != sql.ErrNoRows {
+			return false, err
+		}
+		if err == nil {
+			if existingHash == payloadHash || existingHash == "" {
+				return false, nil
+			}
+			return false, errInvalidAgentStateReport
+		}
+	} else {
+		var existingID int64
+		err := tx.QueryRowContext(ctx, `
+			SELECT id FROM state_samples
+			WHERE node_id = ? AND ts = ? AND payload_hash = ?
+			LIMIT 1
+		`, nodeID, state.TS, payloadHash).Scan(&existingID)
+		if err != nil && err != sql.ErrNoRows {
+			return false, err
+		}
+		if err == nil {
+			return false, nil
+		}
+	}
+	if enforceRateLimit {
+		var lastSampleTS sql.NullInt64
+		if err := tx.QueryRowContext(ctx, `
+			SELECT ts
+			FROM state_samples
+			WHERE node_id = ?
+			ORDER BY ts DESC, id DESC
+			LIMIT 1
+		`, nodeID).Scan(&lastSampleTS); err != nil && err != sql.ErrNoRows {
+			return false, err
+		}
+		minIntervalSec := int64(minAgentStateReportInterval / time.Second)
+		if minIntervalSec < 1 {
+			minIntervalSec = 1
+		}
+		if lastSampleTS.Valid && state.TS <= lastSampleTS.Int64 {
+			return false, nil
+		}
+		if lastSampleTS.Valid && state.TS-lastSampleTS.Int64 < minIntervalSec {
+			return false, nil
+		}
+	}
+
+	if _, err := tx.ExecContext(ctx, `
+		INSERT INTO state_samples (
+			node_id, sample_id, payload_hash, received_at, ts, cpu_percent, load1, load5, load15,
+			memory_used_bytes, memory_total_bytes, swap_used_bytes, swap_total_bytes,
+			disk_used_bytes, disk_total_bytes, net_in_total_bytes, net_out_total_bytes,
+			net_in_speed_bps, net_out_speed_bps, process_count, tcp_connection_count, udp_connection_count, uptime_seconds
+		)
+		VALUES (?, NULLIF(?, ''), ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+	`, nodeID, sampleID, payloadHash, receivedUnix, state.TS, state.CPUPercent, state.Load1, state.Load5, state.Load15, state.MemoryUsedBytes, state.MemoryTotalBytes, state.SwapUsedBytes, state.SwapTotalBytes, state.DiskUsedBytes, state.DiskTotalBytes, state.NetInTotalBytes, state.NetOutTotalBytes, state.NetInSpeedBps, state.NetOutSpeedBps, state.ProcessCount, state.TCPConnectionCount, state.UDPConnectionCount, state.UptimeSeconds); err != nil {
+		return false, err
+	}
+
+	var billingMode string
+	var monthlyResetDay int
+	var billingEpoch int64
+	if err := tx.QueryRowContext(ctx, `SELECT billing_mode, monthly_reset_day, billing_traffic_epoch FROM nodes WHERE id = ? AND disabled = 0`, nodeID).Scan(&billingMode, &monthlyResetDay, &billingEpoch); err != nil {
+		if err == sql.ErrNoRows {
+			return false, errNodeNotFound
+		}
+		return false, err
+	}
+	month := billingPeriodKey(sampleTS, monthlyResetDay)
+	if err := upsertMonthlyTraffic(ctx, tx, nodeID, month, billingEpoch, monthlyResetDay, billingMode, state.NetInTotalBytes, state.NetOutTotalBytes, sampleTS.Unix(), receivedUnix); err != nil {
+		return false, err
+	}
+	return true, nil
+}
+
+func lockAgentNodeWriteTx(ctx context.Context, tx *sql.Tx, nodeID string) error {
+	result, err := tx.ExecContext(ctx, `
+		UPDATE nodes
+		SET updated_at = updated_at
+		WHERE id = ? AND disabled = 0
+	`, nodeID)
+	if err != nil {
+		return err
+	}
+	affected, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if affected == 0 {
+		return errNodeNotFound
+	}
+	return nil
+}
+
+func updateAgentLivenessOnlyTx(ctx context.Context, tx *sql.Tx, nodeID string, nowUnix int64) error {
+	result, err := tx.ExecContext(ctx, `
+		UPDATE nodes
+		SET status = CASE WHEN status IN ('warning', 'offline') THEN status ELSE 'online' END,
+		    last_seen_at = CASE WHEN last_seen_at IS NULL OR last_seen_at <= ? THEN ? ELSE last_seen_at END,
+		    updated_at = CASE WHEN updated_at <= ? THEN ? ELSE updated_at END
+		WHERE id = ? AND disabled = 0
+	`, nowUnix, nowUnix, nowUnix, nowUnix, nodeID)
+	if err != nil {
+		return err
+	}
+	affected, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if affected == 0 {
+		return errNodeNotFound
+	}
+	return nil
+}
+
+func agentStatePayloadHash(state AgentStateRequest) (string, error) {
+	copy := state
+	copy.SampleID = ""
+	copy.IdempotencyKey = ""
+	payload, err := json.Marshal(copy)
+	if err != nil {
+		return "", err
+	}
+	sum := sha256.Sum256(payload)
+	return hex.EncodeToString(sum[:]), nil
 }
 
 func normalizeAgentPublicIP(value string, family int) string {
@@ -437,18 +683,18 @@ func normalizeAgentCountryCode(value string) string {
 	return trimmed
 }
 
-func upsertMonthlyTraffic(ctx context.Context, tx *sql.Tx, nodeID, month, billingMode string, inTotal, outTotal, sampleTS, now int64) error {
+func upsertMonthlyTraffic(ctx context.Context, tx *sql.Tx, nodeID, month string, billingEpoch int64, resetDay int, billingMode string, inTotal, outTotal, sampleTS, now int64) error {
 	var previousIn, previousOut, lastSampleTS sql.NullInt64
 	err := tx.QueryRowContext(ctx, `
 		SELECT last_in_total_bytes, last_out_total_bytes, last_sample_ts
 		FROM traffic_monthly
-		WHERE node_id = ? AND month = ?
-	`, nodeID, month).Scan(&previousIn, &previousOut, &lastSampleTS)
+		WHERE node_id = ? AND month = ? AND billing_epoch = ?
+	`, nodeID, month, billingEpoch).Scan(&previousIn, &previousOut, &lastSampleTS)
 	if err == sql.ErrNoRows {
 		_, err = tx.ExecContext(ctx, `
-			INSERT INTO traffic_monthly (node_id, month, in_bytes, out_bytes, billable_bytes, last_in_total_bytes, last_out_total_bytes, last_sample_ts, updated_at)
-			VALUES (?, ?, 0, 0, 0, ?, ?, ?, ?)
-		`, nodeID, month, inTotal, outTotal, sampleTS, now)
+			INSERT INTO traffic_monthly (node_id, month, billing_epoch, reset_day, billing_mode, in_bytes, out_bytes, billable_bytes, last_in_total_bytes, last_out_total_bytes, last_sample_ts, updated_at)
+			VALUES (?, ?, ?, ?, ?, 0, 0, 0, ?, ?, ?, ?)
+		`, nodeID, month, billingEpoch, normalizeBillingResetDay(resetDay), normalizeTrafficBillingMode(billingMode), inTotal, outTotal, sampleTS, now)
 		return err
 	}
 	if err != nil {
@@ -470,9 +716,29 @@ func upsertMonthlyTraffic(ctx context.Context, tx *sql.Tx, nodeID, month, billin
 		    last_out_total_bytes = ?,
 		    last_sample_ts = ?,
 		    updated_at = ?
-		WHERE node_id = ? AND month = ?
-	`, deltaIn, deltaOut, billable, inTotal, outTotal, sampleTS, now, nodeID, month)
+		WHERE node_id = ? AND month = ? AND billing_epoch = ?
+	`, deltaIn, deltaOut, billable, inTotal, outTotal, sampleTS, now, nodeID, month, billingEpoch)
 	return err
+}
+
+func normalizeBillingResetDay(resetDay int) int {
+	if resetDay < 1 || resetDay > 31 {
+		return 1
+	}
+	return resetDay
+}
+
+func normalizeTrafficBillingMode(mode string) string {
+	switch strings.ToLower(strings.TrimSpace(mode)) {
+	case "in", "download", "inbound":
+		return "in"
+	case "out", "upload", "outbound":
+		return "out"
+	case "max", "higher":
+		return "max"
+	default:
+		return "both"
+	}
 }
 
 func nonNegativeDelta(previous sql.NullInt64, current int64) int64 {
@@ -509,9 +775,7 @@ type billingPeriod struct {
 }
 
 func billingPeriodFor(ts time.Time, resetDay int) billingPeriod {
-	if resetDay < 1 || resetDay > 31 {
-		resetDay = 1
-	}
+	resetDay = normalizeBillingResetDay(resetDay)
 	now := ts.UTC()
 	currentReset := resetDate(now.Year(), now.Month(), resetDay)
 	start := currentReset

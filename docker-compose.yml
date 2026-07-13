@@ -13,6 +13,8 @@ services:
       - no-new-privileges:true
     environment:
       TZ: ${TZ:-Asia/Shanghai}
+      ZENO_NOTIFICATIONS_DISABLED: ${ZENO_NOTIFICATIONS_DISABLED:-false}
+      ZENO_NOTIFICATION_CREDENTIAL_KEY_FILE: /run/secrets/zeno_notification_credential_key
     ports:
       - "127.0.0.1:${ZENO_HOST_PORT:-18980}:18980"
     volumes:

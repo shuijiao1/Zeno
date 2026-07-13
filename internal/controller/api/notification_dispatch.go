@@ -67,6 +67,10 @@ type notificationSender interface {
 	Send(ctx context.Context, channel notificationDispatchChannel, event notificationEvent) error
 }
 
+func (h *handler) automaticNotificationsAllowed() bool {
+	return h != nil && h.notificationSender != nil
+}
+
 type httpNotificationSender struct {
 	client             *http.Client
 	telegramAPIBaseURL string
@@ -213,7 +217,7 @@ func maskIPv4(value string) string {
 }
 
 func (h *handler) dispatchNotificationEvent(store agentStore, event notificationEvent) bool {
-	if strings.TrimSpace(event.EventType) == "" || h.notificationSender == nil {
+	if strings.TrimSpace(event.EventType) == "" || h.notificationSender == nil || !h.automaticNotificationsAllowed() {
 		return false
 	}
 	notificationStore, ok := store.(notificationEventStore)
@@ -222,6 +226,9 @@ func (h *handler) dispatchNotificationEvent(store agentStore, event notification
 	}
 	label, channels, err := notificationStore.EnabledNotificationChannelsForEvent(context.Background(), event.EventType, event.NodeID)
 	if err != nil || len(channels) == 0 {
+		if err != nil {
+			log.Printf("notification channel lookup failed event_id=%s event_type=%s node_id=%s: %v", notificationEventStableID(event), event.EventType, event.NodeID, err)
+		}
 		return false
 	}
 	if event.Label == "" {
@@ -229,13 +236,16 @@ func (h *handler) dispatchNotificationEvent(store agentStore, event notification
 	}
 	if outboxStore, ok := store.(notificationOutboxStore); ok {
 		queued, err := outboxStore.QueueNotificationEvent(context.Background(), event, channels)
-		if err != nil || !queued {
+		if err != nil {
+			log.Printf("notification outbox queue failed event_id=%s event_type=%s node_id=%s: %v", notificationEventStableID(event), event.EventType, event.NodeID, err)
+			h.wakeNotificationOutbox()
 			return false
 		}
-		// Kick the durable worker immediately; the periodic worker remains the
-		// restart-safe fallback and handles backoff retries.
-		h.startBackground(func(ctx context.Context) { h.dispatchPendingNotificationDeliveries(ctx) })
-		return true
+		// A false queue result can mean the transition was already claimed by an
+		// atomic store-side queue path. Wake the single outbox worker either way so
+		// pre-queued deliveries do not wait for the periodic scan.
+		h.wakeNotificationOutbox()
+		return queued
 	}
 	if shouldClaimStatusNotification(event) {
 		if markStore, ok := store.(notificationStatusMarkStore); ok {
@@ -297,6 +307,9 @@ func (h *handler) runRenewalNotificationScanner(ctx context.Context, interval ti
 }
 
 func (h *handler) queueDueRenewalNotifications(ctx context.Context, now time.Time) int {
+	if !h.automaticNotificationsAllowed() {
+		return 0
+	}
 	store, ok := h.store.(renewalNotificationQueueStore)
 	if !ok {
 		return 0
@@ -307,7 +320,7 @@ func (h *handler) queueDueRenewalNotifications(ctx context.Context, now time.Tim
 		return 0
 	}
 	if queued > 0 {
-		h.dispatchPendingNotificationDeliveries(ctx)
+		h.wakeNotificationOutbox()
 	}
 	return queued
 }
@@ -427,10 +440,16 @@ func (s *SQLiteStore) EnabledNotificationChannelsForEvent(ctx context.Context, e
 	channels := make([]notificationDispatchChannel, 0)
 	for rows.Next() {
 		var channel notificationDispatchChannel
-		if err := rows.Scan(&channel.ID, &channel.Name, &channel.Destination, &channel.Credential); err != nil {
+		var storedCredential string
+		if err := rows.Scan(&channel.ID, &channel.Name, &channel.Destination, &storedCredential); err != nil {
+			return "", nil, err
+		}
+		credential, err := s.decryptNotificationCredentialFromStorage(channel.ID, "telegram", storedCredential)
+		if err != nil {
 			return "", nil, err
 		}
 		channel.Type = "telegram"
+		channel.Credential = credential
 		channels = append(channels, channel)
 	}
 	if err := rows.Err(); err != nil {

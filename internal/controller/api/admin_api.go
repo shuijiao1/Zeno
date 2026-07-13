@@ -7,6 +7,7 @@ import (
 	"errors"
 	"net"
 	"net/http"
+	"net/url"
 	"strings"
 )
 
@@ -329,14 +330,40 @@ func (h *handler) handleAdminNodeInstallCommand(w http.ResponseWriter, r *http.R
 	if !ok {
 		return
 	}
-	controllerURL := requestBaseURL(r)
+	nodes, err := store.AdminNodes(r.Context())
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "internal error")
+		return
+	}
+	found := false
+	for _, node := range nodes {
+		if node.ID == nodeID {
+			found = true
+			break
+		}
+	}
+	if !found {
+		writeError(w, http.StatusNotFound, "not found")
+		return
+	}
 	settings, err := store.AdminSettings(r.Context())
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "internal error")
 		return
 	}
-	if strings.TrimSpace(settings.AgentControllerURL) != "" {
-		controllerURL = settings.AgentControllerURL
+	controllerURL := strings.TrimSpace(settings.AgentControllerURL)
+	if controllerURL != "" && !validAgentControllerURL(controllerURL) {
+		writeError(w, http.StatusConflict, "configure a secure agent controller url before generating install commands")
+		return
+	}
+	if controllerURL == "" {
+		fallbackURL := requestBaseURL(r)
+		parsedFallback, parseErr := url.Parse(fallbackURL)
+		if parseErr != nil || !loopbackURLHost(parsedFallback.Hostname()) {
+			writeError(w, http.StatusConflict, "configure agent controller url before generating install commands")
+			return
+		}
+		controllerURL = fallbackURL
 	}
 	commands, err := store.AdminNodeInstallCommand(r.Context(), nodeID, controllerURL, h.agentVersion)
 	if err != nil {
@@ -486,6 +513,10 @@ func writeAdminError(w http.ResponseWriter, err error) {
 	}
 	if errors.Is(err, errInvalidAdminSettingsUpdate) || errors.Is(err, errInvalidAdminNodeUpdate) || errors.Is(err, errInvalidAdminNodeCreate) || errors.Is(err, errInvalidAdminTargetWrite) || errors.Is(err, errInvalidAdminNotificationChannelWrite) || errors.Is(err, errInvalidAdminNotificationTypeWrite) || errors.Is(err, errInvalidAdminAlertRuleUpdate) || errors.Is(err, errInvalidAdminPasswordUpdate) {
 		writeError(w, http.StatusBadRequest, "bad request")
+		return
+	}
+	if errors.Is(err, errNotificationCredentialKeyRequired) {
+		writeError(w, http.StatusConflict, "notification key unavailable")
 		return
 	}
 	if errors.Is(err, errNodeAlreadyExists) || errors.Is(err, errProbeTargetAlreadyExists) || errors.Is(err, errNotificationChannelAlreadyExists) {

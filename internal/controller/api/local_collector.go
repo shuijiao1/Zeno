@@ -9,8 +9,11 @@ import (
 	"errors"
 	"fmt"
 	"hash"
+	"io"
 	"math"
 	"net"
+	"net/http"
+	"os/exec"
 	"strconv"
 	"strings"
 	"time"
@@ -46,7 +49,7 @@ func NewLocalProbeCollector(store *SQLiteStore, options LocalProbeCollectorOptio
 	}
 	probeRunner := options.ProbeRunner
 	if probeRunner == nil {
-		probeRunner = RunTCPProbe
+		probeRunner = RunLocalProbe
 	}
 	return &LocalProbeCollector{store: store, nodeID: nodeID, now: now, probeRunner: probeRunner}
 }
@@ -78,6 +81,19 @@ func (c *LocalProbeCollector) CollectOnce(ctx context.Context) error {
 		}
 	}
 	return errors.Join(errs...)
+}
+
+func RunLocalProbe(ctx context.Context, target ProbeTarget) ([]probe.Sample, error) {
+	switch normalizeProbeTargetForExecution(target).Type {
+	case "tcping":
+		return RunTCPProbe(ctx, target)
+	case "ping":
+		return RunPingProbe(ctx, target)
+	case "http_get":
+		return RunHTTPProbe(ctx, target)
+	default:
+		return nil, fmt.Errorf("unsupported probe target type %q", target.Type)
+	}
 }
 
 func RunTCPProbe(ctx context.Context, target ProbeTarget) ([]probe.Sample, error) {
@@ -114,6 +130,128 @@ func RunTCPProbe(ctx context.Context, target ProbeTarget) ([]probe.Sample, error
 		samples = append(samples, measuredLocalProbeSample(seq, elapsedMS, timeout))
 	}
 	return samples, nil
+}
+
+func RunHTTPProbe(ctx context.Context, target ProbeTarget) ([]probe.Sample, error) {
+	target = normalizeProbeTargetForExecution(target)
+	if target.Type != "http_get" {
+		return nil, fmt.Errorf("target %s is not http_get", target.ID)
+	}
+	count := target.Count
+	if count <= 0 {
+		count = 1
+	}
+	timeout := normalizedLocalProbeTimeout(target.TimeoutMS)
+	observationTimeout := localLatencyObservationTimeout(timeout)
+	client := &http.Client{Timeout: observationTimeout}
+	samples := make([]probe.Sample, 0, count)
+	for seq := 1; seq <= count; seq++ {
+		select {
+		case <-ctx.Done():
+			return samples, ctx.Err()
+		default:
+		}
+		requestCtx, cancel := context.WithTimeout(ctx, observationTimeout)
+		request, err := http.NewRequestWithContext(requestCtx, http.MethodGet, target.Address, nil)
+		if err != nil {
+			cancel()
+			return nil, err
+		}
+		request.Header.Set("User-Agent", "Zeno-Controller")
+		start := time.Now()
+		response, err := client.Do(request)
+		elapsedMS := float64(time.Since(start).Microseconds()) / 1000
+		cancel()
+		if err != nil {
+			samples = append(samples, failedMeasuredLocalProbeSample(seq, elapsedMS, classifyProbeError(err)))
+			continue
+		}
+		_, _ = io.Copy(io.Discard, response.Body)
+		_ = response.Body.Close()
+		if response.StatusCode < 200 || response.StatusCode >= 400 {
+			samples = append(samples, failedMeasuredLocalProbeSample(seq, elapsedMS, "http_status"))
+			continue
+		}
+		samples = append(samples, measuredLocalProbeSample(seq, elapsedMS, timeout))
+	}
+	return samples, nil
+}
+
+func RunPingProbe(ctx context.Context, target ProbeTarget) ([]probe.Sample, error) {
+	target = normalizeProbeTargetForExecution(target)
+	if target.Type != "ping" {
+		return nil, fmt.Errorf("target %s is not ping", target.ID)
+	}
+	count := target.Count
+	if count <= 0 {
+		count = 1
+	}
+	timeout := normalizedLocalProbeTimeout(target.TimeoutMS)
+	observationTimeout := localLatencyObservationTimeout(timeout)
+	samples := make([]probe.Sample, 0, count)
+	for seq := 1; seq <= count; seq++ {
+		select {
+		case <-ctx.Done():
+			return samples, ctx.Err()
+		default:
+		}
+		pingCtx, cancel := context.WithTimeout(ctx, observationTimeout)
+		start := time.Now()
+		output, err := exec.CommandContext(pingCtx, "ping", "-n", "-c", "1", "-W", pingTimeoutSeconds(observationTimeout), "--", target.Address).CombinedOutput()
+		elapsedMS := float64(time.Since(start).Microseconds()) / 1000
+		cancel()
+		if err != nil {
+			samples = append(samples, failedMeasuredLocalProbeSample(seq, elapsedMS, classifyProbeError(err)))
+			continue
+		}
+		latency := parsePingLatencyMS(string(output))
+		if latency == nil {
+			latencyValue := cappedLocalDrawableLatencyMS(elapsedMS)
+			latency = &latencyValue
+		}
+		if time.Duration(*latency*float64(time.Millisecond)) > timeout {
+			capped := cappedLocalDrawableLatencyMS(*latency)
+			samples = append(samples, probe.Sample{Seq: seq, Success: false, LatencyMS: &capped, Error: "timeout"})
+			continue
+		}
+		capped := cappedLocalDrawableLatencyMS(*latency)
+		samples = append(samples, probe.Sample{Seq: seq, Success: true, LatencyMS: &capped})
+	}
+	return samples, nil
+}
+
+func pingTimeoutSeconds(timeout time.Duration) string {
+	seconds := int(math.Ceil(timeout.Seconds()))
+	if seconds < 1 {
+		seconds = 1
+	}
+	return strconv.Itoa(seconds)
+}
+
+func parsePingLatencyMS(output string) *float64 {
+	marker := "time="
+	index := strings.Index(output, marker)
+	if index < 0 {
+		return nil
+	}
+	valueStart := index + len(marker)
+	valueEnd := valueStart
+	for valueEnd < len(output) {
+		c := output[valueEnd]
+		if (c >= '0' && c <= '9') || c == '.' {
+			valueEnd++
+			continue
+		}
+		break
+	}
+	if valueEnd == valueStart {
+		return nil
+	}
+	value, err := strconv.ParseFloat(output[valueStart:valueEnd], 64)
+	if err != nil || math.IsNaN(value) || math.IsInf(value, 0) || value < 0 {
+		return nil
+	}
+	return &value
 }
 
 func normalizedLocalProbeTimeout(timeoutMS int) time.Duration {
@@ -199,6 +337,12 @@ func (s *SQLiteStore) InsertAgentProbeResults(ctx context.Context, nodeID string
 	if len(rounds) == 0 {
 		return nil
 	}
+	return s.withAgentWrite(ctx, func(ctx context.Context) error {
+		return s.insertAgentProbeResultsOnce(ctx, nodeID, configVersion, rounds)
+	})
+}
+
+func (s *SQLiteStore) insertAgentProbeResultsOnce(ctx context.Context, nodeID string, configVersion int64, rounds []preparedAgentProbeRound) error {
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return err

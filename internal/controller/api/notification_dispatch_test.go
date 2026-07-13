@@ -73,6 +73,7 @@ func TestDispatchAgentStatusNotificationDedupesActiveWarningsUntilRecovery(t *te
 		t.Fatalf("open sqlite store: %v", err)
 	}
 	defer store.Close()
+	enableTestNotificationCredentialEncryption(t, store)
 	ctx := context.Background()
 	if err := store.SeedPreviewData(ctx, PreviewSeedOptions{NodeID: "hytron", DisplayName: "Hytron", CountryCode: "HK", AgentToken: "test-agent-token"}); err != nil {
 		t.Fatalf("seed preview data: %v", err)
@@ -128,6 +129,7 @@ func TestNotificationOutboxPersistsFailureAndRetriesAfterRestart(t *testing.T) {
 		t.Fatalf("open sqlite store: %v", err)
 	}
 	defer store.Close()
+	enableTestNotificationCredentialEncryption(t, store)
 	ctx := context.Background()
 	if err := store.SeedPreviewData(ctx, PreviewSeedOptions{NodeID: "hytron", DisplayName: "Hytron", CountryCode: "HK", AgentToken: "test-agent-token"}); err != nil {
 		t.Fatalf("seed preview data: %v", err)
@@ -178,6 +180,7 @@ func TestRenewalNotificationOutboxRetriesWithoutLosingRenewalMessage(t *testing.
 		t.Fatalf("open sqlite store: %v", err)
 	}
 	defer store.Close()
+	enableTestNotificationCredentialEncryption(t, store)
 	ctx := context.Background()
 	if err := store.SeedPreviewData(ctx, PreviewSeedOptions{NodeID: "hytron", DisplayName: "Hytron", CountryCode: "HK", AgentToken: "token"}); err != nil {
 		t.Fatalf("seed preview data: %v", err)

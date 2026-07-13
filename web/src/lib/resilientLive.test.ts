@@ -66,6 +66,42 @@ describe('startResilientLiveData', () => {
     stop()
   })
 
+  it('ignores a late HTTP fallback success after timeout aborts the request', async () => {
+    vi.useFakeTimers()
+    const signals: AbortSignal[] = []
+    const resolvers: Array<(value: string) => void> = []
+    const fetch = vi.fn((signal?: AbortSignal) => {
+      if (signal) signals.push(signal)
+      return new Promise<string>((resolve) => resolvers.push(resolve))
+    })
+    const applyData = vi.fn()
+
+    const stop = startResilientLiveData<string>({
+      subscribe: null,
+      fetch,
+      applyData,
+      httpFallbackTimeoutMs: 10_000,
+      httpFallbackIntervalMs: 15_000,
+    })
+
+    expect(fetch).toHaveBeenCalledTimes(1)
+    await vi.advanceTimersByTimeAsync(10_000)
+    expect(signals[0]?.aborted).toBe(true)
+    await vi.advanceTimersByTimeAsync(5_000)
+    expect(fetch).toHaveBeenCalledTimes(2)
+
+    resolvers[0]?.('late-stale-http')
+    await Promise.resolve()
+    expect(applyData).not.toHaveBeenCalled()
+
+    resolvers[1]?.('fresh-http')
+    await Promise.resolve()
+    expect(applyData).toHaveBeenCalledTimes(1)
+    expect(applyData).toHaveBeenLastCalledWith('fresh-http', 'http')
+
+    stop()
+  })
+
   it('keeps HTTP fallback through a bare websocket handshake and stops only after a fresh frame', async () => {
     vi.useFakeTimers()
     let pushLive = (_data: string) => {}
@@ -117,6 +153,7 @@ describe('startResilientLiveData', () => {
       },
       fetch,
       applyData: vi.fn(),
+      httpFallbackTimeoutMs: 60_000,
     })
 
     await vi.advanceTimersByTimeAsync(1_800)

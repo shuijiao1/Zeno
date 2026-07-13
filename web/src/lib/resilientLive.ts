@@ -38,6 +38,8 @@ export function startResilientLiveData<T>(options: ResilientLiveOptions<T>): () 
   let sustainedFallbackTimer: ReturnType<typeof setTimeout> | null = null
   let fallbackInterval: ReturnType<typeof setInterval> | null = null
   let fallbackController: AbortController | null = null
+  let fallbackRequestId = 0
+  let activeFallbackRequestId = 0
   let fallbackTimeout: ReturnType<typeof setTimeout> | null = null
   let stopStream: (() => void) | null = null
 
@@ -69,27 +71,36 @@ export function startResilientLiveData<T>(options: ResilientLiveOptions<T>): () 
     fallbackController = null
   }
 
+  const finishFallbackRequest = (controller: AbortController, requestId: number) => {
+    if (fallbackController !== controller || activeFallbackRequestId !== requestId) return
+    if (fallbackTimeout !== null) clearTimeout(fallbackTimeout)
+    fallbackTimeout = null
+    fallbackController = null
+    fallbackInFlight = false
+  }
+
   const runHttpFallbackOnce = () => {
     if (stopped || fallbackInFlight) return
     fallbackInFlight = true
     const generation = fallbackGeneration
     const controller = new AbortController()
+    const requestId = fallbackRequestId + 1
+    fallbackRequestId = requestId
+    activeFallbackRequestId = requestId
     fallbackController = controller
-    fallbackTimeout = setTimeout(() => controller.abort(), timeoutMs)
+    fallbackTimeout = setTimeout(() => {
+      controller.abort()
+      finishFallbackRequest(controller, requestId)
+    }, timeoutMs)
     options.fetch(controller.signal)
       .then((data) => {
-        if (!stopped && fallbackActive && generation === fallbackGeneration) options.applyData(data, 'http')
+        if (!stopped && fallbackActive && generation === fallbackGeneration && fallbackController === controller && activeFallbackRequestId === requestId && !controller.signal.aborted) options.applyData(data, 'http')
       })
       .catch((error: unknown) => {
-        if (!stopped && !controller.signal.aborted) options.onError?.(error, 'http')
+        if (!stopped && fallbackController === controller && activeFallbackRequestId === requestId && !controller.signal.aborted) options.onError?.(error, 'http')
       })
       .finally(() => {
-        if (fallbackController === controller) {
-          if (fallbackTimeout !== null) clearTimeout(fallbackTimeout)
-          fallbackTimeout = null
-          fallbackController = null
-          fallbackInFlight = false
-        }
+        finishFallbackRequest(controller, requestId)
       })
   }
 

@@ -12,12 +12,39 @@ type stateAlertRuleTransitionStore interface {
 }
 
 func (s *SQLiteStore) RecordAgentStateAlertRuleTransition(ctx context.Context, nodeID string, ts time.Time, state AgentStateRequest) (notificationStatusTransition, error) {
+	var transition notificationStatusTransition
+	err := s.withAgentWrite(ctx, func(ctx context.Context) error {
+		var err error
+		transition, err = s.recordAgentStateAlertRuleTransitionOnce(ctx, nodeID, ts, state)
+		return err
+	})
+	return transition, err
+}
+
+func (s *SQLiteStore) recordAgentStateAlertRuleTransitionOnce(ctx context.Context, nodeID string, ts time.Time, state AgentStateRequest) (notificationStatusTransition, error) {
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return notificationStatusTransition{}, err
 	}
 	defer rollbackUnlessCommitted(tx)
+	if err := lockAgentNodeWriteTx(ctx, tx, nodeID); err != nil {
+		return notificationStatusTransition{}, err
+	}
+	transition, err := recordAgentStateAlertRuleTransitionTx(ctx, tx, nodeID, ts, state)
+	if err != nil {
+		return notificationStatusTransition{}, err
+	}
+	if err := queueStatusTransitionNotificationTx(ctx, tx, transition, ts); err != nil {
+		return notificationStatusTransition{}, err
+	}
+	if err := tx.Commit(); err != nil {
+		return notificationStatusTransition{}, err
+	}
+	tx = nil
+	return transition, nil
+}
 
+func recordAgentStateAlertRuleTransitionTx(ctx context.Context, tx *sql.Tx, nodeID string, ts time.Time, state AgentStateRequest) (notificationStatusTransition, error) {
 	rules, err := alertRulesForMetrics(ctx, tx, nodeID, map[string]bool{"cpu_percent": true, "memory_percent": true, "disk_percent": true})
 	if err != nil {
 		return notificationStatusTransition{}, err
@@ -43,11 +70,38 @@ func (s *SQLiteStore) RecordAgentStateAlertRuleTransition(ctx context.Context, n
 	} else if transition.Previous.Status == "warning" && transition.Current.Status == "online" {
 		transition.Detail = resourceAlertDetail(recoveredNames, true)
 	}
-	if err := tx.Commit(); err != nil {
-		return notificationStatusTransition{}, err
-	}
-	tx = nil
 	return transition, nil
+}
+
+func queueStatusTransitionNotificationTx(ctx context.Context, tx *sql.Tx, transition notificationStatusTransition, ts time.Time) error {
+	eventType, ok := notificationEventTypeForStatusChange(transition.Previous.Status, transition.Current.Status)
+	if !ok {
+		return nil
+	}
+	node := transition.Current
+	if node.ID == "" {
+		node = transition.Previous
+	}
+	event := notificationEvent{
+		EventType:      eventType,
+		NodeID:         node.ID,
+		NodeName:       node.DisplayName,
+		NodeIP:         node.PublicIPv4,
+		Status:         transition.Current.Status,
+		PreviousStatus: transition.Previous.Status,
+		TS:             ts.UTC().Format(time.RFC3339),
+		Detail:         transition.Detail,
+	}
+	label, channels, err := enabledNotificationChannelsForEventTx(ctx, tx, event.EventType, event.NodeID)
+	if err != nil || len(channels) == 0 {
+		return err
+	}
+	event.Label = label
+	claimed, err := claimStatusNotificationTx(ctx, tx, event)
+	if err != nil || !claimed {
+		return err
+	}
+	return insertNotificationDeliveriesTx(ctx, tx, event, channels, time.Now().UTC().Unix())
 }
 
 func alertRulesForMetrics(ctx context.Context, tx *sql.Tx, nodeID string, metrics map[string]bool) ([]AdminAlertRule, error) {
@@ -239,9 +293,11 @@ func updateNodeStatusForAlertRules(ctx context.Context, tx *sql.Tx, nodeID strin
 	}
 	if _, err := tx.ExecContext(ctx, `
 		UPDATE nodes
-		SET status = ?, last_seen_at = ?, updated_at = ?
+		SET status = ?,
+		    last_seen_at = CASE WHEN last_seen_at IS NULL OR last_seen_at <= ? THEN ? ELSE last_seen_at END,
+		    updated_at = CASE WHEN updated_at <= ? THEN ? ELSE updated_at END
 		WHERE id = ? AND disabled = 0
-	`, nextStatus, seenAt, nowUnix, nodeID); err != nil {
+	`, nextStatus, seenAt, seenAt, nowUnix, nowUnix, nodeID); err != nil {
 		return notificationStatusTransition{}, err
 	}
 	if offlineIncident != 0 {

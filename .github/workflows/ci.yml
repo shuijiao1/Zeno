@@ -25,8 +25,9 @@ jobs:
           node-version: '24.16.0'
           cache: npm
           cache-dependency-path: web/package-lock.json
-      - run: go test ./...
-      - run: go install honnef.co/go/tools/cmd/staticcheck@latest
+      - run: go test -count=1 ./...
+      - run: go vet ./...
+      - run: go install honnef.co/go/tools/cmd/staticcheck@v0.7.0
       - run: $(go env GOPATH)/bin/staticcheck ./...
       - uses: golang/govulncheck-action@b625fbe08f3bccbe446d94fbf87fcc875a4f50ee # v1
         with:
@@ -35,7 +36,10 @@ jobs:
           repo-checkout: false
       - run: bash -n install.sh scripts/*.sh
       - run: docker compose -f docker-compose.yml config >/dev/null
+      - run: python3 -m unittest discover -s scripts/tests -p 'test_*.py'
       - run: npm ci
+        working-directory: web
+      - run: npm audit --omit=dev --audit-level=high
         working-directory: web
       - run: npm test -- --run
         working-directory: web

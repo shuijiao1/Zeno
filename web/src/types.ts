@@ -201,13 +201,6 @@ export interface AdminNotificationDelivery {
   createdAt: string
 }
 
-export interface AdminNotificationType {
-  eventType: string
-  label: string
-  enabled: boolean
-  updatedAt?: string
-}
-
 export interface AdminAlertRule {
   id: string
   name: string

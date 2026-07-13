@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"errors"
+	"log"
 	"math"
 	"net/http"
 	"strings"
@@ -16,6 +17,7 @@ const (
 	maxAgentProbeSamplesPerRound = maxProbeTargetCount
 	maxAgentTimestampFutureSkew  = 5 * time.Minute
 	maxAgentTimestampPastSkew    = 10 * time.Minute
+	minAgentStateReportInterval  = time.Second
 )
 
 type agentStore interface {
@@ -29,6 +31,14 @@ type agentStore interface {
 
 type agentProbeBatchStore interface {
 	InsertAgentProbeResults(ctx context.Context, nodeID string, configVersion int64, rounds []preparedAgentProbeRound) error
+}
+
+type agentProbeTargetSnapshotStore interface {
+	EnabledProbeTargetsWithConfigVersion(ctx context.Context, nodeID string) ([]ProbeTarget, int64, error)
+}
+
+type agentStateReportStore interface {
+	RecordAgentStateReport(ctx context.Context, nodeID string, state AgentStateRequest) (bool, notificationStatusTransition, error)
 }
 
 type preparedAgentProbeRound struct {
@@ -45,6 +55,7 @@ type preparedAgentProbeRound struct {
 var (
 	errAgentProbeConfigStale    = errors.New("stale probe config")
 	errInvalidAgentProbeResults = errors.New("invalid agent probe results")
+	errInvalidAgentStateReport  = errors.New("invalid agent state report")
 )
 
 func (h *handler) handleAgentProbeTargets(w http.ResponseWriter, r *http.Request) {
@@ -56,14 +67,23 @@ func (h *handler) handleAgentProbeTargets(w http.ResponseWriter, r *http.Request
 	if !ok {
 		return
 	}
-	targets, err := store.EnabledProbeTargets(r.Context(), nodeID)
+	var version int64
+	var targets []ProbeTarget
+	var err error
+	if snapshotStore, ok := store.(agentProbeTargetSnapshotStore); ok {
+		targets, version, err = snapshotStore.EnabledProbeTargetsWithConfigVersion(r.Context(), nodeID)
+	} else {
+		targets, err = store.EnabledProbeTargets(r.Context(), nodeID)
+		if err == nil {
+			if versionStore, ok := h.store.(probeConfigVersionStore); ok {
+				version, err = versionStore.ProbeConfigVersion(r.Context())
+			}
+		}
+	}
 	if err != nil {
+		logAgentAPIError("probe-targets", nodeID, "load_targets_snapshot", err)
 		writeError(w, http.StatusInternalServerError, "internal error")
 		return
-	}
-	var version int64
-	if versionStore, ok := h.store.(probeConfigVersionStore); ok {
-		version, _ = versionStore.ProbeConfigVersion(r.Context())
 	}
 	response := AgentProbeTargetsResponse{Targets: make([]AgentProbeTarget, 0, len(targets)), Version: version}
 	for _, target := range targets {
@@ -182,10 +202,12 @@ func (h *handler) handleAgentProbeResults(w http.ResponseWriter, r *http.Request
 				writeError(w, http.StatusBadRequest, "invalid probe round")
 				return
 			}
+			logAgentAPIError("probe-results", nodeID, "insert_results", err)
 			writeError(w, http.StatusInternalServerError, "internal error")
 			return
 		}
 	} else {
+		logAgentAPIError("probe-results", nodeID, "store_capability", errors.New("agent probe batch store unavailable"))
 		writeError(w, http.StatusInternalServerError, "internal error")
 		return
 	}
@@ -234,12 +256,14 @@ func (h *handler) handleAgentHeartbeat(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid status")
 		return
 	}
+	status = normalizeHeartbeatStatus(status)
 	var transition notificationStatusTransition
 	heartbeatTS := time.Unix(request.TS, 0).UTC()
 	if transitionStore, ok := store.(heartbeatTransitionStore); ok {
 		var err error
 		transition, err = transitionStore.RecordAgentHeartbeatTransition(r.Context(), nodeID, heartbeatTS, status, strings.TrimSpace(request.AgentVersion))
 		if err != nil {
+			logAgentAPIError("heartbeat", nodeID, "record_transition", err)
 			writeError(w, http.StatusInternalServerError, "internal error")
 			return
 		}
@@ -250,6 +274,7 @@ func (h *handler) handleAgentHeartbeat(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 		if err := store.RecordAgentHeartbeat(r.Context(), nodeID, heartbeatTS, status, strings.TrimSpace(request.AgentVersion)); err != nil {
+			logAgentAPIError("heartbeat", nodeID, "record", err)
 			writeError(w, http.StatusInternalServerError, "internal error")
 			return
 		}
@@ -259,7 +284,7 @@ func (h *handler) handleAgentHeartbeat(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 	}
-	h.dispatchAgentStatusNotification(store, transition, heartbeatTS)
+	h.dispatchAgentStatusNotification(store, transition, time.Now().UTC())
 	h.invalidateSummaryCache()
 	h.publishSummary(r.Context())
 	writeJSON(w, http.StatusAccepted, map[string]any{"ok": true})
@@ -287,6 +312,7 @@ func (h *handler) handleAgentHost(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := store.UpsertAgentHost(r.Context(), nodeID, request); err != nil {
+		logAgentAPIError("host", nodeID, "upsert_host", err)
 		writeError(w, http.StatusInternalServerError, "internal error")
 		return
 	}
@@ -317,17 +343,42 @@ func (h *handler) handleAgentState(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "timestamp skew too large")
 		return
 	}
-	if request.CPUPercent < 0 || request.CPUPercent > 100 || optionalFloatNegative(request.Load1) || optionalFloatNegative(request.Load5) || optionalFloatNegative(request.Load15) || request.MemoryUsedBytes < 0 || request.MemoryTotalBytes < 0 || optionalIntNegative(request.SwapUsedBytes) || optionalIntNegative(request.SwapTotalBytes) || request.DiskUsedBytes < 0 || request.DiskTotalBytes < 0 || request.NetInTotalBytes < 0 || request.NetOutTotalBytes < 0 || request.NetInSpeedBps < 0 || request.NetOutSpeedBps < 0 || optionalIntNegative(request.ProcessCount) || optionalIntNegative(request.TCPConnectionCount) || request.UptimeSeconds < 0 {
+	if sampleID := strings.TrimSpace(request.effectiveSampleID()); sampleID != "" && !validAgentStateSampleID(sampleID) {
+		writeError(w, http.StatusBadRequest, "invalid state id")
+		return
+	}
+	if invalidFloat(request.CPUPercent) || request.CPUPercent < 0 || request.CPUPercent > 100 || optionalFloatInvalidOrNegative(request.Load1) || optionalFloatInvalidOrNegative(request.Load5) || optionalFloatInvalidOrNegative(request.Load15) || request.MemoryUsedBytes < 0 || request.MemoryTotalBytes < 0 || optionalIntNegative(request.SwapUsedBytes) || optionalIntNegative(request.SwapTotalBytes) || request.DiskUsedBytes < 0 || request.DiskTotalBytes < 0 || request.NetInTotalBytes < 0 || request.NetOutTotalBytes < 0 || invalidFloat(request.NetInSpeedBps) || request.NetInSpeedBps < 0 || invalidFloat(request.NetOutSpeedBps) || request.NetOutSpeedBps < 0 || optionalIntNegative(request.ProcessCount) || optionalIntNegative(request.TCPConnectionCount) || request.UptimeSeconds < 0 {
 		writeError(w, http.StatusBadRequest, "invalid state values")
 		return
 	}
+	if reportStore, ok := store.(agentStateReportStore); ok {
+		accepted, transition, err := reportStore.RecordAgentStateReport(r.Context(), nodeID, request)
+		if err != nil {
+			if errors.Is(err, errInvalidAgentStateReport) {
+				writeError(w, http.StatusBadRequest, "invalid state report")
+				return
+			}
+			logAgentAPIError("state", nodeID, "record_report", err)
+			writeError(w, http.StatusInternalServerError, "internal error")
+			return
+		}
+		if accepted {
+			h.dispatchAgentStatusNotification(store, transition, stateTS)
+			h.publishNodeState(r.Context(), nodeID)
+		}
+		h.publishSummary(r.Context())
+		writeJSON(w, http.StatusAccepted, map[string]any{"ok": true, "accepted": accepted})
+		return
+	}
 	if err := store.InsertAgentState(r.Context(), nodeID, request); err != nil {
+		logAgentAPIError("state", nodeID, "insert_state", err)
 		writeError(w, http.StatusInternalServerError, "internal error")
 		return
 	}
 	if transitionStore, ok := store.(stateAlertRuleTransitionStore); ok {
 		transition, err := transitionStore.RecordAgentStateAlertRuleTransition(r.Context(), nodeID, stateTS, request)
 		if err != nil {
+			logAgentAPIError("state", nodeID, "record_alert_transition", err)
 			writeError(w, http.StatusInternalServerError, "internal error")
 			return
 		}
@@ -370,8 +421,29 @@ func validAgentStatus(status string) bool {
 	}
 }
 
-func optionalFloatNegative(value *float64) bool {
-	return value != nil && *value < 0
+func normalizeHeartbeatStatus(status string) string {
+	switch strings.TrimSpace(status) {
+	case "warning":
+		return "warning"
+	default:
+		// A request that successfully reaches the Controller with a valid Agent
+		// token is, by definition, fresh liveness. Older Agents may still send
+		// "offline" or "no_data" in this field, but accepting that value would let
+		// a delayed heartbeat overwrite the server-side stale/offline state machine.
+		return "online"
+	}
+}
+
+func validAgentStateSampleID(value string) bool {
+	return validAgentProbeRoundID(value)
+}
+
+func invalidFloat(value float64) bool {
+	return math.IsNaN(value) || math.IsInf(value, 0)
+}
+
+func optionalFloatInvalidOrNegative(value *float64) bool {
+	return value != nil && (invalidFloat(*value) || *value < 0)
 }
 
 func optionalIntNegative(value *int64) bool {
@@ -397,6 +469,7 @@ func (h *handler) authorizeAgentRequest(w http.ResponseWriter, r *http.Request) 
 	token := strings.TrimSpace(strings.TrimPrefix(authorization, "Bearer "))
 	allowed, err := store.AuthorizeAgent(r.Context(), nodeID, token)
 	if err != nil {
+		logAgentAPIError(agentEndpointName(r.URL.Path), nodeID, "authorize", err)
 		writeError(w, http.StatusInternalServerError, "internal error")
 		return nil, "", false
 	}
@@ -405,4 +478,61 @@ func (h *handler) authorizeAgentRequest(w http.ResponseWriter, r *http.Request) 
 		return nil, "", false
 	}
 	return store, nodeID, true
+}
+
+func logAgentAPIError(endpoint, nodeID, stage string, err error) {
+	if err == nil {
+		return
+	}
+	log.Printf("agent_api_error endpoint=%s node_id=%s stage=%s error=%s", safeLogToken(endpoint), safeLogToken(nodeID), safeLogToken(stage), sanitizeAgentAPIError(err))
+}
+
+func agentEndpointName(path string) string {
+	path = strings.Trim(strings.TrimSpace(path), "/")
+	if path == "" {
+		return "unknown"
+	}
+	parts := strings.Split(path, "/")
+	return safeLogToken(parts[len(parts)-1])
+}
+
+func sanitizeAgentAPIError(err error) string {
+	if err == nil {
+		return ""
+	}
+	message := strings.TrimSpace(err.Error())
+	if message == "" {
+		return "error"
+	}
+	lower := strings.ToLower(message)
+	if strings.Contains(lower, "bearer ") || strings.Contains(lower, "token") || strings.Contains(lower, "secret") || strings.Contains(lower, "credential") || strings.Contains(lower, "authorization") {
+		return "redacted"
+	}
+	if len(message) > 200 {
+		message = message[:200]
+	}
+	return message
+}
+
+func safeLogToken(value string) string {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return "unknown"
+	}
+	var builder strings.Builder
+	for _, r := range value {
+		if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') || r == '-' || r == '_' || r == '.' || r == ':' {
+			builder.WriteRune(r)
+			continue
+		}
+		builder.WriteByte('_')
+	}
+	result := builder.String()
+	if result == "" {
+		return "unknown"
+	}
+	if len(result) > 128 {
+		return result[:128]
+	}
+	return result
 }

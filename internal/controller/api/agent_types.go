@@ -82,6 +82,8 @@ type AgentHostRequest struct {
 }
 
 type AgentStateRequest struct {
+	SampleID           string   `json:"sample_id,omitempty"`
+	IdempotencyKey     string   `json:"idempotency_key,omitempty"`
 	TS                 int64    `json:"ts"`
 	CPUPercent         float64  `json:"cpu_percent"`
 	Load1              *float64 `json:"load1"`
@@ -101,4 +103,11 @@ type AgentStateRequest struct {
 	TCPConnectionCount *int64   `json:"tcp_connection_count"`
 	UDPConnectionCount *int64   `json:"udp_connection_count"`
 	UptimeSeconds      int64    `json:"uptime_seconds"`
+}
+
+func (request AgentStateRequest) effectiveSampleID() string {
+	if request.SampleID != "" {
+		return request.SampleID
+	}
+	return request.IdempotencyKey
 }

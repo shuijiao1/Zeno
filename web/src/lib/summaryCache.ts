@@ -55,8 +55,3 @@ export function rememberSummary(summary: SummaryData, now = Date.now()) {
     window.localStorage.removeItem(legacySummaryCacheKey)
   } catch {}
 }
-
-export function formatCacheTimestamp(storedAt: number): string {
-  if (storedAt <= 0) return '未知'
-  return new Date(storedAt).toLocaleString('zh-CN', { hour12: false })
-}

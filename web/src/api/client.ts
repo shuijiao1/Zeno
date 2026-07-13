@@ -1,4 +1,4 @@
-import type { AdminAlertRule, AdminNode, AdminNodeInstallCommand, AdminNotificationChannel, AdminNotificationDelivery, AdminNotificationType, AdminProbeTarget, AdminSettings, AdminTheme, AppearancePreset, HomeCardNode, LatencyPoint, ProbeType, ServiceTarget, StatePoint } from '../types'
+import type { AdminAlertRule, AdminNode, AdminNodeInstallCommand, AdminNotificationChannel, AdminNotificationDelivery, AdminProbeTarget, AdminSettings, AdminTheme, AppearancePreset, HomeCardNode, LatencyPoint, ProbeType, ServiceTarget, StatePoint } from '../types'
 
 interface ApiSettings {
   site_title: string
@@ -225,12 +225,6 @@ interface ApiAdminNotificationChannel {
   updated_at: string
 }
 
-interface ApiAdminNotificationType {
-  event_type: string
-  label: string
-  enabled: boolean
-  updated_at?: string
-}
 
 interface ApiAdminNotificationDelivery {
   id: number
@@ -353,9 +347,6 @@ export interface ApiAdminNotificationTestResponse {
   delivery: ApiAdminNotificationDelivery
 }
 
-export interface ApiAdminNotificationTypeResponse {
-  type: ApiAdminNotificationType
-}
 
 export interface ApiAdminAlertRulesResponse {
   rules: ApiAdminAlertRule[]
@@ -661,12 +652,13 @@ export async function fetchAdminAccount(adminToken: string, signal?: AbortSignal
 }
 
 export async function logoutAdmin(adminToken: string): Promise<void> {
-  await fetch('/api/admin/v1/logout', {
+  const response = await fetch('/api/admin/v1/logout', {
     method: 'POST',
     headers: {
       'X-Admin-Token': adminToken,
     },
   })
+  if (!response.ok) throw new Error(`admin logout failed: ${response.status}`)
 }
 
 export async function updateAdminAccount(adminToken: string, username: string, currentPassword: string, newPassword: string): Promise<AdminLoginData> {
@@ -900,22 +892,6 @@ export async function testAdminNotificationChannel(adminToken: string, channelId
   return normalizeAdminNotificationDelivery(data.delivery)
 }
 
-export async function updateAdminNotificationType(adminToken: string, eventType: string, enabled: boolean): Promise<AdminNotificationType> {
-  const response = await fetch(`/api/admin/v1/notification-types/${encodeURIComponent(eventType)}`, {
-    method: 'PATCH',
-    headers: {
-      Accept: 'application/json',
-      'Content-Type': 'application/json',
-      'X-Admin-Token': adminToken,
-    },
-    body: JSON.stringify({ enabled }),
-  })
-  if (!response.ok) {
-    throw new Error(`admin notification type update failed: ${response.status}`)
-  }
-  const data = await response.json() as ApiAdminNotificationTypeResponse
-  return normalizeAdminNotificationType(data.type)
-}
 
 export async function updateAdminAlertRule(adminToken: string, ruleId: string, input: AdminAlertRuleUpdateInput): Promise<AdminAlertRule> {
   const response = await fetch(`/api/admin/v1/alert-rules/${encodeURIComponent(ruleId)}`, {
@@ -1452,14 +1428,6 @@ function normalizeAdminNotificationChannel(channel: ApiAdminNotificationChannel)
   }
 }
 
-function normalizeAdminNotificationType(notificationType: ApiAdminNotificationType): AdminNotificationType {
-  return {
-    eventType: notificationType.event_type,
-    label: notificationType.label,
-    enabled: notificationType.enabled,
-    updatedAt: notificationType.updated_at,
-  }
-}
 
 function normalizeAdminNotificationDelivery(delivery: ApiAdminNotificationDelivery): AdminNotificationDelivery {
   return {

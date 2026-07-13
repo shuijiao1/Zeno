@@ -40,6 +40,7 @@ func (hub *liveUpdateHub) subscribe(topic string) (<-chan []byte, func()) {
 			}
 			if len(clients) == 0 {
 				delete(hub.clients, topic)
+				delete(hub.last, topic)
 			}
 		} else {
 			close(updates)
@@ -57,11 +58,15 @@ func (hub *liveUpdateHub) hasClients(topic string) bool {
 func (hub *liveUpdateHub) publish(topic string, payload []byte) {
 	hub.mu.Lock()
 	defer hub.mu.Unlock()
+	clients := hub.clients[topic]
+	if len(clients) == 0 {
+		delete(hub.last, topic)
+		return
+	}
 	if bytes.Equal(hub.last[topic], payload) {
 		return
 	}
 	hub.last[topic] = append(hub.last[topic][:0], payload...)
-	clients := hub.clients[topic]
 	for updates := range clients {
 		select {
 		case updates <- payload:
@@ -169,7 +174,9 @@ func (h *handler) handleNodeStateWebSocket(w http.ResponseWriter, r *http.Reques
 		writeStoreError(w, err)
 		return
 	}
-	updates, unsubscribe := h.liveHub.subscribe(nodeStateLiveTopic(nodeID, window.Name))
+	topic := nodeStateLiveTopic(nodeID, window.Name)
+	updates, unsubscribe := h.liveHub.subscribe(topic)
+	unsubscribe = h.unsubscribeAndEvictDetailTopic(topic, unsubscribe)
 	h.handleLiveJSONWebSocket(w, r, payload, updates, unsubscribe)
 }
 
@@ -185,7 +192,9 @@ func (h *handler) handleNodeLatencyWebSocket(w http.ResponseWriter, r *http.Requ
 		writeStoreError(w, err)
 		return
 	}
-	updates, unsubscribe := h.liveHub.subscribe(nodeLatencyLiveTopic(nodeID, window.Name))
+	topic := nodeLatencyLiveTopic(nodeID, window.Name)
+	updates, unsubscribe := h.liveHub.subscribe(topic)
+	unsubscribe = h.unsubscribeAndEvictDetailTopic(topic, unsubscribe)
 	h.handleLiveJSONWebSocket(w, r, payload, updates, unsubscribe)
 }
 
@@ -201,8 +210,20 @@ func (h *handler) handleServiceLatencyWebSocket(w http.ResponseWriter, r *http.R
 		writeStoreError(w, err)
 		return
 	}
-	updates, unsubscribe := h.liveHub.subscribe(serviceLatencyLiveTopic(targetID, window.Name))
+	topic := serviceLatencyLiveTopic(targetID, window.Name)
+	updates, unsubscribe := h.liveHub.subscribe(topic)
+	unsubscribe = h.unsubscribeAndEvictDetailTopic(topic, unsubscribe)
 	h.handleLiveJSONWebSocket(w, r, payload, updates, unsubscribe)
+}
+
+func (h *handler) unsubscribeAndEvictDetailTopic(topic string, unsubscribe func()) func() {
+	return func() {
+		unsubscribe()
+		if h.liveHub != nil && h.liveHub.hasClients(topic) {
+			return
+		}
+		h.detailCache.evict(topic)
+	}
 }
 
 func (h *handler) handleLiveJSONWebSocket(w http.ResponseWriter, r *http.Request, initial []byte, updates <-chan []byte, unsubscribe func()) {

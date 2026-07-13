@@ -2,28 +2,83 @@ package api
 
 import (
 	"context"
+	cryptorand "crypto/rand"
+	"crypto/sha256"
 	"database/sql"
+	"encoding/hex"
+	"fmt"
 	"log"
 	"strings"
+	"sync"
 	"time"
 )
 
 const (
 	notificationDeliveryBatchSize   = 32
 	notificationDeliveryMaxAttempts = 5
+	notificationDeliveryLease       = 30 * time.Second
 )
 
 type queuedNotificationDelivery struct {
-	ID       int64
-	Event    notificationEvent
-	Channel  notificationDispatchChannel
-	Attempts int
+	ID         int64
+	Event      notificationEvent
+	Channel    notificationDispatchChannel
+	Attempts   int
+	ClaimToken string
 }
 
 type notificationOutboxStore interface {
 	QueueNotificationEvent(ctx context.Context, event notificationEvent, channels []notificationDispatchChannel) (bool, error)
 	PendingNotificationDeliveries(ctx context.Context, now time.Time, limit int) ([]queuedNotificationDelivery, error)
 	RecordNotificationDeliveryAttempt(ctx context.Context, delivery queuedNotificationDelivery, sendErr error, now time.Time) error
+}
+
+type notificationOutboxWorker struct {
+	wake    chan struct{}
+	mu      sync.Mutex
+	running bool
+}
+
+func (h *handler) notificationOutboxWorker() *notificationOutboxWorker {
+	if h == nil {
+		return nil
+	}
+	h.notificationWorkerMu.Lock()
+	defer h.notificationWorkerMu.Unlock()
+	if h.backgroundCtx == nil {
+		h.backgroundCtx, h.backgroundCancel = context.WithCancel(context.Background())
+	}
+	if h.notificationWorker == nil {
+		h.notificationWorker = &notificationOutboxWorker{wake: make(chan struct{}, 1)}
+	}
+	return h.notificationWorker
+}
+
+func (h *handler) wakeNotificationOutbox() {
+	worker := h.notificationOutboxWorker()
+	if worker == nil {
+		return
+	}
+	select {
+	case worker.wake <- struct{}{}:
+	default:
+	}
+	h.ensureNotificationOutboxWorker(0)
+}
+
+func (h *handler) ensureNotificationOutboxWorker(interval time.Duration) {
+	worker := h.notificationOutboxWorker()
+	if worker == nil || h.backgroundContext().Err() != nil {
+		return
+	}
+	worker.mu.Lock()
+	if worker.running {
+		worker.mu.Unlock()
+		return
+	}
+	worker.running = true
+	worker.mu.Unlock()
+	h.startBackground(func(ctx context.Context) { h.runNotificationOutboxLoop(ctx, interval, worker) })
 }
 
 // QueueNotificationEvent persists both the incident claim and its deliveries in
@@ -74,7 +129,7 @@ func insertNotificationDeliveriesTx(ctx context.Context, tx *sql.Tx, event notif
 
 func enabledNotificationChannelsTx(ctx context.Context, tx *sql.Tx) ([]notificationDispatchChannel, error) {
 	rows, err := tx.QueryContext(ctx, `
-		SELECT id, name, destination, credential
+		SELECT id, name, destination
 		FROM notification_channels
 		WHERE enabled = 1 AND TRIM(destination) <> '' AND TRIM(credential) <> ''
 		ORDER BY id ASC
@@ -86,7 +141,7 @@ func enabledNotificationChannelsTx(ctx context.Context, tx *sql.Tx) ([]notificat
 	channels := make([]notificationDispatchChannel, 0)
 	for rows.Next() {
 		var channel notificationDispatchChannel
-		if err := rows.Scan(&channel.ID, &channel.Name, &channel.Destination, &channel.Credential); err != nil {
+		if err := rows.Scan(&channel.ID, &channel.Name, &channel.Destination); err != nil {
 			return nil, err
 		}
 		channel.Type = "telegram"
@@ -98,45 +153,190 @@ func enabledNotificationChannelsTx(ctx context.Context, tx *sql.Tx) ([]notificat
 	return channels, nil
 }
 
+func enabledNotificationChannelsForEventTx(ctx context.Context, tx *sql.Tx, eventType, nodeID string) (string, []notificationDispatchChannel, error) {
+	label, ok := adminNotificationTypeLabel(eventType)
+	if !ok {
+		return "", nil, errNotificationTypeNotFound
+	}
+	enabled, err := notificationEventEnabledTx(ctx, tx, eventType, nodeID)
+	if err != nil || !enabled {
+		return label, nil, err
+	}
+	channels, err := enabledNotificationChannelsTx(ctx, tx)
+	if err != nil {
+		return "", nil, err
+	}
+	return label, channels, nil
+}
+
+func notificationEventEnabledTx(ctx context.Context, tx *sql.Tx, eventType, nodeID string) (bool, error) {
+	var enabledRuleCount int
+	if err := tx.QueryRowContext(ctx, `
+		SELECT COUNT(*)
+		FROM alert_rules ar
+		WHERE ar.notification_event_type = ?
+		  AND ar.enabled = 1
+		  AND (
+		    ? = ''
+		    OR NOT EXISTS (SELECT 1 FROM alert_rule_node_scopes scope_all WHERE scope_all.rule_id = ar.id)
+		    OR EXISTS (SELECT 1 FROM alert_rule_node_scopes scope_node WHERE scope_node.rule_id = ar.id AND scope_node.node_id = ?)
+		  )
+	`, eventType, strings.TrimSpace(nodeID), strings.TrimSpace(nodeID)).Scan(&enabledRuleCount); err != nil {
+		return false, err
+	}
+	return enabledRuleCount > 0, nil
+}
+
 func (s *SQLiteStore) PendingNotificationDeliveries(ctx context.Context, now time.Time, limit int) ([]queuedNotificationDelivery, error) {
 	if limit <= 0 || limit > notificationDeliveryBatchSize {
 		limit = notificationDeliveryBatchSize
 	}
-	rows, err := s.db.QueryContext(ctx, `
-		SELECT d.id, d.event_type, d.label, d.node_id, d.node_name, d.previous_status,
-		       d.status, d.detail, d.channel_id, d.channel_name, d.attempts,
-		       COALESCE(c.destination, ''), COALESCE(c.credential, ''), COALESCE(c.enabled, 0)
-		FROM notification_deliveries d
-		LEFT JOIN notification_channels c ON c.id = d.channel_id
-		WHERE d.state = 'pending' AND d.next_attempt_at <= ?
-		ORDER BY d.next_attempt_at ASC, d.id ASC
-		LIMIT ?
-	`, now.UTC().Unix(), limit)
+	now = now.UTC()
+	nowUnix := now.Unix()
+	claimToken := notificationClaimToken(now)
+	leaseUntil := now.Add(notificationDeliveryLease).Unix()
+	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer rollbackUnlessCommitted(tx)
 
-	deliveries := make([]queuedNotificationDelivery, 0)
+	if _, err := tx.ExecContext(ctx, `
+		UPDATE notification_deliveries
+		SET state = 'pending', lease_until = 0, claim_token = '', updated_at = ?
+		WHERE state = 'leased' AND lease_until <= ?
+	`, nowUnix, nowUnix); err != nil {
+		return nil, err
+	}
+	if _, err := tx.ExecContext(ctx, `
+		UPDATE notification_deliveries
+		SET state = 'pending', next_attempt_at = CASE WHEN next_attempt_at > ? THEN next_attempt_at ELSE ? END,
+		    last_error = '', updated_at = ?
+		WHERE state = 'paused'
+		  AND EXISTS (
+		    SELECT 1 FROM notification_channels c
+		    WHERE c.id = notification_deliveries.channel_id
+		      AND c.enabled = 1
+		      AND TRIM(c.destination) <> ''
+		      AND TRIM(c.credential) <> ''
+		  )
+	`, nowUnix, nowUnix, nowUnix); err != nil {
+		return nil, err
+	}
+	if _, err := tx.ExecContext(ctx, `
+		UPDATE notification_deliveries
+		SET state = 'paused', lease_until = 0, claim_token = '', last_error = 'notification channel disabled', updated_at = ?
+		WHERE state = 'pending'
+		  AND NOT EXISTS (
+		    SELECT 1 FROM notification_channels c
+		    WHERE c.id = notification_deliveries.channel_id
+		      AND c.enabled = 1
+		      AND TRIM(c.destination) <> ''
+		      AND TRIM(c.credential) <> ''
+		  )
+	`, nowUnix); err != nil {
+		return nil, err
+	}
+
+	rows, err := tx.QueryContext(ctx, `
+		SELECT d.id
+		FROM notification_deliveries d
+		JOIN notification_channels c ON c.id = d.channel_id
+		WHERE d.state = 'pending'
+		  AND d.next_attempt_at <= ?
+		  AND c.enabled = 1
+		  AND TRIM(c.destination) <> ''
+		  AND TRIM(c.credential) <> ''
+		ORDER BY d.next_attempt_at ASC, d.id ASC
+		LIMIT ?
+	`, nowUnix, limit)
+	if err != nil {
+		return nil, err
+	}
+	ids := make([]int64, 0, limit)
 	for rows.Next() {
-		var delivery queuedNotificationDelivery
-		var enabled int
-		if err := rows.Scan(&delivery.ID, &delivery.Event.EventType, &delivery.Event.Label,
-			&delivery.Event.NodeID, &delivery.Event.NodeName, &delivery.Event.PreviousStatus,
-			&delivery.Event.Status, &delivery.Event.Detail, &delivery.Channel.ID,
-			&delivery.Channel.Name, &delivery.Attempts, &delivery.Channel.Destination,
-			&delivery.Channel.Credential, &enabled); err != nil {
+		var id int64
+		if err := rows.Scan(&id); err != nil {
+			_ = rows.Close()
 			return nil, err
 		}
-		delivery.Channel.Type = "telegram"
-		if enabled == 0 {
-			delivery.Channel.Credential = ""
-		}
-		deliveries = append(deliveries, delivery)
+		ids = append(ids, id)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
 	}
 	if err := rows.Err(); err != nil {
 		return nil, err
 	}
+	if len(ids) == 0 {
+		if err := tx.Commit(); err != nil {
+			return nil, err
+		}
+		tx = nil
+		return nil, nil
+	}
+	placeholders := sqlitePlaceholders(len(ids))
+	args := make([]any, 0, len(ids)+4)
+	args = append(args, leaseUntil, claimToken, nowUnix)
+	for _, id := range ids {
+		args = append(args, id)
+	}
+	if _, err := tx.ExecContext(ctx, `
+		UPDATE notification_deliveries
+		SET state = 'leased', lease_until = ?, claim_token = ?, updated_at = ?
+		WHERE state = 'pending' AND id IN (`+placeholders+`)
+	`, args...); err != nil {
+		return nil, err
+	}
+
+	rows, err = tx.QueryContext(ctx, `
+		SELECT d.id, d.event_type, d.label, d.node_id, d.node_name, d.previous_status,
+		       d.status, d.detail, d.channel_id, d.channel_name, d.attempts,
+		       COALESCE(c.destination, ''), COALESCE(c.credential, '')
+		FROM notification_deliveries d
+		JOIN notification_channels c ON c.id = d.channel_id
+		WHERE d.state = 'leased' AND d.claim_token = ?
+		  AND c.enabled = 1
+		  AND TRIM(c.destination) <> ''
+		  AND TRIM(c.credential) <> ''
+		ORDER BY d.next_attempt_at ASC, d.id ASC
+	`, claimToken)
+	if err != nil {
+		return nil, err
+	}
+
+	deliveries := make([]queuedNotificationDelivery, 0)
+	for rows.Next() {
+		var delivery queuedNotificationDelivery
+		var storedCredential string
+		if err := rows.Scan(&delivery.ID, &delivery.Event.EventType, &delivery.Event.Label,
+			&delivery.Event.NodeID, &delivery.Event.NodeName, &delivery.Event.PreviousStatus,
+			&delivery.Event.Status, &delivery.Event.Detail, &delivery.Channel.ID,
+			&delivery.Channel.Name, &delivery.Attempts, &delivery.Channel.Destination,
+			&storedCredential); err != nil {
+			_ = rows.Close()
+			return nil, err
+		}
+		credential, err := s.decryptNotificationCredentialFromStorage(delivery.Channel.ID, "telegram", storedCredential)
+		if err != nil {
+			_ = rows.Close()
+			return nil, err
+		}
+		delivery.Channel.Type = "telegram"
+		delivery.Channel.Credential = credential
+		delivery.ClaimToken = claimToken
+		deliveries = append(deliveries, delivery)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	if err := tx.Commit(); err != nil {
+		return nil, err
+	}
+	tx = nil
 	return deliveries, nil
 }
 
@@ -146,9 +346,9 @@ func (s *SQLiteStore) RecordNotificationDeliveryAttempt(ctx context.Context, del
 		_, err := s.db.ExecContext(ctx, `
 			UPDATE notification_deliveries
 			SET state = 'delivered', attempts = attempts + 1, last_error = '',
-			    updated_at = ?, delivered_at = ?
-			WHERE id = ? AND state = 'pending'
-		`, nowUnix, nowUnix, delivery.ID)
+			    lease_until = 0, claim_token = '', updated_at = ?, delivered_at = ?
+			WHERE id = ? AND state = 'leased' AND claim_token = ?
+		`, nowUnix, nowUnix, delivery.ID, delivery.ClaimToken)
 		return err
 	}
 
@@ -160,10 +360,58 @@ func (s *SQLiteStore) RecordNotificationDeliveryAttempt(ctx context.Context, del
 	delay := notificationRetryDelay(attempts)
 	_, err := s.db.ExecContext(ctx, `
 		UPDATE notification_deliveries
-		SET state = ?, attempts = ?, next_attempt_at = ?, last_error = ?, updated_at = ?
-		WHERE id = ? AND state = 'pending'
-	`, state, attempts, now.Add(delay).UTC().Unix(), sanitizeNotificationDeliveryError(sendErr), nowUnix, delivery.ID)
+		SET state = ?, attempts = ?, next_attempt_at = ?, last_error = ?, lease_until = 0, claim_token = '', updated_at = ?
+		WHERE id = ? AND state = 'leased' AND claim_token = ?
+	`, state, attempts, now.Add(delay).UTC().Unix(), sanitizeNotificationDeliveryError(sendErr), nowUnix, delivery.ID, delivery.ClaimToken)
 	return err
+}
+
+func (s *SQLiteStore) ReplayFailedNotificationDeliveries(ctx context.Context, now time.Time, limit int) (int, error) {
+	if limit <= 0 || limit > notificationDeliveryBatchSize {
+		limit = notificationDeliveryBatchSize
+	}
+	result, err := s.db.ExecContext(ctx, `
+		UPDATE notification_deliveries
+		SET state = 'pending', next_attempt_at = ?, lease_until = 0, claim_token = '', last_error = '', updated_at = ?
+		WHERE id IN (
+			SELECT d.id
+			FROM notification_deliveries d
+			JOIN notification_channels c ON c.id = d.channel_id
+			WHERE d.state = 'failed'
+			  AND c.enabled = 1
+			  AND TRIM(c.destination) <> ''
+			  AND TRIM(c.credential) <> ''
+			ORDER BY d.updated_at ASC, d.id ASC
+			LIMIT ?
+		)
+	`, now.UTC().Unix(), now.UTC().Unix(), limit)
+	if err != nil {
+		return 0, err
+	}
+	affected, err := result.RowsAffected()
+	if err != nil {
+		return 0, err
+	}
+	return int(affected), nil
+}
+
+func notificationClaimToken(now time.Time) string {
+	var random [16]byte
+	if _, err := cryptorand.Read(random[:]); err == nil {
+		return fmt.Sprintf("claim:%d:%s", now.UnixNano(), hex.EncodeToString(random[:]))
+	}
+	return fmt.Sprintf("claim:%d", now.UnixNano())
+}
+
+func sqlitePlaceholders(count int) string {
+	if count <= 0 {
+		return ""
+	}
+	parts := make([]string, count)
+	for i := range parts {
+		parts[i] = "?"
+	}
+	return strings.Join(parts, ",")
 }
 
 func notificationRetryDelay(attempt int) time.Duration {
@@ -233,9 +481,41 @@ func claimStatusNotificationTx(ctx context.Context, tx *sql.Tx, event notificati
 	return claimed > 0, nil
 }
 
-func (h *handler) runNotificationOutbox(ctx context.Context, interval time.Duration) {
+func (h *handler) runNotificationOutboxLoop(ctx context.Context, interval time.Duration, worker *notificationOutboxWorker) {
+	defer func() {
+		worker.mu.Lock()
+		worker.running = false
+		pending := len(worker.wake) > 0
+		worker.mu.Unlock()
+		if pending && h.backgroundContext().Err() == nil {
+			h.ensureNotificationOutboxWorker(interval)
+		}
+	}()
 	if interval <= 0 {
-		return
+		for {
+			// The wake that created this worker is already represented by the
+			// dispatch below. Drain it first so one event does not cause two scans.
+			select {
+			case <-worker.wake:
+			default:
+			}
+			h.dispatchPendingNotificationDeliveries(ctx)
+			idle := time.NewTimer(250 * time.Millisecond)
+			select {
+			case <-ctx.Done():
+				if !idle.Stop() {
+					<-idle.C
+				}
+				return
+			case <-worker.wake:
+				if !idle.Stop() {
+					<-idle.C
+				}
+				continue
+			case <-idle.C:
+				return
+			}
+		}
 	}
 	h.dispatchPendingNotificationDeliveries(ctx)
 	ticker := time.NewTicker(interval)
@@ -244,6 +524,8 @@ func (h *handler) runNotificationOutbox(ctx context.Context, interval time.Durat
 		select {
 		case <-ctx.Done():
 			return
+		case <-worker.wake:
+			h.dispatchPendingNotificationDeliveries(ctx)
 		case <-ticker.C:
 			h.dispatchPendingNotificationDeliveries(ctx)
 		}
@@ -255,9 +537,11 @@ func (h *handler) dispatchPendingNotificationDeliveries(ctx context.Context) {
 	if !ok || h.notificationSender == nil {
 		return
 	}
+	if ctx.Err() != nil || !h.automaticNotificationsAllowed() {
+		return
+	}
 	h.notificationDrainMu.Lock()
 	defer h.notificationDrainMu.Unlock()
-
 	deliveries, err := store.PendingNotificationDeliveries(ctx, time.Now().UTC(), notificationDeliveryBatchSize)
 	if err != nil {
 		log.Printf("notification outbox fetch failed: %v", err)
@@ -276,7 +560,32 @@ func (h *handler) dispatchPendingNotificationDeliveries(ctx context.Context) {
 		}
 		cancel()
 		if err := store.RecordNotificationDeliveryAttempt(ctx, delivery, sendErr, time.Now().UTC()); err != nil {
-			log.Printf("notification outbox update failed for delivery %d: %v", delivery.ID, err)
+			log.Printf("notification outbox update failed delivery_id=%s event_id=%s event_type=%s node_id=%s channel_id=%s: %v", notificationDeliveryStableID(delivery), notificationEventStableID(delivery.Event), delivery.Event.EventType, delivery.Event.NodeID, delivery.Channel.ID, err)
+			continue
+		}
+		if sendErr != nil {
+			log.Printf("notification delivery failed delivery_id=%s event_id=%s event_type=%s node_id=%s channel_id=%s attempt=%d error=%s", notificationDeliveryStableID(delivery), notificationEventStableID(delivery.Event), delivery.Event.EventType, delivery.Event.NodeID, delivery.Channel.ID, delivery.Attempts+1, sanitizeNotificationDeliveryError(sendErr))
 		}
 	}
+}
+
+func notificationEventStableID(event notificationEvent) string {
+	parts := []string{
+		strings.TrimSpace(event.EventType),
+		strings.TrimSpace(event.NodeID),
+		strings.TrimSpace(event.PreviousStatus),
+		strings.TrimSpace(event.Status),
+		strings.TrimSpace(event.Detail),
+	}
+	sum := sha256.Sum256([]byte(strings.Join(parts, "\x00")))
+	return hex.EncodeToString(sum[:8])
+}
+
+func notificationDeliveryStableID(delivery queuedNotificationDelivery) string {
+	if delivery.ID > 0 {
+		return fmt.Sprintf("outbox:%d", delivery.ID)
+	}
+	parts := []string{notificationEventStableID(delivery.Event), strings.TrimSpace(delivery.Channel.ID)}
+	sum := sha256.Sum256([]byte(strings.Join(parts, "\x00")))
+	return "outbox:" + hex.EncodeToString(sum[:8])
 }

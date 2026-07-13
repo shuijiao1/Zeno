@@ -26,6 +26,7 @@ type HandlerOptions struct {
 	RenewalNotificationInterval  time.Duration
 	HistoryRetentionInterval     time.Duration
 	NotificationDispatchInterval time.Duration
+	DisableNotifications         bool
 	BackgroundContext            context.Context
 }
 
@@ -51,6 +52,8 @@ type handler struct {
 	backgroundCancel     context.CancelFunc
 	backgroundWG         sync.WaitGroup
 	notificationDrainMu  sync.Mutex
+	notificationWorkerMu sync.Mutex
+	notificationWorker   *notificationOutboxWorker
 	router               http.Handler
 }
 
@@ -233,8 +236,12 @@ func NewHandler(options ...HandlerOptions) http.Handler {
 		publicWSGate:       newWebSocketGate(publicWebSocketMaxConnections),
 		agentWSGate:        newWebSocketGate(agentWebSocketMaxConnections),
 		detailCache:        newDetailJSONCache(),
+		notificationWorker: &notificationOutboxWorker{wake: make(chan struct{}, 1)},
 		backgroundCtx:      backgroundCtx,
 		backgroundCancel:   backgroundCancel,
+	}
+	if opts.DisableNotifications {
+		h.notificationSender = nil
 	}
 	if opts.StaleOfflineScanInterval > 0 {
 		h.startBackground(func(ctx context.Context) { h.runStaleAgentOfflineScanner(ctx, opts.StaleOfflineScanInterval) })
@@ -246,7 +253,7 @@ func NewHandler(options ...HandlerOptions) http.Handler {
 		h.startBackground(func(ctx context.Context) { h.runHistoryRetention(ctx, opts.HistoryRetentionInterval) })
 	}
 	if opts.NotificationDispatchInterval > 0 {
-		h.startBackground(func(ctx context.Context) { h.runNotificationOutbox(ctx, opts.NotificationDispatchInterval) })
+		h.ensureNotificationOutboxWorker(opts.NotificationDispatchInterval)
 	}
 
 	mux := http.NewServeMux()
@@ -342,6 +349,9 @@ func withSecurityHeaders(next http.Handler) http.Handler {
 		w.Header().Set("Referrer-Policy", "no-referrer")
 		w.Header().Set("Permissions-Policy", "camera=(), microphone=(), geolocation=()")
 		w.Header().Set("Content-Security-Policy", "default-src 'self'; base-uri 'self'; object-src 'none'; frame-ancestors 'none'; form-action 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' https: data:; font-src 'self' https: data:; connect-src 'self'")
+		if requestUsesHTTPS(r) {
+			w.Header().Set("Strict-Transport-Security", "max-age=31536000")
+		}
 		if strings.HasPrefix(r.URL.Path, "/api/admin/") || strings.TrimSpace(r.Header.Get("X-Admin-Token")) != "" {
 			w.Header().Set("Cache-Control", "no-store")
 		}
@@ -350,6 +360,17 @@ func withSecurityHeaders(next http.Handler) http.Handler {
 		}
 		next.ServeHTTP(w, r)
 	})
+}
+
+func requestUsesHTTPS(r *http.Request) bool {
+	if r == nil {
+		return false
+	}
+	if r.TLS != nil {
+		return true
+	}
+	remoteIP := parseRemoteIP(r.RemoteAddr)
+	return remoteIP != nil && trustedForwardingProxy(remoteIP) && strings.EqualFold(strings.TrimSpace(r.Header.Get("X-Forwarded-Proto")), "https")
 }
 
 func (h *handler) handlePublicServiceResource(w http.ResponseWriter, r *http.Request) {

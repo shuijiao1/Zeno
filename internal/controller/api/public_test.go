@@ -91,6 +91,28 @@ func TestSecurityHeadersAndAdminNoStore(t *testing.T) {
 	}
 }
 
+func TestSecurityHeadersSetHSTSOnlyForTrustedHTTPS(t *testing.T) {
+	handler := NewHandler()
+
+	proxiedRecorder := httptest.NewRecorder()
+	proxiedRequest := httptest.NewRequest(http.MethodGet, "/health", nil)
+	proxiedRequest.RemoteAddr = "127.0.0.1:12345"
+	proxiedRequest.Header.Set("X-Forwarded-Proto", "https")
+	handler.ServeHTTP(proxiedRecorder, proxiedRequest)
+	if got := proxiedRecorder.Header().Get("Strict-Transport-Security"); got != "max-age=31536000" {
+		t.Fatalf("trusted HTTPS HSTS = %q, want max-age=31536000", got)
+	}
+
+	spoofedRecorder := httptest.NewRecorder()
+	spoofedRequest := httptest.NewRequest(http.MethodGet, "/health", nil)
+	spoofedRequest.RemoteAddr = "192.0.2.10:12345"
+	spoofedRequest.Header.Set("X-Forwarded-Proto", "https")
+	handler.ServeHTTP(spoofedRecorder, spoofedRequest)
+	if got := spoofedRecorder.Header().Get("Strict-Transport-Security"); got != "" {
+		t.Fatalf("untrusted forwarded HTTPS HSTS = %q, want empty", got)
+	}
+}
+
 func TestCredentialedPublicResponseIsNotCacheable(t *testing.T) {
 	handler := NewHandler()
 	recorder := httptest.NewRecorder()
