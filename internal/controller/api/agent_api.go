@@ -211,8 +211,10 @@ func (h *handler) handleAgentProbeResults(w http.ResponseWriter, r *http.Request
 		writeError(w, http.StatusInternalServerError, "internal error")
 		return
 	}
+	h.invalidateSummaryCache()
+	h.invalidateSummaryAggregates()
 	h.publishSummary(r.Context())
-	h.publishNodeLatency(r.Context(), nodeID)
+	h.scheduleNodeLatencyPublish(nodeID)
 	seenTargetIDs := map[string]struct{}{}
 	for _, round := range prepared {
 		targetID := round.target.ID
@@ -226,7 +228,7 @@ func (h *handler) handleAgentProbeResults(w http.ResponseWriter, r *http.Request
 			continue
 		}
 		seenTargetIDs[targetID] = struct{}{}
-		h.publishServiceLatency(r.Context(), targetID)
+		h.scheduleServiceLatencyPublish(targetID)
 	}
 	writeJSON(w, http.StatusAccepted, map[string]any{"ok": true, "accepted": len(prepared)})
 }
@@ -364,7 +366,7 @@ func (h *handler) handleAgentState(w http.ResponseWriter, r *http.Request) {
 		}
 		if accepted {
 			h.dispatchAgentStatusNotification(store, transition, stateTS)
-			h.publishNodeState(r.Context(), nodeID)
+			h.scheduleNodeStatePublish(nodeID)
 		}
 		h.publishSummary(r.Context())
 		writeJSON(w, http.StatusAccepted, map[string]any{"ok": true, "accepted": accepted})
@@ -385,7 +387,7 @@ func (h *handler) handleAgentState(w http.ResponseWriter, r *http.Request) {
 		h.dispatchAgentStatusNotification(store, transition, stateTS)
 	}
 	h.publishSummary(r.Context())
-	h.publishNodeState(r.Context(), nodeID)
+	h.scheduleNodeStatePublish(nodeID)
 	writeJSON(w, http.StatusAccepted, map[string]any{"ok": true})
 }
 

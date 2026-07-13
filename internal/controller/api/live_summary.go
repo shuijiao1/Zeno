@@ -131,6 +131,7 @@ const (
 	summaryCacheIdleRefreshFor  = 15 * time.Second
 	summaryCacheBackgroundDelay = 350 * time.Millisecond
 	detailCacheFreshFor         = 3 * time.Second
+	detailPublishTimeout        = 5 * time.Second
 	websocketWriteTimeout       = 5 * time.Second
 	websocketReadTimeout        = 75 * time.Second
 )
@@ -351,7 +352,7 @@ func (h *handler) publishSummary(_ context.Context) {
 	if h.liveHub == nil {
 		return
 	}
-	if !h.liveHub.hasClients(summaryLiveTopic) && !h.summaryCacheStale(summaryCacheIdleRefreshFor) {
+	if !h.liveHub.hasClients(summaryLiveTopic) {
 		return
 	}
 	h.scheduleSummaryPublish()
@@ -376,11 +377,17 @@ func (h *handler) scheduleSummaryPublish() {
 	}
 	timer := time.NewTimer(wait)
 	h.summaryPublishTimer = timer
-	h.backgroundWG.Add(1)
+	backgroundCtx, ok := h.beginBackground()
+	if !ok {
+		timer.Stop()
+		h.summaryPublishTimer = nil
+		h.summaryPublishMu.Unlock()
+		return
+	}
 	go func() {
 		defer h.backgroundWG.Done()
 		select {
-		case <-h.backgroundContext().Done():
+		case <-backgroundCtx.Done():
 			if !timer.Stop() {
 				select {
 				case <-timer.C:
@@ -399,7 +406,7 @@ func (h *handler) scheduleSummaryPublish() {
 		h.summaryLastPublished = time.Now()
 		h.summaryPublishMu.Unlock()
 
-		ctx, cancel := context.WithTimeout(h.backgroundContext(), 5*time.Second)
+		ctx, cancel := context.WithTimeout(backgroundCtx, 5*time.Second)
 		defer cancel()
 		h.publishSummaryNow(ctx)
 	}()
@@ -407,17 +414,139 @@ func (h *handler) scheduleSummaryPublish() {
 }
 
 func (h *handler) publishSummaryNow(ctx context.Context) {
-	if h.liveHub == nil {
+	if h.liveHub == nil || !h.liveHub.hasClients(summaryLiveTopic) {
 		return
 	}
 	payload, err := h.summaryJSON(ctx)
 	if err != nil {
 		return
 	}
-	if !h.liveHub.hasClients(summaryLiveTopic) {
+	h.liveHub.publish(summaryLiveTopic, payload)
+}
+
+func (h *handler) publishSummaryNowFresh(ctx context.Context) {
+	h.invalidateSummaryCache()
+	h.invalidateSummaryAggregates()
+	h.publishSummaryNow(ctx)
+}
+
+func (h *handler) scheduleNodeStatePublish(nodeID string) {
+	if !h.hasNodeStateClients(nodeID) {
 		return
 	}
-	h.liveHub.publish(summaryLiveTopic, payload)
+	h.scheduleDetailPublish("node-state:"+nodeID, func(ctx context.Context) {
+		h.publishNodeState(ctx, nodeID)
+	})
+}
+
+func (h *handler) scheduleNodeLatencyPublish(nodeID string) {
+	if !h.hasNodeLatencyClients(nodeID) {
+		return
+	}
+	h.scheduleDetailPublish("node-latency:"+nodeID, func(ctx context.Context) {
+		h.publishNodeLatency(ctx, nodeID)
+	})
+}
+
+func (h *handler) scheduleServiceLatencyPublish(targetID string) {
+	if !h.hasServiceLatencyClients(targetID) {
+		return
+	}
+	h.scheduleDetailPublish("service-latency:"+targetID, func(ctx context.Context) {
+		h.publishServiceLatency(ctx, targetID)
+	})
+}
+
+func (h *handler) scheduleDetailPublish(key string, publish func(context.Context)) {
+	if h == nil || key == "" || publish == nil || h.backgroundContext().Err() != nil {
+		return
+	}
+	h.detailPublishMu.Lock()
+	if h.detailPublishPending == nil {
+		h.detailPublishPending = make(map[string]bool)
+	}
+	if _, pending := h.detailPublishPending[key]; pending {
+		h.detailPublishPending[key] = true
+		h.detailPublishMu.Unlock()
+		return
+	}
+	if h.detailPublishGate == nil {
+		h.detailPublishGate = make(chan struct{}, detailPublishMaxConcurrent)
+	}
+	h.detailPublishPending[key] = false
+	gate := h.detailPublishGate
+	h.detailPublishMu.Unlock()
+
+	backgroundCtx, ok := h.beginBackground()
+	if !ok {
+		h.detailPublishMu.Lock()
+		delete(h.detailPublishPending, key)
+		h.detailPublishMu.Unlock()
+		return
+	}
+	go func() {
+		defer h.backgroundWG.Done()
+		select {
+		case gate <- struct{}{}:
+			defer func() { <-gate }()
+		case <-backgroundCtx.Done():
+			h.detailPublishMu.Lock()
+			delete(h.detailPublishPending, key)
+			h.detailPublishMu.Unlock()
+			return
+		}
+		for {
+			ctx, cancel := context.WithTimeout(backgroundCtx, detailPublishTimeout)
+			publish(ctx)
+			cancel()
+
+			h.detailPublishMu.Lock()
+			if h.detailPublishPending[key] && backgroundCtx.Err() == nil {
+				h.detailPublishPending[key] = false
+				h.detailPublishMu.Unlock()
+				continue
+			}
+			delete(h.detailPublishPending, key)
+			h.detailPublishMu.Unlock()
+			return
+		}
+	}()
+}
+
+func (h *handler) hasNodeStateClients(nodeID string) bool {
+	if h == nil || h.liveHub == nil {
+		return false
+	}
+	for _, rangeName := range liveWindowNames() {
+		if h.liveHub.hasClients(nodeStateLiveTopic(nodeID, rangeName)) {
+			return true
+		}
+	}
+	return false
+}
+
+func (h *handler) hasNodeLatencyClients(nodeID string) bool {
+	if h == nil || h.liveHub == nil {
+		return false
+	}
+	for _, rangeName := range liveWindowNames() {
+		if h.liveHub.hasClients(nodeLatencyLiveTopic(nodeID, rangeName)) {
+			return true
+		}
+	}
+	return false
+}
+
+func (h *handler) hasServiceLatencyClients(targetID string) bool {
+	if h == nil || h.liveHub == nil {
+		return false
+	}
+	for _, rangeName := range liveWindowNames() {
+		if h.liveHub.hasClients(serviceLatencyLiveTopic(targetID, rangeName)) {
+			return true
+		}
+	}
+	return false
 }
 
 func (h *handler) cachedSummaryJSON(maxAge time.Duration) ([]byte, bool) {
@@ -446,6 +575,12 @@ func (h *handler) invalidateSummaryCache() {
 	h.summaryCacheMu.Unlock()
 }
 
+func (h *handler) invalidateSummaryAggregates() {
+	if store, ok := h.store.(interface{ invalidateSummaryAggregates() }); ok {
+		store.invalidateSummaryAggregates()
+	}
+}
+
 func (h *handler) summaryCacheStale(maxAge time.Duration) bool {
 	h.summaryCacheMu.RLock()
 	defer h.summaryCacheMu.RUnlock()
@@ -463,11 +598,17 @@ func (h *handler) scheduleSummaryPublishAfter(delay time.Duration) {
 	}
 	timer := time.NewTimer(delay)
 	h.summaryPublishTimer = timer
-	h.backgroundWG.Add(1)
+	backgroundCtx, ok := h.beginBackground()
+	if !ok {
+		timer.Stop()
+		h.summaryPublishTimer = nil
+		h.summaryPublishMu.Unlock()
+		return
+	}
 	go func() {
 		defer h.backgroundWG.Done()
 		select {
-		case <-h.backgroundContext().Done():
+		case <-backgroundCtx.Done():
 			if !timer.Stop() {
 				select {
 				case <-timer.C:
@@ -486,7 +627,7 @@ func (h *handler) scheduleSummaryPublishAfter(delay time.Duration) {
 		h.summaryLastPublished = time.Now()
 		h.summaryPublishMu.Unlock()
 
-		ctx, cancel := context.WithTimeout(h.backgroundContext(), 5*time.Second)
+		ctx, cancel := context.WithTimeout(backgroundCtx, 5*time.Second)
 		defer cancel()
 		h.publishSummaryNow(ctx)
 	}()

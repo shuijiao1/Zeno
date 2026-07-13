@@ -203,7 +203,7 @@ func (h *handler) handleAdminProbeTargets(w http.ResponseWriter, r *http.Request
 			return
 		}
 		h.notifyProbeConfigChanged(r.Context())
-		h.publishSummaryNow(r.Context())
+		h.publishSummaryNowFresh(r.Context())
 		writeJSON(w, http.StatusCreated, AdminProbeTargetResponse{Target: target})
 	default:
 		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
@@ -231,7 +231,7 @@ func (h *handler) handleAdminProbeTargetResource(w http.ResponseWriter, r *http.
 			return
 		}
 		h.notifyProbeConfigChanged(r.Context())
-		h.publishSummaryNow(r.Context())
+		h.publishSummaryNowFresh(r.Context())
 		w.WriteHeader(http.StatusNoContent)
 		return
 	}
@@ -245,7 +245,7 @@ func (h *handler) handleAdminProbeTargetResource(w http.ResponseWriter, r *http.
 		return
 	}
 	h.notifyProbeConfigChanged(r.Context())
-	h.publishSummaryNow(r.Context())
+	h.publishSummaryNowFresh(r.Context())
 	writeJSON(w, http.StatusOK, AdminProbeTargetResponse{Target: target})
 }
 
@@ -272,7 +272,7 @@ func (h *handler) handleAdminNodes(w http.ResponseWriter, r *http.Request) {
 			writeAdminError(w, err)
 			return
 		}
-		h.publishSummaryNow(r.Context())
+		h.publishSummaryNowFresh(r.Context())
 		writeJSON(w, http.StatusCreated, AdminNodeResponse{Node: node})
 	default:
 		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
@@ -304,7 +304,7 @@ func (h *handler) handleAdminNodeResource(w http.ResponseWriter, r *http.Request
 			writeAdminError(w, err)
 			return
 		}
-		h.publishSummaryNow(r.Context())
+		h.publishSummaryNowFresh(r.Context())
 		w.WriteHeader(http.StatusNoContent)
 		return
 	}
@@ -317,7 +317,7 @@ func (h *handler) handleAdminNodeResource(w http.ResponseWriter, r *http.Request
 		writeAdminError(w, err)
 		return
 	}
-	h.publishSummaryNow(r.Context())
+	h.publishSummaryNowFresh(r.Context())
 	writeJSON(w, http.StatusOK, AdminNodeResponse{Node: node})
 }
 

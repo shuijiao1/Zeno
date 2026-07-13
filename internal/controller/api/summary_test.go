@@ -102,8 +102,8 @@ func TestSummaryQueryCountDoesNotGrowWithNodesOrServices(t *testing.T) {
 	if _, err := largeStore.Summary(ctx); err != nil {
 		t.Fatalf("cached large summary: %v", err)
 	}
-	if cachedQueries := largeCounter.count(); cachedQueries != 2 {
-		t.Fatalf("cached summary query count = %d, want only nodes and per-node latest summaries", cachedQueries)
+	if cachedQueries := largeCounter.count(); cachedQueries != 1 {
+		t.Fatalf("cached summary query count = %d, want only fresh node state", cachedQueries)
 	}
 
 	largeStore.summaryAggregateMu.Lock()

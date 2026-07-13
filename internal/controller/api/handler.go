@@ -48,6 +48,11 @@ type handler struct {
 	summaryCache         []byte
 	summaryCacheUpdated  time.Time
 	detailCache          *detailJSONCache
+	detailPublishMu      sync.Mutex
+	detailPublishPending map[string]bool
+	detailPublishGate    chan struct{}
+	backgroundMu         sync.Mutex
+	backgroundClosing    bool
 	backgroundCtx        context.Context
 	backgroundCancel     context.CancelFunc
 	backgroundWG         sync.WaitGroup
@@ -208,6 +213,7 @@ func (gate *websocketGate) acquire() (func(), bool) {
 const (
 	publicWebSocketMaxConnections = 128
 	agentWebSocketMaxConnections  = 256
+	detailPublishMaxConcurrent    = 2
 )
 
 func NewHandler(options ...HandlerOptions) http.Handler {
@@ -225,20 +231,22 @@ func NewHandler(options ...HandlerOptions) http.Handler {
 	}
 	backgroundCtx, backgroundCancel := context.WithCancel(backgroundParent)
 	h := &handler{
-		store:              store,
-		adminTokenHash:     opts.AdminTokenHash,
-		agentBinaryPath:    opts.AgentBinaryPath,
-		agentVersion:       opts.AgentVersion,
-		notificationSender: newHTTPNotificationSender(opts.NotificationClient, opts.TelegramAPIBaseURL),
-		loginLimiter:       newAdminLoginLimiter(),
-		liveHub:            newLiveUpdateHub(),
-		presence:           newAgentPresenceManager(),
-		publicWSGate:       newWebSocketGate(publicWebSocketMaxConnections),
-		agentWSGate:        newWebSocketGate(agentWebSocketMaxConnections),
-		detailCache:        newDetailJSONCache(),
-		notificationWorker: &notificationOutboxWorker{wake: make(chan struct{}, 1)},
-		backgroundCtx:      backgroundCtx,
-		backgroundCancel:   backgroundCancel,
+		store:                store,
+		adminTokenHash:       opts.AdminTokenHash,
+		agentBinaryPath:      opts.AgentBinaryPath,
+		agentVersion:         opts.AgentVersion,
+		notificationSender:   newHTTPNotificationSender(opts.NotificationClient, opts.TelegramAPIBaseURL),
+		loginLimiter:         newAdminLoginLimiter(),
+		liveHub:              newLiveUpdateHub(),
+		presence:             newAgentPresenceManager(),
+		publicWSGate:         newWebSocketGate(publicWebSocketMaxConnections),
+		agentWSGate:          newWebSocketGate(agentWebSocketMaxConnections),
+		detailCache:          newDetailJSONCache(),
+		detailPublishPending: make(map[string]bool),
+		detailPublishGate:    make(chan struct{}, detailPublishMaxConcurrent),
+		notificationWorker:   &notificationOutboxWorker{wake: make(chan struct{}, 1)},
+		backgroundCtx:        backgroundCtx,
+		backgroundCancel:     backgroundCancel,
 	}
 	if opts.DisableNotifications {
 		h.notificationSender = nil
@@ -299,30 +307,54 @@ func (h *handler) startBackground(fn func(context.Context)) {
 	if h == nil || fn == nil {
 		return
 	}
-	if h.backgroundCtx == nil {
-		h.backgroundCtx, h.backgroundCancel = context.WithCancel(context.Background())
+	ctx, ok := h.beginBackground()
+	if !ok {
+		return
 	}
-	h.backgroundWG.Add(1)
 	go func() {
 		defer h.backgroundWG.Done()
-		fn(h.backgroundCtx)
+		fn(ctx)
 	}()
 }
 
 func (h *handler) backgroundContext() context.Context {
-	if h == nil || h.backgroundCtx == nil {
+	if h == nil {
+		return context.Background()
+	}
+	h.backgroundMu.Lock()
+	defer h.backgroundMu.Unlock()
+	if h.backgroundCtx == nil {
 		return context.Background()
 	}
 	return h.backgroundCtx
+}
+
+func (h *handler) beginBackground() (context.Context, bool) {
+	if h == nil {
+		return nil, false
+	}
+	h.backgroundMu.Lock()
+	defer h.backgroundMu.Unlock()
+	if h.backgroundClosing {
+		return nil, false
+	}
+	if h.backgroundCtx == nil {
+		h.backgroundCtx, h.backgroundCancel = context.WithCancel(context.Background())
+	}
+	h.backgroundWG.Add(1)
+	return h.backgroundCtx, true
 }
 
 func (h *handler) Cleanup(ctx context.Context) error {
 	if h == nil {
 		return nil
 	}
+	h.backgroundMu.Lock()
+	h.backgroundClosing = true
 	if h.backgroundCancel != nil {
 		h.backgroundCancel()
 	}
+	h.backgroundMu.Unlock()
 	h.summaryPublishMu.Lock()
 	if h.summaryPublishTimer != nil {
 		h.summaryPublishTimer.Stop()

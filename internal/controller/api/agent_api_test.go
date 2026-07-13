@@ -47,6 +47,48 @@ func TestAgentProbeTargetsRequiresBearerToken(t *testing.T) {
 	}
 }
 
+type blockingNodeStateStore struct {
+	*SQLiteStore
+	started chan struct{}
+	release chan struct{}
+	once    sync.Once
+}
+
+func (store *blockingNodeStateStore) NodeState(ctx context.Context, nodeID string, window latencyWindow) (StateResponse, error) {
+	store.once.Do(func() { close(store.started) })
+	select {
+	case <-store.release:
+		return store.SQLiteStore.NodeState(ctx, nodeID, window)
+	case <-ctx.Done():
+		return StateResponse{}, ctx.Err()
+	}
+}
+
+func TestAgentStateResponseDoesNotWaitForLiveDetailRefresh(t *testing.T) {
+	sqliteStore, err := OpenSQLiteStore(filepath.Join(t.TempDir(), "zeno.db"))
+	if err != nil {
+		t.Fatalf("open sqlite store: %v", err)
+	}
+	defer sqliteStore.Close()
+	if err := sqliteStore.SeedPreviewData(context.Background(), PreviewSeedOptions{NodeID: "hytron", DisplayName: "Hytron", CountryCode: "HK", AgentToken: "test-agent-token"}); err != nil {
+		t.Fatalf("seed preview data: %v", err)
+	}
+	store := &blockingNodeStateStore{SQLiteStore: sqliteStore, started: make(chan struct{}), release: make(chan struct{})}
+	httpHandler := NewHandler(HandlerOptions{Store: store})
+	h := httpHandler.(*handler)
+	_, unsubscribe := h.liveHub.subscribe(nodeStateLiveTopic("hytron", "1h"))
+	defer unsubscribe()
+
+	postAgentState(t, httpHandler.ServeHTTP, time.Now().UTC().Unix(), 12.5)
+	select {
+	case <-store.started:
+	case <-time.After(time.Second):
+		t.Fatal("background live detail refresh did not start")
+	}
+	close(store.release)
+	cleanupTestHandler(t, httpHandler)
+}
+
 func TestAgentProbeTargetsReturnsEnabledTargetsAfterAuth(t *testing.T) {
 	store, err := OpenSQLiteStore(filepath.Join(t.TempDir(), "zeno.db"))
 	if err != nil {

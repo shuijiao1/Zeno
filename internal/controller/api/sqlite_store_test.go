@@ -440,6 +440,57 @@ func TestAgentProbeRoundLookupUsesPartialUniqueIndex(t *testing.T) {
 	}
 }
 
+func TestStateSampleIdempotencyKeepsPartialIndex(t *testing.T) {
+	store, err := OpenSQLiteStore(filepath.Join(t.TempDir(), "zeno.db"))
+	if err != nil {
+		t.Fatalf("open sqlite store: %v", err)
+	}
+	defer store.Close()
+	var partial int
+	var sql string
+	if err := store.db.QueryRowContext(context.Background(), `
+		SELECT COUNT(*) FILTER (WHERE name = 'idx_state_samples_node_sample_id'),
+		       COALESCE(MAX(sql), '')
+		FROM sqlite_master
+		WHERE type = 'index' AND name = 'idx_state_samples_node_sample_id'
+	`).Scan(&partial, &sql); err != nil {
+		t.Fatalf("inspect state sample indexes: %v", err)
+	}
+	if partial != 1 || !strings.Contains(sql, "WHERE sample_id IS NOT NULL AND sample_id <> ''") {
+		t.Fatalf("state sample idempotency index = count %d sql %q, want partial unique index", partial, sql)
+	}
+}
+
+func TestAgentStateSampleLookupUsesPartialUniqueIndex(t *testing.T) {
+	store, err := OpenSQLiteStore(filepath.Join(t.TempDir(), "zeno.db"))
+	if err != nil {
+		t.Fatalf("open sqlite store: %v", err)
+	}
+	defer store.Close()
+
+	rows, err := store.db.QueryContext(context.Background(), "EXPLAIN QUERY PLAN "+agentStateSampleLookupSQL, "node-a", "sample-a")
+	if err != nil {
+		t.Fatalf("explain agent state sample lookup: %v", err)
+	}
+	defer rows.Close()
+	var plan []string
+	for rows.Next() {
+		var id, parent, unused int
+		var detail string
+		if err := rows.Scan(&id, &parent, &unused, &detail); err != nil {
+			t.Fatalf("scan query plan: %v", err)
+		}
+		plan = append(plan, detail)
+	}
+	if err := rows.Err(); err != nil {
+		t.Fatalf("read query plan: %v", err)
+	}
+	joined := strings.Join(plan, "\n")
+	if !strings.Contains(joined, "idx_state_samples_node_sample_id") {
+		t.Fatalf("agent state sample lookup plan does not use partial unique index:\n%s", joined)
+	}
+}
+
 func TestSQLiteBackedLatencyUsesKulinMinuteGridAndAverageDelay(t *testing.T) {
 	store, err := OpenSQLiteStore(filepath.Join(t.TempDir(), "zeno.db"))
 	if err != nil {
@@ -691,20 +742,51 @@ func TestSQLiteBackedSummaryUsesConfiguredHomeLatencyTarget(t *testing.T) {
 	`, now.Unix()); err != nil {
 		t.Fatalf("insert google round: %v", err)
 	}
+	if _, err := store.db.ExecContext(ctx, `
+		INSERT INTO nodes (id, display_name, token_hash, status, country_code, home_probe_target_id, created_at, updated_at, last_seen_at)
+		VALUES ('loss-only', 'Loss Only', 'loss-only-hash', 'online', 'HK', 'cloudflare', ?, ?, ?);
+		INSERT INTO node_probe_targets (node_id, target_id, enabled)
+		VALUES ('loss-only', 'cloudflare', 1);
+	`, now.Unix(), now.Unix(), now.Unix()); err != nil {
+		t.Fatalf("insert loss-only home node: %v", err)
+	}
+	if _, err := store.db.ExecContext(ctx, `
+		INSERT INTO probe_rounds (node_id, target_id, ts, type, sent, received, loss_percent, min_ms, avg_ms, median_ms, max_ms, stddev_ms)
+		VALUES ('loss-only', 'cloudflare', ?, 'ping', 3, 3, 0, 123, 123, 123, 123, 0);
+	`, now.Add(-25*time.Hour).Unix()); err != nil {
+		t.Fatalf("insert old loss-only home round: %v", err)
+	}
+	if _, err := store.db.ExecContext(ctx, `
+		INSERT INTO probe_rounds (node_id, target_id, ts, type, sent, received, loss_percent, min_ms, avg_ms, median_ms, max_ms, stddev_ms)
+		VALUES ('loss-only', 'cloudflare', ?, 'ping', 3, 0, 100, NULL, NULL, NULL, NULL, NULL);
+	`, now.Add(-time.Minute).Unix()); err != nil {
+		t.Fatalf("insert recent loss-only home round: %v", err)
+	}
 
 	summary, err := store.Summary(ctx)
 	if err != nil {
 		t.Fatalf("summary: %v", err)
 	}
-	if len(summary.Nodes) != 1 || summary.Nodes[0].LatencySummary == nil {
-		t.Fatalf("summary nodes = %+v, want latency summary", summary.Nodes)
+	if len(summary.Nodes) != 2 {
+		t.Fatalf("summary nodes = %+v, want two nodes", summary.Nodes)
 	}
-	latency := summary.Nodes[0].LatencySummary
-	if latency.TargetID != "cloudflare" || latency.TargetName != "Cloudflare" || latency.MedianMS == nil || *latency.MedianMS != 1.2 {
-		t.Fatalf("latency summary = %+v, want configured home target cloudflare", latency)
+	var configured, lossOnly *LatencySummary
+	for _, node := range summary.Nodes {
+		switch node.ID {
+		case "hytron":
+			configured = node.LatencySummary
+		case "loss-only":
+			lossOnly = node.LatencySummary
+		}
 	}
-	if latency.LossPercent == nil || *latency.LossPercent <= 16.6 || *latency.LossPercent >= 16.7 {
-		t.Fatalf("latency summary loss = %+v, want 1d average loss around 16.67", latency.LossPercent)
+	if configured == nil || configured.TargetID != "cloudflare" || configured.TargetName != "Cloudflare" || configured.MedianMS == nil || *configured.MedianMS != 1.2 {
+		t.Fatalf("latency summary = %+v, want configured home target cloudflare", configured)
+	}
+	if configured.LossPercent == nil || *configured.LossPercent <= 16.6 || *configured.LossPercent >= 16.7 {
+		t.Fatalf("latency summary loss = %+v, want 1d average loss around 16.67", configured.LossPercent)
+	}
+	if lossOnly == nil || lossOnly.MedianMS != nil || lossOnly.AvgMS != nil || lossOnly.LossPercent == nil || *lossOnly.LossPercent != 100 {
+		t.Fatalf("loss-only summary = %+v, want no stale pre-24h latency value and 100%% loss", lossOnly)
 	}
 }
 

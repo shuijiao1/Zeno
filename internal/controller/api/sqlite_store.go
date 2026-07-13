@@ -29,6 +29,7 @@ type SQLiteStore struct {
 	summaryAggregateUpdated      time.Time
 	summaryAggregateHome         map[string]*LatencySummary
 	summaryAggregateServices     []ServiceTarget
+	summaryAggregateNodeLatency  map[string][]LatencySummary
 }
 
 const (
@@ -37,7 +38,7 @@ const (
 	// 24-hour loss/reporting aggregates are reused briefly. Probe targets update
 	// on a much slower cadence, so rebuilding these scans every three seconds
 	// only burns CPU without materially improving freshness.
-	summaryAggregateFreshFor = 10 * time.Second
+	summaryAggregateFreshFor = 30 * time.Second
 	// Agent HTTP clients use a 30s total timeout. Keep server-side SQLite busy
 	// recovery below that budget even when an individual SQLite call consumes the
 	// configured 5s busy_timeout before returning SQLITE_BUSY.
@@ -885,11 +886,7 @@ func (s *SQLiteStore) Summary(ctx context.Context) (SummaryResponse, error) {
 	if err != nil {
 		return SummaryResponse{}, err
 	}
-	homeSummaries, services, err := s.summaryAggregates(ctx)
-	if err != nil {
-		return SummaryResponse{}, err
-	}
-	latencySummaries, err := s.latestLatencySummariesByNode(ctx)
+	homeSummaries, services, latencySummaries, err := s.summaryAggregates(ctx)
 	if err != nil {
 		return SummaryResponse{}, err
 	}
@@ -904,24 +901,38 @@ func (s *SQLiteStore) Summary(ctx context.Context) (SummaryResponse, error) {
 	return SummaryResponse{Nodes: nodes, Services: services, LatencyPoints: []LatencyPoint{}}, nil
 }
 
-func (s *SQLiteStore) summaryAggregates(ctx context.Context) (map[string]*LatencySummary, []ServiceTarget, error) {
+func (s *SQLiteStore) summaryAggregates(ctx context.Context) (map[string]*LatencySummary, []ServiceTarget, map[string][]LatencySummary, error) {
 	s.summaryAggregateMu.Lock()
 	defer s.summaryAggregateMu.Unlock()
 	if !s.summaryAggregateUpdated.IsZero() && time.Since(s.summaryAggregateUpdated) < summaryAggregateFreshFor {
-		return s.summaryAggregateHome, s.summaryAggregateServices, nil
+		return s.summaryAggregateHome, s.summaryAggregateServices, s.summaryAggregateNodeLatency, nil
 	}
 	homeSummaries, err := s.latestHomeLatencySummaries(ctx)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 	services, err := s.serviceTargets(ctx)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
+	}
+	latencySummaries, err := s.latestLatencySummariesByNode(ctx)
+	if err != nil {
+		return nil, nil, nil, err
 	}
 	s.summaryAggregateHome = homeSummaries
 	s.summaryAggregateServices = services
+	s.summaryAggregateNodeLatency = latencySummaries
 	s.summaryAggregateUpdated = time.Now()
-	return homeSummaries, services, nil
+	return homeSummaries, services, latencySummaries, nil
+}
+
+func (s *SQLiteStore) invalidateSummaryAggregates() {
+	s.summaryAggregateMu.Lock()
+	s.summaryAggregateUpdated = time.Time{}
+	s.summaryAggregateHome = nil
+	s.summaryAggregateServices = nil
+	s.summaryAggregateNodeLatency = nil
+	s.summaryAggregateMu.Unlock()
 }
 
 func (s *SQLiteStore) NodeLatency(ctx context.Context, nodeID string, window latencyWindow) (LatencyResponse, error) {
@@ -1842,39 +1853,48 @@ func (s *SQLiteStore) latestLatencySummaries(ctx context.Context, nodeID string)
 func (s *SQLiteStore) latestHomeLatencySummaries(ctx context.Context) (map[string]*LatencySummary, error) {
 	since := time.Now().UTC().Add(-24 * time.Hour).Unix()
 	rows, err := s.db.QueryContext(ctx, `
-		WITH home_rounds AS (
-			SELECT pr.node_id, pr.target_id, pt.name AS target_name, pr.median_ms, pr.avg_ms,
-			       pr.loss_percent, pr.ts, pr.id,
-			       ROW_NUMBER() OVER (PARTITION BY pr.node_id ORDER BY pr.ts DESC, pr.id DESC) AS latest_rank,
-			       ROW_NUMBER() OVER (
-			         PARTITION BY pr.node_id
-			         ORDER BY CASE WHEN pr.avg_ms IS NOT NULL OR pr.median_ms IS NOT NULL THEN 0 ELSE 1 END,
-			                  pr.ts DESC, pr.id DESC
-			       ) AS value_rank
+		WITH eligible_nodes AS (
+			SELECT n.id AS node_id, TRIM(n.home_probe_target_id) AS target_id
 			FROM nodes n
-			JOIN probe_rounds pr ON pr.node_id = n.id AND pr.target_id = TRIM(n.home_probe_target_id)
-			JOIN probe_targets pt ON pt.id = pr.target_id
-			LEFT JOIN node_probe_targets npt ON npt.node_id = pr.node_id AND npt.target_id = pr.target_id
+			JOIN probe_targets pt ON pt.id = TRIM(n.home_probe_target_id)
+			JOIN node_probe_targets npt ON npt.node_id = n.id AND npt.target_id = pt.id
 			WHERE n.disabled = 0
 			  AND TRIM(COALESCE(n.home_probe_target_id, '')) <> ''
 			  AND pt.enabled = 1
-			  AND COALESCE(npt.enabled, 0) = 1
-			  AND pr.ts >= ?
+			  AND npt.enabled = 1
 		),
 		loss_by_node AS (
-			SELECT node_id, AVG(loss_percent) AS loss_percent
-			FROM home_rounds
-			GROUP BY node_id
+			SELECT eligible.node_id, AVG(pr.loss_percent) AS loss_percent
+			FROM eligible_nodes eligible
+			JOIN probe_rounds pr ON pr.node_id = eligible.node_id AND pr.target_id = eligible.target_id
+			WHERE pr.ts >= ?
+			GROUP BY eligible.node_id
 		)
-		SELECT latest.node_id, latest.target_id, latest.target_name,
+		SELECT eligible.node_id, eligible.target_id, pt.name,
 		       value.median_ms, value.avg_ms, loss_by_node.loss_percent, latest.ts
-		FROM home_rounds latest
-		JOIN loss_by_node ON loss_by_node.node_id = latest.node_id
-		LEFT JOIN home_rounds value ON value.node_id = latest.node_id
-		  AND value.value_rank = 1
-		  AND (value.avg_ms IS NOT NULL OR value.median_ms IS NOT NULL)
-		WHERE latest.latest_rank = 1
-	`, since)
+		FROM eligible_nodes eligible
+		JOIN probe_targets pt ON pt.id = eligible.target_id
+		JOIN probe_rounds latest ON latest.id = (
+			SELECT candidate.id
+			FROM probe_rounds candidate
+			WHERE candidate.node_id = eligible.node_id
+			  AND candidate.target_id = eligible.target_id
+			  AND candidate.ts >= ?
+			ORDER BY candidate.ts DESC, candidate.id DESC
+			LIMIT 1
+		)
+		LEFT JOIN probe_rounds value ON value.id = (
+			SELECT candidate.id
+			FROM probe_rounds candidate
+			WHERE candidate.node_id = eligible.node_id
+			  AND candidate.target_id = eligible.target_id
+			  AND candidate.ts >= ?
+			  AND (candidate.avg_ms IS NOT NULL OR candidate.median_ms IS NOT NULL)
+			ORDER BY candidate.ts DESC, candidate.id DESC
+			LIMIT 1
+		)
+		JOIN loss_by_node ON loss_by_node.node_id = eligible.node_id
+	`, since, since, since)
 	if err != nil {
 		return nil, err
 	}

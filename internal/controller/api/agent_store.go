@@ -518,11 +518,7 @@ func insertAgentStateSampleTx(ctx context.Context, tx *sql.Tx, nodeID string, st
 	}
 	if sampleID != "" {
 		var existingHash string
-		err := tx.QueryRowContext(ctx, `
-			SELECT payload_hash FROM state_samples
-			WHERE node_id = ? AND sample_id = ?
-			LIMIT 1
-		`, nodeID, sampleID).Scan(&existingHash)
+		err := tx.QueryRowContext(ctx, agentStateSampleLookupSQL, nodeID, sampleID).Scan(&existingHash)
 		if err != nil && err != sql.ErrNoRows {
 			return false, err
 		}
@@ -596,6 +592,16 @@ func insertAgentStateSampleTx(ctx context.Context, tx *sql.Tx, nodeID string, st
 	}
 	return true, nil
 }
+
+const agentStateSampleLookupSQL = `
+	SELECT payload_hash
+	FROM state_samples INDEXED BY idx_state_samples_node_sample_id
+	WHERE node_id = ?
+	  AND sample_id = ?
+	  AND sample_id IS NOT NULL
+	  AND sample_id <> ''
+	LIMIT 1
+`
 
 func lockAgentNodeWriteTx(ctx context.Context, tx *sql.Tx, nodeID string) error {
 	result, err := tx.ExecContext(ctx, `
