@@ -1712,7 +1712,7 @@ describe('requestAdminNodeInstallCommand', () => {
     }), { status: 200, headers: { 'Content-Type': 'application/json' } }))
     globalThis.fetch = fetchMock as unknown as typeof fetch
 
-    const result = await requestAdminNodeInstallCommand('admin-pass', 'hytron')
+    const result = await requestAdminNodeInstallCommand('admin-pass', 'hytron', 'https://probe.example.com')
 
     expect(result.nodeId).toBe('hytron')
     expect(result.command).toContain('zeno.shuijiao.de/agent/install.sh')
@@ -1722,8 +1722,10 @@ describe('requestAdminNodeInstallCommand', () => {
       method: 'POST',
       headers: {
         Accept: 'application/json',
+        'Content-Type': 'application/json',
         'X-Admin-Token': 'admin-pass',
       },
+      body: JSON.stringify({ controller_url: 'https://probe.example.com' }),
     })
   })
 

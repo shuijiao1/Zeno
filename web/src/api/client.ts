@@ -910,13 +910,15 @@ export async function updateAdminAlertRule(adminToken: string, ruleId: string, i
   return normalizeAdminAlertRule(data.rule)
 }
 
-export async function requestAdminNodeInstallCommand(adminToken: string, nodeId: string): Promise<AdminNodeInstallCommand> {
+export async function requestAdminNodeInstallCommand(adminToken: string, nodeId: string, controllerURL = typeof window === 'undefined' ? '' : window.location.origin): Promise<AdminNodeInstallCommand> {
   const response = await fetch(`/api/admin/v1/nodes/${encodeURIComponent(nodeId)}/install-command`, {
     method: 'POST',
     headers: {
       Accept: 'application/json',
+      'Content-Type': 'application/json',
       'X-Admin-Token': adminToken,
     },
+    body: JSON.stringify({ controller_url: controllerURL }),
   })
   if (!response.ok) {
     if (response.status === 409) {

@@ -915,6 +915,34 @@ func TestAdminNodeInstallCommandFallsBackToDirectIPAddressAndPort(t *testing.T) 
 	}
 }
 
+func TestAdminNodeInstallCommandUsesAuthenticatedBrowserOriginWhenSettingIsEmpty(t *testing.T) {
+	store, err := OpenSQLiteStore(filepath.Join(t.TempDir(), "zeno.db"))
+	if err != nil {
+		t.Fatalf("open sqlite store: %v", err)
+	}
+	defer store.Close()
+	if err := store.SeedPreviewData(context.Background(), PreviewSeedOptions{NodeID: "hytron", DisplayName: "Hytron", AgentToken: "old-agent-token"}); err != nil {
+		t.Fatalf("seed preview data: %v", err)
+	}
+
+	recorder := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodPost, "/api/admin/v1/nodes/hytron/install-command", bytes.NewBufferString(`{"controller_url":"https://zeno.example.com"}`))
+	request.Host = "attacker.example"
+	request.Header.Set("Content-Type", "application/json")
+	request.Header.Set("X-Admin-Token", "admin-pass")
+	NewHandler(HandlerOptions{Store: store, AdminTokenHash: HashAdminToken("admin-pass")}).ServeHTTP(recorder, request)
+
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200; body=%s", recorder.Code, recorder.Body.String())
+	}
+	if !strings.Contains(recorder.Body.String(), "ZENO_CONTROLLER_URL='https://zeno.example.com'") {
+		t.Fatalf("install command should use the authenticated browser origin: %s", recorder.Body.String())
+	}
+	if strings.Contains(recorder.Body.String(), "attacker.example") {
+		t.Fatalf("install command trusted the request Host instead of the explicit origin: %s", recorder.Body.String())
+	}
+}
+
 func extractQuotedInstallCredential(t *testing.T, command string) string {
 	t.Helper()
 	marker := "ZENO_ENROLLMENT_TOKEN='"

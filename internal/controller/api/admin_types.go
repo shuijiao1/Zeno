@@ -390,6 +390,10 @@ type AdminNodeResponse struct {
 	Node AdminNode `json:"node"`
 }
 
+type AdminNodeInstallCommandRequest struct {
+	ControllerURL string `json:"controller_url,omitempty"`
+}
+
 type AdminNodeInstallCommandResponse struct {
 	NodeID                  string            `json:"node_id"`
 	Command                 string            `json:"command"`

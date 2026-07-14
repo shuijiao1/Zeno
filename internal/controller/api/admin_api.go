@@ -367,11 +367,25 @@ func (h *handler) handleAdminNodeInstallCommand(w http.ResponseWriter, r *http.R
 		return
 	}
 	if controllerURL == "" {
-		fallbackURL := h.requestBaseURL(r)
-		parsedFallback, parseErr := url.Parse(fallbackURL)
-		if parseErr != nil || (!loopbackURLHost(parsedFallback.Hostname()) && !directIPURLHost(parsedFallback)) || !validAgentControllerURL(fallbackURL) {
-			writeError(w, http.StatusConflict, "configure agent controller url before generating install commands")
-			return
+		var input AdminNodeInstallCommandRequest
+		if r.Body != nil && r.ContentLength != 0 {
+			if !decodeJSONBody(w, r, &input, adminJSONBodyLimit, true) {
+				return
+			}
+		}
+		fallbackURL := strings.TrimRight(strings.TrimSpace(input.ControllerURL), "/")
+		if fallbackURL != "" {
+			if !validAgentControllerURL(fallbackURL) {
+				writeError(w, http.StatusConflict, "current admin url cannot be used as the agent controller url")
+				return
+			}
+		} else {
+			fallbackURL = h.requestBaseURL(r)
+			parsedFallback, parseErr := url.Parse(fallbackURL)
+			if parseErr != nil || (!loopbackURLHost(parsedFallback.Hostname()) && !directIPURLHost(parsedFallback)) || !validAgentControllerURL(fallbackURL) {
+				writeError(w, http.StatusConflict, "configure agent controller url before generating install commands")
+				return
+			}
 		}
 		controllerURL = fallbackURL
 	}
