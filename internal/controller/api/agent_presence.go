@@ -17,14 +17,24 @@ type agentPresenceSession struct {
 	done   chan struct{}
 }
 
+type agentPresenceOfflineCheck struct {
+	nodeID string
+	ctx    context.Context
+	cancel context.CancelFunc
+}
+
 type agentPresenceManager struct {
-	mu       sync.Mutex
-	nextID   uint64
-	sessions map[string]*agentPresenceSession
+	mu            sync.Mutex
+	nextID        uint64
+	sessions      map[string]*agentPresenceSession
+	offlineChecks map[string]*agentPresenceOfflineCheck
 }
 
 func newAgentPresenceManager() *agentPresenceManager {
-	return &agentPresenceManager{sessions: map[string]*agentPresenceSession{}}
+	return &agentPresenceManager{
+		sessions:      map[string]*agentPresenceSession{},
+		offlineChecks: map[string]*agentPresenceOfflineCheck{},
+	}
 }
 
 const agentPresenceSendQueueLimit = 2
@@ -32,6 +42,7 @@ const agentPresenceSendQueueLimit = 2
 func (m *agentPresenceManager) connect(nodeID string) *agentPresenceSession {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	m.cancelOfflineCheckLocked(nodeID)
 	m.nextID++
 	session := &agentPresenceSession{nodeID: nodeID, id: m.nextID, send: make(chan []byte, agentPresenceSendQueueLimit), done: make(chan struct{})}
 	if previous := m.sessions[nodeID]; previous != nil {
@@ -55,13 +66,71 @@ func (m *agentPresenceManager) disconnect(session *agentPresenceSession) bool {
 	return true
 }
 
-func (m *agentPresenceManager) isOnline(nodeID string) bool {
+func (m *agentPresenceManager) reserveOfflineCheck(parent context.Context, nodeID string) (*agentPresenceOfflineCheck, bool) {
 	if m == nil {
+		return nil, false
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.sessions[nodeID] != nil {
+		return nil, false
+	}
+	m.cancelOfflineCheckLocked(nodeID)
+	ctx, cancel := context.WithCancel(parent)
+	check := &agentPresenceOfflineCheck{nodeID: nodeID, ctx: ctx, cancel: cancel}
+	m.offlineChecks[nodeID] = check
+	return check, true
+}
+
+func (m *agentPresenceManager) offlineCheckReady(check *agentPresenceOfflineCheck) bool {
+	if m == nil || check == nil {
 		return false
 	}
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	return m.sessions[nodeID] != nil
+	return m.offlineChecks[check.nodeID] == check && m.sessions[check.nodeID] == nil && check.ctx.Err() == nil
+}
+
+func (m *agentPresenceManager) finishOfflineCheck(check *agentPresenceOfflineCheck) {
+	if m == nil || check == nil {
+		return
+	}
+	m.mu.Lock()
+	if m.offlineChecks[check.nodeID] == check {
+		delete(m.offlineChecks, check.nodeID)
+	}
+	m.mu.Unlock()
+	check.cancel()
+}
+
+func (m *agentPresenceManager) cancelOfflineCheckLocked(nodeID string) {
+	check := m.offlineChecks[nodeID]
+	if check == nil {
+		return
+	}
+	delete(m.offlineChecks, nodeID)
+	check.cancel()
+}
+
+func (m *agentPresenceManager) cancelOfflineChecks() {
+	if m == nil {
+		return
+	}
+	m.mu.Lock()
+	for nodeID, check := range m.offlineChecks {
+		delete(m.offlineChecks, nodeID)
+		check.cancel()
+	}
+	m.mu.Unlock()
+}
+
+func (m *agentPresenceManager) pendingOfflineCheckCount() int {
+	if m == nil {
+		return 0
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return len(m.offlineChecks)
 }
 
 func (m *agentPresenceManager) notifyConfigChanged(nodeID string, version int64) bool {
@@ -179,18 +248,24 @@ func (h *handler) dispatchStaleAgentOfflineChecks(ctx context.Context) {
 	}
 	changed := false
 	for _, nodeID := range nodeIDs {
-		transition, ok, err := store.RecordStaleAgentOfflineTransition(ctx, nodeID, now)
-		if err != nil || !ok {
-			continue
+		if h.dispatchStaleAgentOfflineNode(ctx, store, nodeID, now) {
+			changed = true
 		}
-		h.dispatchAgentStatusNotification(store, transition, now)
-		changed = true
 	}
 	if !changed {
 		return
 	}
 	h.invalidateSummaryCache()
 	h.publishSummary(ctx)
+}
+
+func (h *handler) dispatchStaleAgentOfflineNode(ctx context.Context, store staleAgentOfflineStore, nodeID string, now time.Time) bool {
+	transition, ok, err := store.RecordStaleAgentOfflineTransition(ctx, nodeID, now)
+	if err != nil || !ok {
+		return false
+	}
+	h.dispatchAgentStatusNotification(store, transition, now)
+	return true
 }
 
 func (h *handler) handleAgentPresenceWebSocket(w http.ResponseWriter, r *http.Request) {
@@ -202,8 +277,18 @@ func (h *handler) handleAgentPresenceWebSocket(w http.ResponseWriter, r *http.Re
 	if !ok {
 		return
 	}
+	if !h.admitAgentRequest(w, nodeID, agentQuotaPresence) {
+		return
+	}
+	releaseNodePresence, retryAfter, ok := h.agentQuotas.acquirePresence(nodeID)
+	if !ok {
+		writeAgentRateLimit(w, retryAfter)
+		return
+	}
+	defer releaseNodePresence()
 	release, ok := h.agentWSGate.acquire()
 	if !ok {
+		w.Header().Set("Retry-After", "1")
 		writeError(w, http.StatusTooManyRequests, "too many websocket connections")
 		return
 	}
@@ -258,7 +343,16 @@ func (h *handler) handleAgentPresenceWebSocket(w http.ResponseWriter, r *http.Re
 			if !ok {
 				continue
 			}
-			if err := ackStore.RecordProbeConfigApplied(r.Context(), nodeID, message.Version, time.Now().UTC()); err != nil {
+			releaseWrite, _, accepted := h.agentQuotas.admitWrite(nodeID, 1)
+			if !accepted {
+				// HTTP 429 is no longer available after the WebSocket upgrade. Close
+				// an abusive per-node stream instead of allowing it to amplify SQLite
+				// writes or affecting another node.
+				return
+			}
+			err = ackStore.RecordProbeConfigApplied(r.Context(), nodeID, message.Version, time.Now().UTC())
+			releaseWrite()
+			if err != nil {
 				if !errors.Is(err, errProbeConfigAckInvalid) {
 					log.Printf("agent_presence_ack_error endpoint=presence node_id=%s stage=config_applied error=%s", safeLogToken(nodeID), sanitizeAgentAPIError(err))
 				}
@@ -291,25 +385,47 @@ func (h *handler) handleAgentPresenceWebSocket(w http.ResponseWriter, r *http.Re
 }
 
 func (h *handler) scheduleAgentPresenceOfflineCheck(store agentStore, nodeID string) {
-	if h == nil || h.presence == nil {
+	h.scheduleAgentPresenceOfflineCheckAfter(store, nodeID, nodeHeartbeatOfflineAfter)
+}
+
+func (h *handler) scheduleAgentPresenceOfflineCheckAfter(store agentStore, nodeID string, delay time.Duration) {
+	if h == nil || h.presence == nil || delay <= 0 {
 		return
 	}
-	if _, ok := store.(staleAgentOfflineStore); !ok {
+	offlineStore, ok := store.(staleAgentOfflineStore)
+	if !ok {
 		return
 	}
-	h.startBackground(func(ctx context.Context) {
-		timer := time.NewTimer(nodeHeartbeatOfflineAfter)
+	backgroundCtx, ok := h.beginBackground()
+	if !ok {
+		return
+	}
+	check, ok := h.presence.reserveOfflineCheck(backgroundCtx, nodeID)
+	if !ok {
+		h.backgroundWG.Done()
+		return
+	}
+	go func() {
+		defer h.backgroundWG.Done()
+		defer h.presence.finishOfflineCheck(check)
+		timer := time.NewTimer(delay)
 		defer timer.Stop()
 		select {
-		case <-ctx.Done():
+		case <-check.ctx.Done():
 			return
 		case <-timer.C:
 		}
-		if h.presence.isOnline(nodeID) {
+		if !h.presence.offlineCheckReady(check) {
 			return
 		}
-		h.dispatchStaleAgentOfflineChecks(ctx)
-	})
+		// A reconnect cancels check.ctx. Store operations use that context, so a
+		// reconnect racing the debounce boundary can still abort stale work.
+		if !h.dispatchStaleAgentOfflineNode(check.ctx, offlineStore, nodeID, time.Now().UTC()) {
+			return
+		}
+		h.invalidateSummaryCache()
+		h.publishSummary(check.ctx)
+	}()
 }
 
 const (

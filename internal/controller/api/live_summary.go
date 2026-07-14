@@ -141,7 +141,7 @@ func (h *handler) handleSummaryWebSocket(w http.ResponseWriter, r *http.Request)
 		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
 		return
 	}
-	release, ok := h.publicWSGate.acquire()
+	release, ok := h.acquirePublicWebSocket(r)
 	if !ok {
 		writeError(w, http.StatusTooManyRequests, "too many websocket connections")
 		return
@@ -150,7 +150,7 @@ func (h *handler) handleSummaryWebSocket(w http.ResponseWriter, r *http.Request)
 	initial, cached := h.cachedSummaryJSON(0)
 	if !cached {
 		var err error
-		initial, err = h.summaryJSON(r.Context())
+		initial, err = h.summaryJSONForHTTP(r.Context())
 		if err != nil {
 			writeStoreError(w, err)
 			return
@@ -164,7 +164,7 @@ func (h *handler) handleSummaryWebSocket(w http.ResponseWriter, r *http.Request)
 }
 
 func (h *handler) handleNodeStateWebSocket(w http.ResponseWriter, r *http.Request, nodeID string, window latencyWindow) {
-	release, ok := h.publicWSGate.acquire()
+	release, ok := h.acquirePublicWebSocket(r)
 	if !ok {
 		writeError(w, http.StatusTooManyRequests, "too many websocket connections")
 		return
@@ -182,7 +182,7 @@ func (h *handler) handleNodeStateWebSocket(w http.ResponseWriter, r *http.Reques
 }
 
 func (h *handler) handleNodeLatencyWebSocket(w http.ResponseWriter, r *http.Request, nodeID string, window latencyWindow) {
-	release, ok := h.publicWSGate.acquire()
+	release, ok := h.acquirePublicWebSocket(r)
 	if !ok {
 		writeError(w, http.StatusTooManyRequests, "too many websocket connections")
 		return
@@ -200,7 +200,7 @@ func (h *handler) handleNodeLatencyWebSocket(w http.ResponseWriter, r *http.Requ
 }
 
 func (h *handler) handleServiceLatencyWebSocket(w http.ResponseWriter, r *http.Request, targetID string, window latencyWindow) {
-	release, ok := h.publicWSGate.acquire()
+	release, ok := h.acquirePublicWebSocket(r)
 	if !ok {
 		writeError(w, http.StatusTooManyRequests, "too many websocket connections")
 		return
@@ -302,17 +302,85 @@ func writeWebSocketControl(conn *websocket.Conn, messageType int, payload []byte
 	return conn.WriteControl(messageType, payload, time.Now().Add(timeout))
 }
 
+func (h *handler) acquirePublicWebSocket(r *http.Request) (func(), bool) {
+	key := h.clientIPForRateLimit(r)
+	if key == "" {
+		key = "unknown"
+	}
+	return h.publicWSGate.acquireFor(key)
+}
+
 func (h *handler) summaryJSON(ctx context.Context) ([]byte, error) {
-	summary, err := h.store.Summary(ctx)
-	if err != nil {
-		return nil, err
+	return h.loadSummaryJSON(ctx, 0, false)
+}
+
+func (h *handler) summaryJSONForHTTP(ctx context.Context) ([]byte, error) {
+	return h.loadSummaryJSON(ctx, summaryCacheHTTPFreshFor, true)
+}
+
+// loadSummaryJSON coalesces the complete Summary query and JSON encoding. HTTP
+// callers allow a fresh cache hit; the check under summaryCacheMu is the
+// leader's second check after handleSummary's fast path, closing the usual
+// cache-miss race. Live publishers bypass the cached value but still join an
+// in-flight build for the same generation.
+func (h *handler) loadSummaryJSON(ctx context.Context, maxAge time.Duration, allowCached bool) ([]byte, error) {
+	for {
+		now := time.Now()
+		h.summaryCacheMu.Lock()
+		if allowCached && len(h.summaryCache) > 0 && (maxAge <= 0 || now.Sub(h.summaryCacheUpdated) <= maxAge) {
+			payload := append([]byte(nil), h.summaryCache...)
+			h.summaryCacheMu.Unlock()
+			return payload, nil
+		}
+		generation := h.summaryCacheGeneration
+		if flight := h.summaryCacheFlight; flight != nil {
+			h.summaryCacheMu.Unlock()
+			select {
+			case <-ctx.Done():
+				return nil, ctx.Err()
+			case <-flight.done:
+			}
+			h.summaryCacheMu.RLock()
+			currentGeneration := h.summaryCacheGeneration
+			h.summaryCacheMu.RUnlock()
+			if currentGeneration != flight.generation {
+				continue
+			}
+			return append([]byte(nil), flight.payload...), flight.err
+		}
+
+		flight := &jsonCacheFlight{generation: generation, done: make(chan struct{})}
+		h.summaryCacheFlight = flight
+		h.summaryCacheMu.Unlock()
+
+		summary, err := h.store.Summary(ctx)
+		var payload []byte
+		if err == nil {
+			payload, err = json.Marshal(summary)
+		}
+
+		h.summaryCacheMu.Lock()
+		currentGeneration := h.summaryCacheGeneration
+		if err == nil && currentGeneration == generation {
+			h.summaryCache = append(h.summaryCache[:0], payload...)
+			h.summaryCacheUpdated = time.Now()
+		}
+		flight.payload = append([]byte(nil), payload...)
+		flight.err = err
+		if h.summaryCacheFlight == flight {
+			h.summaryCacheFlight = nil
+		}
+		close(flight.done)
+		h.summaryCacheMu.Unlock()
+
+		if currentGeneration != generation {
+			if ctx.Err() != nil {
+				return nil, ctx.Err()
+			}
+			continue
+		}
+		return append([]byte(nil), payload...), err
 	}
-	payload, err := json.Marshal(summary)
-	if err != nil {
-		return nil, err
-	}
-	h.rememberSummaryJSON(payload)
-	return payload, nil
 }
 
 func (h *handler) nodeStateJSON(ctx context.Context, nodeID string, window latencyWindow) ([]byte, error) {
@@ -425,8 +493,8 @@ func (h *handler) publishSummaryNow(ctx context.Context) {
 }
 
 func (h *handler) publishSummaryNowFresh(ctx context.Context) {
-	h.invalidateSummaryCache()
 	h.invalidateSummaryAggregates()
+	h.invalidateSummaryCache()
 	h.publishSummaryNow(ctx)
 }
 
@@ -563,6 +631,7 @@ func (h *handler) cachedSummaryJSON(maxAge time.Duration) ([]byte, bool) {
 
 func (h *handler) rememberSummaryJSON(payload []byte) {
 	h.summaryCacheMu.Lock()
+	h.summaryCacheGeneration++
 	h.summaryCache = append(h.summaryCache[:0], payload...)
 	h.summaryCacheUpdated = time.Now()
 	h.summaryCacheMu.Unlock()
@@ -570,6 +639,7 @@ func (h *handler) rememberSummaryJSON(payload []byte) {
 
 func (h *handler) invalidateSummaryCache() {
 	h.summaryCacheMu.Lock()
+	h.summaryCacheGeneration++
 	h.summaryCache = nil
 	h.summaryCacheUpdated = time.Time{}
 	h.summaryCacheMu.Unlock()
@@ -581,6 +651,16 @@ func (h *handler) invalidateSummaryAggregates() {
 	}
 }
 
+func (h *handler) markSummaryAggregatesDirty() {
+	if store, ok := h.store.(interface{ markSummaryAggregatesDirty() }); ok {
+		store.markSummaryAggregatesDirty()
+		return
+	}
+	// Non-SQLite stores may only expose hard invalidation. Keep compatibility
+	// without making the common SQLite Agent path wait for aggregate SQL.
+	h.invalidateSummaryAggregates()
+}
+
 func (h *handler) summaryCacheStale(maxAge time.Duration) bool {
 	h.summaryCacheMu.RLock()
 	defer h.summaryCacheMu.RUnlock()
@@ -588,7 +668,7 @@ func (h *handler) summaryCacheStale(maxAge time.Duration) bool {
 }
 
 func (h *handler) scheduleSummaryPublishAfter(delay time.Duration) {
-	if h == nil || h.backgroundContext().Err() != nil {
+	if h == nil || h.backgroundContext().Err() != nil || h.liveHub == nil || !h.liveHub.hasClients(summaryLiveTopic) {
 		return
 	}
 	h.summaryPublishMu.Lock()

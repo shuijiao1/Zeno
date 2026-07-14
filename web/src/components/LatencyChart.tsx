@@ -17,7 +17,7 @@ interface LatencyChartProps {
   compactHeader?: boolean
   hideHeader?: boolean
   peakCut?: boolean
-  activeTargetNames?: string[]
+  activeTargetIds?: string[]
 }
 
 const desktopLayout = { width: 960, height: 320, lineStrokeWidth: 1, pad: { left: 52, right: 24, top: 24, bottom: 44 } }
@@ -33,15 +33,15 @@ export function LatencyChart({
   compactHeader = false,
   hideHeader = false,
   peakCut = false,
-  activeTargetNames = [],
+  activeTargetIds = [],
 }: LatencyChartProps) {
   const { width, height, lineStrokeWidth, pad } = useLatencyChartLayout()
   const reactClipId = useId()
   const clipId = `latency-plot-${reactClipId.replace(/:/g, '')}`
-  const activeTargetKey = activeTargetNames.join('\u0000')
+  const activeTargetKey = JSON.stringify(activeTargetIds)
   const series = useMemo(() => buildKulinTargetSeries(points), [points])
   const allRows = useMemo(() => buildKulinChartRows(series), [series])
-  const baseView = useMemo(() => selectKulinChartView(series, allRows, activeTargetNames), [series, allRows, activeTargetKey])
+  const baseView = useMemo(() => selectKulinChartView(series, allRows, activeTargetIds), [series, allRows, activeTargetKey])
   const rows = useMemo(() => (peakCut ? applyKulinPeakCut(baseView.rows, baseView.lineKeys) : baseView.rows), [baseView, peakCut])
   const timestamps = useMemo(() => rows.map((row) => row.created_at), [rows])
   const xStep = timestamps.length > 1 ? (width - pad.left - pad.right) / (timestamps.length - 1) : 0
@@ -51,13 +51,13 @@ export function LatencyChart({
   const plotHeight = height - pad.top - pad.bottom
   const domain = useMemo(() => yDomainForRows(rows, baseView.lineKeys), [rows, baseView.lineKeys])
   const packetLossSeries = baseView.showPacketLossArea
-    ? series.find((item) => item.targetName === activeTargetNames[0])
+    ? series.find((item) => item.targetId === activeTargetIds[0])
     : undefined
   const lossRows = baseView.showPacketLossArea ? rows : []
   const visibleLineKeys = baseView.lineKeys
-  const hoverColumns = useMemo(() => hoverColumnsForRows(rows, visibleLineKeys, activeTargetNames), [rows, visibleLineKeys, activeTargetKey])
-  const legendSeries = useMemo(() => (activeTargetNames.length > 0
-    ? series.filter((item) => activeTargetNames.includes(item.targetName))
+  const hoverColumns = useMemo(() => hoverColumnsForRows(rows, visibleLineKeys, series), [rows, visibleLineKeys, series])
+  const legendSeries = useMemo(() => (activeTargetIds.length > 0
+    ? series.filter((item) => activeTargetIds.includes(item.targetId))
     : series), [series, activeTargetKey])
   const [hoverColumn, setHoverColumn] = useState<HoverColumn | null>(null)
 
@@ -150,10 +150,10 @@ export function LatencyChart({
           )
         })}
 
-        {lossRows.length > 0 && (
+        {lossRows.length > 0 && baseView.packetLossKey && (
           <path
             className="packet-loss-area"
-            d={packetLossAreaPath(lossRows, x, yLoss)}
+            d={packetLossAreaPath(lossRows, baseView.packetLossKey, x, yLoss)}
             fill={packetLossColor}
             fillOpacity={0.18}
             stroke="none"
@@ -166,7 +166,7 @@ export function LatencyChart({
             key={key}
             d={linePath(rows, key, x, yDelay)}
             fill="none"
-            stroke={palette[paletteIndexForKey(series, key, activeTargetNames) % palette.length]}
+            stroke={palette[paletteIndexForKey(series, key) % palette.length]}
             strokeWidth={lineStrokeWidth}
             vectorEffect="non-scaling-stroke"
             clipPath={`url(#${clipId})`}
@@ -190,7 +190,7 @@ export function LatencyChart({
                 cx={x(hoverColumn.createdAt)}
                 cy={yDelay(point.delay)}
                 r={5}
-                fill={palette[paletteIndexForKey(series, point.key, activeTargetNames) % palette.length]}
+                fill={palette[paletteIndexForKey(series, point.key) % palette.length]}
                 clipPath={`url(#${clipId})`}
               />
             ))}
@@ -210,7 +210,6 @@ export function LatencyChart({
           <LatencyTooltip
             column={hoverColumn}
             series={series}
-            activeTargetNames={activeTargetNames}
             x={x(hoverColumn.createdAt)}
             layout={{ width, height, lineStrokeWidth, pad }}
           />
@@ -221,8 +220,8 @@ export function LatencyChart({
         {legendSeries.map((item, index) => (
           <span key={item.targetId}><i style={{ background: palette[(series.findIndex((seriesItem) => seriesItem.targetId === item.targetId) >= 0 ? series.findIndex((seriesItem) => seriesItem.targetId === item.targetId) : index) % palette.length] }} />{item.targetName}</span>
         ))}
-        {baseView.showPacketLossArea && packetLossSeries && (
-          <span><i style={{ background: packetLossColor }} />{packetLossSeries.targetName} 丢包 {formatPercent(avgPacketLoss(lossRows))}</span>
+        {baseView.showPacketLossArea && baseView.packetLossKey && packetLossSeries && (
+          <span><i style={{ background: packetLossColor }} />{packetLossSeries.targetName} 丢包 {formatPercent(avgPacketLoss(lossRows, baseView.packetLossKey))}</span>
         )}
       </div>
     </section>
@@ -244,7 +243,7 @@ function useLatencyChartLayout() {
   return isMobile ? mobileLayout : desktopLayout
 }
 
-function LatencyTooltip({ column, series, activeTargetNames, x: tooltipAnchorX, layout }: { column: HoverColumn; series: KulinTargetSeries[]; activeTargetNames: string[]; x: number; layout: typeof desktopLayout }) {
+function LatencyTooltip({ column, series, x: tooltipAnchorX, layout }: { column: HoverColumn; series: KulinTargetSeries[]; x: number; layout: typeof desktopLayout }) {
   const { width, height, pad } = layout
   const tooltipColumns = column.points.length > 6 ? 2 : 1
   const tooltipRows = Math.ceil(column.points.length / tooltipColumns)
@@ -264,7 +263,7 @@ function LatencyTooltip({ column, series, activeTargetNames, x: tooltipAnchorX, 
           <div className="latency-tooltip-grid" style={{ gridTemplateColumns: `repeat(${tooltipColumns}, minmax(0, 1fr))` }}>
             {column.points.map((point) => (
               <span key={`${point.key}-${column.createdAt}`} className="latency-tooltip-row">
-                <i style={{ backgroundColor: palette[paletteIndexForKey(series, point.key, activeTargetNames) % palette.length] }} />
+                <i style={{ backgroundColor: palette[paletteIndexForKey(series, point.key) % palette.length] }} />
                 <b>{point.label}</b>
                 <strong>{formatLatencyValue(point.delay)}</strong>
               </span>
@@ -292,10 +291,10 @@ function linePath(rows: KulinChartRow[], key: string, x: (createdAt: number) => 
     .join(' ')
 }
 
-function packetLossAreaPath(rows: KulinChartRow[], x: (createdAt: number) => number, yLoss: (value: number) => number): string {
+function packetLossAreaPath(rows: KulinChartRow[], packetLossKey: string, x: (createdAt: number) => number, yLoss: (value: number) => number): string {
   const coords = rows
     .map((row) => {
-      const value = rowNumber(row, 'packet_loss')
+      const value = rowNumber(row, packetLossKey)
       return value === null ? null : { x: x(row.created_at), y: yLoss(value) }
     })
     .filter((coord): coord is { x: number; y: number } => coord !== null)
@@ -310,13 +309,19 @@ function packetLossAreaPath(rows: KulinChartRow[], x: (createdAt: number) => num
   ].join(' ')
 }
 
-function yDomainForRows(rows: KulinChartRow[], keys: string[]): { min: number; max: number } {
-  const values = rows
-    .flatMap((row) => keys.map((key) => rowNumber(row, key)).filter((value): value is number => value !== null))
-    .map((value) => Math.min(value, maxDrawableLatencyMs))
-  if (values.length === 0) return { min: 0, max: 1 }
-  const min = Math.min(...values)
-  const max = Math.max(...values)
+export function yDomainForRows(rows: KulinChartRow[], keys: string[]): { min: number; max: number } {
+  let min = Number.POSITIVE_INFINITY
+  let max = Number.NEGATIVE_INFINITY
+  for (const row of rows) {
+    for (const key of keys) {
+      const value = rowNumber(row, key)
+      if (value === null) continue
+      const cappedValue = Math.min(value, maxDrawableLatencyMs)
+      if (cappedValue < min) min = cappedValue
+      if (cappedValue > max) max = cappedValue
+    }
+  }
+  if (!Number.isFinite(min) || !Number.isFinite(max)) return { min: 0, max: 1 }
   const span = max - min
   if (span <= 0) {
     const padding = Math.max(0.5, Math.abs(max) * 0.05)
@@ -349,7 +354,8 @@ interface HoverColumn {
   points: HoverPoint[]
 }
 
-function hoverColumnsForRows(rows: KulinChartRow[], keys: string[], activeTargetNames: string[]): HoverColumn[] {
+function hoverColumnsForRows(rows: KulinChartRow[], keys: string[], series: KulinTargetSeries[]): HoverColumn[] {
+  const labelsByTargetId = new Map(series.map((target) => [target.targetId, target.targetName]))
   return rows
     .map((row) => {
       const points = keys
@@ -358,7 +364,7 @@ function hoverColumnsForRows(rows: KulinChartRow[], keys: string[], activeTarget
           if (delay === null) return null
           return {
             key,
-            label: key === 'avg_delay' ? (activeTargetNames[0] ?? '延迟') : key,
+            label: labelsByTargetId.get(key) ?? key,
             delay,
           }
         })
@@ -373,9 +379,8 @@ function hoverColumnsForRows(rows: KulinChartRow[], keys: string[], activeTarget
     .filter((column): column is HoverColumn => column !== null)
 }
 
-function paletteIndexForKey(series: KulinTargetSeries[], key: string, activeTargetNames: string[]): number {
-  const targetName = key === 'avg_delay' ? activeTargetNames[0] : key
-  const index = series.findIndex((item) => item.targetName === targetName)
+function paletteIndexForKey(series: KulinTargetSeries[], key: string): number {
+  const index = series.findIndex((item) => item.targetId === key)
   return Math.max(index, 0)
 }
 
@@ -389,10 +394,16 @@ function formatTooltipTime(createdAt: number): string {
   return date.toLocaleString('zh-CN', { hour12: false })
 }
 
-function avgPacketLoss(rows: KulinChartRow[]): number {
-  const values = rows.map((row) => rowNumber(row, 'packet_loss')).filter((value): value is number => value !== null)
-  if (values.length === 0) return 0
-  return values.reduce((sum, value) => sum + value, 0) / values.length
+function avgPacketLoss(rows: KulinChartRow[], packetLossKey: string): number {
+  let total = 0
+  let count = 0
+  for (const row of rows) {
+    const value = rowNumber(row, packetLossKey)
+    if (value === null) continue
+    total += value
+    count += 1
+  }
+  return count === 0 ? 0 : total / count
 }
 
 function axisTicksForTimestamps(timestamps: number[], maxTicks: number): number[] {

@@ -43,9 +43,6 @@ export function LatencyDetail({
   const targetSummaries = useMemo(() => summarizeLatencyTargets(points), [points])
   const [activeTargetIds, setActiveTargetIds] = useState<string[]>([])
   const [peakCut, setPeakCut] = useState(false)
-  const activeTargetNames = targetSummaries
-    .filter((target) => activeTargetIds.includes(target.targetId))
-    .map((target) => target.targetName)
   const rangeOptions = availableHistoryRanges(canUseExtendedRanges)
   const rangeLabel = rangeOptions.find((option) => option.value === range)?.label ?? range
   const latestState = latestStatePoint(statePoints)
@@ -154,7 +151,7 @@ export function LatencyDetail({
               compactHeader
               hideHeader
               peakCut={peakCut}
-              activeTargetNames={activeTargetNames}
+              activeTargetIds={activeTargetIds}
             />
           </>
         )}

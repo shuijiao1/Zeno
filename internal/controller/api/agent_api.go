@@ -67,6 +67,9 @@ func (h *handler) handleAgentProbeTargets(w http.ResponseWriter, r *http.Request
 	if !ok {
 		return
 	}
+	if !h.admitAgentRequest(w, nodeID, agentQuotaProbeTargets) {
+		return
+	}
 	var version int64
 	var targets []ProbeTarget
 	var err error
@@ -108,6 +111,9 @@ func (h *handler) handleAgentProbeResults(w http.ResponseWriter, r *http.Request
 	}
 	store, nodeID, ok := h.authorizeAgentRequest(w, r)
 	if !ok {
+		return
+	}
+	if !h.admitAgentRequest(w, nodeID, agentQuotaProbeResults) {
 		return
 	}
 
@@ -191,6 +197,11 @@ func (h *handler) handleAgentProbeResults(w http.ResponseWriter, r *http.Request
 		}
 		prepared = append(prepared, preparedAgentProbeRound{targetID: targetID, targetType: targetType, ts: roundTS, agentRoundID: roundID, samples: samples})
 	}
+	releaseWrite, ok := h.admitAgentWrite(w, nodeID, agentProbeWriteUnits(request))
+	if !ok {
+		return
+	}
+	defer releaseWrite()
 
 	if batchStore, ok := store.(agentProbeBatchStore); ok {
 		if err := batchStore.InsertAgentProbeResults(r.Context(), nodeID, configVersion, prepared); err != nil {
@@ -211,8 +222,11 @@ func (h *handler) handleAgentProbeResults(w http.ResponseWriter, r *http.Request
 		writeError(w, http.StatusInternalServerError, "internal error")
 		return
 	}
+	// Probe writes arrive on the Agent cadence. Mark aggregate data dirty in
+	// O(1), retaining the bounded aggregate snapshot, before invalidating the
+	// full JSON cache. This keeps the 202 path independent of 24-hour scans.
+	h.markSummaryAggregatesDirty()
 	h.invalidateSummaryCache()
-	h.invalidateSummaryAggregates()
 	h.publishSummary(r.Context())
 	h.scheduleNodeLatencyPublish(nodeID)
 	seenTargetIDs := map[string]struct{}{}
@@ -242,12 +256,21 @@ func (h *handler) handleAgentHeartbeat(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+	if !h.admitAgentRequest(w, nodeID, agentQuotaHeartbeat) {
+		return
+	}
 	var request AgentHeartbeatRequest
 	if !decodeJSONBody(w, r, &request, agentStateJSONBodyLimit, false) {
 		return
 	}
 	if request.TS <= 0 {
 		writeError(w, http.StatusBadRequest, "invalid timestamp")
+		return
+	}
+	receivedAt := time.Now().UTC()
+	agentTS := time.Unix(request.TS, 0).UTC()
+	if !agentTimestampWithinSkew(agentTS, receivedAt) {
+		writeError(w, http.StatusBadRequest, "timestamp skew too large")
 		return
 	}
 	status := strings.TrimSpace(request.Status)
@@ -259,8 +282,16 @@ func (h *handler) handleAgentHeartbeat(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	status = normalizeHeartbeatStatus(status)
+	releaseWrite, ok := h.admitAgentWrite(w, nodeID, 1)
+	if !ok {
+		return
+	}
+	defer releaseWrite()
 	var transition notificationStatusTransition
-	heartbeatTS := time.Unix(request.TS, 0).UTC()
+	// Liveness is authoritative at the Controller receive time. The Agent
+	// timestamp is validated above, but never allowed to move last_seen_at into
+	// the future or keep a node online after its clock is corrected.
+	heartbeatTS := receivedAt
 	if transitionStore, ok := store.(heartbeatTransitionStore); ok {
 		var err error
 		transition, err = transitionStore.RecordAgentHeartbeatTransition(r.Context(), nodeID, heartbeatTS, status, strings.TrimSpace(request.AgentVersion))
@@ -301,6 +332,9 @@ func (h *handler) handleAgentHost(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+	if !h.admitAgentRequest(w, nodeID, agentQuotaHost) {
+		return
+	}
 	var request AgentHostRequest
 	if !decodeJSONBody(w, r, &request, agentStateJSONBodyLimit, false) {
 		return
@@ -313,6 +347,11 @@ func (h *handler) handleAgentHost(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid host values")
 		return
 	}
+	releaseWrite, ok := h.admitAgentWrite(w, nodeID, 2)
+	if !ok {
+		return
+	}
+	defer releaseWrite()
 	if err := store.UpsertAgentHost(r.Context(), nodeID, request); err != nil {
 		logAgentAPIError("host", nodeID, "upsert_host", err)
 		writeError(w, http.StatusInternalServerError, "internal error")
@@ -332,6 +371,9 @@ func (h *handler) handleAgentState(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+	if !h.admitAgentRequest(w, nodeID, agentQuotaState) {
+		return
+	}
 	var request AgentStateRequest
 	if !decodeJSONBody(w, r, &request, agentStateJSONBodyLimit, false) {
 		return
@@ -349,10 +391,15 @@ func (h *handler) handleAgentState(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid state id")
 		return
 	}
-	if invalidFloat(request.CPUPercent) || request.CPUPercent < 0 || request.CPUPercent > 100 || optionalFloatInvalidOrNegative(request.Load1) || optionalFloatInvalidOrNegative(request.Load5) || optionalFloatInvalidOrNegative(request.Load15) || request.MemoryUsedBytes < 0 || request.MemoryTotalBytes < 0 || optionalIntNegative(request.SwapUsedBytes) || optionalIntNegative(request.SwapTotalBytes) || request.DiskUsedBytes < 0 || request.DiskTotalBytes < 0 || request.NetInTotalBytes < 0 || request.NetOutTotalBytes < 0 || invalidFloat(request.NetInSpeedBps) || request.NetInSpeedBps < 0 || invalidFloat(request.NetOutSpeedBps) || request.NetOutSpeedBps < 0 || optionalIntNegative(request.ProcessCount) || optionalIntNegative(request.TCPConnectionCount) || request.UptimeSeconds < 0 {
+	if invalidFloat(request.CPUPercent) || request.CPUPercent < 0 || request.CPUPercent > 100 || optionalFloatInvalidOrNegative(request.Load1) || optionalFloatInvalidOrNegative(request.Load5) || optionalFloatInvalidOrNegative(request.Load15) || request.MemoryUsedBytes < 0 || request.MemoryTotalBytes < 0 || optionalIntNegative(request.SwapUsedBytes) || optionalIntNegative(request.SwapTotalBytes) || request.DiskUsedBytes < 0 || request.DiskTotalBytes < 0 || request.NetInTotalBytes < 0 || request.NetOutTotalBytes < 0 || invalidFloat(request.NetInSpeedBps) || request.NetInSpeedBps < 0 || invalidFloat(request.NetOutSpeedBps) || request.NetOutSpeedBps < 0 || optionalIntNegative(request.ProcessCount) || optionalIntNegative(request.TCPConnectionCount) || optionalIntNegative(request.UDPConnectionCount) || request.UptimeSeconds < 0 {
 		writeError(w, http.StatusBadRequest, "invalid state values")
 		return
 	}
+	releaseWrite, ok := h.admitAgentWrite(w, nodeID, 1)
+	if !ok {
+		return
+	}
+	defer releaseWrite()
 	if reportStore, ok := store.(agentStateReportStore); ok {
 		accepted, transition, err := reportStore.RecordAgentStateReport(r.Context(), nodeID, request)
 		if err != nil {

@@ -1,7 +1,7 @@
 import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it } from 'vitest'
 import type { StatePoint } from '../types'
-import { StateHistoryPanel } from './StateHistoryPanel'
+import { StateHistoryPanel, stateYDomain } from './StateHistoryPanel'
 
 const points: StatePoint[] = [
   {
@@ -112,5 +112,12 @@ describe('StateHistoryPanel', () => {
     )
 
     expect(html).toContain('暂无系统资源历史')
+  })
+
+  it('reduces an exceptionally large state payload without spreading it into Math.max', () => {
+    const values = Array.from({ length: 250_000 }, (_, index) => index === 249_999 ? 200 : index % 100)
+
+    expect(() => stateYDomain(values)).not.toThrow()
+    expect(stateYDomain(values)).toEqual({ min: 0, max: 230 })
   })
 })

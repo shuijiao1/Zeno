@@ -985,7 +985,7 @@ func TestAgentHeartbeatUpdatesNodeStatusAndLastSeen(t *testing.T) {
 	}
 
 	before := time.Now().UTC().Unix()
-	ts := time.Now().UTC().Add(-10 * time.Minute).Truncate(time.Second).Unix()
+	ts := time.Now().UTC().Add(-5 * time.Minute).Truncate(time.Second).Unix()
 	payload := []byte(`{"ts":` + strconv.FormatInt(ts, 10) + `,"status":"online","agent_version":"agent-test"}`)
 	recorder := httptest.NewRecorder()
 	request := httptest.NewRequest(http.MethodPost, "/api/agent/v1/heartbeat", bytes.NewReader(payload))
@@ -1009,6 +1009,51 @@ func TestAgentHeartbeatUpdatesNodeStatusAndLastSeen(t *testing.T) {
 	after := time.Now().UTC().Unix()
 	if status != "online" || lastSeen < before || lastSeen > after || agentVersion != "agent-test" {
 		t.Fatalf("heartbeat persisted status=%q last_seen=%d agent_version=%q, want online/received-at %d..%d/agent-test", status, lastSeen, agentVersion, before, after)
+	}
+}
+
+func TestAgentHeartbeatRejectsTimestampSkewWithoutPoisoningLastSeen(t *testing.T) {
+	store, err := OpenSQLiteStore(filepath.Join(t.TempDir(), "zeno.db"))
+	if err != nil {
+		t.Fatalf("open sqlite store: %v", err)
+	}
+	defer store.Close()
+	ctx := context.Background()
+	if err := store.SeedPreviewData(ctx, PreviewSeedOptions{NodeID: "hytron", DisplayName: "Hytron", CountryCode: "HK", AgentToken: "test-agent-token"}); err != nil {
+		t.Fatalf("seed preview data: %v", err)
+	}
+	baseline := time.Now().UTC().Add(-time.Minute).Unix()
+	if _, err := store.db.ExecContext(ctx, `UPDATE nodes SET last_seen_at = ? WHERE id = 'hytron'`, baseline); err != nil {
+		t.Fatalf("set baseline last_seen_at: %v", err)
+	}
+	var original int64
+	if err := store.db.QueryRowContext(ctx, `SELECT last_seen_at FROM nodes WHERE id = 'hytron'`).Scan(&original); err != nil {
+		t.Fatalf("query original last_seen_at: %v", err)
+	}
+	handler := NewHandler(HandlerOptions{Store: store})
+	for name, ts := range map[string]int64{
+		"future": time.Now().UTC().Add(maxAgentTimestampFutureSkew + time.Minute).Unix(),
+		"past":   time.Now().UTC().Add(-maxAgentTimestampPastSkew - time.Minute).Unix(),
+	} {
+		t.Run(name, func(t *testing.T) {
+			payload := []byte(`{"ts":` + strconv.FormatInt(ts, 10) + `,"status":"online"}`)
+			recorder := httptest.NewRecorder()
+			request := httptest.NewRequest(http.MethodPost, "/api/agent/v1/heartbeat", bytes.NewReader(payload))
+			request.Header.Set("X-Node-ID", "hytron")
+			request.Header.Set("Authorization", "Bearer test-agent-token")
+			request.Header.Set("Content-Type", "application/json")
+			handler.ServeHTTP(recorder, request)
+			if recorder.Code != http.StatusBadRequest {
+				t.Fatalf("status = %d, want 400; body=%s", recorder.Code, recorder.Body.String())
+			}
+			var got int64
+			if err := store.db.QueryRowContext(ctx, `SELECT last_seen_at FROM nodes WHERE id = 'hytron'`).Scan(&got); err != nil {
+				t.Fatalf("query last_seen_at: %v", err)
+			}
+			if got != original {
+				t.Fatalf("last_seen_at changed from %d to %d after rejected heartbeat", original, got)
+			}
+		})
 	}
 }
 
@@ -2400,6 +2445,53 @@ func TestBillingTrafficModeAndResetPeriodHelpers(t *testing.T) {
 	clamped := billingPeriodFor(time.Date(2026, 2, 28, 12, 0, 0, 0, time.UTC), 31)
 	if clamped.Key != "2026-02" || clamped.StartDate != "2026-02-28" || clamped.EndDate != "2026-03-30" {
 		t.Fatalf("clamped billing period window = %+v, want reset day clamped to month end", clamped)
+	}
+}
+
+func TestAgentStateRejectsNegativeUDPConnectionCount(t *testing.T) {
+	store, err := OpenSQLiteStore(filepath.Join(t.TempDir(), "zeno.db"))
+	if err != nil {
+		t.Fatalf("open sqlite store: %v", err)
+	}
+	defer store.Close()
+	ctx := context.Background()
+	if err := store.SeedPreviewData(ctx, PreviewSeedOptions{NodeID: "hytron", DisplayName: "Hytron", AgentToken: "test-agent-token"}); err != nil {
+		t.Fatalf("seed preview data: %v", err)
+	}
+	body := map[string]any{
+		"ts":                      time.Now().UTC().Unix(),
+		"cpu_percent":             1,
+		"memory_used_bytes":       1,
+		"memory_total_bytes":      2,
+		"disk_used_bytes":         1,
+		"disk_total_bytes":        2,
+		"net_in_total_bytes":      1,
+		"net_out_total_bytes":     1,
+		"net_in_speed_bps":        1,
+		"net_out_speed_bps":       1,
+		"udp_connection_count":    -1,
+		"connection_counts_valid": true,
+		"uptime_seconds":          1,
+	}
+	payload, err := json.Marshal(body)
+	if err != nil {
+		t.Fatalf("marshal state: %v", err)
+	}
+	recorder := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodPost, "/api/agent/v1/state", bytes.NewReader(payload))
+	request.Header.Set("X-Node-ID", "hytron")
+	request.Header.Set("Authorization", "Bearer test-agent-token")
+	request.Header.Set("Content-Type", "application/json")
+	NewHandler(HandlerOptions{Store: store}).ServeHTTP(recorder, request)
+	if recorder.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400 for negative UDP connection count; body=%s", recorder.Code, recorder.Body.String())
+	}
+	var samples int
+	if err := store.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM state_samples`).Scan(&samples); err != nil {
+		t.Fatalf("count state samples: %v", err)
+	}
+	if samples != 0 {
+		t.Fatalf("negative UDP connection count persisted %d samples", samples)
 	}
 }
 

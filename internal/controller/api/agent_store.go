@@ -565,6 +565,23 @@ func insertAgentStateSampleTx(ctx context.Context, tx *sql.Tx, nodeID string, st
 		}
 	}
 
+	// Invalid optional collector groups are unknown, not zero. Persist NULL so
+	// public summaries and history do not present a failed collection as a real
+	// counter value. Traffic accounting independently refuses to advance its
+	// baseline unless net_totals_valid is true (or absent for legacy agents).
+	var netInTotalBytes any = state.NetInTotalBytes
+	var netOutTotalBytes any = state.NetOutTotalBytes
+	if state.NetTotalsValid != nil && !*state.NetTotalsValid {
+		netInTotalBytes = nil
+		netOutTotalBytes = nil
+	}
+	var tcpConnectionCount any = state.TCPConnectionCount
+	var udpConnectionCount any = state.UDPConnectionCount
+	if state.ConnectionCountsValid != nil && !*state.ConnectionCountsValid {
+		tcpConnectionCount = nil
+		udpConnectionCount = nil
+	}
+
 	if _, err := tx.ExecContext(ctx, `
 		INSERT INTO state_samples (
 			node_id, sample_id, payload_hash, received_at, ts, cpu_percent, load1, load5, load15,
@@ -573,7 +590,7 @@ func insertAgentStateSampleTx(ctx context.Context, tx *sql.Tx, nodeID string, st
 			net_in_speed_bps, net_out_speed_bps, process_count, tcp_connection_count, udp_connection_count, uptime_seconds
 		)
 		VALUES (?, NULLIF(?, ''), ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-	`, nodeID, sampleID, payloadHash, receivedUnix, state.TS, state.CPUPercent, state.Load1, state.Load5, state.Load15, state.MemoryUsedBytes, state.MemoryTotalBytes, state.SwapUsedBytes, state.SwapTotalBytes, state.DiskUsedBytes, state.DiskTotalBytes, state.NetInTotalBytes, state.NetOutTotalBytes, state.NetInSpeedBps, state.NetOutSpeedBps, state.ProcessCount, state.TCPConnectionCount, state.UDPConnectionCount, state.UptimeSeconds); err != nil {
+	`, nodeID, sampleID, payloadHash, receivedUnix, state.TS, state.CPUPercent, state.Load1, state.Load5, state.Load15, state.MemoryUsedBytes, state.MemoryTotalBytes, state.SwapUsedBytes, state.SwapTotalBytes, state.DiskUsedBytes, state.DiskTotalBytes, netInTotalBytes, netOutTotalBytes, state.NetInSpeedBps, state.NetOutSpeedBps, state.ProcessCount, tcpConnectionCount, udpConnectionCount, state.UptimeSeconds); err != nil {
 		return false, err
 	}
 
@@ -587,8 +604,13 @@ func insertAgentStateSampleTx(ctx context.Context, tx *sql.Tx, nodeID string, st
 		return false, err
 	}
 	month := billingPeriodKey(sampleTS, monthlyResetDay)
-	if err := upsertMonthlyTraffic(ctx, tx, nodeID, month, billingEpoch, monthlyResetDay, billingMode, state.NetInTotalBytes, state.NetOutTotalBytes, sampleTS.Unix(), receivedUnix); err != nil {
-		return false, err
+	// A failed platform counter read is not a real zero sample. Skipping the
+	// billing baseline here is essential for first-sample failures: otherwise a
+	// later recovery would bill the machine's full lifetime counter as new use.
+	if state.NetTotalsValid == nil || *state.NetTotalsValid {
+		if err := upsertMonthlyTraffic(ctx, tx, nodeID, month, billingEpoch, monthlyResetDay, billingMode, state.NetInTotalBytes, state.NetOutTotalBytes, sampleTS.Unix(), receivedUnix); err != nil {
+			return false, err
+		}
 	}
 	return true, nil
 }

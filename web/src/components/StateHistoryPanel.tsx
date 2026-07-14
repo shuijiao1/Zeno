@@ -139,7 +139,7 @@ export function StateHistoryPanel({ points, range, loading = false, error, canUs
 }
 
 function ResourceMetricCard({ metric, timestamps }: { metric: MetricConfig; timestamps: number[] }) {
-  const domain = yDomain(metric.lines.flatMap((line) => line.values), metric.domainMax)
+  const domain = stateYDomain(metric.lines.flatMap((line) => line.values), metric.domainMax)
   const yTicks = yAxisTicks(domain, metric.unitLabel)
   const timeTicks = stateAxisTicks(timestamps)
   const [hoverIndex, setHoverIndex] = useState<number | null>(null)
@@ -335,10 +335,12 @@ function finiteOrNull(value: number | null | undefined): number | null {
   return typeof value === 'number' && Number.isFinite(value) ? value : null
 }
 
-function yDomain(values: Array<number | null>, forcedMax?: number): { min: number; max: number } {
-  const finiteValues = values.filter((value): value is number => value !== null)
-  if (finiteValues.length === 0) return { min: 0, max: forcedMax ?? 1 }
-  const max = Math.max(...finiteValues)
+export function stateYDomain(values: Array<number | null>, forcedMax?: number): { min: number; max: number } {
+  let max = Number.NEGATIVE_INFINITY
+  for (const value of values) {
+    if (typeof value === 'number' && Number.isFinite(value) && value > max) max = value
+  }
+  if (!Number.isFinite(max)) return { min: 0, max: forcedMax ?? 1 }
   return { min: 0, max: Math.max(1, forcedMax ?? Math.ceil(max * 1.15)) }
 }
 

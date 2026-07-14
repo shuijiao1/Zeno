@@ -21,4 +21,10 @@ describe('parseDashboardRoute', () => {
     expect(parseDashboardRoute('/service/google')).toEqual({ kind: 'service', targetId: 'google' })
     expect(parseDashboardRoute('/service/Akari%20HK')).toEqual({ kind: 'service', targetId: 'Akari HK' })
   })
+
+  it('falls back to the safe canonical route for malformed percent-encoded ids', () => {
+    expect(() => parseDashboardRoute('/server/%')).not.toThrow()
+    expect(parseDashboardRoute('/server/%E0%A4%A')).toEqual({ kind: 'home' })
+    expect(parseDashboardRoute('/service/%FF')).toEqual({ kind: 'home' })
+  })
 })

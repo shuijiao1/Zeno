@@ -27,7 +27,7 @@ func (s *SQLiteStore) PruneRawHistory(ctx context.Context, before time.Time) err
 	if err := s.pruneRowsInBatches(ctx, `DELETE FROM state_samples WHERE id IN (SELECT id FROM state_samples WHERE ts < ? ORDER BY id LIMIT ?)`, cutoff); err != nil {
 		return err
 	}
-	if err := s.pruneRowsInBatches(ctx, `DELETE FROM notification_deliveries WHERE id IN (SELECT id FROM notification_deliveries WHERE state IN ('delivered', 'failed') AND updated_at < ? ORDER BY id LIMIT ?)`, cutoff); err != nil {
+	if err := s.pruneRowsInBatches(ctx, `DELETE FROM notification_deliveries WHERE id IN (SELECT id FROM notification_deliveries WHERE state IN ('delivered', 'failed', 'canceled') AND updated_at < ? ORDER BY id LIMIT ?)`, cutoff); err != nil {
 		return err
 	}
 	stalePendingCutoff := time.Now().UTC().Add(-stalePendingNotificationDeliveryAfter).Unix()

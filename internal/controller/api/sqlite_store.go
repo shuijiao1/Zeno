@@ -2,10 +2,7 @@ package api
 
 import (
 	"context"
-	"crypto/sha256"
-	"crypto/subtle"
 	"database/sql"
-	"encoding/hex"
 	"errors"
 	"fmt"
 	"net/url"
@@ -17,27 +14,39 @@ import (
 	moderncsqlite "modernc.org/sqlite"
 )
 
+type summaryAggregateFlight struct {
+	generation  uint64
+	done        chan struct{}
+	home        map[string]*LatencySummary
+	services    []ServiceTarget
+	nodeLatency map[string][]LatencySummary
+	err         error
+}
+
 type SQLiteStore struct {
-	db                           *sql.DB
-	agentWriteMu                 sync.Mutex
-	renewalMu                    sync.Mutex
-	adminSessionPruneMu          sync.Mutex
-	adminSessionLastPruned       time.Time
-	notificationCredentialMu     sync.RWMutex
-	notificationCredentialCipher *notificationCredentialCipher
-	summaryAggregateMu           sync.Mutex
-	summaryAggregateUpdated      time.Time
-	summaryAggregateHome         map[string]*LatencySummary
-	summaryAggregateServices     []ServiceTarget
-	summaryAggregateNodeLatency  map[string][]LatencySummary
+	db                            *sql.DB
+	agentWriteMu                  sync.Mutex
+	renewalMu                     sync.Mutex
+	adminSessionPruneMu           sync.Mutex
+	adminSessionLastPruned        time.Time
+	notificationCredentialMu      sync.RWMutex
+	notificationCredentialKeyring *notificationCredentialKeyring
+	summaryAggregateMu            sync.Mutex
+	summaryAggregateUpdated       time.Time
+	summaryAggregateHome          map[string]*LatencySummary
+	summaryAggregateServices      []ServiceTarget
+	summaryAggregateNodeLatency   map[string][]LatencySummary
+	summaryAggregateGeneration    uint64
+	summaryAggregateFlight        *summaryAggregateFlight
 }
 
 const (
 	nodeHeartbeatOfflineAfter = 30 * time.Second
 	// Node state remains live at the Agent cadence, while the expensive rolling
-	// 24-hour loss/reporting aggregates are reused briefly. Probe targets update
-	// on a much slower cadence, so rebuilding these scans every three seconds
-	// only burns CPU without materially improving freshness.
+	// 24-hour loss/reporting aggregates are reused briefly. Probe writes mark the
+	// aggregate generation dirty in O(1), but a cached aggregate is retained for
+	// this minimum rebuild window. With a live summary client, aggregate fields
+	// are therefore at most this interval plus one 3s publish cadence stale.
 	summaryAggregateFreshFor = 30 * time.Second
 	// Agent HTTP clients use a 30s total timeout. Keep server-side SQLite busy
 	// recovery below that budget even when an individual SQLite call consumes the
@@ -189,33 +198,6 @@ func (s *SQLiteStore) Close() error {
 	return s.db.Close()
 }
 
-// AuthorizeNotificationAuthority binds notification delivery to an external
-// secret that is deliberately not stored in SQLite. Copying the production DB
-// therefore cannot copy permission to send through its Telegram channels.
-func (s *SQLiteStore) AuthorizeNotificationAuthority(ctx context.Context, authorityKey string) (bool, error) {
-	authorityKey = strings.TrimSpace(authorityKey)
-	if authorityKey == "" {
-		return false, nil
-	}
-	sum := sha256.Sum256([]byte(authorityKey))
-	fingerprint := hex.EncodeToString(sum[:])
-	nowUnix := time.Now().UTC().Unix()
-	if _, err := s.db.ExecContext(ctx, `
-		INSERT OR IGNORE INTO settings (key, value, updated_at)
-		VALUES ('internal.notification_authority_fingerprint', ?, ?)
-	`, fingerprint, nowUnix); err != nil {
-		return false, err
-	}
-	var stored string
-	if err := s.db.QueryRowContext(ctx, `SELECT value FROM settings WHERE key = 'internal.notification_authority_fingerprint'`).Scan(&stored); err != nil {
-		return false, err
-	}
-	if len(stored) != len(fingerprint) {
-		return false, nil
-	}
-	return subtle.ConstantTimeCompare([]byte(stored), []byte(fingerprint)) == 1, nil
-}
-
 func (s *SQLiteStore) Ready(ctx context.Context) error {
 	if s == nil || s.db == nil {
 		return fmt.Errorf("sqlite store is closed")
@@ -264,6 +246,10 @@ func (s *SQLiteStore) ensureSchema(ctx context.Context) error {
 			id TEXT PRIMARY KEY,
 			display_name TEXT NOT NULL,
 			token_hash TEXT NOT NULL,
+			pending_token_hash TEXT,
+			pending_token_expires_at INTEGER,
+			-- Deprecated migration-only column. Startup clears every value and
+			-- no current write path stores a runtime credential here.
 			install_token TEXT,
 			status TEXT NOT NULL DEFAULT 'no_data',
 			country_code TEXT,
@@ -286,6 +272,16 @@ func (s *SQLiteStore) ensureSchema(ctx context.Context) error {
 			updated_at INTEGER NOT NULL,
 			last_seen_at INTEGER
 		);`,
+		`CREATE TABLE IF NOT EXISTS agent_enrollment_tokens (
+			token_hash TEXT PRIMARY KEY,
+			node_id TEXT NOT NULL REFERENCES nodes(id) ON DELETE CASCADE,
+			created_at INTEGER NOT NULL,
+			expires_at INTEGER NOT NULL,
+			used_at INTEGER,
+			revoked_at INTEGER
+		);`,
+		`CREATE INDEX IF NOT EXISTS idx_agent_enrollment_node_created ON agent_enrollment_tokens(node_id, created_at DESC);`,
+		`CREATE INDEX IF NOT EXISTS idx_agent_enrollment_expiry ON agent_enrollment_tokens(expires_at);`,
 		`CREATE TABLE IF NOT EXISTS host_info (
 			node_id TEXT PRIMARY KEY REFERENCES nodes(id),
 			hostname TEXT,
@@ -406,6 +402,8 @@ func (s *SQLiteStore) ensureSchema(ctx context.Context) error {
 			name TEXT NOT NULL,
 			destination TEXT NOT NULL,
 			credential TEXT NOT NULL,
+			delivery_version INTEGER NOT NULL DEFAULT 1,
+			destination_fingerprint TEXT NOT NULL DEFAULT '',
 			enabled INTEGER NOT NULL DEFAULT 1,
 			created_at INTEGER NOT NULL,
 			updated_at INTEGER NOT NULL
@@ -460,21 +458,28 @@ func (s *SQLiteStore) ensureSchema(ctx context.Context) error {
 		`CREATE INDEX IF NOT EXISTS idx_notification_event_marks_event_node ON notification_event_marks(event_type, node_id);`,
 		`CREATE TABLE IF NOT EXISTS notification_deliveries (
 			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			event_id TEXT NOT NULL DEFAULT '',
 			event_type TEXT NOT NULL,
 			label TEXT NOT NULL DEFAULT '',
 			node_id TEXT NOT NULL DEFAULT '',
 			node_name TEXT NOT NULL DEFAULT '',
+			node_ip TEXT NOT NULL DEFAULT '',
 			previous_status TEXT NOT NULL DEFAULT '',
 			status TEXT NOT NULL DEFAULT '',
+			event_ts TEXT NOT NULL DEFAULT '',
 			detail TEXT NOT NULL DEFAULT '',
 			channel_id TEXT NOT NULL,
 			channel_name TEXT NOT NULL DEFAULT '',
+			channel_version INTEGER NOT NULL DEFAULT 1,
+			destination_fingerprint TEXT NOT NULL DEFAULT '',
 			state TEXT NOT NULL DEFAULT 'pending',
 			attempts INTEGER NOT NULL DEFAULT 0,
 			next_attempt_at INTEGER NOT NULL,
 			last_error TEXT NOT NULL DEFAULT '',
 			lease_until INTEGER NOT NULL DEFAULT 0,
 			claim_token TEXT NOT NULL DEFAULT '',
+			causal_predecessor_event_id TEXT NOT NULL DEFAULT '',
+			superseded_by_event_id TEXT NOT NULL DEFAULT '',
 			created_at INTEGER NOT NULL,
 			updated_at INTEGER NOT NULL,
 			delivered_at INTEGER
@@ -537,6 +542,8 @@ func (s *SQLiteStore) ensureSchema(ctx context.Context) error {
 	}
 	nodeColumns := map[string]string{
 		"install_token":                "TEXT",
+		"pending_token_hash":           "TEXT",
+		"pending_token_expires_at":     "INTEGER",
 		"home_probe_target_id":         "TEXT",
 		"expiry_date":                  "TEXT",
 		"expiry_permanent":             "INTEGER NOT NULL DEFAULT 0",
@@ -558,14 +565,36 @@ func (s *SQLiteStore) ensureSchema(ctx context.Context) error {
 			return err
 		}
 	}
+	if err := s.migrateLegacyAgentCredentials(ctx); err != nil {
+		return err
+	}
+	notificationChannelColumns := map[string]string{
+		"delivery_version":        "INTEGER NOT NULL DEFAULT 1",
+		"destination_fingerprint": "TEXT NOT NULL DEFAULT ''",
+	}
+	for column, columnType := range notificationChannelColumns {
+		if err := s.ensureColumn(ctx, "notification_channels", column, columnType); err != nil {
+			return err
+		}
+	}
 	notificationDeliveryColumns := map[string]string{
-		"lease_until": "INTEGER NOT NULL DEFAULT 0",
-		"claim_token": "TEXT NOT NULL DEFAULT ''",
+		"event_id":                    "TEXT NOT NULL DEFAULT ''",
+		"node_ip":                     "TEXT NOT NULL DEFAULT ''",
+		"event_ts":                    "TEXT NOT NULL DEFAULT ''",
+		"channel_version":             "INTEGER NOT NULL DEFAULT 1",
+		"destination_fingerprint":     "TEXT NOT NULL DEFAULT ''",
+		"lease_until":                 "INTEGER NOT NULL DEFAULT 0",
+		"claim_token":                 "TEXT NOT NULL DEFAULT ''",
+		"causal_predecessor_event_id": "TEXT NOT NULL DEFAULT ''",
+		"superseded_by_event_id":      "TEXT NOT NULL DEFAULT ''",
 	}
 	for column, columnType := range notificationDeliveryColumns {
 		if err := s.ensureColumn(ctx, "notification_deliveries", column, columnType); err != nil {
 			return err
 		}
+	}
+	if err := s.migrateNotificationRoutingBindings(ctx); err != nil {
+		return err
 	}
 	// Existing databases predate the lease columns. Build the claim index only
 	// after both columns have been added; otherwise CREATE INDEX aborts startup
@@ -573,6 +602,18 @@ func (s *SQLiteStore) ensureSchema(ctx context.Context) error {
 	if _, err := s.db.ExecContext(ctx, `
 		CREATE INDEX IF NOT EXISTS idx_notification_deliveries_claim
 		ON notification_deliveries(state, next_attempt_at, lease_until, id)
+	`); err != nil {
+		return err
+	}
+	if _, err := s.db.ExecContext(ctx, `
+		CREATE INDEX IF NOT EXISTS idx_notification_deliveries_causal
+		ON notification_deliveries(channel_id, node_id, event_type, id, state)
+	`); err != nil {
+		return err
+	}
+	if _, err := s.db.ExecContext(ctx, `
+		CREATE INDEX IF NOT EXISTS idx_notification_deliveries_event_route
+		ON notification_deliveries(channel_id, channel_version, destination_fingerprint, event_id, state)
 	`); err != nil {
 		return err
 	}
@@ -615,6 +656,19 @@ func (s *SQLiteStore) ensureSchema(ctx context.Context) error {
 		return err
 	}
 	return nil
+}
+
+func (s *SQLiteStore) migrateLegacyAgentCredentials(ctx context.Context) error {
+	// v0.6.1 and earlier retained the Agent runtime token in install_token so it
+	// could be placed back into generated commands. Preserve token_hash (and thus
+	// compatibility with every already-installed v0.3.0 Agent) while removing
+	// the directly usable plaintext on the first upgraded startup.
+	_, err := s.db.ExecContext(ctx, `
+		UPDATE nodes
+		SET install_token = NULL
+		WHERE install_token IS NOT NULL
+	`)
+	return err
 }
 
 func (s *SQLiteStore) pruneRetiredTables(ctx context.Context) error {
@@ -902,32 +956,91 @@ func (s *SQLiteStore) Summary(ctx context.Context) (SummaryResponse, error) {
 }
 
 func (s *SQLiteStore) summaryAggregates(ctx context.Context) (map[string]*LatencySummary, []ServiceTarget, map[string][]LatencySummary, error) {
+	for {
+		if err := ctx.Err(); err != nil {
+			return nil, nil, nil, err
+		}
+		now := time.Now()
+		s.summaryAggregateMu.Lock()
+		if !s.summaryAggregateUpdated.IsZero() && now.Sub(s.summaryAggregateUpdated) < summaryAggregateFreshFor {
+			home := s.summaryAggregateHome
+			services := s.summaryAggregateServices
+			nodeLatency := s.summaryAggregateNodeLatency
+			s.summaryAggregateMu.Unlock()
+			return home, services, nodeLatency, nil
+		}
+		generation := s.summaryAggregateGeneration
+		if flight := s.summaryAggregateFlight; flight != nil {
+			s.summaryAggregateMu.Unlock()
+			select {
+			case <-ctx.Done():
+				return nil, nil, nil, ctx.Err()
+			case <-flight.done:
+			}
+			s.summaryAggregateMu.Lock()
+			currentGeneration := s.summaryAggregateGeneration
+			s.summaryAggregateMu.Unlock()
+			if currentGeneration != flight.generation {
+				continue
+			}
+			return flight.home, flight.services, flight.nodeLatency, flight.err
+		}
+		flight := &summaryAggregateFlight{generation: generation, done: make(chan struct{})}
+		s.summaryAggregateFlight = flight
+		s.summaryAggregateMu.Unlock()
+
+		// These are the expensive rolling queries. They intentionally run outside
+		// summaryAggregateMu so an Agent probe write can mark the cache dirty and
+		// return 202 without waiting for a 24-hour scan.
+		homeSummaries, err := s.latestHomeLatencySummaries(ctx)
+		var services []ServiceTarget
+		if err == nil {
+			services, err = s.serviceTargets(ctx)
+		}
+		var latencySummaries map[string][]LatencySummary
+		if err == nil {
+			latencySummaries, err = s.latestLatencySummariesByNode(ctx)
+		}
+
+		s.summaryAggregateMu.Lock()
+		currentGeneration := s.summaryAggregateGeneration
+		if err == nil && currentGeneration == generation {
+			s.summaryAggregateHome = homeSummaries
+			s.summaryAggregateServices = services
+			s.summaryAggregateNodeLatency = latencySummaries
+			s.summaryAggregateUpdated = time.Now()
+		}
+		flight.home = homeSummaries
+		flight.services = services
+		flight.nodeLatency = latencySummaries
+		flight.err = err
+		if s.summaryAggregateFlight == flight {
+			s.summaryAggregateFlight = nil
+		}
+		close(flight.done)
+		s.summaryAggregateMu.Unlock()
+
+		if currentGeneration != generation {
+			// Invalidation raced this snapshot. Do not let it repopulate the cache;
+			// retry in the current generation so callers after invalidation do not
+			// publish the obsolete result.
+			continue
+		}
+		return homeSummaries, services, latencySummaries, err
+	}
+}
+
+func (s *SQLiteStore) markSummaryAggregatesDirty() {
 	s.summaryAggregateMu.Lock()
-	defer s.summaryAggregateMu.Unlock()
-	if !s.summaryAggregateUpdated.IsZero() && time.Since(s.summaryAggregateUpdated) < summaryAggregateFreshFor {
-		return s.summaryAggregateHome, s.summaryAggregateServices, s.summaryAggregateNodeLatency, nil
-	}
-	homeSummaries, err := s.latestHomeLatencySummaries(ctx)
-	if err != nil {
-		return nil, nil, nil, err
-	}
-	services, err := s.serviceTargets(ctx)
-	if err != nil {
-		return nil, nil, nil, err
-	}
-	latencySummaries, err := s.latestLatencySummariesByNode(ctx)
-	if err != nil {
-		return nil, nil, nil, err
-	}
-	s.summaryAggregateHome = homeSummaries
-	s.summaryAggregateServices = services
-	s.summaryAggregateNodeLatency = latencySummaries
-	s.summaryAggregateUpdated = time.Now()
-	return homeSummaries, services, latencySummaries, nil
+	s.summaryAggregateGeneration++
+	// Keep a recently built snapshot until the bounded rebuild window expires.
+	// This converts high-frequency probe invalidation into O(1) metadata work.
+	s.summaryAggregateMu.Unlock()
 }
 
 func (s *SQLiteStore) invalidateSummaryAggregates() {
 	s.summaryAggregateMu.Lock()
+	s.summaryAggregateGeneration++
 	s.summaryAggregateUpdated = time.Time{}
 	s.summaryAggregateHome = nil
 	s.summaryAggregateServices = nil
@@ -1978,13 +2091,13 @@ func (s *SQLiteStore) latestLatencySummariesByNode(ctx context.Context) (map[str
 
 func (s *SQLiteStore) serviceTargets(ctx context.Context) ([]ServiceTarget, error) {
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT pt.id, pt.name, pt.type, pt.address, pt.port,
+		SELECT pt.id, pt.name, pt.type,
 		       COUNT(DISTINCT CASE WHEN n.id IS NOT NULL AND COALESCE(npt.enabled, 0) = 1 AND n.disabled = 0 THEN n.id END) AS assigned_nodes
 		FROM probe_targets pt
 		LEFT JOIN node_probe_targets npt ON npt.target_id = pt.id
 		LEFT JOIN nodes n ON n.id = npt.node_id
 		WHERE pt.enabled = 1
-		GROUP BY pt.id, pt.name, pt.type, pt.address, pt.port, pt.display_order
+		GROUP BY pt.id, pt.name, pt.type, pt.display_order
 		ORDER BY pt.display_order ASC, pt.name ASC, pt.id ASC
 	`)
 	if err != nil {
@@ -1995,11 +2108,9 @@ func (s *SQLiteStore) serviceTargets(ctx context.Context) ([]ServiceTarget, erro
 	targets := []ServiceTarget{}
 	for rows.Next() {
 		var target ServiceTarget
-		var port sql.NullInt64
-		if err := rows.Scan(&target.ID, &target.Name, &target.Type, &target.Address, &port, &target.AssignedNodeCount); err != nil {
+		if err := rows.Scan(&target.ID, &target.Name, &target.Type, &target.AssignedNodeCount); err != nil {
 			return nil, err
 		}
-		target.Port = intSQLPtr(port)
 		targets = append(targets, target)
 	}
 	if err := rows.Err(); err != nil {
@@ -2013,24 +2124,22 @@ func (s *SQLiteStore) serviceTargets(ctx context.Context) ([]ServiceTarget, erro
 
 func (s *SQLiteStore) serviceTargetByID(ctx context.Context, targetID string) (ServiceTarget, error) {
 	var target ServiceTarget
-	var port sql.NullInt64
 	var assigned int
 	err := s.db.QueryRowContext(ctx, `
-		SELECT pt.id, pt.name, pt.type, pt.address, pt.port,
+		SELECT pt.id, pt.name, pt.type,
 		       COUNT(DISTINCT CASE WHEN n.id IS NOT NULL AND COALESCE(npt.enabled, 0) = 1 AND n.disabled = 0 THEN n.id END) AS assigned_nodes
 		FROM probe_targets pt
 		LEFT JOIN node_probe_targets npt ON npt.target_id = pt.id
 		LEFT JOIN nodes n ON n.id = npt.node_id
 		WHERE pt.enabled = 1 AND pt.id = ?
-		GROUP BY pt.id, pt.name, pt.type, pt.address, pt.port
-	`, targetID).Scan(&target.ID, &target.Name, &target.Type, &target.Address, &port, &assigned)
+		GROUP BY pt.id, pt.name, pt.type
+	`, targetID).Scan(&target.ID, &target.Name, &target.Type, &assigned)
 	if err != nil {
 		if err == sql.ErrNoRows {
 			return ServiceTarget{}, errProbeTargetNotFound
 		}
 		return ServiceTarget{}, err
 	}
-	target.Port = intSQLPtr(port)
 	target.AssignedNodeCount = assigned
 	if err := s.populateServiceTargetLatencySummary(ctx, &target); err != nil {
 		return ServiceTarget{}, err

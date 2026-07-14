@@ -220,6 +220,78 @@ func TestBillingTrafficEpochRebasesOnModeAndResetDayChange(t *testing.T) {
 	}
 }
 
+func TestInvalidNetworkCounterSamplesNeverAdvanceOrCreateBillingBaseline(t *testing.T) {
+	store, err := OpenSQLiteStore(filepath.Join(t.TempDir(), "zeno.db"))
+	if err != nil {
+		t.Fatalf("open sqlite store: %v", err)
+	}
+	defer store.Close()
+	ctx := context.Background()
+	if err := store.SeedPreviewData(ctx, PreviewSeedOptions{NodeID: "hytron", DisplayName: "Hytron", AgentToken: "token"}); err != nil {
+		t.Fatalf("seed node: %v", err)
+	}
+	now := time.Now().UTC().Truncate(time.Second)
+	valid, invalid := true, false
+	tcpCount, udpCount := int64(41), int64(17)
+	state := AgentStateRequest{
+		TS: now.Unix(), CPUPercent: 1, MemoryUsedBytes: 1, MemoryTotalBytes: 2,
+		DiskUsedBytes: 1, DiskTotalBytes: 2, UptimeSeconds: 1,
+		NetInTotalBytes: 900, NetOutTotalBytes: 800, NetTotalsValid: &invalid,
+		TCPConnectionCount: &tcpCount, UDPConnectionCount: &udpCount, ConnectionCountsValid: &invalid,
+	}
+	if err := store.InsertAgentState(ctx, "hytron", state); err != nil {
+		t.Fatalf("insert first invalid sample: %v", err)
+	}
+	var rows int
+	if err := store.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM traffic_monthly WHERE node_id = 'hytron'`).Scan(&rows); err != nil {
+		t.Fatalf("count traffic rows: %v", err)
+	}
+	if rows != 0 {
+		t.Fatalf("invalid first sample created %d billing rows", rows)
+	}
+	var storedIn, storedOut, storedTCP, storedUDP sql.NullInt64
+	if err := store.db.QueryRowContext(ctx, `
+		SELECT net_in_total_bytes, net_out_total_bytes, tcp_connection_count, udp_connection_count
+		FROM state_samples WHERE node_id = 'hytron' AND ts = ?
+	`, state.TS).Scan(&storedIn, &storedOut, &storedTCP, &storedUDP); err != nil {
+		t.Fatalf("read invalid state sample: %v", err)
+	}
+	if storedIn.Valid || storedOut.Valid || storedTCP.Valid || storedUDP.Valid {
+		t.Fatalf("invalid collector groups persisted as values: in=%v out=%v tcp=%v udp=%v", storedIn, storedOut, storedTCP, storedUDP)
+	}
+
+	state.TS = now.Add(time.Second).Unix()
+	state.NetInTotalBytes, state.NetOutTotalBytes = 1000, 2000
+	state.NetTotalsValid = &valid
+	state.ConnectionCountsValid = &valid
+	if err := store.InsertAgentState(ctx, "hytron", state); err != nil {
+		t.Fatalf("insert valid baseline: %v", err)
+	}
+	state.TS = now.Add(2 * time.Second).Unix()
+	state.NetInTotalBytes, state.NetOutTotalBytes = 0, 0
+	state.NetTotalsValid = &invalid
+	if err := store.InsertAgentState(ctx, "hytron", state); err != nil {
+		t.Fatalf("insert transient failure: %v", err)
+	}
+	state.TS = now.Add(3 * time.Second).Unix()
+	state.NetInTotalBytes, state.NetOutTotalBytes = 1100, 2100
+	state.NetTotalsValid = &valid
+	if err := store.InsertAgentState(ctx, "hytron", state); err != nil {
+		t.Fatalf("insert recovered sample: %v", err)
+	}
+
+	var billable, lastIn, lastOut int64
+	if err := store.db.QueryRowContext(ctx, `
+		SELECT billable_bytes, last_in_total_bytes, last_out_total_bytes
+		FROM traffic_monthly WHERE node_id = 'hytron'
+	`).Scan(&billable, &lastIn, &lastOut); err != nil {
+		t.Fatalf("read billing row: %v", err)
+	}
+	if billable != 200 || lastIn != 1100 || lastOut != 2100 {
+		t.Fatalf("billing after 1000/2000 -> invalid -> 1100/2100 = billable %d last %d/%d, want 200 and 1100/2100", billable, lastIn, lastOut)
+	}
+}
+
 func TestTrafficMonthlyEpochMigrationPreservesLegacyRows(t *testing.T) {
 	databasePath := filepath.Join(t.TempDir(), "zeno.db")
 	db, err := sql.Open("sqlite", sqliteURLForTest(t, databasePath))

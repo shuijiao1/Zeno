@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from 'vitest'
-import { adminTokenStorageKey, adminTokenStoredAtKey, clearStoredAdminToken, loadStoredAdminToken, rememberAdminToken } from './adminToken'
+import { adminTokenStorageKey, adminTokenStoredAtKey, captureAdminTokenIdentity, clearStoredAdminToken, clearStoredAdminTokenIfCurrent, loadStoredAdminToken, rememberAdminToken } from './adminToken'
 
 function makeStorage() {
   const values = new Map<string, string>()
@@ -73,6 +73,37 @@ describe('admin token storage', () => {
       expect(() => clearStoredAdminToken()).not.toThrow()
     } finally {
       Object.defineProperty(globalThis, 'window', { configurable: true, value: previousWindow })
+    }
+  })
+
+  it('does not let a late unauthorized response clear a newly rotated token', () => {
+    const { sessionStorage, restore } = installWindowStorage()
+    try {
+      rememberAdminToken('old-token')
+      const oldRequestIdentity = captureAdminTokenIdentity('old-token')
+
+      rememberAdminToken('new-token')
+
+      expect(clearStoredAdminTokenIfCurrent(oldRequestIdentity)).toBe(false)
+      expect(loadStoredAdminToken()).toBe('new-token')
+      expect(sessionStorage.getItem(adminTokenStorageKey)).toBe('new-token')
+    } finally {
+      restore()
+    }
+  })
+
+  it('uses generations to protect a renewed session even if the token text is reused', () => {
+    const { restore } = installWindowStorage()
+    try {
+      rememberAdminToken('same-token')
+      const oldRequestIdentity = captureAdminTokenIdentity('same-token')
+
+      rememberAdminToken('same-token')
+
+      expect(clearStoredAdminTokenIfCurrent(oldRequestIdentity)).toBe(false)
+      expect(loadStoredAdminToken()).toBe('same-token')
+    } finally {
+      restore()
     }
   })
 })

@@ -55,14 +55,18 @@ func TestDetailJSONCacheRefreshWinsOverOlderInflightLoad(t *testing.T) {
 	cache := newDetailJSONCache()
 	oldStarted := make(chan struct{})
 	releaseOld := make(chan struct{})
-	oldDone := make(chan struct{})
+	oldDone := make(chan string, 1)
 	go func() {
-		defer close(oldDone)
-		_, _ = cache.get(context.Background(), "node-state:hytron:1h", time.Second, func() ([]byte, error) {
+		payload, err := cache.get(context.Background(), "node-state:hytron:1h", time.Second, func() ([]byte, error) {
 			close(oldStarted)
 			<-releaseOld
 			return []byte(`{"value":"old"}`), nil
 		})
+		if err != nil {
+			oldDone <- "error: " + err.Error()
+			return
+		}
+		oldDone <- string(payload)
 	}()
 	<-oldStarted
 
@@ -76,7 +80,9 @@ func TestDetailJSONCacheRefreshWinsOverOlderInflightLoad(t *testing.T) {
 		t.Fatalf("refresh payload = %s", payload)
 	}
 	close(releaseOld)
-	<-oldDone
+	if oldResult := <-oldDone; oldResult != `{"value":"fresh"}` {
+		t.Fatalf("invalidated in-flight caller received %s", oldResult)
+	}
 
 	payload, err = cache.get(context.Background(), "node-state:hytron:1h", time.Second, func() ([]byte, error) {
 		return []byte(`{"value":"unexpected"}`), nil

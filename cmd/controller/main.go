@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/hex"
+	"encoding/json"
 	"flag"
 	"fmt"
 	"io"
@@ -21,17 +22,22 @@ import (
 )
 
 type handlerConfig struct {
-	DBPath                    string
-	WebDir                    string
-	SeedPreview               bool
-	NodeID                    string
-	AgentToken                string
-	AdminToken                string
-	AgentBinaryPath           string
-	AgentVersion              string
-	DisableNotifications      bool
-	NotificationAuthorityKey  string
-	NotificationCredentialKey []byte
+	DBPath                            string
+	WebDir                            string
+	SeedPreview                       bool
+	NodeID                            string
+	AgentToken                        string
+	AdminToken                        string
+	TrustedProxies                    string
+	AgentBinaryPath                   string
+	AgentVersion                      string
+	DisableNotifications              bool
+	NotificationAuthorityKey          string
+	NotificationCredentialKey         []byte
+	NotificationAuthorityActiveKeyID  string
+	NotificationAuthorityKeys         map[string]string
+	NotificationCredentialActiveKeyID string
+	NotificationCredentialKeys        map[string][]byte
 }
 
 type controllerRuntime struct {
@@ -41,6 +47,10 @@ type controllerRuntime struct {
 }
 
 func buildController(config handlerConfig) (*controllerRuntime, error) {
+	trustedProxies, err := api.ParseTrustedProxies(config.TrustedProxies)
+	if err != nil {
+		return nil, fmt.Errorf("parse ZENO_TRUSTED_PROXIES: %w", err)
+	}
 	backgroundCtx, backgroundCancel := context.WithCancel(context.Background())
 	cleanupHandlers := []func(context.Context) error{func(context.Context) error {
 		backgroundCancel()
@@ -50,6 +60,7 @@ func buildController(config handlerConfig) (*controllerRuntime, error) {
 		StaticDir: config.WebDir, AgentBinaryPath: config.AgentBinaryPath, AgentVersion: config.AgentVersion,
 		BackgroundContext:    backgroundCtx,
 		DisableNotifications: config.DisableNotifications,
+		TrustedProxies:       trustedProxies,
 	}
 	if strings.TrimSpace(config.AdminToken) != "" {
 		options.AdminTokenHash = api.HashAdminToken(config.AdminToken)
@@ -62,7 +73,13 @@ func buildController(config handlerConfig) (*controllerRuntime, error) {
 			return nil, err
 		}
 		store = opened
-		if len(config.NotificationCredentialKey) > 0 {
+		if len(config.NotificationCredentialKeys) > 0 {
+			if err := store.ConfigureNotificationCredentialKeyring(context.Background(), config.NotificationCredentialActiveKeyID, config.NotificationCredentialKeys); err != nil {
+				_ = store.Close()
+				backgroundCancel()
+				return nil, err
+			}
+		} else if len(config.NotificationCredentialKey) > 0 {
 			if err := store.ConfigureNotificationCredentialEncryption(context.Background(), config.NotificationCredentialKey); err != nil {
 				_ = store.Close()
 				backgroundCancel()
@@ -73,7 +90,12 @@ func buildController(config handlerConfig) (*controllerRuntime, error) {
 			backgroundCancel()
 			return nil, err
 		}
-		authorized, err := store.AuthorizeNotificationAuthority(context.Background(), config.NotificationAuthorityKey)
+		var authorized bool
+		if len(config.NotificationAuthorityKeys) > 0 {
+			authorized, err = store.AuthorizeNotificationAuthorityKeyring(context.Background(), config.NotificationAuthorityActiveKeyID, config.NotificationAuthorityKeys)
+		} else {
+			authorized, err = store.AuthorizeNotificationAuthority(context.Background(), config.NotificationAuthorityKey)
+		}
 		if err != nil {
 			_ = store.Close()
 			backgroundCancel()
@@ -155,7 +177,9 @@ func readNotificationCredentialKeyFile(keyFile string) ([]byte, error) {
 	if !info.Mode().IsRegular() {
 		return nil, fmt.Errorf("notification key file must be a regular file")
 	}
-	if info.Mode().Perm()&0o077 != 0 {
+	// Root-owned Docker secrets may grant read-only access to the fixed runtime
+	// group (0640). Group write/execute and every "other" bit remain forbidden.
+	if info.Mode().Perm()&0o037 != 0 {
 		return nil, fmt.Errorf("notification key file permissions are too open")
 	}
 	file, err := os.Open(keyFile)
@@ -167,7 +191,7 @@ func readNotificationCredentialKeyFile(keyFile string) ([]byte, error) {
 	if err != nil || !openedInfo.Mode().IsRegular() || !os.SameFile(info, openedInfo) {
 		return nil, fmt.Errorf("notification key file changed while opening")
 	}
-	if openedInfo.Mode().Perm()&0o077 != 0 {
+	if openedInfo.Mode().Perm()&0o037 != 0 {
 		return nil, fmt.Errorf("notification key file permissions are too open")
 	}
 	content, err := io.ReadAll(io.LimitReader(file, 1025))
@@ -180,6 +204,25 @@ func readNotificationCredentialKeyFile(keyFile string) ([]byte, error) {
 	key, err := parseNotificationCredentialKey(content)
 	if err != nil {
 		return nil, err
+	}
+	return key, nil
+}
+
+func readNotificationAuthorityKeyFile(keyFile string) (string, error) {
+	keyFile = strings.TrimSpace(keyFile)
+	if keyFile == "" {
+		return "", nil
+	}
+	content, err := readRestrictedNotificationKeyringFile(keyFile)
+	if err != nil {
+		return "", fmt.Errorf("notification authority key file unavailable")
+	}
+	if len(content) > 1024 {
+		return "", fmt.Errorf("notification authority key file is too large")
+	}
+	key := strings.TrimSpace(string(content))
+	if key == "" {
+		return "", fmt.Errorf("notification authority key file is empty")
 	}
 	return key, nil
 }
@@ -212,6 +255,215 @@ func parseNotificationCredentialKey(content []byte) ([]byte, error) {
 	return nil, fmt.Errorf("notification key file must contain a 32-byte key")
 }
 
+func readNotificationCredentialKeyringFile(path string) (string, map[string][]byte, error) {
+	content, err := readRestrictedNotificationKeyringFile(path)
+	if err != nil || len(content) == 0 {
+		return "", nil, err
+	}
+	activeKeyID, encodedKeys, err := decodeNotificationKeyringDocument(content)
+	if err != nil {
+		return "", nil, fmt.Errorf("invalid notification credential key ring")
+	}
+	keys := make(map[string][]byte, len(encodedKeys))
+	for keyID, encodedKey := range encodedKeys {
+		key, err := parseNotificationCredentialKey([]byte(encodedKey))
+		if err != nil {
+			return "", nil, fmt.Errorf("invalid notification credential key ring")
+		}
+		keys[keyID] = key
+	}
+	if _, ok := keys[activeKeyID]; !ok {
+		return "", nil, fmt.Errorf("invalid notification credential key ring")
+	}
+	return activeKeyID, keys, nil
+}
+
+func readNotificationAuthorityKeyringFile(path string) (string, map[string]string, error) {
+	content, err := readRestrictedNotificationKeyringFile(path)
+	if err != nil || len(content) == 0 {
+		return "", nil, err
+	}
+	activeKeyID, encodedKeys, err := decodeNotificationKeyringDocument(content)
+	if err != nil {
+		return "", nil, fmt.Errorf("invalid notification authority key ring")
+	}
+	keys := make(map[string]string, len(encodedKeys))
+	for keyID, key := range encodedKeys {
+		key = strings.TrimSpace(key)
+		if key == "" {
+			return "", nil, fmt.Errorf("invalid notification authority key ring")
+		}
+		keys[keyID] = key
+	}
+	if _, ok := keys[activeKeyID]; !ok {
+		return "", nil, fmt.Errorf("invalid notification authority key ring")
+	}
+	return activeKeyID, keys, nil
+}
+
+// decodeNotificationKeyringDocument deliberately avoids unmarshalling JSON
+// objects straight into maps: encoding/json otherwise accepts duplicate keys
+// with last-value-wins semantics. Key material and active-key selection must be
+// unambiguous, so duplicate fields, duplicate key ids, surrounding key-id
+// whitespace, unknown fields and trailing JSON are all rejected.
+func decodeNotificationKeyringDocument(content []byte) (string, map[string]string, error) {
+	document, err := decodeStrictJSONObject(content)
+	if err != nil || len(document) != 2 {
+		return "", nil, fmt.Errorf("invalid key ring document")
+	}
+	activeRaw, activeOK := document["active_key_id"]
+	keysRaw, keysOK := document["keys"]
+	if !activeOK || !keysOK {
+		return "", nil, fmt.Errorf("invalid key ring document")
+	}
+	var activeKeyID string
+	if err := json.Unmarshal(activeRaw, &activeKeyID); err != nil {
+		return "", nil, err
+	}
+	normalizedActiveKeyID := strings.TrimSpace(activeKeyID)
+	if normalizedActiveKeyID != activeKeyID || !validNotificationKeyID(normalizedActiveKeyID) {
+		return "", nil, fmt.Errorf("invalid active key id")
+	}
+	keys, err := decodeStrictJSONStringMap(keysRaw)
+	if err != nil || len(keys) == 0 {
+		return "", nil, fmt.Errorf("invalid key map")
+	}
+	for keyID := range keys {
+		normalizedKeyID := strings.TrimSpace(keyID)
+		if normalizedKeyID != keyID || !validNotificationKeyID(normalizedKeyID) {
+			return "", nil, fmt.Errorf("invalid key id")
+		}
+	}
+	if _, ok := keys[normalizedActiveKeyID]; !ok {
+		return "", nil, fmt.Errorf("active key id is not in key map")
+	}
+	return normalizedActiveKeyID, keys, nil
+}
+
+func validNotificationKeyID(keyID string) bool {
+	if len(keyID) == 0 || len(keyID) > 64 {
+		return false
+	}
+	for _, character := range keyID {
+		if (character >= 'a' && character <= 'z') || (character >= 'A' && character <= 'Z') || (character >= '0' && character <= '9') || character == '-' || character == '_' || character == '.' {
+			continue
+		}
+		return false
+	}
+	return true
+}
+
+func decodeStrictJSONObject(content []byte) (map[string]json.RawMessage, error) {
+	decoder := json.NewDecoder(bytes.NewReader(content))
+	token, err := decoder.Token()
+	if err != nil || token != json.Delim('{') {
+		return nil, fmt.Errorf("JSON object required")
+	}
+	values := make(map[string]json.RawMessage)
+	for decoder.More() {
+		keyToken, err := decoder.Token()
+		if err != nil {
+			return nil, err
+		}
+		key, ok := keyToken.(string)
+		if !ok {
+			return nil, fmt.Errorf("invalid JSON object key")
+		}
+		if _, duplicate := values[key]; duplicate {
+			return nil, fmt.Errorf("duplicate JSON object key")
+		}
+		var value json.RawMessage
+		if err := decoder.Decode(&value); err != nil {
+			return nil, err
+		}
+		values[key] = value
+	}
+	if token, err := decoder.Token(); err != nil || token != json.Delim('}') {
+		return nil, fmt.Errorf("invalid JSON object")
+	}
+	if err := requireJSONDecoderEOF(decoder); err != nil {
+		return nil, err
+	}
+	return values, nil
+}
+
+func decodeStrictJSONStringMap(content []byte) (map[string]string, error) {
+	decoder := json.NewDecoder(bytes.NewReader(content))
+	token, err := decoder.Token()
+	if err != nil || token != json.Delim('{') {
+		return nil, fmt.Errorf("JSON object required")
+	}
+	values := make(map[string]string)
+	for decoder.More() {
+		keyToken, err := decoder.Token()
+		if err != nil {
+			return nil, err
+		}
+		key, ok := keyToken.(string)
+		if !ok {
+			return nil, fmt.Errorf("invalid JSON object key")
+		}
+		if _, duplicate := values[key]; duplicate {
+			return nil, fmt.Errorf("duplicate JSON object key")
+		}
+		var value string
+		if err := decoder.Decode(&value); err != nil {
+			return nil, err
+		}
+		values[key] = value
+	}
+	if token, err := decoder.Token(); err != nil || token != json.Delim('}') {
+		return nil, fmt.Errorf("invalid JSON object")
+	}
+	if err := requireJSONDecoderEOF(decoder); err != nil {
+		return nil, err
+	}
+	return values, nil
+}
+
+func requireJSONDecoderEOF(decoder *json.Decoder) error {
+	var trailing json.RawMessage
+	if err := decoder.Decode(&trailing); err != io.EOF {
+		if err == nil {
+			return fmt.Errorf("trailing JSON value")
+		}
+		return err
+	}
+	return nil
+}
+
+func readRestrictedNotificationKeyringFile(path string) ([]byte, error) {
+	path = strings.TrimSpace(path)
+	if path == "" {
+		return nil, nil
+	}
+	info, err := os.Lstat(path)
+	if err != nil || !info.Mode().IsRegular() || info.Mode()&os.ModeSymlink != 0 {
+		return nil, fmt.Errorf("notification key ring file unavailable")
+	}
+	if info.Mode().Perm()&0o037 != 0 {
+		return nil, fmt.Errorf("notification key ring file permissions are too open")
+	}
+	file, err := os.Open(path)
+	if err != nil {
+		return nil, fmt.Errorf("notification key ring file unavailable")
+	}
+	defer file.Close()
+	openedInfo, err := file.Stat()
+	if err != nil || !openedInfo.Mode().IsRegular() || !os.SameFile(info, openedInfo) || openedInfo.Mode().Perm()&0o037 != 0 {
+		return nil, fmt.Errorf("notification key ring file changed while opening")
+	}
+	const maximumKeyringBytes = 16 << 10
+	content, err := io.ReadAll(io.LimitReader(file, maximumKeyringBytes+1))
+	if err != nil {
+		return nil, fmt.Errorf("notification key ring file unavailable")
+	}
+	if len(content) > maximumKeyringBytes {
+		return nil, fmt.Errorf("notification key ring file is too large")
+	}
+	return content, nil
+}
+
 const notificationCredentialKeySize = 32
 
 func main() {
@@ -228,7 +480,9 @@ func main() {
 	agentBinaryPath := flag.String("agent-binary", "", "optional Zeno agent linux/amd64 binary path served for dashboard install commands")
 	agentVersion := flag.String("agent-version", "", "optional version string inserted into generated agent install commands")
 	notificationAuthorityKeyFile := flag.String("notification-authority-key-file", "", "file containing the external notification authority key")
+	notificationAuthorityKeyringFile := flag.String("notification-authority-keyring-file", "", "JSON file containing active and previous notification authority keys")
 	notificationCredentialKeyFile := flag.String("notification-credential-key-file", "", "file containing the external notification credential encryption key")
+	notificationCredentialKeyringFile := flag.String("notification-credential-keyring-file", "", "JSON file containing active and previous notification credential encryption keys")
 	probeInterval := flag.Duration("probe-interval", time.Minute, "controller-local probe collection interval")
 	checkDB := flag.Bool("check-db", false, "run SQLite schema setup and PRAGMA quick_check, then exit")
 	flag.Parse()
@@ -251,21 +505,50 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	notificationAuthorityKey, err := readSecret("", *notificationAuthorityKeyFile)
+	authorityKeyringFile := strings.TrimSpace(*notificationAuthorityKeyringFile)
+	if authorityKeyringFile == "" {
+		authorityKeyringFile = strings.TrimSpace(os.Getenv("ZENO_NOTIFICATION_AUTHORITY_KEYRING_FILE"))
+	}
+	var notificationAuthorityKey string
+	var notificationAuthorityActiveKeyID string
+	var notificationAuthorityKeys map[string]string
+	if authorityKeyringFile != "" {
+		notificationAuthorityActiveKeyID, notificationAuthorityKeys, err = readNotificationAuthorityKeyringFile(authorityKeyringFile)
+	} else {
+		notificationAuthorityKey, err = readNotificationAuthorityKeyFile(*notificationAuthorityKeyFile)
+	}
 	if err != nil {
 		log.Fatal(err)
 	}
-	credentialKeyFile := strings.TrimSpace(*notificationCredentialKeyFile)
-	if credentialKeyFile == "" {
-		credentialKeyFile = strings.TrimSpace(os.Getenv("ZENO_NOTIFICATION_CREDENTIAL_KEY_FILE"))
+	credentialKeyringFile := strings.TrimSpace(*notificationCredentialKeyringFile)
+	if credentialKeyringFile == "" {
+		credentialKeyringFile = strings.TrimSpace(os.Getenv("ZENO_NOTIFICATION_CREDENTIAL_KEYRING_FILE"))
 	}
-	notificationCredentialKey, err := readNotificationCredentialKeyFile(credentialKeyFile)
+	var notificationCredentialKey []byte
+	var notificationCredentialActiveKeyID string
+	var notificationCredentialKeys map[string][]byte
+	if credentialKeyringFile != "" {
+		notificationCredentialActiveKeyID, notificationCredentialKeys, err = readNotificationCredentialKeyringFile(credentialKeyringFile)
+	} else {
+		credentialKeyFile := strings.TrimSpace(*notificationCredentialKeyFile)
+		if credentialKeyFile == "" {
+			credentialKeyFile = strings.TrimSpace(os.Getenv("ZENO_NOTIFICATION_CREDENTIAL_KEY_FILE"))
+		}
+		notificationCredentialKey, err = readNotificationCredentialKeyFile(credentialKeyFile)
+	}
 	if err != nil {
 		log.Fatal(err)
 	}
 
 	disableNotifications := strings.EqualFold(strings.TrimSpace(os.Getenv("ZENO_NOTIFICATIONS_DISABLED")), "true") || strings.TrimSpace(os.Getenv("ZENO_NOTIFICATIONS_DISABLED")) == "1"
-	runtime, err := buildController(handlerConfig{DBPath: *dbPath, WebDir: *webDir, SeedPreview: *seedPreview, NodeID: *nodeID, AgentToken: token, AdminToken: adminSecret, AgentBinaryPath: *agentBinaryPath, AgentVersion: *agentVersion, DisableNotifications: disableNotifications, NotificationAuthorityKey: notificationAuthorityKey, NotificationCredentialKey: notificationCredentialKey})
+	runtime, err := buildController(handlerConfig{
+		DBPath: *dbPath, WebDir: *webDir, SeedPreview: *seedPreview, NodeID: *nodeID,
+		AgentToken: token, AdminToken: adminSecret, TrustedProxies: os.Getenv("ZENO_TRUSTED_PROXIES"),
+		AgentBinaryPath: *agentBinaryPath, AgentVersion: *agentVersion, DisableNotifications: disableNotifications,
+		NotificationAuthorityKey: notificationAuthorityKey, NotificationCredentialKey: notificationCredentialKey,
+		NotificationAuthorityActiveKeyID: notificationAuthorityActiveKeyID, NotificationAuthorityKeys: notificationAuthorityKeys,
+		NotificationCredentialActiveKeyID: notificationCredentialActiveKeyID, NotificationCredentialKeys: notificationCredentialKeys,
+	})
 	if err != nil {
 		log.Fatal(err)
 	}

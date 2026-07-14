@@ -66,10 +66,14 @@ func (s *SQLiteStore) CreateAdminNotificationChannel(ctx context.Context, create
 	if err != nil {
 		return AdminNotificationChannel{}, err
 	}
+	destinationFingerprint := notificationDestinationFingerprint("telegram", create.Destination)
 	result, err := s.db.ExecContext(ctx, `
-		INSERT OR IGNORE INTO notification_channels (id, name, destination, credential, enabled, created_at, updated_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?)
-	`, channelID, create.Name, create.Destination, credential, enabled, now, now)
+		INSERT OR IGNORE INTO notification_channels (
+			id, name, destination, credential, delivery_version,
+			destination_fingerprint, enabled, created_at, updated_at
+		)
+		VALUES (?, ?, ?, ?, 1, ?, ?, ?, ?)
+	`, channelID, create.Name, create.Destination, credential, destinationFingerprint, enabled, now, now)
 	if err != nil {
 		return AdminNotificationChannel{}, err
 	}
@@ -91,15 +95,47 @@ func (s *SQLiteStore) UpdateAdminNotificationChannel(ctx context.Context, channe
 	if err := update.normalize(); err != nil {
 		return AdminNotificationChannel{}, err
 	}
-	var exists int
-	if err := s.db.QueryRowContext(ctx, `SELECT 1 FROM notification_channels WHERE id = ?`, channelID).Scan(&exists); err != nil {
+	var encryptedCredential string
+	if update.Credential != nil {
+		credential, err := s.encryptNotificationCredentialForStorage(channelID, "telegram", *update.Credential)
+		if err != nil {
+			return AdminNotificationChannel{}, err
+		}
+		encryptedCredential = credential
+	}
+
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return AdminNotificationChannel{}, err
+	}
+	defer rollbackUnlessCommitted(tx)
+	var currentDestination string
+	var currentVersion int64
+	if err := tx.QueryRowContext(ctx, `
+		SELECT destination, delivery_version
+		FROM notification_channels WHERE id = ?
+	`, channelID).Scan(&currentDestination, &currentVersion); err != nil {
 		if err == sql.ErrNoRows {
 			return AdminNotificationChannel{}, errNotificationChannelNotFound
 		}
 		return AdminNotificationChannel{}, err
 	}
-	sets := make([]string, 0, 6)
-	args := make([]any, 0, 7)
+	if currentVersion < 1 {
+		currentVersion = 1
+	}
+	routingChanged := update.Destination != nil || update.Credential != nil
+	newDestination := currentDestination
+	if update.Destination != nil {
+		newDestination = *update.Destination
+	}
+	newVersion := currentVersion
+	if routingChanged {
+		newVersion++
+	}
+	newFingerprint := notificationDestinationFingerprint("telegram", newDestination)
+
+	sets := make([]string, 0, 8)
+	args := make([]any, 0, 9)
 	if update.Name != nil {
 		sets = append(sets, "name = ?")
 		args = append(args, *update.Name)
@@ -109,12 +145,8 @@ func (s *SQLiteStore) UpdateAdminNotificationChannel(ctx context.Context, channe
 		args = append(args, *update.Destination)
 	}
 	if update.Credential != nil {
-		credential, err := s.encryptNotificationCredentialForStorage(channelID, "telegram", *update.Credential)
-		if err != nil {
-			return AdminNotificationChannel{}, err
-		}
 		sets = append(sets, "credential = ?")
-		args = append(args, credential)
+		args = append(args, encryptedCredential)
 	}
 	if update.Enabled != nil {
 		sets = append(sets, "enabled = ?")
@@ -124,14 +156,50 @@ func (s *SQLiteStore) UpdateAdminNotificationChannel(ctx context.Context, channe
 			args = append(args, 0)
 		}
 	}
+	if routingChanged {
+		sets = append(sets, "delivery_version = ?", "destination_fingerprint = ?")
+		args = append(args, newVersion, newFingerprint)
+	}
 	if len(sets) == 0 {
 		return AdminNotificationChannel{}, errInvalidAdminNotificationChannelWrite
 	}
+	nowUnix := time.Now().UTC().Unix()
 	sets = append(sets, "updated_at = ?")
-	args = append(args, time.Now().UTC().Unix(), channelID)
-	if _, err := s.db.ExecContext(ctx, "UPDATE notification_channels SET "+strings.Join(sets, ", ")+" WHERE id = ?", args...); err != nil {
+	args = append(args, nowUnix, channelID)
+	result, err := tx.ExecContext(ctx, "UPDATE notification_channels SET "+strings.Join(sets, ", ")+" WHERE id = ?", args...)
+	if err != nil {
 		return AdminNotificationChannel{}, err
 	}
+	affected, err := result.RowsAffected()
+	if err != nil {
+		return AdminNotificationChannel{}, err
+	}
+	if affected != 1 {
+		return AdminNotificationChannel{}, errNotificationChannelNotFound
+	}
+
+	disabling := update.Enabled != nil && !*update.Enabled
+	if routingChanged || disabling {
+		reason := "notification channel changed"
+		if disabling && !routingChanged {
+			reason = "notification channel disabled"
+		}
+		// Old generations are terminal. A later re-enable or id reuse cannot
+		// silently send their payload to a different destination/credential.
+		if _, err := tx.ExecContext(ctx, `
+			UPDATE notification_deliveries
+			SET state = 'canceled', last_error = ?, lease_until = 0,
+			    claim_token = '', updated_at = ?
+			WHERE channel_id = ?
+			  AND state IN ('pending', 'paused', 'failed', 'leased')
+		`, reason, nowUnix, channelID); err != nil {
+			return AdminNotificationChannel{}, err
+		}
+	}
+	if err := tx.Commit(); err != nil {
+		return AdminNotificationChannel{}, err
+	}
+	tx = nil
 	return s.adminNotificationChannelByID(ctx, channelID)
 }
 
@@ -140,7 +208,22 @@ func (s *SQLiteStore) DeleteAdminNotificationChannel(ctx context.Context, channe
 	if channelID == "" {
 		return errNotificationChannelNotFound
 	}
-	result, err := s.db.ExecContext(ctx, `DELETE FROM notification_channels WHERE id = ?`, channelID)
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer rollbackUnlessCommitted(tx)
+	nowUnix := time.Now().UTC().Unix()
+	if _, err := tx.ExecContext(ctx, `
+		UPDATE notification_deliveries
+		SET state = 'canceled', last_error = 'notification channel deleted',
+		    lease_until = 0, claim_token = '', updated_at = ?
+		WHERE channel_id = ?
+		  AND state IN ('pending', 'paused', 'failed', 'leased')
+	`, nowUnix, channelID); err != nil {
+		return err
+	}
+	result, err := tx.ExecContext(ctx, `DELETE FROM notification_channels WHERE id = ?`, channelID)
 	if err != nil {
 		return err
 	}
@@ -151,6 +234,10 @@ func (s *SQLiteStore) DeleteAdminNotificationChannel(ctx context.Context, channe
 	if affected == 0 {
 		return errNotificationChannelNotFound
 	}
+	if err := tx.Commit(); err != nil {
+		return err
+	}
+	tx = nil
 	return nil
 }
 
@@ -175,10 +262,11 @@ func (s *SQLiteStore) AdminNotificationDispatchChannel(ctx context.Context, chan
 	var channel notificationDispatchChannel
 	var storedCredential string
 	if err := s.db.QueryRowContext(ctx, `
-		SELECT id, name, destination, credential
+		SELECT id, name, destination, credential, delivery_version, destination_fingerprint
 		FROM notification_channels
 		WHERE id = ? AND enabled = 1
-	`, channelID).Scan(&channel.ID, &channel.Name, &channel.Destination, &storedCredential); err != nil {
+	`, channelID).Scan(&channel.ID, &channel.Name, &channel.Destination, &storedCredential,
+		&channel.DeliveryVersion, &channel.DestinationFingerprint); err != nil {
 		if err == sql.ErrNoRows {
 			return notificationDispatchChannel{}, errNotificationChannelNotFound
 		}
@@ -216,7 +304,12 @@ func (s *SQLiteStore) UpdateAdminNotificationType(ctx context.Context, eventType
 		enabled = 1
 	}
 	now := time.Now().UTC().Unix()
-	if _, err := s.db.ExecContext(ctx, `
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return AdminNotificationType{}, err
+	}
+	defer rollbackUnlessCommitted(tx)
+	if _, err := tx.ExecContext(ctx, `
 		INSERT INTO notification_types (event_type, enabled, updated_at)
 		VALUES (?, ?, ?)
 		ON CONFLICT(event_type) DO UPDATE SET enabled = excluded.enabled, updated_at = excluded.updated_at
@@ -227,13 +320,25 @@ func (s *SQLiteStore) UpdateAdminNotificationType(ctx context.Context, eventType
 	// alert rule (currently node_offline and renewal_due) update that rule. Do
 	// not fan out by notification_event_type; resource rules share
 	// probe_unhealthy and must remain independently configurable.
-	if _, err := s.db.ExecContext(ctx, `
+	result, err := tx.ExecContext(ctx, `
 		UPDATE alert_rules
 		SET enabled = ?, updated_at = ?
 		WHERE id = ?
-	`, enabled, now, eventType); err != nil {
+	`, enabled, now, eventType)
+	if err != nil {
 		return AdminNotificationType{}, err
 	}
+	affected, err := result.RowsAffected()
+	if err != nil {
+		return AdminNotificationType{}, err
+	}
+	if affected != 1 {
+		return AdminNotificationType{}, errNotificationTypeNotFound
+	}
+	if err := tx.Commit(); err != nil {
+		return AdminNotificationType{}, err
+	}
+	tx = nil
 	return AdminNotificationType{EventType: eventType, Label: label, Enabled: *update.Enabled, UpdatedAt: time.Unix(now, 0).UTC().Format(time.RFC3339)}, nil
 }
 

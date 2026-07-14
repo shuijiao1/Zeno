@@ -202,6 +202,8 @@ CREATE TABLE notification_channels (
   name TEXT NOT NULL,
   destination TEXT NOT NULL,
   credential TEXT NOT NULL,
+  delivery_version INTEGER NOT NULL DEFAULT 1,
+  destination_fingerprint TEXT NOT NULL DEFAULT '',
   enabled INTEGER NOT NULL DEFAULT 1,
   created_at INTEGER NOT NULL,
   updated_at INTEGER NOT NULL
@@ -215,19 +217,28 @@ CREATE TABLE notification_types (
 
 CREATE TABLE notification_deliveries (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
+  event_id TEXT NOT NULL DEFAULT '',
   event_type TEXT NOT NULL,
   label TEXT NOT NULL DEFAULT '',
   node_id TEXT NOT NULL DEFAULT '',
   node_name TEXT NOT NULL DEFAULT '',
+  node_ip TEXT NOT NULL DEFAULT '',
   previous_status TEXT NOT NULL DEFAULT '',
   status TEXT NOT NULL DEFAULT '',
+  event_ts TEXT NOT NULL DEFAULT '',
   detail TEXT NOT NULL DEFAULT '',
   channel_id TEXT NOT NULL,
   channel_name TEXT NOT NULL DEFAULT '',
+  channel_version INTEGER NOT NULL DEFAULT 1,
+  destination_fingerprint TEXT NOT NULL DEFAULT '',
   state TEXT NOT NULL DEFAULT 'pending',
   attempts INTEGER NOT NULL DEFAULT 0,
   next_attempt_at INTEGER NOT NULL,
   last_error TEXT NOT NULL DEFAULT '',
+  lease_until INTEGER NOT NULL DEFAULT 0,
+  claim_token TEXT NOT NULL DEFAULT '',
+  causal_predecessor_event_id TEXT NOT NULL DEFAULT '',
+  superseded_by_event_id TEXT NOT NULL DEFAULT '',
   created_at INTEGER NOT NULL,
   updated_at INTEGER NOT NULL,
   delivered_at INTEGER
@@ -235,10 +246,21 @@ CREATE TABLE notification_deliveries (
 
 ```
 
-`credential` 不通过 Admin API 响应返回；`notification_types` 仅保留旧 API 兼容，发送开关以 `alert_rules.enabled` 为准。
-通知事件与 incident/续费按日去重标记在同一事务中写入 outbox；发送失败按退避策略最多
-尝试 5 次，Controller 重启后继续处理。投递历史只保存净化后的错误，不保存 Bot
-Token 或请求 URL。
+`credential` 不通过 Admin API 响应返回；delivery 也不复制 destination 或 credential，只绑定
+`channel_version` 和不可逆 destination fingerprint。渠道目标、凭据或启用状态变化，以及渠道删除，
+都会把旧 generation 的积压明确变成 terminal `canceled`；历史清理可删除该状态。
+`notification_types` 仅保留旧 API 兼容，发送开关以 `alert_rules.enabled` 为准；兼容 PATCH 的两表写入
+在同一事务内完成。
+
+通知事件与 incident/续费按日去重标记在同一事务中写入 outbox；同一渠道、节点和事件流通过
+`causal_predecessor_event_id` 串联。未开始尝试的离线可由恢复 supersede；一旦离线投递开始尝试，
+恢复必须等待，前驱最终失败时恢复转为 `canceled`。`event_ts` 保存原事件时间，重试沿用稳定
+`event_id`。
+
+发送语义是 **at-least-once**：单次只 claim 一条，5 秒发送超时小于 30 秒 lease；ack 使用
+claim token 并检查 RowsAffected。远端已接受后 Controller 在 ack 前崩溃仍可能重发，支持去重的
+接收端应使用稳定 `event_id`。失败按退避策略最多尝试 5 次，Controller 重启后继续处理；投递
+历史只保存净化后的错误和不可逆绑定，不保存 Bot Token、明文接收目标或请求 URL。
 
 ## alert_rules / alert_rule_node_scopes / alert_rule_states
 

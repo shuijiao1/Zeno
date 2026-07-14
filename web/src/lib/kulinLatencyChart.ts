@@ -21,6 +21,11 @@ export interface KulinChartView {
   rows: KulinChartRow[]
   lineKeys: string[]
   showPacketLossArea: boolean
+  packetLossKey: string | null
+}
+
+export function kulinPacketLossKey(targetId: string): string {
+  return `${targetId}_packet_loss`
 }
 
 export function calculateKulinPacketLoss(delays: Array<number | null | undefined>): number[] {
@@ -128,8 +133,8 @@ export function buildKulinChartRows(series: KulinTargetSeries[]): KulinChartRow[
       const row: KulinChartRow = { created_at: createdAt }
       for (const target of series) {
         const point = pointsByTargetTime.get(target.targetId)?.get(createdAt)
-        row[target.targetName] = point ? point.avg_delay : null
-        row[`${target.targetName}_packet_loss`] = point ? point.packet_loss : null
+        row[target.targetId] = point ? point.avg_delay : null
+        row[kulinPacketLossKey(target.targetId)] = point ? point.packet_loss : null
       }
       return row
     })
@@ -137,25 +142,29 @@ export function buildKulinChartRows(series: KulinTargetSeries[]): KulinChartRow[
   return rows
 }
 
-export function selectKulinChartView(series: KulinTargetSeries[], rows: KulinChartRow[], activeTargetNames: string[]): KulinChartView {
-  if (activeTargetNames.length === 1) {
-    const selectedName = activeTargetNames[0]
-    const selected = series.find((target) => target.targetName === selectedName)
+export function selectKulinChartView(series: KulinTargetSeries[], rows: KulinChartRow[], activeTargetIds: string[]): KulinChartView {
+  if (activeTargetIds.length === 1) {
+    const selectedId = activeTargetIds[0]
+    const selected = series.find((target) => target.targetId === selectedId)
+    const packetLossKey = selected ? kulinPacketLossKey(selected.targetId) : null
     return {
-      rows: selected ? selected.points.map((point) => ({
+      rows: selected && packetLossKey ? selected.points.map((point) => ({
         created_at: point.created_at,
-        avg_delay: point.avg_delay,
-        packet_loss: point.packet_loss,
+        [selected.targetId]: point.avg_delay,
+        [packetLossKey]: point.packet_loss,
       })) : [],
-      lineKeys: ['avg_delay'],
-      showPacketLossArea: true,
+      lineKeys: selected ? [selected.targetId] : [],
+      showPacketLossArea: Boolean(selected),
+      packetLossKey,
     }
   }
 
+  const knownTargetIds = new Set(series.map((target) => target.targetId))
   return {
     rows,
-    lineKeys: activeTargetNames.length > 1 ? activeTargetNames : series.map((target) => target.targetName),
+    lineKeys: activeTargetIds.length > 1 ? activeTargetIds.filter((targetId) => knownTargetIds.has(targetId)) : series.map((target) => target.targetId),
     showPacketLossArea: false,
+    packetLossKey: null,
   }
 }
 

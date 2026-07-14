@@ -8,6 +8,8 @@ AGENT_INSTALL_URL="https://zeno.shuijiao.de/agent/install.sh"
 AGENT_WINDOWS_INSTALL_URL="https://zeno.shuijiao.de/agent/install.ps1"
 NOTIFICATION_CREDENTIAL_KEY_FILE="/run/secrets/zeno_notification_credential_key"
 IMAGE="${ZENO_IMAGE:-}"
+REQUESTED_IMAGE=""
+TARGET_VERSION_LABEL=""
 INSTALL_DIR="${ZENO_INSTALL_DIR:-/opt/zeno}"
 HOST_PORT="${ZENO_HOST_PORT:-}"
 CONTAINER_NAME="${ZENO_CONTAINER_NAME:-}"
@@ -26,6 +28,16 @@ BACKUP_KEEP_COUNT="${ZENO_BACKUP_KEEP_COUNT:-5}"
 FAILED_STATE_KEEP_COUNT="${ZENO_FAILED_STATE_KEEP_COUNT:-3}"
 BUILD_KEEP_COUNT="${ZENO_BUILD_KEEP_COUNT:-3}"
 MIN_FREE_BYTES="${ZENO_MIN_FREE_BYTES:-67108864}"
+DB_CHECK_TIMEOUT_SECONDS="${ZENO_DB_CHECK_TIMEOUT_SECONDS:-300}"
+VERIFY_ATTESTATION="${ZENO_VERIFY_ATTESTATION:-true}"
+TRUSTED_PROXIES="${ZENO_TRUSTED_PROXIES:-}"
+DOCKER_SUBNET="${ZENO_DOCKER_SUBNET:-}"
+DOCKER_GATEWAY="${ZENO_DOCKER_GATEWAY:-}"
+CONTAINER_IP="${ZENO_CONTAINER_IP:-}"
+ROLLBACK_IMAGE_ID=""
+ROLLBACK_IMAGE_REF=""
+ROLLBACK_IMAGE_DIGEST=""
+ROLLBACK_IMAGE_REVISION=""
 
 fail() {
   echo "错误: $*" >&2
@@ -71,6 +83,36 @@ random_secret() {
   fi
 }
 
+json_escape_string() {
+  local value="$1"
+  value=${value//\\/\\\\}
+  value=${value//\"/\\\"}
+  value=${value//$'\n'/\\n}
+  value=${value//$'\r'/\\r}
+  value=${value//$'\t'/\\t}
+  printf '%s' "$value"
+}
+
+ensure_single_keyring_file() {
+  local keyring_path="$1"
+  local source_secret_path="$2"
+  reject_symlink "$keyring_path" "notification keyring" || return 1
+  if [ -s "$keyring_path" ]; then
+    return 0
+  fi
+  local secret_value=""
+  IFS= read -r secret_value < "$source_secret_path" || [ -n "$secret_value" ] || return 1
+  [ -n "$secret_value" ] || return 1
+  local escaped_value
+  escaped_value=$(json_escape_string "$secret_value") || return 1
+  local tmp="${keyring_path}.new.$$"
+  rm -f -- "$tmp"
+  printf '{"active_key_id":"primary","keys":{"primary":"%s"}}\n' "$escaped_value" > "$tmp" || return 1
+  chown "0:$ZENO_GID" "$tmp" || return 1
+  chmod 640 "$tmp" || return 1
+  mv -f -- "$tmp" "$keyring_path" || return 1
+}
+
 read_env_value_from() {
   local file="$1"
   local key="$2"
@@ -98,6 +140,15 @@ validate_non_negative_int() {
   fi
 }
 
+validate_bool() {
+  local value="$1"
+  local name="$2"
+  case "$value" in
+    true|false) ;;
+    *) fail "${name} 必须是 true 或 false" ;;
+  esac
+}
+
 validate_image_reference() {
   local image="$1"
   local image_name="${image##*/}"
@@ -108,8 +159,12 @@ validate_image_reference() {
 
 load_existing_env_defaults() {
   local value
-  if [ -z "$IMAGE" ] && value=$(read_env_value ZENO_IMAGE); then
-    IMAGE="$value"
+  if [ -z "$IMAGE" ]; then
+    if value=$(read_env_value ZENO_UPDATE_IMAGE); then
+      IMAGE="$value"
+    elif value=$(read_env_value ZENO_IMAGE); then
+      IMAGE="$value"
+    fi
   fi
   if [ -z "$HOST_PORT" ] && value=$(read_env_value ZENO_HOST_PORT); then
     HOST_PORT="$value"
@@ -120,16 +175,34 @@ load_existing_env_defaults() {
   if [ -z "$TZ_VALUE" ] && value=$(read_env_value TZ); then
     TZ_VALUE="$value"
   fi
+  if [ -z "$TRUSTED_PROXIES" ] && value=$(read_env_value ZENO_TRUSTED_PROXIES); then
+    TRUSTED_PROXIES="$value"
+  fi
+  if [ -z "$DOCKER_SUBNET" ] && value=$(read_env_value ZENO_DOCKER_SUBNET); then
+    DOCKER_SUBNET="$value"
+  fi
+  if [ -z "$DOCKER_GATEWAY" ] && value=$(read_env_value ZENO_DOCKER_GATEWAY); then
+    DOCKER_GATEWAY="$value"
+  fi
+  if [ -z "$CONTAINER_IP" ] && value=$(read_env_value ZENO_CONTAINER_IP); then
+    CONTAINER_IP="$value"
+  fi
 
   IMAGE="${IMAGE:-$DEFAULT_IMAGE}"
   HOST_PORT="${HOST_PORT:-18980}"
   CONTAINER_NAME="${CONTAINER_NAME:-zeno}"
   TZ_VALUE="${TZ_VALUE:-Asia/Shanghai}"
+  DOCKER_SUBNET="${DOCKER_SUBNET:-172.30.250.0/29}"
+  DOCKER_GATEWAY="${DOCKER_GATEWAY:-172.30.250.1}"
+  CONTAINER_IP="${CONTAINER_IP:-172.30.250.2}"
+  TRUSTED_PROXIES="${TRUSTED_PROXIES:-${DOCKER_GATEWAY}/32}"
   validate_image_reference "$IMAGE"
   validate_positive_int "$BACKUP_KEEP_COUNT" ZENO_BACKUP_KEEP_COUNT
   validate_positive_int "$FAILED_STATE_KEEP_COUNT" ZENO_FAILED_STATE_KEEP_COUNT
   validate_positive_int "$BUILD_KEEP_COUNT" ZENO_BUILD_KEEP_COUNT
   validate_non_negative_int "$MIN_FREE_BYTES" ZENO_MIN_FREE_BYTES
+  validate_positive_int "$DB_CHECK_TIMEOUT_SECONDS" ZENO_DB_CHECK_TIMEOUT_SECONDS
+  validate_bool "$VERIFY_ATTESTATION" ZENO_VERIFY_ATTESTATION
 }
 
 compose_from() {
@@ -146,12 +219,39 @@ compose_staging() {
   compose_from "$STAGING_DIR" "$@"
 }
 
+reject_symlink() {
+  local path="$1"
+  local label="$2"
+  if [ -L "$path" ]; then
+    echo "拒绝符号链接 ${label}: ${path}" >&2
+    return 1
+  fi
+}
+
 private_dir() {
   local dir="$1"
   local owner="$2"
+  local mode="${3:-700}"
+  reject_symlink "$dir" "目录" || return 1
   mkdir -p "$dir" || return 1
   chown "$owner" "$dir" || return 1
-  chmod 700 "$dir" || return 1
+  chmod "$mode" "$dir" || return 1
+}
+
+secure_secret_tree() {
+  local dir="$1"
+  reject_symlink "$dir" "secrets 目录" || return 1
+  mkdir -p "$dir" || return 1
+  # Take write ownership away from the runtime UID before inspecting entries,
+  # so a same-UID host process cannot race root into following a replacement.
+  chown "0:$ZENO_GID" "$dir" || return 1
+  chmod 750 "$dir" || return 1
+  if find "$dir" -mindepth 1 -type l -print -quit | grep -q .; then
+    echo "secrets 目录包含符号链接，拒绝继续: $dir" >&2
+    return 1
+  fi
+  find "$dir" -type d -exec chown "0:$ZENO_GID" {} + -exec chmod 750 {} + || return 1
+  find "$dir" -type f -exec chown "0:$ZENO_GID" {} + -exec chmod 640 {} + || return 1
 }
 
 set_runtime_permissions_for() {
@@ -162,18 +262,17 @@ set_runtime_permissions_for() {
       -exec chown "$ZENO_UID:$ZENO_GID" {} + -exec chmod 600 {} + || return 1
   fi
   if [ -d "$root/secrets" ]; then
-    find "$root/secrets" -type d -exec chown "$ZENO_UID:$ZENO_GID" {} + -exec chmod 700 {} + || return 1
-    find "$root/secrets" -type f -exec chown "$ZENO_UID:$ZENO_GID" {} + -exec chmod 600 {} + || return 1
+    secure_secret_tree "$root/secrets" || return 1
   fi
 }
 
 set_install_permissions() {
-  # Runtime directories are private by default. /data and /run/secrets must be
-  # readable/writable by the fixed non-root container user (10001:10001), while
+  # Runtime directories are private by default. /data is writable by the fixed
+  # non-root container user; /run/secrets is root-owned and group-readable only.
   # backups/build artefacts/staging stay root-only and are never mounted into the
   # running container.
   private_dir "$INSTALL_DIR/data" "$ZENO_UID:$ZENO_GID" || return 1
-  private_dir "$INSTALL_DIR/secrets" "$ZENO_UID:$ZENO_GID" || return 1
+  private_dir "$INSTALL_DIR/secrets" "0:$ZENO_GID" 750 || return 1
   private_dir "$INSTALL_DIR/backups" "0:0" || return 1
   private_dir "$INSTALL_DIR/builds" "0:0" || return 1
   private_dir "$INSTALL_DIR/.staging" "0:0" || return 1
@@ -192,6 +291,27 @@ portable_stat_mtime() {
     stat -c '%Y %n' "$1"
   else
     stat -f '%m %N' "$1"
+  fi
+}
+
+remove_backup_rollback_image() {
+  local backup="$1"
+  local ref=""
+  local current_ref=""
+  if [ -f "$backup/BACKUP_INFO" ]; then
+    if ! ref=$(read_env_value_from "$backup/BACKUP_INFO" rollback_image_ref); then
+      ref=""
+    fi
+  fi
+  [ -n "$ref" ] || return 0
+  if [ -f "$INSTALL_DIR/.env" ]; then
+    if ! current_ref=$(read_env_value_from "$INSTALL_DIR/.env" ZENO_IMAGE); then
+      current_ref=""
+    fi
+  fi
+  [ "$ref" != "$current_ref" ] || return 0
+  if ! docker image rm "$ref" >/dev/null 2>&1; then
+    echo "警告: 无法清理旧回滚镜像引用 ${ref}" >&2
   fi
 }
 
@@ -218,7 +338,12 @@ prune_named_dirs() {
     | sort -rn \
     | awk -v keep="$effective_keep" 'NR>keep {sub(/^[^ ]+ /, ""); print}' \
     | while IFS= read -r old_dir; do
-        [ -n "$old_dir" ] && rm -rf -- "$old_dir"
+        if [ -n "$old_dir" ]; then
+          if [ "$pattern" = 'install-*' ]; then
+            remove_backup_rollback_image "$old_dir"
+          fi
+          rm -rf -- "$old_dir"
+        fi
       done
 }
 
@@ -315,6 +440,171 @@ mark_existing_install() {
   done
 }
 
+capture_rollback_image() {
+  [ "$HAD_EXISTING_INSTALL" -eq 1 ] || return 0
+  [ -f "$INSTALL_DIR/.env" ] && [ -f "$INSTALL_DIR/docker-compose.yml" ] || return 0
+
+  local container_id=""
+  local old_image_ref=""
+  if ! old_image_ref=$(read_env_value_from "$INSTALL_DIR/.env" ZENO_IMAGE); then
+    old_image_ref=""
+  fi
+  if ! container_id=$(compose_current ps -q zeno 2>/dev/null); then
+    container_id=""
+  fi
+  if [ -n "$container_id" ]; then
+    if ! ROLLBACK_IMAGE_ID=$(docker inspect --format '{{.Image}}' "$container_id" 2>/dev/null); then
+      ROLLBACK_IMAGE_ID=""
+    fi
+  fi
+  if [ -z "$ROLLBACK_IMAGE_ID" ] && [ -n "$old_image_ref" ]; then
+    if ! ROLLBACK_IMAGE_ID=$(docker image inspect --format '{{.Id}}' "$old_image_ref" 2>/dev/null); then
+      ROLLBACK_IMAGE_ID=""
+    fi
+  fi
+  if ! [[ "$ROLLBACK_IMAGE_ID" =~ ^sha256:[0-9a-f]{64}$ ]]; then
+    fail "无法取得当前版本的不可变 image ID，拒绝执行不可回滚更新"
+  fi
+
+  if ! ROLLBACK_IMAGE_DIGEST=$(docker image inspect --format '{{join .RepoDigests "\n"}}' "$ROLLBACK_IMAGE_ID" 2>/dev/null | sed -n '1p'); then
+    ROLLBACK_IMAGE_DIGEST=""
+  fi
+  if ! ROLLBACK_IMAGE_REVISION=$(docker image inspect --format '{{index .Config.Labels "org.opencontainers.image.revision"}}' "$ROLLBACK_IMAGE_ID" 2>/dev/null); then
+    ROLLBACK_IMAGE_REVISION=""
+  fi
+}
+
+prepare_rollback_image_ref() {
+  [ "$HAD_EXISTING_INSTALL" -eq 1 ] || return 0
+  [ -n "$ROLLBACK_IMAGE_ID" ] || fail "缺少旧版本 image ID，拒绝停止当前服务"
+  local short_id="${ROLLBACK_IMAGE_ID#sha256:}"
+  short_id="${short_id:0:12}"
+  ROLLBACK_IMAGE_REF="zeno-rollback:$(date +%Y%m%d-%H%M%S)-${short_id}"
+  docker image tag "$ROLLBACK_IMAGE_ID" "$ROLLBACK_IMAGE_REF" || fail "创建不可变回滚镜像引用失败"
+  docker image inspect "$ROLLBACK_IMAGE_REF" >/dev/null || fail "回滚镜像引用验证失败"
+}
+
+resolve_target_image() {
+  local image_id=""
+  local digest=""
+  local requested_repo=""
+  local source_label=""
+  local revision_label=""
+  local version_label=""
+  if ! image_id=$(docker image inspect --format '{{.Id}}' "$REQUESTED_IMAGE" 2>/dev/null); then
+    fail "拉取后无法解析目标镜像: $REQUESTED_IMAGE"
+  fi
+  if ! [[ "$image_id" =~ ^sha256:[0-9a-f]{64}$ ]]; then
+    fail "目标镜像缺少有效 image ID: $REQUESTED_IMAGE"
+  fi
+  requested_repo="${REQUESTED_IMAGE%@sha256:*}"
+  if [ "$requested_repo" = "$REQUESTED_IMAGE" ]; then
+    local last_component="${REQUESTED_IMAGE##*/}"
+    if [[ "$last_component" == *:* ]]; then
+      requested_repo="${REQUESTED_IMAGE%:*}"
+    fi
+  fi
+  if ! digest=$(docker image inspect --format '{{join .RepoDigests "\n"}}' "$image_id" 2>/dev/null \
+      | awk -v repo="$requested_repo" 'index($0, repo "@sha256:") == 1 { print; exit }'); then
+    digest=""
+  fi
+  if ! source_label=$(docker image inspect --format '{{index .Config.Labels "org.opencontainers.image.source"}}' "$image_id" 2>/dev/null); then
+    source_label=""
+  fi
+  if ! revision_label=$(docker image inspect --format '{{index .Config.Labels "org.opencontainers.image.revision"}}' "$image_id" 2>/dev/null); then
+    revision_label=""
+  fi
+  if ! version_label=$(docker image inspect --format '{{index .Config.Labels "org.opencontainers.image.version"}}' "$image_id" 2>/dev/null); then
+    version_label=""
+  fi
+
+  if [[ "$REQUESTED_IMAGE" == ghcr.io/shuijiao1/zeno:* || "$REQUESTED_IMAGE" == ghcr.io/shuijiao1/zeno@sha256:* ]]; then
+    [ "$source_label" = "https://github.com/shuijiao1/Zeno" ] || fail "官方镜像 source label 不匹配，拒绝安装"
+    [[ "$revision_label" =~ ^[0-9a-f]{40}$ ]] || fail "官方镜像 revision label 无效，拒绝安装"
+    [[ "$version_label" =~ ^[0-9]+\.[0-9]+\.[0-9]+([.-][A-Za-z0-9][A-Za-z0-9.-]*)?$ ]] || fail "官方镜像 version label 无效，拒绝安装"
+    TARGET_VERSION_LABEL="$version_label"
+  fi
+
+  if [[ "$REQUESTED_IMAGE" == *@sha256:* ]]; then
+    IMAGE="$REQUESTED_IMAGE"
+  elif [ -n "$digest" ]; then
+    IMAGE="$digest"
+  else
+    local short_id="${image_id#sha256:}"
+    short_id="${short_id:0:12}"
+    IMAGE="zeno-candidate:$(date +%Y%m%d-%H%M%S)-${short_id}"
+    docker image tag "$image_id" "$IMAGE" || fail "无法为本地目标镜像创建不可变引用"
+  fi
+  set_env_value_file "$STAGING_DIR/.env" ZENO_IMAGE "$IMAGE" || fail "写入不可变目标镜像失败"
+  set_env_value_file "$STAGING_DIR/.env" ZENO_UPDATE_IMAGE "$REQUESTED_IMAGE" || fail "保存后续更新镜像引用失败"
+  compose_staging config >/dev/null || fail "不可变目标镜像 Compose 验证失败"
+}
+
+verify_official_image_attestation() {
+  [[ "$REQUESTED_IMAGE" == ghcr.io/shuijiao1/zeno:* || "$REQUESTED_IMAGE" == ghcr.io/shuijiao1/zeno@sha256:* ]] || return 0
+  [ "$VERIFY_ATTESTATION" = "true" ] || {
+    echo "警告: 已显式关闭官方镜像 provenance 验证。" >&2
+    return 0
+  }
+  [[ "$IMAGE" == ghcr.io/shuijiao1/zeno@sha256:* ]] || fail "官方镜像未解析为 repo digest，无法验证 provenance"
+
+  local machine
+  local gh_arch
+  local gh_sha
+  machine=$(uname -m)
+  case "$machine" in
+    x86_64|amd64)
+      gh_arch="amd64"
+      gh_sha="762569efe785082b7d1feb06995efece1a9cecce16da8503ac6fdbcbea04085b"
+      ;;
+    aarch64|arm64)
+      gh_arch="arm64"
+      gh_sha="8bcec9f3ee5c7c3700359a75da774c71221064a0ba017537795aa32ac8bbb481"
+      ;;
+    armv6l|armv7l)
+      gh_arch="armv6"
+      gh_sha="72b4949ba83a19938b486c9ec58b23c97d6ec1f17f613084c163503dd3bb0b8d"
+      ;;
+    *) fail "不支持在 ${machine} 上验证官方镜像 provenance" ;;
+  esac
+
+  local gh_version="2.65.0"
+  local archive="$STAGING_DIR/gh-${gh_version}-${gh_arch}.tar.gz"
+  local extract_dir="$STAGING_DIR/gh-verifier"
+  local url="https://github.com/cli/cli/releases/download/v${gh_version}/gh_${gh_version}_linux_${gh_arch}.tar.gz"
+  curl -fsSL --max-time 90 -o "$archive" "$url" || fail "下载固定版本 provenance verifier 失败"
+  printf '%s  %s\n' "$gh_sha" "$archive" | sha256sum -c - >/dev/null || fail "provenance verifier 校验失败"
+  rm -rf -- "$extract_dir"
+  mkdir -p "$extract_dir"
+  tar -xzf "$archive" -C "$extract_dir" || fail "解压 provenance verifier 失败"
+  local verifier="$extract_dir/gh_${gh_version}_linux_${gh_arch}/bin/gh"
+  [ -x "$verifier" ] || fail "provenance verifier 缺少可执行文件"
+  local certificate_identity="https://github.com/shuijiao1/Zeno/.github/workflows/docker.yml@refs/tags/v${TARGET_VERSION_LABEL}"
+  "$verifier" attestation verify "oci://${IMAGE}" --repo "$REPO" --bundle-from-oci --cert-identity "$certificate_identity" --deny-self-hosted-runners >/dev/null \
+    || fail "官方镜像 provenance 验证失败"
+}
+
+set_env_value_file() {
+  local file="$1"
+  local key="$2"
+  local value="$3"
+  local tmp="${file}.new.$$"
+  awk -v key="$key" -v value="$value" '
+    BEGIN { found = 0 }
+    index($0, key "=") == 1 { print key "=" value; found = 1; next }
+    { print }
+    END { if (!found) print key "=" value }
+  ' "$file" > "$tmp" || return 1
+  chmod 600 "$tmp" || return 1
+  mv -f "$tmp" "$file" || return 1
+}
+
+backup_info_value() {
+  local dir="$1"
+  local key="$2"
+  read_env_value_from "$dir/BACKUP_INFO" "$key"
+}
+
 write_manifest() {
   local dir="$1"
   (
@@ -360,7 +650,8 @@ sqlite_quick_check_dir() {
   local data_dir="$1"
   local secrets_dir="$2"
   [ -e "$data_dir/zeno.db" ] || return 0
-  docker run --rm \
+  reject_symlink "$data_dir/zeno.db" "SQLite 数据库" || return 1
+  timeout --foreground "${DB_CHECK_TIMEOUT_SECONDS}s" docker run --rm \
     -v "$data_dir:/data" \
     -v "$secrets_dir:/run/secrets:ro" \
     "$IMAGE" -db /data/zeno.db -check-db >/dev/null
@@ -431,7 +722,9 @@ create_offline_backup() {
   chmod 700 "$backup_root" "$partial"
 
   copy_backup_payload "$INSTALL_DIR" "$partial"
-  printf 'created_at=%s\nsource=%s\nimage=%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$INSTALL_DIR" "$IMAGE" > "$partial/BACKUP_INFO"
+  printf 'created_at=%s\nsource=%s\nimage=%s\nrollback_image_id=%s\nrollback_image_ref=%s\nrollback_image_digest=%s\nrollback_image_revision=%s\n' \
+    "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$INSTALL_DIR" "$IMAGE" \
+    "$ROLLBACK_IMAGE_ID" "$ROLLBACK_IMAGE_REF" "$ROLLBACK_IMAGE_DIGEST" "$ROLLBACK_IMAGE_REVISION" > "$partial/BACKUP_INFO"
   chmod 600 "$partial/BACKUP_INFO"
   sqlite_quick_check_scratch_copy "$partial/data" "$partial/secrets"
   write_manifest "$partial"
@@ -446,7 +739,8 @@ create_offline_backup() {
 
 restart_current_install() {
   if [ -f "$INSTALL_DIR/docker-compose.yml" ] && [ -f "$INSTALL_DIR/.env" ]; then
-    compose_current up -d >/dev/null || return 1
+    [ -n "$ROLLBACK_IMAGE_REF" ] || return 1
+    ZENO_IMAGE="$ROLLBACK_IMAGE_REF" compose_current up -d >/dev/null || return 1
     local current_port="$HOST_PORT"
     local env_port
     if env_port=$(read_env_value_from "$INSTALL_DIR/.env" ZENO_HOST_PORT); then
@@ -512,6 +806,24 @@ restore_backup() {
     return 1
   fi
 
+  local rollback_ref
+  local update_ref
+  if ! rollback_ref=$(backup_info_value "$restore_stage" rollback_image_ref); then
+    rollback_ref=""
+  fi
+  if ! update_ref=$(read_env_value_from "$restore_stage/.env" ZENO_IMAGE); then
+    update_ref=""
+  fi
+  if [ -z "$rollback_ref" ]; then
+    rollback_ref="$ROLLBACK_IMAGE_REF"
+  fi
+  [ -n "$rollback_ref" ] || { rm -rf -- "$restore_stage"; return 1; }
+  docker image inspect "$rollback_ref" >/dev/null || { rm -rf -- "$restore_stage"; return 1; }
+  set_env_value_file "$restore_stage/.env" ZENO_IMAGE "$rollback_ref" || { rm -rf -- "$restore_stage"; return 1; }
+  if [ -n "$update_ref" ]; then
+    set_env_value_file "$restore_stage/.env" ZENO_UPDATE_IMAGE "$update_ref" || { rm -rf -- "$restore_stage"; return 1; }
+  fi
+
   if [ -f "$INSTALL_DIR/docker-compose.yml" ] && [ -f "$INSTALL_DIR/.env" ]; then
     compose_current stop zeno >/dev/null || return 1
   fi
@@ -559,6 +871,16 @@ rollback_on_error() {
         fi
         fail "${message}，旧版本重新启动失败；未完成备份不会用于恢复"
       fi
+    else
+      if [ -f "$INSTALL_DIR/docker-compose.yml" ] && [ -f "$INSTALL_DIR/.env" ]; then
+        if ! compose_current down --remove-orphans >/dev/null 2>&1; then
+          echo "警告: 首次安装失败后停止容器未成功，请人工检查。" >&2
+        fi
+      fi
+      if preserve_failed_state; then
+        fail "${message}；首次安装失败现场已隔离，未保留运行中的正式实例"
+      fi
+      fail "${message}；首次安装失败，且失败现场隔离未完成"
     fi
     fail "$message"
   fi
@@ -574,6 +896,10 @@ ZENO_HOST_PORT=${HOST_PORT}
 TZ=${TZ_VALUE}
 ZENO_UID=${ZENO_UID}
 ZENO_GID=${ZENO_GID}
+ZENO_TRUSTED_PROXIES=${TRUSTED_PROXIES}
+ZENO_DOCKER_SUBNET=${DOCKER_SUBNET}
+ZENO_DOCKER_GATEWAY=${DOCKER_GATEWAY}
+ZENO_CONTAINER_IP=${CONTAINER_IP}
 EOF_ENV
   chmod 600 "$dir/.env"
 }
@@ -597,7 +923,9 @@ services:
     environment:
       TZ: ${TZ:-Asia/Shanghai}
       ZENO_NOTIFICATIONS_DISABLED: ${ZENO_NOTIFICATIONS_DISABLED:-false}
-      ZENO_NOTIFICATION_CREDENTIAL_KEY_FILE: /run/secrets/zeno_notification_credential_key
+      ZENO_NOTIFICATION_AUTHORITY_KEYRING_FILE: /run/secrets/zeno_notification_authority_keyring.json
+      ZENO_NOTIFICATION_CREDENTIAL_KEYRING_FILE: /run/secrets/zeno_notification_credential_keyring.json
+      ZENO_TRUSTED_PROXIES: ${ZENO_TRUSTED_PROXIES:-172.30.250.1/32}
     ports:
       - "127.0.0.1:${ZENO_HOST_PORT:-18980}:18980"
     volumes:
@@ -609,6 +937,16 @@ services:
       timeout: 5s
       retries: 3
       start_period: 5m
+    networks:
+      zeno_proxy:
+        ipv4_address: ${ZENO_CONTAINER_IP:-172.30.250.2}
+networks:
+  zeno_proxy:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: ${ZENO_DOCKER_SUBNET:-172.30.250.0/29}
+          gateway: ${ZENO_DOCKER_GATEWAY:-172.30.250.1}
 EOF_COMPOSE
 }
 
@@ -659,13 +997,20 @@ fi
 need docker
 need curl
 need sha256sum
+need timeout
+need tar
 if ! docker compose version >/dev/null 2>&1; then
   fail "未找到 docker compose 插件，请先安装 Docker Compose v2"
 fi
 
 load_existing_env_defaults
+REQUESTED_IMAGE="$IMAGE"
 mkdir -p "$INSTALL_DIR"
+reject_symlink "$INSTALL_DIR" "安装目录" || fail "安装目录不能是符号链接"
+chown 0:0 "$INSTALL_DIR"
+chmod 700 "$INSTALL_DIR"
 mark_existing_install
+capture_rollback_image
 set_lifecycle_permissions
 preflight_disk_space
 prune_lifecycle_artifacts
@@ -680,11 +1025,16 @@ write_compose_file "$STAGING_DIR"
 # stopped. The outage window starts only after these network/config checks pass.
 compose_staging config >/dev/null || fail "Docker Compose 配置验证失败，未停止旧版本"
 compose_staging pull || fail "拉取镜像失败，未停止旧版本"
+resolve_target_image
+verify_official_image_attestation
+prepare_rollback_image_ref
 
 admin_secret="$INSTALL_DIR/secrets/zeno_admin_token"
 agent_secret="$INSTALL_DIR/secrets/zeno_agent_token"
 notification_authority_secret="$INSTALL_DIR/secrets/zeno_notification_authority"
 notification_credential_secret="$INSTALL_DIR/secrets/zeno_notification_credential_key"
+notification_authority_keyring="$INSTALL_DIR/secrets/zeno_notification_authority_keyring.json"
+notification_credential_keyring="$INSTALL_DIR/secrets/zeno_notification_credential_keyring.json"
 legacy_admin="$INSTALL_DIR/data/admin-token"
 legacy_agent="$INSTALL_DIR/data/agent-token"
 
@@ -692,8 +1042,14 @@ legacy_agent="$INSTALL_DIR/data/agent-token"
 # SQLite and .env. Create them before the offline backup so failed upgrades can
 # restore the exact key material needed to decrypt existing notification
 # credentials; only paths are exposed through compose/env.
-mkdir -p "$INSTALL_DIR/secrets" || fail "创建 secrets 目录失败"
-chmod 700 "$INSTALL_DIR/secrets" || fail "设置 secrets 目录权限失败"
+secure_secret_tree "$INSTALL_DIR/secrets" || fail "创建或加固 secrets 目录失败"
+for secret_path in "$notification_authority_secret" "$notification_credential_secret" "$notification_authority_keyring" "$notification_credential_keyring" "$admin_secret" "$agent_secret"; do
+  reject_symlink "$secret_path" "secret 文件" || fail "secret 文件不能是符号链接"
+done
+
+trap rollback_on_error ERR
+ROLLBACK_ACTIVE=1
+STEP_MESSAGE="初始化通知密钥失败"
 if [ ! -s "$notification_authority_secret" ]; then
   umask 077
   random_secret > "$notification_authority_secret" || fail "生成通知 authority key 失败"
@@ -702,10 +1058,8 @@ if [ ! -s "$notification_credential_secret" ]; then
   umask 077
   random_secret > "$notification_credential_secret" || fail "生成通知凭据加密 key 失败"
 fi
-chmod 600 "$notification_authority_secret" "$notification_credential_secret" || fail "设置通知 key 权限失败"
-
-trap rollback_on_error ERR
-ROLLBACK_ACTIVE=1
+chown "0:$ZENO_GID" "$notification_authority_secret" "$notification_credential_secret" || fail "设置通知 key 所有者失败"
+chmod 640 "$notification_authority_secret" "$notification_credential_secret" || fail "设置通知 key 权限失败"
 
 STEP_MESSAGE="停止旧版本失败"
 if [ "$HAD_EXISTING_INSTALL" -eq 1 ] && [ -f "$INSTALL_DIR/docker-compose.yml" ] && [ -f "$INSTALL_DIR/.env" ]; then
@@ -725,7 +1079,8 @@ sqlite_quick_check_current
 STEP_MESSAGE="初始化密钥失败"
 if [ ! -s "$admin_secret" ]; then
   if [ -s "$legacy_admin" ]; then
-    install -m 600 "$legacy_admin" "$admin_secret"
+    reject_symlink "$legacy_admin" "legacy admin token" || fail "legacy admin token 不能是符号链接"
+    install -o 0 -g "$ZENO_GID" -m 640 "$legacy_admin" "$admin_secret"
   else
     umask 077
     random_secret > "$admin_secret"
@@ -733,13 +1088,19 @@ if [ ! -s "$admin_secret" ]; then
 fi
 if [ ! -s "$agent_secret" ]; then
   if [ -s "$legacy_agent" ]; then
-    install -m 600 "$legacy_agent" "$agent_secret"
+    reject_symlink "$legacy_agent" "legacy agent token" || fail "legacy agent token 不能是符号链接"
+    install -o 0 -g "$ZENO_GID" -m 640 "$legacy_agent" "$agent_secret"
   else
     umask 077
     random_secret > "$agent_secret"
   fi
 fi
-chmod 600 "$admin_secret" "$agent_secret" "$notification_authority_secret" "$notification_credential_secret"
+chown "0:$ZENO_GID" "$admin_secret" "$agent_secret" "$notification_authority_secret" "$notification_credential_secret"
+chmod 640 "$admin_secret" "$agent_secret" "$notification_authority_secret" "$notification_credential_secret"
+ensure_single_keyring_file "$notification_authority_keyring" "$notification_authority_secret" || fail "生成通知 authority keyring 失败"
+ensure_single_keyring_file "$notification_credential_keyring" "$notification_credential_secret" || fail "生成通知凭据 keyring 失败"
+chown "0:$ZENO_GID" "$notification_authority_keyring" "$notification_credential_keyring"
+chmod 640 "$notification_authority_keyring" "$notification_credential_keyring"
 set_install_permissions
 
 STEP_MESSAGE="原子切换配置失败"

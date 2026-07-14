@@ -96,6 +96,12 @@ func TestReadNotificationCredentialKeyFileAcceptsInstallerKeyAndRejectsUnsafeFil
 	if !bytes.Equal(readKey, key) {
 		t.Fatalf("read key = %x, want %x", readKey, key)
 	}
+	if err := os.Chmod(keyPath, 0o640); err != nil {
+		t.Fatalf("chmod group-readable key file: %v", err)
+	}
+	if _, err := readNotificationCredentialKeyFile(keyPath); err != nil {
+		t.Fatalf("read root-owned/group-readable installer key: %v", err)
+	}
 
 	if err := os.Chmod(keyPath, 0o644); err != nil {
 		t.Fatalf("chmod loose key file: %v", err)
@@ -126,6 +132,78 @@ func TestReadNotificationCredentialKeyFileAcceptsInstallerKeyAndRejectsUnsafeFil
 	}
 	if _, err := readNotificationCredentialKeyFile(largeKeyPath); err == nil {
 		t.Fatalf("read oversized key succeeded, want error")
+	}
+}
+
+func TestReadNotificationAuthorityKeyFileRejectsUnsafeFiles(t *testing.T) {
+	dir := t.TempDir()
+	keyPath := filepath.Join(dir, "authority-key")
+	if err := os.WriteFile(keyPath, []byte("authority-secret\n"), 0o640); err != nil {
+		t.Fatalf("write authority key: %v", err)
+	}
+	key, err := readNotificationAuthorityKeyFile(keyPath)
+	if err != nil || key != "authority-secret" {
+		t.Fatalf("read authority key=%q err=%v", key, err)
+	}
+	if err := os.Chmod(keyPath, 0o644); err != nil {
+		t.Fatalf("chmod authority key: %v", err)
+	}
+	if _, err := readNotificationAuthorityKeyFile(keyPath); err == nil {
+		t.Fatal("group/other-readable authority key was accepted")
+	}
+	if err := os.Chmod(keyPath, 0o640); err != nil {
+		t.Fatalf("restore authority key permissions: %v", err)
+	}
+	linkPath := filepath.Join(dir, "authority-link")
+	if err := os.Symlink(keyPath, linkPath); err != nil {
+		t.Fatalf("symlink authority key: %v", err)
+	}
+	if _, err := readNotificationAuthorityKeyFile(linkPath); err == nil {
+		t.Fatal("symlink authority key was accepted")
+	}
+}
+
+func TestNotificationKeyringFilesRejectAmbiguousJSON(t *testing.T) {
+	key := base64.RawURLEncoding.EncodeToString(bytes.Repeat([]byte{0x42}, notificationCredentialKeySize))
+	credentialDocuments := []struct {
+		name    string
+		content string
+	}{
+		{name: "active id whitespace", content: `{"active_key_id":" primary","keys":{"primary":"` + key + `"}}`},
+		{name: "key id whitespace", content: `{"active_key_id":"primary","keys":{" primary":"` + key + `"}}`},
+		{name: "duplicate key id", content: `{"active_key_id":"primary","keys":{"primary":"` + key + `","primary":"` + key + `"}}`},
+		{name: "missing active member", content: `{"active_key_id":"missing","keys":{"primary":"` + key + `"}}`},
+		{name: "unknown top level field", content: `{"active_key_id":"primary","keys":{"primary":"` + key + `"},"extra":true}`},
+		{name: "duplicate top level field", content: `{"active_key_id":"primary","active_key_id":"other","keys":{"primary":"` + key + `"}}`},
+		{name: "trailing document", content: `{"active_key_id":"primary","keys":{"primary":"` + key + `"}} {}`},
+	}
+	for _, tt := range credentialDocuments {
+		t.Run("credential "+tt.name, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "credential-keyring.json")
+			if err := os.WriteFile(path, []byte(tt.content), 0o600); err != nil {
+				t.Fatalf("write keyring: %v", err)
+			}
+			if _, _, err := readNotificationCredentialKeyringFile(path); err == nil {
+				t.Fatalf("ambiguous credential keyring was accepted: %s", tt.content)
+			}
+		})
+	}
+
+	authorityPath := filepath.Join(t.TempDir(), "authority-keyring.json")
+	if err := os.WriteFile(authorityPath, []byte(`{"active_key_id":"primary","keys":{"primary":"authority-one","primary":"authority-two"}}`), 0o600); err != nil {
+		t.Fatalf("write authority keyring: %v", err)
+	}
+	if _, _, err := readNotificationAuthorityKeyringFile(authorityPath); err == nil {
+		t.Fatal("duplicate authority key id was accepted")
+	}
+
+	validPath := filepath.Join(t.TempDir(), "valid-keyring.json")
+	if err := os.WriteFile(validPath, []byte(`{"active_key_id":"primary","keys":{"primary":"`+key+`"}}`), 0o640); err != nil {
+		t.Fatalf("write valid keyring: %v", err)
+	}
+	active, keys, err := readNotificationCredentialKeyringFile(validPath)
+	if err != nil || active != "primary" || len(keys) != 1 || !bytes.Equal(keys["primary"], bytes.Repeat([]byte{0x42}, notificationCredentialKeySize)) {
+		t.Fatalf("valid keyring active=%q keys=%v err=%v", active, keys, err)
 	}
 }
 

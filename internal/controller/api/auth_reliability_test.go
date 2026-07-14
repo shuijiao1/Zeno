@@ -120,6 +120,7 @@ func TestAdminLoginRejectsWhenArgon2QueueIsFull(t *testing.T) {
 	for attempt := 0; attempt < adminLoginMaxFailures; attempt++ {
 		recorder := httptest.NewRecorder()
 		request := httptest.NewRequest(http.MethodPost, "/api/admin/v1/login", strings.NewReader(`{"username":"admin","password":"admin-pass"}`))
+		request.Header.Set("Content-Type", "application/json")
 		handler.ServeHTTP(recorder, request)
 		if recorder.Code != http.StatusTooManyRequests {
 			t.Fatalf("admission rejection %d status = %d, want 429; body=%s", attempt+1, recorder.Code, recorder.Body.String())
@@ -131,6 +132,7 @@ func TestAdminLoginRejectsWhenArgon2QueueIsFull(t *testing.T) {
 	queueDrained = true
 	recorder := httptest.NewRecorder()
 	request := httptest.NewRequest(http.MethodPost, "/api/admin/v1/login", strings.NewReader(`{"username":"admin","password":"admin-pass"}`))
+	request.Header.Set("Content-Type", "application/json")
 	handler.ServeHTTP(recorder, request)
 	if recorder.Code != http.StatusOK {
 		t.Fatalf("valid login after admission recovery status = %d, want 200; body=%s", recorder.Code, recorder.Body.String())

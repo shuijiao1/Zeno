@@ -386,9 +386,12 @@ type AdminNodeResponse struct {
 }
 
 type AdminNodeInstallCommandResponse struct {
-	NodeID   string            `json:"node_id"`
-	Command  string            `json:"command"`
-	Commands map[string]string `json:"commands,omitempty"`
+	NodeID                  string            `json:"node_id"`
+	Command                 string            `json:"command"`
+	Commands                map[string]string `json:"commands,omitempty"`
+	EnrollmentExpiresAt     string            `json:"enrollment_expires_at"`
+	EnrollmentOneTime       bool              `json:"enrollment_one_time"`
+	SupersedesPreviousToken bool              `json:"supersedes_previous_enrollment"`
 }
 
 type AdminNodeCreateRequest struct {

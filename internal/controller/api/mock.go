@@ -228,9 +228,9 @@ func mockLatencyPoints(nodeID string, rangeNames ...string) []LatencyPoint {
 
 func mockServiceTargets() []ServiceTarget {
 	return []ServiceTarget{
-		{ID: "cq-unicom", Name: "重庆联通", Type: "tcping", Address: "cq-unicom.example", Port: intValue(443), AssignedNodeCount: 11, ReportingNodeCount: 11, MedianMS: ptr(34.8), LossPercent: ptr(0.18), UpdatedAt: "2026-07-02T13:30:00Z"},
-		{ID: "telegram-dc5", Name: "DC5", Type: "tcping", Address: "149.154.171.5", Port: intValue(443), AssignedNodeCount: 11, ReportingNodeCount: 10, MedianMS: ptr(31.8), LossPercent: ptr(0.38), UpdatedAt: "2026-07-02T13:30:00Z"},
-		{ID: "google", Name: "Google", Type: "http_get", Address: "https://www.google.com/generate_204", AssignedNodeCount: 11, ReportingNodeCount: 11, MedianMS: ptr(1.4), LossPercent: ptr(0), UpdatedAt: "2026-07-02T13:30:00Z"},
+		{ID: "cq-unicom", Name: "重庆联通", Type: "tcping", AssignedNodeCount: 11, ReportingNodeCount: 11, MedianMS: ptr(34.8), LossPercent: ptr(0.18), UpdatedAt: "2026-07-02T13:30:00Z"},
+		{ID: "telegram-dc5", Name: "DC5", Type: "tcping", AssignedNodeCount: 11, ReportingNodeCount: 10, MedianMS: ptr(31.8), LossPercent: ptr(0.38), UpdatedAt: "2026-07-02T13:30:00Z"},
+		{ID: "google", Name: "Google", Type: "http_get", AssignedNodeCount: 11, ReportingNodeCount: 11, MedianMS: ptr(1.4), LossPercent: ptr(0), UpdatedAt: "2026-07-02T13:30:00Z"},
 	}
 }
 

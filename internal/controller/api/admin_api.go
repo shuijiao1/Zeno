@@ -5,10 +5,11 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
-	"net"
+	"mime"
 	"net/http"
 	"net/url"
 	"strings"
+	"time"
 )
 
 type adminStore interface {
@@ -51,6 +52,15 @@ func (h *handler) handleAdminLogin(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusNotFound, "not found")
 		return
 	}
+	if strings.EqualFold(strings.TrimSpace(r.Header.Get("Sec-Fetch-Site")), "cross-site") {
+		writeError(w, http.StatusForbidden, "cross-site login rejected")
+		return
+	}
+	mediaType, _, err := mime.ParseMediaType(r.Header.Get("Content-Type"))
+	if err != nil || !strings.EqualFold(mediaType, "application/json") {
+		writeError(w, http.StatusUnsupportedMediaType, "application/json required")
+		return
+	}
 	var request AdminLoginRequest
 	if !decodeJSONBody(w, r, &request, adminJSONBodyLimit, true) {
 		return
@@ -61,8 +71,8 @@ func (h *handler) handleAdminLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer releaseArgon2()
-	accountKey := adminLoginRateLimitKey(r, request.Username)
-	ipKey := adminLoginIPRateLimitKey(r)
+	accountKey := h.adminLoginRateLimitKey(r, request.Username)
+	ipKey := h.adminLoginIPRateLimitKey(r)
 	accountReservation := adminLoginReservation{}
 	ipReservation := adminLoginReservation{}
 	if h.loginLimiter != nil {
@@ -357,7 +367,7 @@ func (h *handler) handleAdminNodeInstallCommand(w http.ResponseWriter, r *http.R
 		return
 	}
 	if controllerURL == "" {
-		fallbackURL := requestBaseURL(r)
+		fallbackURL := h.requestBaseURL(r)
 		parsedFallback, parseErr := url.Parse(fallbackURL)
 		if parseErr != nil || !loopbackURLHost(parsedFallback.Hostname()) {
 			writeError(w, http.StatusConflict, "configure agent controller url before generating install commands")
@@ -370,7 +380,14 @@ func (h *handler) handleAdminNodeInstallCommand(w http.ResponseWriter, r *http.R
 		writeAdminError(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, AdminNodeInstallCommandResponse{NodeID: nodeID, Command: commands.Linux, Commands: commands.Map()})
+	writeJSON(w, http.StatusOK, AdminNodeInstallCommandResponse{
+		NodeID:                  nodeID,
+		Command:                 commands.Linux,
+		Commands:                commands.Map(),
+		EnrollmentExpiresAt:     commands.EnrollmentExpiresAt.UTC().Format(time.RFC3339),
+		EnrollmentOneTime:       true,
+		SupersedesPreviousToken: true,
+	})
 }
 
 func (h *handler) authorizeAdminRequest(w http.ResponseWriter, r *http.Request) (adminStore, bool) {
@@ -441,25 +458,31 @@ func (h *handler) authorizeExtendedHistoryRequest(w http.ResponseWriter, r *http
 	return false
 }
 
-func adminLoginIPRateLimitKey(r *http.Request) string {
-	return "ip:" + clientIPForRateLimit(r)
+func (h *handler) adminLoginIPRateLimitKey(r *http.Request) string {
+	return "ip:" + h.clientIPForRateLimit(r)
 }
 
-func adminLoginRateLimitKey(r *http.Request, username string) string {
-	remote := clientIPForRateLimit(r)
+func (h *handler) adminLoginRateLimitKey(r *http.Request, username string) string {
+	remote := h.clientIPForRateLimit(r)
 	// Keep attacker-controlled usernames out of the limiter map. Login bodies can
 	// be tens of KiB, while the digest is fixed-size and preserves exact keys.
 	usernameDigest := sha256.Sum256([]byte(strings.ToLower(strings.TrimSpace(username))))
 	return remote + ":" + hex.EncodeToString(usernameDigest[:])
 }
 
-func clientIPForRateLimit(r *http.Request) string {
+func (h *handler) clientIPForRateLimit(r *http.Request) string {
 	remoteIP := parseRemoteIP(r.RemoteAddr)
-	if remoteIP != nil && trustedForwardingProxy(remoteIP) {
-		if forwarded := forwardedClientIP(r.Header.Get("X-Forwarded-For")); forwarded != nil {
-			return forwarded.String()
+	if remoteIP != nil && h.trustedProxies.contains(remoteIP) {
+		forwardedValue := r.Header.Get("X-Forwarded-For")
+		if strings.TrimSpace(forwardedValue) != "" {
+			if forwarded, valid := h.trustedProxies.forwardedClientIP(forwardedValue); valid && forwarded != nil {
+				return forwarded.String()
+			}
+			// A malformed XFF chain is not allowed to fall through to another
+			// attacker-controlled forwarding header.
+			return remoteIP.String()
 		}
-		if realIP := net.ParseIP(strings.TrimSpace(r.Header.Get("X-Real-IP"))); realIP != nil {
+		if realIP := parseRemoteIP(strings.TrimSpace(r.Header.Get("X-Real-IP"))); realIP != nil {
 			return realIP.String()
 		}
 	}
@@ -469,37 +492,14 @@ func clientIPForRateLimit(r *http.Request) string {
 	return strings.TrimSpace(r.RemoteAddr)
 }
 
-func parseRemoteIP(remoteAddr string) net.IP {
-	remoteAddr = strings.TrimSpace(remoteAddr)
-	if remoteAddr == "" {
-		return nil
-	}
-	if host, _, err := net.SplitHostPort(remoteAddr); err == nil {
-		return net.ParseIP(strings.Trim(host, "[]"))
-	}
-	return net.ParseIP(strings.Trim(remoteAddr, "[]"))
+// Compatibility wrappers keep focused unit tests and internal callers on the
+// secure default (loopback proxies only).
+func adminLoginIPRateLimitKey(r *http.Request) string {
+	return (&handler{}).adminLoginIPRateLimitKey(r)
 }
 
-func forwardedClientIP(value string) net.IP {
-	parts := strings.Split(value, ",")
-	// A reverse proxy appends the address of its direct peer. Use the rightmost
-	// valid value so an untrusted client cannot choose the limiter key by
-	// prepending its own X-Forwarded-For entry. Multi-proxy deployments without
-	// an explicit trusted-proxy list may aggregate at the nearest proxy, which is
-	// safer than accepting a spoofable client address.
-	for index := len(parts) - 1; index >= 0; index-- {
-		if ip := net.ParseIP(strings.TrimSpace(parts[index])); ip != nil {
-			return ip
-		}
-	}
-	return nil
-}
-
-func trustedForwardingProxy(ip net.IP) bool {
-	// The official deployment binds Controller to 127.0.0.1 and proxies from the
-	// same host. Treating every RFC1918 peer as a proxy would let any LAN client
-	// spoof X-Forwarded-For and bypass the per-IP login limiter.
-	return ip.IsLoopback()
+func adminLoginRateLimitKey(r *http.Request, username string) string {
+	return (&handler{}).adminLoginRateLimitKey(r, username)
 }
 
 func writeAdminError(w http.ResponseWriter, err error) {

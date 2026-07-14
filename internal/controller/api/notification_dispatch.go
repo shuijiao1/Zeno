@@ -44,14 +44,17 @@ type notificationStatusTransition struct {
 }
 
 type notificationDispatchChannel struct {
-	ID          string
-	Name        string
-	Type        string
-	Destination string
-	Credential  string
+	ID                     string
+	Name                   string
+	Type                   string
+	Destination            string
+	Credential             string
+	DeliveryVersion        int64
+	DestinationFingerprint string
 }
 
 type notificationEvent struct {
+	EventID        string `json:"event_id,omitempty"`
 	EventType      string `json:"event_type"`
 	Label          string `json:"label"`
 	NodeID         string `json:"node_id"`

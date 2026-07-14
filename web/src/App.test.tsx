@@ -1,6 +1,6 @@
 import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it } from 'vitest'
-import { AdminDashboard, HomeTopPanel, adminTokenMaxAgeMs, applyCustomCode, documentBrandingForSettings, isAdminUnauthorizedError, orderHomeNodes, shellStyleForSettings, shouldRefreshHomeRealtimeSnapshot, validateAdminSettingsInput } from './App'
+import { AdminCredentialField, AdminDashboard, HomeTopPanel, adminTokenMaxAgeMs, applyCustomCode, documentBrandingForSettings, isAdminUnauthorizedError, orderHomeNodes, shellStyleForSettings, shouldRefreshHomeRealtimeSnapshot, validateAdminSettingsInput } from './App'
 import type { AdminAlertRule, AdminNode, AdminNotificationChannel, AdminProbeTarget, AdminSettings, HomeCardNode } from './types'
 
 const overviewProps = {
@@ -347,6 +347,21 @@ describe('HomeTopPanel', () => {
 })
 
 describe('AdminDashboard', () => {
+  it('keeps Telegram credentials masked with an accessible visibility toggle and no reflected value', () => {
+    const html = renderToStaticMarkup(
+      <AdminCredentialField name="channel-credential" placeholder="留空则保留已保存 Token" />,
+    )
+
+    expect(html).toContain('name="channel-credential"')
+    expect(html).toContain('type="password"')
+    expect(html).toContain('autoComplete="new-password"')
+    expect(html).toContain('class="admin-secret-toggle"')
+    expect(html).toContain('aria-label="显示 Telegram Bot Token"')
+    expect(html).toContain('aria-pressed="false"')
+    expect(html).not.toContain('value=')
+    expect(html).not.toContain('telegram-bot-secret')
+  })
+
   it('uses the same card shell and opens backend directly on the server list', () => {
     const html = renderAdmin()
 

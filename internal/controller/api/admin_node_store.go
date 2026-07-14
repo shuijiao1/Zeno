@@ -3,7 +3,6 @@ package api
 import (
 	"context"
 	"crypto/rand"
-	"database/sql"
 	"encoding/base64"
 	"encoding/hex"
 	"fmt"
@@ -24,7 +23,7 @@ func (s *SQLiteStore) CreateAdminNode(ctx context.Context, create AdminNodeCreat
 		}
 		nodeID = generated
 	}
-	credential, err := randomAdminCredential()
+	bootstrapCredential, err := randomAdminCredential()
 	if err != nil {
 		return AdminNode{}, err
 	}
@@ -50,8 +49,8 @@ func (s *SQLiteStore) CreateAdminNode(ctx context.Context, create AdminNodeCreat
 
 	result, err := tx.ExecContext(ctx, `
 		INSERT OR IGNORE INTO nodes (id, display_name, token_hash, install_token, status, country_code, region, expiry_date, expiry_permanent, billing_cycle, display_order, public_ipv4, public_ipv6, billing_mode, monthly_quota_bytes, monthly_reset_day, disabled, created_at, updated_at, last_seen_at)
-		VALUES (?, ?, ?, ?, 'no_data', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)
-	`, nodeID, create.DisplayName, hashAgentToken(credential), credential, nullIfEmpty(create.CountryCode), nullIfEmpty(create.Region), nullIfEmpty(create.ExpiryDate), sqliteBoolInt(create.ExpiryPermanent), nullIfEmpty(create.BillingCycle), create.DisplayOrder, nullIfEmpty(create.PublicIPv4), nullIfEmpty(create.PublicIPv6), create.BillingMode, quota, monthlyResetDay, disabled, now, now)
+		VALUES (?, ?, ?, NULL, 'no_data', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)
+	`, nodeID, create.DisplayName, hashAgentToken(bootstrapCredential), nullIfEmpty(create.CountryCode), nullIfEmpty(create.Region), nullIfEmpty(create.ExpiryDate), sqliteBoolInt(create.ExpiryPermanent), nullIfEmpty(create.BillingCycle), create.DisplayOrder, nullIfEmpty(create.PublicIPv4), nullIfEmpty(create.PublicIPv6), create.BillingMode, quota, monthlyResetDay, disabled, now, now)
 	if err != nil {
 		return AdminNode{}, err
 	}
@@ -76,9 +75,10 @@ func (s *SQLiteStore) CreateAdminNode(ctx context.Context, create AdminNodeCreat
 }
 
 type AgentInstallCommands struct {
-	Linux   string
-	MacOS   string
-	Windows string
+	Linux               string
+	MacOS               string
+	Windows             string
+	EnrollmentExpiresAt time.Time
 }
 
 func (commands AgentInstallCommands) Map() map[string]string {
@@ -94,31 +94,13 @@ func (s *SQLiteStore) AdminNodeInstallCommand(ctx context.Context, nodeID, contr
 	if nodeID == "" || strings.Contains(nodeID, "/") {
 		return AgentInstallCommands{}, errNodeNotFound
 	}
-	var installToken sql.NullString
-	if err := s.db.QueryRowContext(ctx, `SELECT install_token FROM nodes WHERE id = ?`, nodeID).Scan(&installToken); err != nil {
-		return AgentInstallCommands{}, errNodeNotFound
+	enrollmentToken, expiresAt, err := s.issueAgentEnrollment(ctx, nodeID)
+	if err != nil {
+		return AgentInstallCommands{}, err
 	}
-	credential := strings.TrimSpace(installToken.String)
-	if credential == "" {
-		generated, err := randomAdminCredential()
-		if err != nil {
-			return AgentInstallCommands{}, err
-		}
-		credential = generated
-		now := time.Now().UTC().Unix()
-		result, err := s.db.ExecContext(ctx, `UPDATE nodes SET token_hash = ?, install_token = ?, updated_at = ? WHERE id = ?`, hashAgentToken(credential), credential, now, nodeID)
-		if err != nil {
-			return AgentInstallCommands{}, err
-		}
-		affected, err := result.RowsAffected()
-		if err != nil {
-			return AgentInstallCommands{}, err
-		}
-		if affected == 0 {
-			return AgentInstallCommands{}, errNodeNotFound
-		}
-	}
-	return buildAgentInstallCommands(controllerURL, nodeID, credential, agentVersion), nil
+	commands := buildAgentInstallCommands(controllerURL, nodeID, enrollmentToken, agentVersion)
+	commands.EnrollmentExpiresAt = expiresAt
+	return commands, nil
 }
 
 func (s *SQLiteStore) DeleteAdminNode(ctx context.Context, nodeID string) error {
@@ -240,7 +222,7 @@ func randomHex(size int) (string, error) {
 	return hex.EncodeToString(buf), nil
 }
 
-func buildAgentInstallCommands(controllerURL, nodeID, credential, agentVersion string) AgentInstallCommands {
+func buildAgentInstallCommands(controllerURL, nodeID, enrollmentToken, agentVersion string) AgentInstallCommands {
 	controllerURL = strings.TrimRight(strings.TrimSpace(controllerURL), "/")
 	if controllerURL == "" {
 		controllerURL = "http://127.0.0.1:18980"
@@ -253,11 +235,11 @@ func buildAgentInstallCommands(controllerURL, nodeID, credential, agentVersion s
 	}
 	installURL := "https://zeno.shuijiao.de/agent/install.sh"
 	windowsInstallURL := "https://zeno.shuijiao.de/agent/install.ps1"
-	unixRunner := `bash -o pipefail -c 'curl -fsSL "$ZENO_INSTALL_URL" | sudo env ZENO_CONTROLLER_URL="$ZENO_CONTROLLER_URL" ZENO_NODE_ID="$ZENO_NODE_ID" ZENO_AGENT_TOKEN="$ZENO_AGENT_TOKEN" ZENO_AGENT_VERSION="$ZENO_AGENT_VERSION" bash'`
+	unixRunner := `bash -o pipefail -c 'curl -fsSL "$ZENO_INSTALL_URL" | sudo env ZENO_CONTROLLER_URL="$ZENO_CONTROLLER_URL" ZENO_NODE_ID="$ZENO_NODE_ID" ZENO_ENROLLMENT_TOKEN="$ZENO_ENROLLMENT_TOKEN" ZENO_AGENT_VERSION="$ZENO_AGENT_VERSION" bash'`
 	return AgentInstallCommands{
-		Linux:   fmt.Sprintf(`ZENO_INSTALL_URL=%s ZENO_CONTROLLER_URL=%s ZENO_NODE_ID=%s ZENO_AGENT_TOKEN=%s%s %s`, shellSingleQuote(installURL), shellSingleQuote(controllerURL), shellSingleQuote(nodeID), shellSingleQuote(credential), versionEnv, unixRunner),
-		MacOS:   fmt.Sprintf(`ZENO_INSTALL_URL=%s ZENO_CONTROLLER_URL=%s ZENO_NODE_ID=%s ZENO_AGENT_TOKEN=%s%s %s`, shellSingleQuote(installURL), shellSingleQuote(controllerURL), shellSingleQuote(nodeID), shellSingleQuote(credential), versionEnv, unixRunner),
-		Windows: fmt.Sprintf(`powershell -NoProfile -ExecutionPolicy Bypass -Command "$ErrorActionPreference='Stop'; %s$env:ZENO_CONTROLLER_URL=%s; $env:ZENO_NODE_ID=%s; $env:ZENO_AGENT_TOKEN=%s; irm %s | iex"`, windowsVersionEnv, powershellSingleQuote(controllerURL), powershellSingleQuote(nodeID), powershellSingleQuote(credential), powershellSingleQuote(windowsInstallURL)),
+		Linux:   fmt.Sprintf(`ZENO_INSTALL_URL=%s ZENO_CONTROLLER_URL=%s ZENO_NODE_ID=%s ZENO_ENROLLMENT_TOKEN=%s%s %s`, shellSingleQuote(installURL), shellSingleQuote(controllerURL), shellSingleQuote(nodeID), shellSingleQuote(enrollmentToken), versionEnv, unixRunner),
+		MacOS:   fmt.Sprintf(`ZENO_INSTALL_URL=%s ZENO_CONTROLLER_URL=%s ZENO_NODE_ID=%s ZENO_ENROLLMENT_TOKEN=%s%s %s`, shellSingleQuote(installURL), shellSingleQuote(controllerURL), shellSingleQuote(nodeID), shellSingleQuote(enrollmentToken), versionEnv, unixRunner),
+		Windows: fmt.Sprintf(`powershell -NoProfile -ExecutionPolicy Bypass -Command "$ErrorActionPreference='Stop'; %s$env:ZENO_CONTROLLER_URL=%s; $env:ZENO_NODE_ID=%s; $env:ZENO_ENROLLMENT_TOKEN=%s; irm %s | iex"`, windowsVersionEnv, powershellSingleQuote(controllerURL), powershellSingleQuote(nodeID), powershellSingleQuote(enrollmentToken), powershellSingleQuote(windowsInstallURL)),
 	}
 }
 

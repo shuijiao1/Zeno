@@ -1,6 +1,6 @@
 import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it } from 'vitest'
-import { LatencyChart } from './LatencyChart'
+import { LatencyChart, yDomainForRows } from './LatencyChart'
 
 const points = [
   { ts: '2026-07-02T00:00:00Z', targetId: 'alpha', targetName: 'Alpha', medianMs: 12, avgMs: 12, lossPercent: 0 },
@@ -10,7 +10,7 @@ const points = [
 
 describe('LatencyChart', () => {
   it('renders a single custom hover surface without browser title tooltips', () => {
-    const html = renderToStaticMarkup(<LatencyChart points={points} activeTargetNames={['Alpha', 'Beta']} />)
+    const html = renderToStaticMarkup(<LatencyChart points={points} activeTargetIds={['alpha', 'beta']} />)
 
     expect(html).toContain('latency-hover-hit')
     expect(html.match(/latency-hover-hit/g)).toHaveLength(1)
@@ -21,8 +21,8 @@ describe('LatencyChart', () => {
   })
 
   it('shows packet loss only for a single selected target, not when multiple latency lines are displayed', () => {
-    const multiHtml = renderToStaticMarkup(<LatencyChart points={points} activeTargetNames={['Alpha', 'Beta']} />)
-    const singleHtml = renderToStaticMarkup(<LatencyChart points={points} activeTargetNames={['Alpha']} />)
+    const multiHtml = renderToStaticMarkup(<LatencyChart points={points} activeTargetIds={['alpha', 'beta']} />)
+    const singleHtml = renderToStaticMarkup(<LatencyChart points={points} activeTargetIds={['alpha']} />)
 
     expect(multiHtml).not.toContain('packet-loss-area')
     expect(multiHtml).not.toContain('丢包')
@@ -40,7 +40,7 @@ describe('LatencyChart', () => {
       lossPercent: 0,
     }))
 
-    const html = renderToStaticMarkup(<LatencyChart points={dayPoints} activeTargetNames={['Alpha']} />)
+    const html = renderToStaticMarkup(<LatencyChart points={dayPoints} activeTargetIds={['alpha']} />)
     const labels = [...html.matchAll(/class="axis-label"[^>]*>([^<]+)<\/text>/g)].map((match) => match[1])
     const xAxisLabels = labels.filter((label) => label.includes(':'))
 
@@ -59,7 +59,7 @@ describe('LatencyChart', () => {
       lossPercent: 0,
     }))
 
-    const html = renderToStaticMarkup(<LatencyChart points={steadyHighLatencyPoints} activeTargetNames={['High latency']} />)
+    const html = renderToStaticMarkup(<LatencyChart points={steadyHighLatencyPoints} activeTargetIds={['high']} />)
     const labels = [...html.matchAll(/class="axis-label"[^>]*>([^<]+)<\/text>/g)].map((match) => match[1])
     const yAxisLabels = labels.filter((label) => label.endsWith('ms'))
 
@@ -77,13 +77,13 @@ describe('LatencyChart', () => {
       lossPercent: 0,
     }))
 
-    const html = renderToStaticMarkup(<LatencyChart points={highLatencyPoints} activeTargetNames={['High latency']} />)
+    const html = renderToStaticMarkup(<LatencyChart points={highLatencyPoints} activeTargetIds={['high']} />)
     const labels = [...html.matchAll(/class="axis-label"[^>]*>([^<]+)<\/text>/g)].map((match) => match[1])
     const yAxisValues = labels
       .filter((label) => label.endsWith('ms'))
       .map((label) => Number(label.replace('ms', '')))
 
-    expect(Math.max(...yAxisValues)).toBe(5000)
+    expect(yAxisValues.reduce((max, value) => Math.max(max, value), Number.NEGATIVE_INFINITY)).toBe(5000)
     expect(yAxisValues.some((value) => value > 1000)).toBe(true)
   })
 
@@ -94,7 +94,7 @@ describe('LatencyChart', () => {
       { ts: '2026-07-02T00:02:00Z', targetId: 'alpha', targetName: 'Alpha', avgMs: 18, medianMs: 16, lossPercent: 0 },
     ]
 
-    const html = renderToStaticMarkup(<LatencyChart points={gapPoints} activeTargetNames={['Alpha']} />)
+    const html = renderToStaticMarkup(<LatencyChart points={gapPoints} activeTargetIds={['alpha']} />)
     const lineMatch = html.match(/<path[^>]+d="([^"]+)"[^>]+stroke="#22c55e"/)
 
     expect(lineMatch?.[1].match(/M/g)).toHaveLength(1)
@@ -111,10 +111,38 @@ describe('LatencyChart', () => {
       lossPercent: 0,
     }))
 
-    const html = renderToStaticMarkup(<LatencyChart points={minutePoints} activeTargetNames={['Alpha']} />)
+    const html = renderToStaticMarkup(<LatencyChart points={minutePoints} activeTargetIds={['alpha']} />)
     const lineMatch = html.match(/<path[^>]+d="([^"]+)"[^>]+stroke="#22c55e"/)
 
     expect(lineMatch?.[1].match(/M/g)).toHaveLength(1)
     expect(lineMatch?.[1].match(/L/g)).toHaveLength(1439)
+  })
+
+  it('renders duplicate and reserved-looking target names as labels while selecting lines by id', () => {
+    const timestamp = '2026-07-02T00:00:00Z'
+    const specialPoints = [
+      { ts: timestamp, targetId: 'first-id', targetName: 'Duplicate', avgMs: 11, medianMs: 11, lossPercent: 0 },
+      { ts: timestamp, targetId: 'second-id', targetName: 'Duplicate', avgMs: 22, medianMs: 22, lossPercent: 0 },
+      { ts: timestamp, targetId: 'created-id', targetName: 'created_at', avgMs: 33, medianMs: 33, lossPercent: 0 },
+      { ts: timestamp, targetId: 'loss-id', targetName: 'first-id_packet_loss', avgMs: 44, medianMs: 44, lossPercent: 0 },
+    ]
+
+    const html = renderToStaticMarkup(
+      <LatencyChart points={specialPoints} activeTargetIds={specialPoints.map((point) => point.targetId)} />,
+    )
+
+    expect(html.match(/>Duplicate<\/span>/g)).toHaveLength(2)
+    expect(html).toContain('>created_at</span>')
+    expect(html).toContain('>first-id_packet_loss</span>')
+    expect(html.match(/<path[^>]+vector-effect="non-scaling-stroke"/g)).toHaveLength(4)
+  })
+
+  it('reduces an exceptionally large latency payload without spreading it into Math.min or Math.max', () => {
+    const rows = Array.from({ length: 250_000 }, (_, index) => ({ created_at: index, target: index % 2 === 0 ? 12 : 48 }))
+
+    expect(() => yDomainForRows(rows, ['target'])).not.toThrow()
+    const domain = yDomainForRows(rows, ['target'])
+    expect(domain.min).toBeCloseTo(6.6)
+    expect(domain.max).toBeCloseTo(53.4)
   })
 })

@@ -18,6 +18,7 @@ type HandlerOptions struct {
 	StaticDir                    string
 	Store                        Store
 	AdminTokenHash               string
+	TrustedProxies               TrustedProxySet
 	AgentBinaryPath              string
 	AgentVersion                 string
 	NotificationClient           *http.Client
@@ -31,35 +32,40 @@ type HandlerOptions struct {
 }
 
 type handler struct {
-	store                Store
-	adminTokenHash       string
-	agentBinaryPath      string
-	agentVersion         string
-	notificationSender   notificationSender
-	loginLimiter         *adminLoginLimiter
-	liveHub              *liveUpdateHub
-	presence             *agentPresenceManager
-	publicWSGate         *websocketGate
-	agentWSGate          *websocketGate
-	summaryPublishMu     sync.Mutex
-	summaryPublishTimer  *time.Timer
-	summaryLastPublished time.Time
-	summaryCacheMu       sync.RWMutex
-	summaryCache         []byte
-	summaryCacheUpdated  time.Time
-	detailCache          *detailJSONCache
-	detailPublishMu      sync.Mutex
-	detailPublishPending map[string]bool
-	detailPublishGate    chan struct{}
-	backgroundMu         sync.Mutex
-	backgroundClosing    bool
-	backgroundCtx        context.Context
-	backgroundCancel     context.CancelFunc
-	backgroundWG         sync.WaitGroup
-	notificationDrainMu  sync.Mutex
-	notificationWorkerMu sync.Mutex
-	notificationWorker   *notificationOutboxWorker
-	router               http.Handler
+	store                  Store
+	adminTokenHash         string
+	agentBinaryPath        string
+	agentVersion           string
+	notificationSender     notificationSender
+	loginLimiter           *adminLoginLimiter
+	enrollmentLimiter      *adminLoginLimiter
+	trustedProxies         TrustedProxySet
+	agentQuotas            *agentQuotaManager
+	liveHub                *liveUpdateHub
+	presence               *agentPresenceManager
+	publicWSGate           *websocketGate
+	agentWSGate            *websocketGate
+	summaryPublishMu       sync.Mutex
+	summaryPublishTimer    *time.Timer
+	summaryLastPublished   time.Time
+	summaryCacheMu         sync.RWMutex
+	summaryCache           []byte
+	summaryCacheUpdated    time.Time
+	summaryCacheGeneration uint64
+	summaryCacheFlight     *jsonCacheFlight
+	detailCache            *detailJSONCache
+	detailPublishMu        sync.Mutex
+	detailPublishPending   map[string]bool
+	detailPublishGate      chan struct{}
+	backgroundMu           sync.Mutex
+	backgroundClosing      bool
+	backgroundCtx          context.Context
+	backgroundCancel       context.CancelFunc
+	backgroundWG           sync.WaitGroup
+	notificationDrainMu    sync.Mutex
+	notificationWorkerMu   sync.Mutex
+	notificationWorker     *notificationOutboxWorker
+	router                 http.Handler
 }
 
 const (
@@ -177,25 +183,38 @@ func (limiter *adminLoginLimiter) recordSuccess(key string) {
 }
 
 type websocketGate struct {
-	mu      sync.Mutex
-	current int
-	max     int
+	mu        sync.Mutex
+	current   int
+	max       int
+	maxPerKey int
+	byKey     map[string]int
 }
 
 func newWebSocketGate(max int) *websocketGate {
-	return &websocketGate{max: max}
+	return newWebSocketGateWithPerKey(max, 0)
+}
+
+func newWebSocketGateWithPerKey(max, maxPerKey int) *websocketGate {
+	return &websocketGate{max: max, maxPerKey: maxPerKey, byKey: make(map[string]int)}
 }
 
 func (gate *websocketGate) acquire() (func(), bool) {
+	return gate.acquireFor("")
+}
+
+func (gate *websocketGate) acquireFor(key string) (func(), bool) {
 	if gate == nil || gate.max <= 0 {
 		return func() {}, true
 	}
 	gate.mu.Lock()
 	defer gate.mu.Unlock()
-	if gate.current >= gate.max {
+	if gate.current >= gate.max || (key != "" && gate.maxPerKey > 0 && gate.byKey[key] >= gate.maxPerKey) {
 		return nil, false
 	}
 	gate.current++
+	if key != "" && gate.maxPerKey > 0 {
+		gate.byKey[key]++
+	}
 	released := false
 	return func() {
 		gate.mu.Lock()
@@ -207,13 +226,21 @@ func (gate *websocketGate) acquire() (func(), bool) {
 		if gate.current > 0 {
 			gate.current--
 		}
+		if key != "" && gate.maxPerKey > 0 {
+			if gate.byKey[key] <= 1 {
+				delete(gate.byKey, key)
+			} else {
+				gate.byKey[key]--
+			}
+		}
 	}, true
 }
 
 const (
-	publicWebSocketMaxConnections = 128
-	agentWebSocketMaxConnections  = 256
-	detailPublishMaxConcurrent    = 2
+	publicWebSocketMaxConnections      = 128
+	publicWebSocketMaxConnectionsPerIP = 16
+	agentWebSocketMaxConnections       = 256
+	detailPublishMaxConcurrent         = 2
 )
 
 func NewHandler(options ...HandlerOptions) http.Handler {
@@ -237,9 +264,12 @@ func NewHandler(options ...HandlerOptions) http.Handler {
 		agentVersion:         opts.AgentVersion,
 		notificationSender:   newHTTPNotificationSender(opts.NotificationClient, opts.TelegramAPIBaseURL),
 		loginLimiter:         newAdminLoginLimiter(),
+		enrollmentLimiter:    newAdminLoginLimiter(),
+		trustedProxies:       opts.TrustedProxies,
+		agentQuotas:          newAgentQuotaManager(),
 		liveHub:              newLiveUpdateHub(),
 		presence:             newAgentPresenceManager(),
-		publicWSGate:         newWebSocketGate(publicWebSocketMaxConnections),
+		publicWSGate:         newWebSocketGateWithPerKey(publicWebSocketMaxConnections, publicWebSocketMaxConnectionsPerIP),
 		agentWSGate:          newWebSocketGate(agentWebSocketMaxConnections),
 		detailCache:          newDetailJSONCache(),
 		detailPublishPending: make(map[string]bool),
@@ -286,6 +316,7 @@ func NewHandler(options ...HandlerOptions) http.Handler {
 	mux.HandleFunc("/api/admin/v1/probe-targets/", h.handleAdminProbeTargetResource)
 	mux.HandleFunc("/api/admin/v1/nodes", h.handleAdminNodes)
 	mux.HandleFunc("/api/admin/v1/nodes/", h.handleAdminNodeResource)
+	mux.HandleFunc("/api/agent/v1/enroll", h.handleAgentEnrollment)
 	mux.HandleFunc("/api/agent/v1/probe-targets", h.handleAgentProbeTargets)
 	mux.HandleFunc("/api/agent/v1/presence/ws", h.handleAgentPresenceWebSocket)
 	mux.HandleFunc("/api/agent/v1/probe-results", h.handleAgentProbeResults)
@@ -295,7 +326,7 @@ func NewHandler(options ...HandlerOptions) http.Handler {
 	if opts.StaticDir != "" {
 		mux.HandleFunc("/", handleStatic(opts.StaticDir))
 	}
-	h.router = withSecurityHeaders(mux)
+	h.router = h.withSecurityHeaders(mux)
 	return h
 }
 
@@ -355,6 +386,9 @@ func (h *handler) Cleanup(ctx context.Context) error {
 		h.backgroundCancel()
 	}
 	h.backgroundMu.Unlock()
+	if h.presence != nil {
+		h.presence.cancelOfflineChecks()
+	}
 	h.summaryPublishMu.Lock()
 	if h.summaryPublishTimer != nil {
 		h.summaryPublishTimer.Stop()
@@ -374,18 +408,21 @@ func (h *handler) Cleanup(ctx context.Context) error {
 
 }
 
-func withSecurityHeaders(next http.Handler) http.Handler {
+func (h *handler) withSecurityHeaders(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("X-Content-Type-Options", "nosniff")
 		w.Header().Set("X-Frame-Options", "DENY")
 		w.Header().Set("Referrer-Policy", "no-referrer")
 		w.Header().Set("Permissions-Policy", "camera=(), microphone=(), geolocation=()")
 		w.Header().Set("Content-Security-Policy", "default-src 'self'; base-uri 'self'; object-src 'none'; frame-ancestors 'none'; form-action 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' https: data:; font-src 'self' https: data:; connect-src 'self'")
-		if requestUsesHTTPS(r) {
+		if h.requestUsesHTTPS(r) {
 			w.Header().Set("Strict-Transport-Security", "max-age=31536000")
 		}
-		if strings.HasPrefix(r.URL.Path, "/api/admin/") || strings.TrimSpace(r.Header.Get("X-Admin-Token")) != "" {
+		if strings.HasPrefix(r.URL.Path, "/api/admin/") || r.URL.Path == "/api/agent/v1/enroll" || strings.TrimSpace(r.Header.Get("X-Admin-Token")) != "" {
 			w.Header().Set("Cache-Control", "no-store")
+		}
+		if r.URL.Path == "/api/agent/v1/enroll" {
+			w.Header().Set("Pragma", "no-cache")
 		}
 		if strings.TrimSpace(r.Header.Get("X-Admin-Token")) != "" {
 			w.Header().Add("Vary", "X-Admin-Token")
@@ -394,15 +431,11 @@ func withSecurityHeaders(next http.Handler) http.Handler {
 	})
 }
 
-func requestUsesHTTPS(r *http.Request) bool {
+func (h *handler) requestUsesHTTPS(r *http.Request) bool {
 	if r == nil {
 		return false
 	}
-	if r.TLS != nil {
-		return true
-	}
-	remoteIP := parseRemoteIP(r.RemoteAddr)
-	return remoteIP != nil && trustedForwardingProxy(remoteIP) && strings.EqualFold(strings.TrimSpace(r.Header.Get("X-Forwarded-Proto")), "https")
+	return h.requestProto(r) == "https"
 }
 
 func (h *handler) handlePublicServiceResource(w http.ResponseWriter, r *http.Request) {
@@ -487,23 +520,27 @@ func (h *handler) handleAgentBinary(w http.ResponseWriter, r *http.Request) {
 	http.ServeFile(w, r, h.agentBinaryPath)
 }
 
-func requestBaseURL(r *http.Request) string {
-	proto := strings.TrimSpace(r.Header.Get("X-Forwarded-Proto"))
-	if proto != "http" && proto != "https" {
-		proto = ""
-	}
+func (h *handler) requestBaseURL(r *http.Request) string {
+	proto := h.requestProto(r)
 	if proto == "" {
-		if r.TLS != nil {
-			proto = "https"
-		} else {
-			proto = "http"
-		}
+		proto = "http"
 	}
 	host := strings.TrimSpace(r.Host)
 	if host == "" {
 		host = "127.0.0.1:18980"
 	}
 	return strings.TrimRight(proto+"://"+host, "/")
+}
+
+func (h *handler) requestProto(r *http.Request) string {
+	if r == nil {
+		return ""
+	}
+	return h.trustedProxies.requestProto(&httpRequestView{
+		remoteAddr:     r.RemoteAddr,
+		forwardedProto: r.Header.Get("X-Forwarded-Proto"),
+		tls:            r.TLS != nil,
+	})
 }
 
 func (h *handler) handlePublicSettings(w http.ResponseWriter, r *http.Request) {
@@ -528,12 +565,12 @@ func (h *handler) handleSummary(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json; charset=utf-8")
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write(payload)
-		if h.summaryCacheStale(summaryCacheIdleRefreshFor) {
+		if h.summaryCacheStale(summaryCacheIdleRefreshFor) && h.liveHub != nil && h.liveHub.hasClients(summaryLiveTopic) {
 			h.scheduleSummaryPublishAfter(summaryCacheBackgroundDelay)
 		}
 		return
 	}
-	payload, err := h.summaryJSON(r.Context())
+	payload, err := h.summaryJSONForHTTP(r.Context())
 	if err != nil {
 		writeStoreError(w, err)
 		return

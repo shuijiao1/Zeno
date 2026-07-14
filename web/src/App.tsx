@@ -1,4 +1,4 @@
-import { type CSSProperties, type DragEvent, type FormEvent, type ReactNode, useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { type CSSProperties, type DragEvent, type FormEvent, type ReactNode, useEffect, useId, useLayoutEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import copy from 'copy-to-clipboard'
 import { createAdminNode, createAdminNotificationChannel, createAdminProbeTarget, deleteAdminNode, deleteAdminNotificationChannel, deleteAdminProbeTarget, fetchAdminAccount, fetchAdminAlertRules, fetchAdminNodes, fetchAdminNotificationChannels, fetchAdminProbeTargets, fetchAdminSettings, fetchNodeLatency, fetchNodeState, fetchPublicSettings, fetchServiceLatency, fetchSummary, subscribeNodeLatency, subscribeNodeState, subscribeServiceLatency, subscribeSummary, loginAdmin, logoutAdmin, requestAdminNodeInstallCommand, testAdminNotificationChannel, updateAdminAccount, updateAdminAlertRule, updateAdminNode, updateAdminNotificationChannel, updateAdminProbeTarget, updateAdminSettings, type AdminAccountData, type AdminAlertRuleUpdateInput, type AdminNodeCreateInput, type AdminNodeUpdateInput, type AdminNotificationChannelCreateInput, type AdminNotificationChannelUpdateInput, type AdminProbeTargetInput, type AdminProbeTargetUpdateInput, type AdminSettingsUpdateInput, type NodeLatencyData, type NodeStateData, type ServiceLatencyData, type SummaryData } from './api/client'
@@ -9,11 +9,11 @@ import { ServerFlag } from './components/ServerFlag'
 import { startLiveRefresh } from './lib/liveRefresh'
 import { startResilientLiveData } from './lib/resilientLive'
 import { createMutationEpoch } from './lib/mutationEpoch'
-import { clearStoredAdminToken, loadStoredAdminToken, rememberAdminToken } from './lib/adminToken'
+import { captureAdminTokenIdentity, clearStoredAdminToken, clearStoredAdminTokenIfCurrent, loadStoredAdminToken, rememberAdminToken, type AdminTokenIdentity } from './lib/adminToken'
 import { nodePath, parseDashboardRoute, type DashboardRoute } from './lib/route'
 import { applyCustomCode } from './lib/customCode'
 import { availableHistoryRanges, coerceHistoryRange, isHTTPUnauthorizedError, rangeRequiresAdmin } from './lib/historyRange'
-import { loadCachedDetailData, nodeLatencyCachePrefix, nodeStateCachePrefix, rememberDetailData, serviceLatencyCachePrefix } from './lib/detailCache'
+import { DetailMemoryCache, loadCachedDetailData, nodeLatencyCachePrefix, nodeStateCachePrefix, rememberDetailData, serviceLatencyCachePrefix } from './lib/detailCache'
 import { loadStoredSummary, rememberSummary } from './lib/summaryCache'
 import type { AdminAlertRule, AdminNode, AdminNodeInstallCommand, AdminNotificationChannel, AdminProbeTarget, AdminSettings, AdminTheme, AppearancePreset, HomeCardNode, LatencyPoint, ProbeType, ServiceTarget, StatePoint } from './types'
 
@@ -404,9 +404,9 @@ export function App() {
   const [latencyState, setLatencyState] = useState<LatencyLoadState>({ kind: 'idle' })
   const [stateHistoryState, setStateHistoryState] = useState<StateHistoryLoadState>({ kind: 'idle' })
   const [serviceLatencyState, setServiceLatencyState] = useState<ServiceLatencyLoadState>({ kind: 'idle' })
-  const nodeLatencyCacheRef = useRef(new Map<string, NodeLatencyData>())
-  const nodeStateCacheRef = useRef(new Map<string, NodeStateData>())
-  const serviceLatencyCacheRef = useRef(new Map<string, ServiceLatencyData>())
+  const nodeLatencyCacheRef = useRef(new DetailMemoryCache<NodeLatencyData>())
+  const nodeStateCacheRef = useRef(new DetailMemoryCache<NodeStateData>())
+  const serviceLatencyCacheRef = useRef(new DetailMemoryCache<ServiceLatencyData>())
   const summaryRef = useRef<SummaryData | null>(initialSummary?.data ?? null)
   const homeRealtimeMountedAtRef = useRef(monotonicNowMs())
   const homeRealtimeLastUpdatedAtRef = useRef<number | null>(null)
@@ -419,6 +419,24 @@ export function App() {
   const [settings, setSettings] = useState<AdminSettings>(defaultSettings)
   const [themeOverride, setThemeOverride] = useState<AdminTheme | null>(() => storedThemeOverride())
   const [backgroundEnabled, setBackgroundEnabled] = useState(() => storedBackgroundEnabled())
+
+  const clearAdminSession = (identity?: AdminTokenIdentity): boolean => {
+    if (identity) {
+      if (!clearStoredAdminTokenIfCurrent(identity)) return false
+      setAdminToken((current) => current === identity.token ? '' : current)
+    } else {
+      clearStoredAdminToken()
+      setAdminToken('')
+    }
+    setAdminState({ kind: 'idle' })
+    return true
+  }
+
+  const expireAdminSession = (identity: AdminTokenIdentity): boolean => {
+    if (!clearAdminSession(identity)) return false
+    setAdminAuthState({ kind: 'error', message: '登录已过期，请重新登录。' })
+    return true
+  }
 
   useEffect(() => {
     let cancelled = false
@@ -508,16 +526,16 @@ export function App() {
 
     let cancelled = false
     const cacheKey = `${route.nodeId}:${nodeLatencyRange}`
-    const memoryCached = nodeLatencyCacheRef.current.get(cacheKey)
+    const memoryCached = nodeLatencyCacheRef.current.getCached(cacheKey)
     const sessionCached = memoryCached ? null : loadCachedDetailData(nodeLatencyCachePrefix, route.nodeId, nodeLatencyRange, validateNodeLatencyData)
-    const cached = memoryCached ?? sessionCached?.data ?? null
+    const cached = memoryCached?.data ?? sessionCached?.data ?? null
     const seeded = cached ?? seedNodeLatencyFromSummary(summaryRef.current, route.nodeId, nodeLatencyRange)
-    if (cached) nodeLatencyCacheRef.current.set(cacheKey, cached)
+    if (sessionCached) nodeLatencyCacheRef.current.set(cacheKey, sessionCached.data, sessionCached.storedAt)
     if (seeded) {
       setLatencyState({
         kind: 'ready',
         data: seeded,
-        freshness: sessionCached ? { stale: sessionCached.stale, storedAt: sessionCached.storedAt, source: 'cache' } : cached ? { stale: false, source: 'cache' } : { stale: true, source: 'summary' },
+        freshness: sessionCached ? { stale: sessionCached.stale, storedAt: sessionCached.storedAt, source: 'cache' } : memoryCached ? { stale: memoryCached.stale, storedAt: memoryCached.storedAt, source: 'cache' } : { stale: true, source: 'summary' },
       })
     } else {
       setLatencyState((current) => (current.kind === 'ready' && current.data.nodeId === route.nodeId ? current : { kind: 'loading' }))
@@ -528,19 +546,17 @@ export function App() {
       if (!cancelled) setLatencyState({ kind: 'ready', data, freshness: { stale: false, storedAt: Date.now(), source } })
     }
     const useLiveStream = !rangeRequiresAdmin(nodeLatencyRange)
+    const requestToken = useLiveStream ? undefined : adminToken
+    const requestTokenIdentity = requestToken ? captureAdminTokenIdentity(requestToken) : null
     const stopLatencyStream = startResilientLiveData<NodeLatencyData>({
       subscribe: useLiveStream ? (onData, onError, onStatus) => subscribeNodeLatency(route.nodeId, nodeLatencyRange, onData, onError, onStatus) : null,
-      fetch: (signal) => fetchNodeLatency(route.nodeId, nodeLatencyRange, rangeRequiresAdmin(nodeLatencyRange) ? adminToken : undefined, signal),
+      fetch: (signal) => fetchNodeLatency(route.nodeId, nodeLatencyRange, requestToken, signal),
       applyData: applyLatencyData,
       initialFallbackDelayMs: detailHttpFallbackDelayMs,
       onError: (error) => {
         if (cancelled) return
         const unauthorized = isHTTPUnauthorizedError(error)
-        if (unauthorized) {
-          clearStoredAdminToken()
-          setAdminToken('')
-          setAdminAuthState({ kind: 'error', message: '登录已过期，请重新登录。' })
-        }
+        if (unauthorized && requestTokenIdentity && !expireAdminSession(requestTokenIdentity)) return
         setLatencyState((current) => (current.kind === 'ready'
           ? { ...current, freshness: { ...current.freshness, stale: true } }
           : { kind: 'error', message: unauthorized ? '登录已过期，请重新登录。' : error instanceof Error ? error.message : 'latency request failed' }))
@@ -560,16 +576,16 @@ export function App() {
 
     let cancelled = false
     const cacheKey = `${route.nodeId}:${stateRange}`
-    const memoryCached = nodeStateCacheRef.current.get(cacheKey)
+    const memoryCached = nodeStateCacheRef.current.getCached(cacheKey)
     const sessionCached = memoryCached ? null : loadCachedDetailData(nodeStateCachePrefix, route.nodeId, stateRange, validateNodeStateData)
-    const cached = memoryCached ?? sessionCached?.data ?? null
+    const cached = memoryCached?.data ?? sessionCached?.data ?? null
     const seeded = cached ?? seedNodeStateFromSummary(summaryRef.current, route.nodeId, stateRange)
-    if (cached) nodeStateCacheRef.current.set(cacheKey, cached)
+    if (sessionCached) nodeStateCacheRef.current.set(cacheKey, sessionCached.data, sessionCached.storedAt)
     if (seeded) {
       setStateHistoryState({
         kind: 'ready',
         data: seeded,
-        freshness: sessionCached ? { stale: sessionCached.stale, storedAt: sessionCached.storedAt, source: 'cache' } : cached ? { stale: false, source: 'cache' } : { stale: true, source: 'summary' },
+        freshness: sessionCached ? { stale: sessionCached.stale, storedAt: sessionCached.storedAt, source: 'cache' } : memoryCached ? { stale: memoryCached.stale, storedAt: memoryCached.storedAt, source: 'cache' } : { stale: true, source: 'summary' },
       })
     } else {
       setStateHistoryState({ kind: 'loading' })
@@ -580,19 +596,17 @@ export function App() {
       if (!cancelled) setStateHistoryState({ kind: 'ready', data, freshness: { stale: false, storedAt: Date.now(), source } })
     }
     const useLiveStream = !rangeRequiresAdmin(stateRange)
+    const requestToken = useLiveStream ? undefined : adminToken
+    const requestTokenIdentity = requestToken ? captureAdminTokenIdentity(requestToken) : null
     const stopStateStream = startResilientLiveData<NodeStateData>({
       subscribe: useLiveStream ? (onData, onError, onStatus) => subscribeNodeState(route.nodeId, stateRange, onData, onError, onStatus) : null,
-      fetch: (signal) => fetchNodeState(route.nodeId, stateRange, rangeRequiresAdmin(stateRange) ? adminToken : undefined, signal),
+      fetch: (signal) => fetchNodeState(route.nodeId, stateRange, requestToken, signal),
       applyData: applyStateData,
       initialFallbackDelayMs: detailHttpFallbackDelayMs,
       onError: (error) => {
         if (cancelled) return
         const unauthorized = isHTTPUnauthorizedError(error)
-        if (unauthorized) {
-          clearStoredAdminToken()
-          setAdminToken('')
-          setAdminAuthState({ kind: 'error', message: '登录已过期，请重新登录。' })
-        }
+        if (unauthorized && requestTokenIdentity && !expireAdminSession(requestTokenIdentity)) return
         setStateHistoryState((current) => (current.kind === 'ready'
           ? { ...current, freshness: { ...current.freshness, stale: true } }
           : { kind: 'error', message: unauthorized ? '登录已过期，请重新登录。' : error instanceof Error ? error.message : 'state request failed' }))
@@ -624,15 +638,15 @@ export function App() {
 
     let cancelled = false
     const cacheKey = `${route.targetId}:${serviceLatencyRange}`
-    const memoryCached = serviceLatencyCacheRef.current.get(cacheKey)
+    const memoryCached = serviceLatencyCacheRef.current.getCached(cacheKey)
     const sessionCached = memoryCached ? null : loadCachedDetailData(serviceLatencyCachePrefix, route.targetId, serviceLatencyRange, validateServiceLatencyData)
-    const cached = memoryCached ?? sessionCached?.data ?? null
+    const cached = memoryCached?.data ?? sessionCached?.data ?? null
     if (cached) {
-      serviceLatencyCacheRef.current.set(cacheKey, cached)
+      if (sessionCached) serviceLatencyCacheRef.current.set(cacheKey, sessionCached.data, sessionCached.storedAt)
       setServiceLatencyState({
         kind: 'ready',
         data: cached,
-        freshness: sessionCached ? { stale: sessionCached.stale, storedAt: sessionCached.storedAt, source: 'cache' } : { stale: false, source: 'cache' },
+        freshness: sessionCached ? { stale: sessionCached.stale, storedAt: sessionCached.storedAt, source: 'cache' } : { stale: memoryCached?.stale ?? false, storedAt: memoryCached?.storedAt, source: 'cache' },
       })
     } else {
       setServiceLatencyState({ kind: 'loading' })
@@ -643,19 +657,17 @@ export function App() {
       if (!cancelled) setServiceLatencyState({ kind: 'ready', data, freshness: { stale: false, storedAt: Date.now(), source } })
     }
     const useLiveStream = !rangeRequiresAdmin(serviceLatencyRange)
+    const requestToken = useLiveStream ? undefined : adminToken
+    const requestTokenIdentity = requestToken ? captureAdminTokenIdentity(requestToken) : null
     const stopServiceLatencyStream = startResilientLiveData<ServiceLatencyData>({
       subscribe: useLiveStream ? (onData, onError, onStatus) => subscribeServiceLatency(route.targetId, serviceLatencyRange, onData, onError, onStatus) : null,
-      fetch: (signal) => fetchServiceLatency(route.targetId, serviceLatencyRange, rangeRequiresAdmin(serviceLatencyRange) ? adminToken : undefined, signal),
+      fetch: (signal) => fetchServiceLatency(route.targetId, serviceLatencyRange, requestToken, signal),
       applyData: applyServiceLatencyData,
       initialFallbackDelayMs: detailHttpFallbackDelayMs,
       onError: (error) => {
         if (cancelled) return
         const unauthorized = isHTTPUnauthorizedError(error)
-        if (unauthorized) {
-          clearStoredAdminToken()
-          setAdminToken('')
-          setAdminAuthState({ kind: 'error', message: '登录已过期，请重新登录。' })
-        }
+        if (unauthorized && requestTokenIdentity && !expireAdminSession(requestTokenIdentity)) return
         setServiceLatencyState((current) => (current.kind === 'ready'
           ? { ...current, freshness: { ...current.freshness, stale: true } }
           : { kind: 'error', message: unauthorized ? '登录已过期，请重新登录。' : error instanceof Error ? error.message : 'service latency request failed' }))
@@ -688,9 +700,11 @@ export function App() {
     const loadAdminNodes = async (signal?: AbortSignal) => {
       const mutationSnapshot = adminMutationEpochRef.current.snapshot()
       if (!adminMutationEpochRef.current.isCurrent(mutationSnapshot)) return
+      const requestToken = adminToken
+      const requestTokenIdentity = captureAdminTokenIdentity(requestToken)
       if (!loadedOnce) setAdminState({ kind: 'loading' })
       try {
-        const nodesData = await fetchAdminNodes(adminToken, signal)
+        const nodesData = await fetchAdminNodes(requestToken, signal)
         loadedOnce = true
         if (cancelled || signal?.aborted || !adminMutationEpochRef.current.isCurrent(mutationSnapshot)) return
         setAdminState((current) => ({
@@ -702,20 +716,17 @@ export function App() {
           alertRules: current.kind === 'ready' ? current.alertRules : [],
         }))
         const results = await Promise.allSettled([
-          fetchAdminSettings(adminToken, signal),
-          fetchAdminAccount(adminToken, signal),
-          fetchAdminProbeTargets(adminToken, signal),
-          fetchAdminNotificationChannels(adminToken, signal),
-          fetchAdminAlertRules(adminToken, signal),
+          fetchAdminSettings(requestToken, signal),
+          fetchAdminAccount(requestToken, signal),
+          fetchAdminProbeTargets(requestToken, signal),
+          fetchAdminNotificationChannels(requestToken, signal),
+          fetchAdminAlertRules(requestToken, signal),
         ])
         if (cancelled || signal?.aborted || !adminMutationEpochRef.current.isCurrent(mutationSnapshot)) return
         const [settingsResult, accountResult, targetsResult, channelsResult, alertRulesResult] = results
         const unauthorizedResult = results.find((result) => result.status === 'rejected' && isAdminUnauthorizedError(result.reason))
         if (unauthorizedResult) {
-          clearStoredAdminToken()
-          setAdminToken('')
-          setAdminAuthState({ kind: 'error', message: '登录已过期，请重新登录。' })
-          setAdminState({ kind: 'idle' })
+          expireAdminSession(requestTokenIdentity)
           return
         }
         if (settingsResult.status === 'fulfilled') setSettings(settingsResult.value)
@@ -728,12 +739,9 @@ export function App() {
         } : current)
       } catch (error: unknown) {
         loadedOnce = true
-        if (cancelled || signal?.aborted || (error instanceof DOMException && error.name === 'AbortError')) return
+        if (cancelled || signal?.aborted || !adminMutationEpochRef.current.isCurrent(mutationSnapshot) || (error instanceof DOMException && error.name === 'AbortError')) return
         if (isAdminUnauthorizedError(error)) {
-          clearStoredAdminToken()
-          setAdminToken('')
-          setAdminAuthState({ kind: 'error', message: '登录已过期，请重新登录。' })
-          setAdminState({ kind: 'idle' })
+          expireAdminSession(requestTokenIdentity)
           return
         }
         setAdminState({ kind: 'error', message: error instanceof Error ? error.message : 'unknown error' })
@@ -763,12 +771,6 @@ export function App() {
       })
   }
 
-  const clearAdminSession = () => {
-    clearStoredAdminToken()
-    setAdminToken('')
-    setAdminState({ kind: 'idle' })
-  }
-
   const clearAdminToken = () => {
     if (adminToken === '') {
       clearAdminSession()
@@ -776,16 +778,16 @@ export function App() {
       return
     }
     const finishMutation = adminMutationEpochRef.current.beginMutation()
+    const requestToken = adminToken
+    const requestTokenIdentity = captureAdminTokenIdentity(requestToken)
     setAdminAuthState({ kind: 'loading' })
-    logoutAdmin(adminToken)
+    logoutAdmin(requestToken)
       .then(() => {
-        clearAdminSession()
-        setAdminAuthState({ kind: 'idle' })
+        if (clearAdminSession(requestTokenIdentity)) setAdminAuthState({ kind: 'idle' })
       })
       .catch((error: unknown) => {
         if (isAdminUnauthorizedError(error)) {
-          clearAdminSession()
-          setAdminAuthState({ kind: 'error', message: '登录已过期，请重新登录。' })
+          expireAdminSession(requestTokenIdentity)
           return
         }
         setAdminAuthState({ kind: 'error', message: error instanceof Error ? `退出失败：${error.message}` : '退出失败' })
@@ -793,10 +795,9 @@ export function App() {
       .finally(finishMutation)
   }
 
-  const handleAdminRequestError = (error: unknown) => {
+  const handleAdminRequestError = (error: unknown, requestTokenIdentity: AdminTokenIdentity) => {
     if (isAdminUnauthorizedError(error)) {
-      clearAdminSession()
-      setAdminAuthState({ kind: 'error', message: '登录已过期，请重新登录。' })
+      expireAdminSession(requestTokenIdentity)
       return
     }
     setAdminState({ kind: 'error', message: error instanceof Error ? error.message : 'unknown error' })
@@ -805,10 +806,11 @@ export function App() {
   const runAdminMutation = <T, R = void>(operation: () => Promise<T>, applyResult: (value: T) => R): Promise<R> => {
     if (adminToken === '') return Promise.reject(new Error('missing admin token'))
     const finishMutation = adminMutationEpochRef.current.beginMutation()
+    const requestTokenIdentity = captureAdminTokenIdentity(adminToken)
     return operation()
       .then((value) => applyResult(value))
       .catch((error: unknown) => {
-        handleAdminRequestError(error)
+        handleAdminRequestError(error, requestTokenIdentity)
         throw error
       })
       .finally(finishMutation)
@@ -838,9 +840,11 @@ export function App() {
 
   const requestAdminInstallCommand = (nodeId: string): Promise<AdminNodeInstallCommand> => {
     if (adminToken === '') return Promise.reject(new Error('missing admin token'))
-    return requestAdminNodeInstallCommand(adminToken, nodeId)
+    const requestToken = adminToken
+    const requestTokenIdentity = captureAdminTokenIdentity(requestToken)
+    return requestAdminNodeInstallCommand(requestToken, nodeId)
       .catch((error: unknown) => {
-        handleAdminRequestError(error)
+        handleAdminRequestError(error, requestTokenIdentity)
         throw error
       })
   }
@@ -947,9 +951,11 @@ export function App() {
 
   const testAdminNotificationChannelDetails = (channelId: string) => {
     if (adminToken === '') return
-    testAdminNotificationChannel(adminToken, channelId)
+    const requestToken = adminToken
+    const requestTokenIdentity = captureAdminTokenIdentity(requestToken)
+    testAdminNotificationChannel(requestToken, channelId)
       .then(() => {})
-      .catch(handleAdminRequestError)
+      .catch((error: unknown) => handleAdminRequestError(error, requestTokenIdentity))
   }
 
   const updateAdminAlertRuleDetails = (ruleId: string, input: AdminAlertRuleUpdateInput): Promise<void> => runAdminMutation(
@@ -2889,10 +2895,10 @@ function AdminNotificationChannelEditModal({ channel, onUpdate, onTest, onClose 
               <span>Telegram Chat ID</span>
               <input name="channel-destination" autoComplete="off" defaultValue={channel.destination} />
             </label>
-            <label>
-              <span>Telegram Bot Token</span>
-              <input name="channel-credential" autoComplete="new-password" placeholder={channel.credentialSet ? '留空则保留已保存 Token' : '请输入 Telegram Bot Token'} />
-            </label>
+            <AdminCredentialField
+              name="channel-credential"
+              placeholder={channel.credentialSet ? '留空则保留已保存 Token' : '请输入 Telegram Bot Token'}
+            />
             <label className="admin-node-toggle admin-channel-enabled-toggle">
               <input name="channel-enabled" type="checkbox" defaultChecked={channel.enabled} />
               <span>启用渠道</span>
@@ -2945,10 +2951,7 @@ function AdminNotificationChannelCreateModal({ onCreate, onClose }: { onCreate: 
               <span>Telegram Chat ID</span>
               <input name="new-channel-destination" autoComplete="off" placeholder="请输入 Telegram Chat ID" />
             </label>
-            <label>
-              <span>Telegram Bot Token</span>
-              <input name="new-channel-credential" autoComplete="new-password" placeholder="请输入 Telegram Bot Token" />
-            </label>
+            <AdminCredentialField name="new-channel-credential" placeholder="请输入 Telegram Bot Token" />
             <label className="admin-node-toggle admin-channel-enabled-toggle">
               <input name="new-channel-enabled" type="checkbox" defaultChecked />
               <span>创建后启用渠道</span>
@@ -2967,6 +2970,38 @@ function AdminNotificationChannelCreateModal({ onCreate, onClose }: { onCreate: 
 function AdminModalLayer({ children }: { children: ReactNode }) {
   if (typeof document === 'undefined') return <>{children}</>
   return createPortal(children, document.body)
+}
+
+export function AdminCredentialField({ name, placeholder }: { name: string; placeholder: string }) {
+  const [visible, setVisible] = useState(false)
+  const inputId = useId()
+  const actionLabel = visible ? '隐藏 Telegram Bot Token' : '显示 Telegram Bot Token'
+
+  return (
+    <div className="admin-form-control admin-secret-field">
+      <label htmlFor={inputId}>Telegram Bot Token</label>
+      <div className="admin-secret-input">
+        <input
+          id={inputId}
+          name={name}
+          type={visible ? 'text' : 'password'}
+          autoComplete="new-password"
+          placeholder={placeholder}
+        />
+        <button
+          className="admin-secret-toggle"
+          type="button"
+          aria-label={actionLabel}
+          aria-pressed={visible}
+          aria-controls={inputId}
+          title={actionLabel}
+          onClick={() => setVisible((current) => !current)}
+        >
+          <SecretVisibilityIcon visible={visible} />
+        </button>
+      </div>
+    </div>
+  )
 }
 
 function AdminModal({ title, onClose, children }: { title: string; onClose: () => void; children: ReactNode }) {
@@ -3641,6 +3676,16 @@ function TrashActionIcon() {
       <path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
       <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" />
       <path d="M10 11v6M14 11v6" />
+    </svg>
+  )
+}
+
+function SecretVisibilityIcon({ visible }: { visible: boolean }) {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true">
+      <path d="M2.5 12s3.5-6 9.5-6 9.5 6 9.5 6-3.5 6-9.5 6-9.5-6-9.5-6Z" />
+      <circle cx="12" cy="12" r="2.75" />
+      {visible && <path d="m4 4 16 16" />}
     </svg>
   )
 }

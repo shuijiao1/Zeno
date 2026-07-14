@@ -5,17 +5,22 @@ import (
 	"crypto/aes"
 	"crypto/cipher"
 	cryptorand "crypto/rand"
+	"crypto/sha256"
 	"encoding/base64"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"io"
+	"sort"
 	"strings"
 )
 
 const (
-	notificationCredentialKeySize          = 32
-	notificationCredentialCiphertextPrefix = "zeno:notification-credential:v1:aes-256-gcm:"
-	notificationCredentialAADDomain        = "zeno.notification.credential\x00v1\x00"
+	notificationCredentialKeySize                = 32
+	notificationCredentialLegacyCiphertextPrefix = "zeno:notification-credential:v1:aes-256-gcm:"
+	notificationCredentialCiphertextPrefix       = "zeno:notification-credential:v2:aes-256-gcm:"
+	notificationCredentialAADDomain              = "zeno.notification.credential\x00v1\x00"
+	notificationCredentialMaximumKeyIDLength     = 64
 )
 
 var (
@@ -25,19 +30,34 @@ var (
 )
 
 type notificationCredentialCipher struct {
-	aead cipher.AEAD
+	keyID string
+	aead  cipher.AEAD
+}
+
+type notificationCredentialKeyring struct {
+	activeKeyID string
+	active      *notificationCredentialCipher
+	byID        map[string]*notificationCredentialCipher
+	legacyOrder []*notificationCredentialCipher
 }
 
 func newNotificationCredentialCipher(key []byte) (*notificationCredentialCipher, error) {
+	return newNotificationCredentialCipherWithID(notificationCredentialDerivedKeyID(key), key)
+}
+
+func newNotificationCredentialCipherWithID(keyID string, key []byte) (*notificationCredentialCipher, error) {
+	normalizedKeyID := strings.TrimSpace(keyID)
+	if normalizedKeyID != keyID || !validNotificationCredentialKeyID(normalizedKeyID) {
+		return nil, fmt.Errorf("invalid notification credential key id")
+	}
+	keyID = normalizedKeyID
 	if len(key) != notificationCredentialKeySize {
 		return nil, fmt.Errorf("notification credential key must be %d bytes", notificationCredentialKeySize)
 	}
 	keyCopy := make([]byte, len(key))
 	copy(keyCopy, key)
 	block, err := aes.NewCipher(keyCopy)
-	for i := range keyCopy {
-		keyCopy[i] = 0
-	}
+	zeroBytes(keyCopy)
 	if err != nil {
 		return nil, err
 	}
@@ -45,11 +65,56 @@ func newNotificationCredentialCipher(key []byte) (*notificationCredentialCipher,
 	if err != nil {
 		return nil, err
 	}
-	return &notificationCredentialCipher{aead: aead}, nil
+	return &notificationCredentialCipher{keyID: keyID, aead: aead}, nil
+}
+
+func newNotificationCredentialKeyring(activeKeyID string, keys map[string][]byte) (*notificationCredentialKeyring, error) {
+	normalizedActiveKeyID := strings.TrimSpace(activeKeyID)
+	if normalizedActiveKeyID != activeKeyID || !validNotificationCredentialKeyID(normalizedActiveKeyID) || len(keys) == 0 {
+		return nil, errNotificationCredentialKeyRequired
+	}
+	normalizedKeys := make(map[string][]byte, len(keys))
+	keyIDs := make([]string, 0, len(keys))
+	for rawKeyID, key := range keys {
+		keyID := strings.TrimSpace(rawKeyID)
+		if keyID != rawKeyID || !validNotificationCredentialKeyID(keyID) {
+			return nil, fmt.Errorf("invalid notification credential key id")
+		}
+		if _, duplicate := normalizedKeys[keyID]; duplicate {
+			return nil, fmt.Errorf("duplicate notification credential key id")
+		}
+		normalizedKeys[keyID] = key
+		keyIDs = append(keyIDs, keyID)
+	}
+	sort.Strings(keyIDs)
+	ring := &notificationCredentialKeyring{
+		activeKeyID: normalizedActiveKeyID,
+		byID:        make(map[string]*notificationCredentialCipher, len(keys)),
+	}
+	for _, keyID := range keyIDs {
+		cipher, err := newNotificationCredentialCipherWithID(keyID, normalizedKeys[keyID])
+		if err != nil {
+			return nil, err
+		}
+		ring.byID[keyID] = cipher
+	}
+	ring.active = ring.byID[normalizedActiveKeyID]
+	if ring.active == nil {
+		return nil, fmt.Errorf("active notification credential key id is not in key ring")
+	}
+	// Legacy v1 ciphertext had no key id. Try the active key first, then the
+	// remaining keys in deterministic order during a rolling rotation.
+	ring.legacyOrder = append(ring.legacyOrder, ring.active)
+	for _, keyID := range keyIDs {
+		if keyID != normalizedActiveKeyID {
+			ring.legacyOrder = append(ring.legacyOrder, ring.byID[keyID])
+		}
+	}
+	return ring, nil
 }
 
 func (cipher *notificationCredentialCipher) encrypt(channelID, channelType, credential string) (string, error) {
-	if cipher == nil || cipher.aead == nil {
+	if cipher == nil || cipher.aead == nil || !validNotificationCredentialKeyID(cipher.keyID) {
 		return "", errNotificationCredentialKeyRequired
 	}
 	credential = strings.TrimSpace(credential)
@@ -61,18 +126,14 @@ func (cipher *notificationCredentialCipher) encrypt(channelID, channelType, cred
 		return "", err
 	}
 	plaintext := []byte(credential)
-	sealed := cipher.aead.Seal(nil, nonce, plaintext, notificationCredentialAAD(channelID, channelType))
-	for i := range plaintext {
-		plaintext[i] = 0
-	}
+	sealed := cipher.aead.Seal(nil, nonce, plaintext, notificationCredentialAADV2(channelID, channelType, cipher.keyID))
+	zeroBytes(plaintext)
 	payload := make([]byte, 0, len(nonce)+len(sealed))
 	payload = append(payload, nonce...)
 	payload = append(payload, sealed...)
 	encoded := base64.RawURLEncoding.EncodeToString(payload)
-	for i := range payload {
-		payload[i] = 0
-	}
-	return notificationCredentialCiphertextPrefix + encoded, nil
+	zeroBytes(payload)
+	return notificationCredentialCiphertextPrefix + cipher.keyID + ":" + encoded, nil
 }
 
 func (cipher *notificationCredentialCipher) decrypt(channelID, channelType, storedCredential string) (string, error) {
@@ -83,10 +144,21 @@ func (cipher *notificationCredentialCipher) decrypt(channelID, channelType, stor
 	if storedCredential == "" {
 		return "", errInvalidAdminNotificationChannelWrite
 	}
-	if !isEncryptedNotificationCredential(storedCredential) {
-		return "", errNotificationCredentialPlaintext
+	if strings.HasPrefix(storedCredential, notificationCredentialCiphertextPrefix) {
+		keyID, encoded, ok := parseNotificationCredentialV2Envelope(storedCredential)
+		if !ok || keyID != cipher.keyID {
+			return "", errNotificationCredentialCiphertextInvalid
+		}
+		return cipher.decryptPayload(channelID, channelType, keyID, encoded, true)
 	}
-	encoded := strings.TrimPrefix(storedCredential, notificationCredentialCiphertextPrefix)
+	if strings.HasPrefix(storedCredential, notificationCredentialLegacyCiphertextPrefix) {
+		encoded := strings.TrimPrefix(storedCredential, notificationCredentialLegacyCiphertextPrefix)
+		return cipher.decryptPayload(channelID, channelType, "", encoded, false)
+	}
+	return "", errNotificationCredentialPlaintext
+}
+
+func (cipher *notificationCredentialCipher) decryptPayload(channelID, channelType, keyID, encoded string, v2 bool) (string, error) {
 	payload, err := base64.RawURLEncoding.DecodeString(encoded)
 	if err != nil {
 		return "", errNotificationCredentialCiphertextInvalid
@@ -98,7 +170,11 @@ func (cipher *notificationCredentialCipher) decrypt(channelID, channelType, stor
 	}
 	nonce := payload[:nonceSize]
 	ciphertext := payload[nonceSize:]
-	plaintext, err := cipher.aead.Open(nil, nonce, ciphertext, notificationCredentialAAD(channelID, channelType))
+	aad := notificationCredentialAAD(channelID, channelType)
+	if v2 {
+		aad = notificationCredentialAADV2(channelID, channelType, keyID)
+	}
+	plaintext, err := cipher.aead.Open(nil, nonce, ciphertext, aad)
 	if err != nil {
 		return "", errNotificationCredentialCiphertextInvalid
 	}
@@ -110,6 +186,72 @@ func (cipher *notificationCredentialCipher) decrypt(channelID, channelType, stor
 	return credential, nil
 }
 
+func (ring *notificationCredentialKeyring) encrypt(channelID, channelType, credential string) (string, error) {
+	if ring == nil || ring.active == nil {
+		return "", errNotificationCredentialKeyRequired
+	}
+	return ring.active.encrypt(channelID, channelType, credential)
+}
+
+func (ring *notificationCredentialKeyring) decrypt(channelID, channelType, storedCredential string) (string, error) {
+	if ring == nil || ring.active == nil {
+		return "", errNotificationCredentialKeyRequired
+	}
+	storedCredential = strings.TrimSpace(storedCredential)
+	if strings.HasPrefix(storedCredential, notificationCredentialCiphertextPrefix) {
+		keyID, _, ok := parseNotificationCredentialV2Envelope(storedCredential)
+		if !ok {
+			return "", errNotificationCredentialCiphertextInvalid
+		}
+		cipher := ring.byID[keyID]
+		if cipher == nil {
+			return "", errNotificationCredentialCiphertextInvalid
+		}
+		return cipher.decrypt(channelID, channelType, storedCredential)
+	}
+	if strings.HasPrefix(storedCredential, notificationCredentialLegacyCiphertextPrefix) {
+		for _, cipher := range ring.legacyOrder {
+			credential, err := cipher.decrypt(channelID, channelType, storedCredential)
+			if err == nil {
+				return credential, nil
+			}
+		}
+		return "", errNotificationCredentialCiphertextInvalid
+	}
+	if storedCredential == "" {
+		return "", errInvalidAdminNotificationChannelWrite
+	}
+	return "", errNotificationCredentialPlaintext
+}
+
+func parseNotificationCredentialV2Envelope(value string) (string, string, bool) {
+	remainder := strings.TrimPrefix(strings.TrimSpace(value), notificationCredentialCiphertextPrefix)
+	keyID, encoded, ok := strings.Cut(remainder, ":")
+	if !ok || !validNotificationCredentialKeyID(keyID) || encoded == "" {
+		return "", "", false
+	}
+	return keyID, encoded, true
+}
+
+func notificationCredentialDerivedKeyID(key []byte) string {
+	sum := sha256.Sum256(key)
+	return "key-" + hex.EncodeToString(sum[:8])
+}
+
+func validNotificationCredentialKeyID(keyID string) bool {
+	if keyID == "" || len(keyID) > notificationCredentialMaximumKeyIDLength {
+		return false
+	}
+	for _, character := range keyID {
+		if (character >= 'a' && character <= 'z') || (character >= 'A' && character <= 'Z') ||
+			(character >= '0' && character <= '9') || character == '-' || character == '_' || character == '.' {
+			continue
+		}
+		return false
+	}
+	return true
+}
+
 func notificationCredentialAAD(channelID, channelType string) []byte {
 	channelID = strings.TrimSpace(channelID)
 	channelType = strings.ToLower(strings.TrimSpace(channelType))
@@ -119,20 +261,35 @@ func notificationCredentialAAD(channelID, channelType string) []byte {
 	return []byte(notificationCredentialAADDomain + channelType + "\x00" + channelID)
 }
 
+func notificationCredentialAADV2(channelID, channelType, keyID string) []byte {
+	return append(notificationCredentialAAD(channelID, channelType), []byte("\x00key-id\x00"+keyID)...)
+}
+
 func isEncryptedNotificationCredential(value string) bool {
-	return strings.HasPrefix(strings.TrimSpace(value), notificationCredentialCiphertextPrefix)
+	value = strings.TrimSpace(value)
+	return strings.HasPrefix(value, notificationCredentialCiphertextPrefix) ||
+		strings.HasPrefix(value, notificationCredentialLegacyCiphertextPrefix)
 }
 
 func (s *SQLiteStore) ConfigureNotificationCredentialEncryption(ctx context.Context, key []byte) error {
-	cipher, err := newNotificationCredentialCipher(key)
+	keyID := notificationCredentialDerivedKeyID(key)
+	return s.ConfigureNotificationCredentialKeyring(ctx, keyID, map[string][]byte{keyID: key})
+}
+
+// ConfigureNotificationCredentialKeyring installs a key-id-addressable ring.
+// Existing ciphertext is decrypted with the supplied ring and atomically
+// re-encrypted under activeKeyID. Callers can therefore remove retired keys on
+// a later restart without asking administrators to re-enter every credential.
+func (s *SQLiteStore) ConfigureNotificationCredentialKeyring(ctx context.Context, activeKeyID string, keys map[string][]byte) error {
+	ring, err := newNotificationCredentialKeyring(activeKeyID, keys)
 	if err != nil {
 		return err
 	}
-	if err := s.migrateNotificationCredentialsToEncrypted(ctx, cipher); err != nil {
+	if err := s.migrateNotificationCredentialsToEncrypted(ctx, ring); err != nil {
 		return err
 	}
 	s.notificationCredentialMu.Lock()
-	s.notificationCredentialCipher = cipher
+	s.notificationCredentialKeyring = ring
 	s.notificationCredentialMu.Unlock()
 	return nil
 }
@@ -151,41 +308,37 @@ func (s *SQLiteStore) RequireNotificationCredentialKeyForExistingCredentials(ctx
 	return nil
 }
 
-func (s *SQLiteStore) notificationCredentialCipherSnapshot() *notificationCredentialCipher {
+func (s *SQLiteStore) notificationCredentialKeyringSnapshot() *notificationCredentialKeyring {
 	if s == nil {
 		return nil
 	}
 	s.notificationCredentialMu.RLock()
-	cipher := s.notificationCredentialCipher
+	ring := s.notificationCredentialKeyring
 	s.notificationCredentialMu.RUnlock()
-	return cipher
+	return ring
 }
 
 func (s *SQLiteStore) encryptNotificationCredentialForStorage(channelID, channelType, credential string) (string, error) {
-	cipher := s.notificationCredentialCipherSnapshot()
-	if cipher == nil {
+	ring := s.notificationCredentialKeyringSnapshot()
+	if ring == nil {
 		return "", errNotificationCredentialKeyRequired
 	}
-	return cipher.encrypt(channelID, channelType, credential)
+	return ring.encrypt(channelID, channelType, credential)
 }
 
 func (s *SQLiteStore) decryptNotificationCredentialFromStorage(channelID, channelType, storedCredential string) (string, error) {
-	cipher := s.notificationCredentialCipherSnapshot()
-	if cipher == nil {
+	ring := s.notificationCredentialKeyringSnapshot()
+	if ring == nil {
 		return "", errNotificationCredentialKeyRequired
 	}
-	credential, err := cipher.decrypt(channelID, channelType, storedCredential)
-	if err != nil {
-		return "", err
-	}
-	return credential, nil
+	return ring.decrypt(channelID, channelType, storedCredential)
 }
 
-func (s *SQLiteStore) migrateNotificationCredentialsToEncrypted(ctx context.Context, credentialCipher *notificationCredentialCipher) error {
+func (s *SQLiteStore) migrateNotificationCredentialsToEncrypted(ctx context.Context, keyring *notificationCredentialKeyring) error {
 	if s == nil || s.db == nil {
 		return fmt.Errorf("sqlite store is closed")
 	}
-	if credentialCipher == nil {
+	if keyring == nil || keyring.active == nil {
 		return errNotificationCredentialKeyRequired
 	}
 	tx, err := s.db.BeginTx(ctx, nil)
@@ -217,14 +370,19 @@ func (s *SQLiteStore) migrateNotificationCredentialsToEncrypted(ctx context.Cont
 			return err
 		}
 		trimmedCredential := strings.TrimSpace(storedCredential)
+		plaintextCredential := trimmedCredential
 		if isEncryptedNotificationCredential(trimmedCredential) {
-			if _, err := credentialCipher.decrypt(channelID, "telegram", trimmedCredential); err != nil {
+			decryptedCredential, err := keyring.decrypt(channelID, "telegram", trimmedCredential)
+			if err != nil {
 				_ = rows.Close()
 				return err
 			}
-			continue
+			if strings.HasPrefix(trimmedCredential, notificationCredentialCiphertextPrefix+keyring.activeKeyID+":") {
+				continue
+			}
+			plaintextCredential = decryptedCredential
 		}
-		encryptedCredential, err := credentialCipher.encrypt(channelID, "telegram", trimmedCredential)
+		encryptedCredential, err := keyring.encrypt(channelID, "telegram", plaintextCredential)
 		if err != nil {
 			_ = rows.Close()
 			return err

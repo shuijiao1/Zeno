@@ -440,6 +440,57 @@ func TestAgentProbeRoundLookupUsesPartialUniqueIndex(t *testing.T) {
 	}
 }
 
+func TestLocalProbeInsertRetriesWholeTransactionAfterConcurrentWriter(t *testing.T) {
+	store, err := OpenSQLiteStore(filepath.Join(t.TempDir(), "zeno.db"))
+	if err != nil {
+		t.Fatalf("open sqlite store: %v", err)
+	}
+	defer store.Close()
+	ctx := context.Background()
+	if err := store.SeedPreviewData(ctx, PreviewSeedOptions{NodeID: "hytron", DisplayName: "Hytron", CountryCode: "HK", AgentToken: "test-agent-token"}); err != nil {
+		t.Fatalf("seed preview data: %v", err)
+	}
+	targets, err := store.EnabledProbeTargets(ctx, "hytron")
+	if err != nil || len(targets) == 0 {
+		t.Fatalf("load target: targets=%d err=%v", len(targets), err)
+	}
+
+	writer, err := store.db.BeginTx(ctx, nil)
+	if err != nil {
+		t.Fatalf("begin competing writer: %v", err)
+	}
+	if _, err := writer.ExecContext(ctx, `UPDATE nodes SET updated_at = updated_at WHERE id = 'hytron'`); err != nil {
+		t.Fatalf("hold competing write lock: %v", err)
+	}
+	done := make(chan error, 1)
+	go func() {
+		done <- store.InsertProbeRound(ctx, "hytron", targets[0], time.Now().UTC(), []probe.Sample{{Seq: 1, Success: true, LatencyMS: testF64(12)}})
+	}()
+	select {
+	case err := <-done:
+		t.Fatalf("local probe insert returned before competing writer released: %v", err)
+	case <-time.After(100 * time.Millisecond):
+	}
+	if err := writer.Commit(); err != nil {
+		t.Fatalf("commit competing writer: %v", err)
+	}
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatalf("local probe insert after writer release: %v", err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("local probe insert did not recover after competing writer released")
+	}
+	var count int
+	if err := store.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM probe_rounds WHERE node_id = 'hytron'`).Scan(&count); err != nil {
+		t.Fatalf("count local probe rounds: %v", err)
+	}
+	if count != 1 {
+		t.Fatalf("local probe rounds = %d, want 1", count)
+	}
+}
+
 func TestStateSampleIdempotencyKeepsPartialIndex(t *testing.T) {
 	store, err := OpenSQLiteStore(filepath.Join(t.TempDir(), "zeno.db"))
 	if err != nil {

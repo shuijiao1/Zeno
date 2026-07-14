@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"time"
 
 	"golang.org/x/crypto/argon2"
 )
@@ -183,8 +184,32 @@ func (s *SQLiteStore) AuthorizeAgent(ctx context.Context, nodeID, token string) 
 	if nodeID == "" || token == "" {
 		return false, nil
 	}
+	computed := hashAgentToken(token)
+	now := time.Now().UTC().Unix()
+	// Enrollment stages a second hash without invalidating the currently
+	// running Agent. The first authenticated use of the staged credential
+	// atomically promotes it and retires the old hash.
+	result, err := s.db.ExecContext(ctx, `
+		UPDATE nodes
+		SET token_hash = pending_token_hash,
+			pending_token_hash = NULL,
+			pending_token_expires_at = NULL,
+			updated_at = ?
+		WHERE id = ?
+		  AND disabled = 0
+		  AND pending_token_hash = ?
+		  AND pending_token_expires_at > ?
+	`, now, nodeID, computed, now)
+	if err != nil {
+		return false, err
+	}
+	if affected, err := result.RowsAffected(); err != nil {
+		return false, err
+	} else if affected == 1 {
+		return true, nil
+	}
 	var storedHash string
-	err := s.db.QueryRowContext(ctx, `
+	err = s.db.QueryRowContext(ctx, `
 		SELECT token_hash
 		FROM nodes
 		WHERE id = ? AND disabled = 0
@@ -195,6 +220,5 @@ func (s *SQLiteStore) AuthorizeAgent(ctx context.Context, nodeID, token string) 
 		}
 		return false, err
 	}
-	computed := hashAgentToken(token)
 	return subtle.ConstantTimeCompare([]byte(storedHash), []byte(computed)) == 1, nil
 }

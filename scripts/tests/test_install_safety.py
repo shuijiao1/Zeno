@@ -1,3 +1,4 @@
+import json
 import os
 import pathlib
 import shutil
@@ -104,7 +105,15 @@ class InstallSafetyTest(unittest.TestCase):
                   touch "$state/new_up"
                   exit 0
                   ;;
-                ps|logs)
+                ps)
+                  if [ "${1:-}" = "-q" ]; then printf '%s\n' fake-container-id; fi
+                  exit 0
+                  ;;
+                logs)
+                  exit 0
+                  ;;
+                down)
+                  touch "$state/down"
                   exit 0
                   ;;
               esac
@@ -147,6 +156,41 @@ class InstallSafetyTest(unittest.TestCase):
               fi
               exit 0
             fi
+            if [ "${1:-}" = "inspect" ]; then
+              if [[ "$*" == *"{{.Image}}"* ]]; then
+                printf '%s\n' 'sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'
+              fi
+              exit 0
+            fi
+            if [ "${1:-}" = "image" ]; then
+              case "${2:-}" in
+                inspect)
+                  if [[ "$*" == *"{{.Id}}"* ]]; then
+                    printf '%s\n' 'sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'
+                  elif [[ "$*" == *"RepoDigests"* ]]; then
+                    if [ "${FAKE_OFFICIAL_IMAGE:-}" = "1" ]; then
+                      printf '%s\n' 'ghcr.io/shuijiao1/zeno@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb'
+                    else
+                      printf '%s\n' 'registry.example/zeno@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb'
+                    fi
+                  elif [[ "$*" == *"org.opencontainers.image.source"* ]]; then
+                    printf '%s\n' 'https://github.com/shuijiao1/Zeno'
+                  elif [[ "$*" == *"org.opencontainers.image.revision"* ]]; then
+                    printf '%s\n' 'cccccccccccccccccccccccccccccccccccccccc'
+                  elif [[ "$*" == *"org.opencontainers.image.version"* ]]; then
+                    printf '%s\n' '0.6.1'
+                  fi
+                  exit 0
+                  ;;
+                tag)
+                  printf '%s\n' "${4:-}" > "$state/rollback_tag"
+                  exit 0
+                  ;;
+                rm)
+                  exit 0
+                  ;;
+              esac
+            fi
             echo "unexpected docker command: $*" >&2
             exit 64
         '''))
@@ -179,6 +223,19 @@ class InstallSafetyTest(unittest.TestCase):
         sleep.write_text('#!/usr/bin/env bash\nexit 0\n')
         sleep.chmod(0o755)
 
+        timeout = fake_bin / 'timeout'
+        timeout.write_text(textwrap.dedent(r'''#!/usr/bin/env bash
+            set -euo pipefail
+            shift 2
+            if [ "${FAIL_STAGE:-}" = "db_timeout" ] && [[ "$*" == *"${ZENO_INSTALL_DIR:?}/data:/data"* ]]; then
+              mkdir -p "${FAKE_DOCKER_STATE:?}"
+              touch "${FAKE_DOCKER_STATE:?}/failed"
+              exit 124
+            fi
+            exec "$@"
+        '''))
+        timeout.chmod(0o755)
+
         openssl = fake_bin / 'openssl'
         openssl.write_text('#!/usr/bin/env bash\nprintf %s fake-secret-token\n')
         openssl.chmod(0o755)
@@ -208,9 +265,10 @@ class InstallSafetyTest(unittest.TestCase):
         result = subprocess.run(['sha256sum', '-c', 'MANIFEST.sha256'], cwd=backup_dir, text=True, capture_output=True)
         return result.returncode == 0
 
-    def run_install(self, tempdir: pathlib.Path, stage: str = '', restore: str = '', extra_env=None, setup=None, prepare_env=None):
+    def run_install(self, tempdir: pathlib.Path, stage: str = '', restore: str = '', extra_env=None, setup=None, prepare_env=None, existing=True):
         install_dir = tempdir / 'zeno-install'
-        self.make_existing_install(install_dir)
+        if existing:
+            self.make_existing_install(install_dir)
         if setup:
             setup(install_dir)
         fake_bin = self.make_fake_bin(tempdir)
@@ -260,7 +318,8 @@ class InstallSafetyTest(unittest.TestCase):
         self.assertLess(df_index, stop_index)
         self.assertLess(config_index, stop_index)
         self.assertLess(pull_index, stop_index)
-        self.assertIn('ZENO_IMAGE=registry.example/zeno:new', env_text)
+        self.assertIn('ZENO_IMAGE=registry.example/zeno@sha256:', env_text)
+        self.assertIn('ZENO_UPDATE_IMAGE=registry.example/zeno:new', env_text)
 
     def test_success_creates_complete_backup_marker_manifest_and_private_permissions(self):
         with tempfile.TemporaryDirectory() as td:
@@ -268,15 +327,22 @@ class InstallSafetyTest(unittest.TestCase):
             backup_dir = self.latest_backup(install_dir)
             dirs = {name: stat.S_IMODE((install_dir / name).stat().st_mode) for name in ('data', 'secrets', 'backups', 'builds')}
             secret_modes = {p.name: stat.S_IMODE(p.stat().st_mode) for p in (install_dir / 'secrets').iterdir() if p.is_file()}
+            authority_ring = json.loads((install_dir / 'secrets' / 'zeno_notification_authority_keyring.json').read_text())
+            credential_ring = json.loads((install_dir / 'secrets' / 'zeno_notification_credential_keyring.json').read_text())
+            authority_secret = (install_dir / 'secrets' / 'zeno_notification_authority').read_text().strip()
+            credential_secret = (install_dir / 'secrets' / 'zeno_notification_credential_key').read_text().strip()
             self.assertTrue((backup_dir / '.zeno-backup-complete').exists())
             self.assertTrue((backup_dir / 'MANIFEST.sha256').exists())
             self.assertTrue((backup_dir / 'secrets' / 'zeno_notification_credential_key').exists())
             self.assertFalse(list((install_dir / 'backups').glob('.partial-install-*')))
         self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertEqual(dirs, {'data': 0o700, 'secrets': 0o700, 'backups': 0o700, 'builds': 0o700})
+        self.assertEqual(dirs, {'data': 0o700, 'secrets': 0o750, 'backups': 0o700, 'builds': 0o700})
         self.assertTrue(secret_modes)
-        self.assertTrue(all(mode == 0o600 for mode in secret_modes.values()))
+        self.assertTrue(all(mode == 0o640 for mode in secret_modes.values()))
+        self.assertEqual(authority_ring, {'active_key_id': 'primary', 'keys': {'primary': authority_secret}})
+        self.assertEqual(credential_ring, {'active_key_id': 'primary', 'keys': {'primary': credential_secret}})
         self.assertIn('chown 10001:10001', log_text)
+        self.assertIn('chown 0:10001', log_text)
         self.assertIn('chown 0:0', log_text)
 
     def test_backup_quick_check_uses_scratch_so_formal_backup_manifest_survives_db_writes(self):
@@ -332,11 +398,57 @@ class InstallSafetyTest(unittest.TestCase):
             backup_dir = self.latest_backup(install_dir)
             failed_state = pathlib.Path((install_dir / '.last-failed-install-state').read_text().strip())
             failed_env = (failed_state / '.env').read_text()
+            backup_info = (backup_dir / 'BACKUP_INFO').read_text()
             self.assertTrue((backup_dir / '.zeno-backup-complete').exists())
         self.assertNotEqual(result.returncode, 0, result.stdout)
         self.assertIn('已恢复旧版本', result.stderr)
-        self.assertIn('ZENO_IMAGE=registry.example/zeno:old', env_text)
-        self.assertIn('ZENO_IMAGE=registry.example/zeno:new', failed_env)
+        self.assertIn('ZENO_IMAGE=zeno-rollback:', env_text)
+        self.assertIn('ZENO_UPDATE_IMAGE=registry.example/zeno:old', env_text)
+        self.assertIn('rollback_image_id=sha256:aaaaaaaa', backup_info)
+        self.assertIn('rollback_image_ref=zeno-rollback:', backup_info)
+        self.assertIn('ZENO_IMAGE=registry.example/zeno@sha256:', failed_env)
+        self.assertIn('ZENO_UPDATE_IMAGE=registry.example/zeno:new', failed_env)
+
+    def test_fresh_install_ready_failure_stops_container_and_quarantines_scene(self):
+        with tempfile.TemporaryDirectory() as td:
+            result, install_dir, log_text = self.run_install(pathlib.Path(td), stage='ready', existing=False)
+            failed_pointer = install_dir / '.last-failed-install-state'
+            self.assertTrue(failed_pointer.exists())
+            failed_state = pathlib.Path(failed_pointer.read_text().strip())
+            self.assertTrue((failed_state / '.env').exists())
+            self.assertTrue((failed_state / 'docker-compose.yml').exists())
+            self.assertFalse((install_dir / '.env').exists())
+            self.assertFalse((install_dir / 'data').exists())
+            self.assertFalse((install_dir / 'secrets').exists())
+        self.assertNotEqual(result.returncode, 0, result.stdout)
+        self.assertIn('首次安装失败现场已隔离', result.stderr)
+        self.assertIn('compose:down:', log_text)
+
+    def test_secret_symlink_is_rejected_before_stopping_existing_service(self):
+        external = {}
+
+        def install_symlink(install_dir: pathlib.Path) -> None:
+            target = install_dir.parent / 'external-secret-target'
+            target.write_text('do-not-touch')
+            (install_dir / 'secrets' / 'zeno_admin_token').unlink()
+            (install_dir / 'secrets' / 'zeno_admin_token').symlink_to(target)
+            external['target'] = target
+
+        with tempfile.TemporaryDirectory() as td:
+            result, _, log_text = self.run_install(pathlib.Path(td), setup=install_symlink)
+            value = external['target'].read_text()
+        self.assertNotEqual(result.returncode, 0, result.stdout)
+        self.assertIn('包含符号链接', result.stderr)
+        self.assertEqual(value, 'do-not-touch')
+        self.assertNotIn('compose:stop:', log_text)
+
+    def test_database_check_timeout_restores_immutable_old_image(self):
+        with tempfile.TemporaryDirectory() as td:
+            result, install_dir, _ = self.run_install(pathlib.Path(td), stage='db_timeout')
+            env_text = (install_dir / '.env').read_text()
+        self.assertNotEqual(result.returncode, 0, result.stdout)
+        self.assertIn('已恢复旧版本', result.stderr)
+        self.assertIn('ZENO_IMAGE=zeno-rollback:', env_text)
 
     def test_restore_quick_check_uses_scratch_so_backup_manifest_survives_db_writes(self):
         with tempfile.TemporaryDirectory() as td:
@@ -360,7 +472,8 @@ class InstallSafetyTest(unittest.TestCase):
             failed_state_exists = (install_dir / '.last-failed-install-state').exists()
         self.assertNotEqual(result.returncode, 0, result.stdout)
         self.assertIn('自动恢复失败', result.stderr)
-        self.assertIn('ZENO_IMAGE=registry.example/zeno:new', env_text)
+        self.assertIn('ZENO_IMAGE=registry.example/zeno@sha256:', env_text)
+        self.assertIn('ZENO_UPDATE_IMAGE=registry.example/zeno:new', env_text)
         self.assertFalse(failed_state_exists)
 
     def test_restore_stage_copy_enospc_does_not_move_current_install_first(self):
@@ -372,7 +485,8 @@ class InstallSafetyTest(unittest.TestCase):
             stop_count = sum(1 for line in log_text.splitlines() if 'compose:stop:' in line)
         self.assertNotEqual(result.returncode, 0, result.stdout)
         self.assertIn('自动恢复失败', result.stderr)
-        self.assertIn('ZENO_IMAGE=registry.example/zeno:new', env_text)
+        self.assertIn('ZENO_IMAGE=registry.example/zeno@sha256:', env_text)
+        self.assertIn('ZENO_UPDATE_IMAGE=registry.example/zeno:new', env_text)
         self.assertTrue(data_exists)
         self.assertFalse(failed_state_exists)
         self.assertEqual(stop_count, 1)
@@ -475,8 +589,11 @@ class InstallSafetyTest(unittest.TestCase):
             self.assertIn('127.0.0.1:${ZENO_HOST_PORT:-18980}:18980', text)
         self.assertIn('https://zeno.shuijiao.de/agent/install.sh', script)
         self.assertIn('https://zeno.shuijiao.de/agent/install.ps1', script)
-        self.assertIn('ZENO_NOTIFICATION_CREDENTIAL_KEY_FILE: /run/secrets/zeno_notification_credential_key', compose)
-        self.assertIn('ZENO_NOTIFICATION_CREDENTIAL_KEY_FILE: /run/secrets/zeno_notification_credential_key', script)
+        self.assertIn('ZENO_NOTIFICATION_AUTHORITY_KEYRING_FILE: /run/secrets/zeno_notification_authority_keyring.json', compose)
+        self.assertIn('ZENO_NOTIFICATION_CREDENTIAL_KEYRING_FILE: /run/secrets/zeno_notification_credential_keyring.json', compose)
+        self.assertIn('ZENO_NOTIFICATION_AUTHORITY_KEYRING_FILE: /run/secrets/zeno_notification_authority_keyring.json', script)
+        self.assertIn('ZENO_NOTIFICATION_CREDENTIAL_KEYRING_FILE: /run/secrets/zeno_notification_credential_keyring.json', script)
+        self.assertIn('ensure_single_keyring_file', script)
         self.assertNotIn('ZENO_NOTIFICATION_CREDENTIAL_KEY=', compose)
         self.assertNotIn('ZENO_NOTIFICATION_CREDENTIAL_KEY=', script)
         self.assertNotIn('raw.githubusercontent.com/${REPO}/main/install.sh', script)
@@ -491,7 +608,31 @@ class InstallSafetyTest(unittest.TestCase):
         self.assertIn('preserve_failed_state', script)
         self.assertIn('STAGING_DIR=', script)
         self.assertIn('atomic_install_file', script)
+        self.assertIn('verify_official_image_attestation', script)
+        self.assertIn('gh_sha="762569efe785082b7d1feb06995efece1a9cecce16da8503ac6fdbcbea04085b"', script)
         self.assertNotIn('|| true', script)
+
+    def test_release_workflow_publishes_github_signed_image_attestation(self):
+        workflow = (ROOT / '.github' / 'workflows' / 'docker.yml').read_text()
+        self.assertIn('actions/attest-build-provenance@0f67c3f4856b2e3261c31976d6725780e5e4c373', workflow)
+        self.assertIn('subject-digest: ${{ steps.build.outputs.digest }}', workflow)
+        self.assertIn('push-to-registry: true', workflow)
+
+    def test_official_image_can_only_skip_attestation_with_explicit_override(self):
+        with tempfile.TemporaryDirectory() as td:
+            result, install_dir, _ = self.run_install(
+                pathlib.Path(td),
+                extra_env={
+                    'ZENO_IMAGE': 'ghcr.io/shuijiao1/zeno:v0.6.1',
+                    'ZENO_VERIFY_ATTESTATION': 'false',
+                    'FAKE_OFFICIAL_IMAGE': '1',
+                },
+            )
+            env_text = (install_dir / '.env').read_text()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn('已显式关闭官方镜像 provenance 验证', result.stderr)
+        self.assertIn('ZENO_IMAGE=ghcr.io/shuijiao1/zeno@sha256:', env_text)
+        self.assertIn('ZENO_UPDATE_IMAGE=ghcr.io/shuijiao1/zeno:v0.6.1', env_text)
 
     def test_dockerignore_excludes_secrets_and_sqlite_but_keeps_examples(self):
         dockerignore = (ROOT / '.dockerignore').read_text()

@@ -4,7 +4,7 @@
 # upgrades. The GitHub Docker workflow emits provenance and SBOM attestations for
 # every published image.
 
-FROM --platform=$BUILDPLATFORM node:24.16.0-bookworm-slim AS web-builder
+FROM --platform=$BUILDPLATFORM node:24.16.0-bookworm-slim@sha256:2c87ef9bd3c6a3bd4b472b4bec2ce9d16354b0c574f736c476489d09f560a203 AS web-builder
 WORKDIR /src/web
 COPY web/package*.json ./
 RUN npm ci
@@ -13,7 +13,7 @@ ARG VERSION=dev
 ENV VITE_BUILD_ID=${VERSION}
 RUN npm run build
 
-FROM --platform=$BUILDPLATFORM golang:1.25.12-bookworm AS go-builder
+FROM --platform=$BUILDPLATFORM golang:1.25.12-bookworm@sha256:a9c020ee3d1508c7be5435c262434e3d3fc1d0e76a11afeb9ddae7d60bc86aa4 AS go-builder
 WORKDIR /src
 COPY go.mod go.sum ./
 RUN go mod download
@@ -24,7 +24,7 @@ ARG TARGETOS=linux
 ARG TARGETARCH=amd64
 RUN CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} go build -trimpath -ldflags "-s -w" -o /out/zeno-controller ./cmd/controller
 
-FROM debian:13.2-slim
+FROM debian:13.2-slim@sha256:4bcb9db66237237d03b55b969271728dd3d955eaaa254b9db8a3db94550b1885
 ARG VERSION=dev
 ARG REVISION=unknown
 ARG ZENO_UID=10001

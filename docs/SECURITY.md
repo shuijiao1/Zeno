@@ -79,6 +79,15 @@ Public API 只返回展示所需数据：
 - 通知 payload body 不包含渠道凭据。
 - Telegram Bot Token 只用于 Telegram API 请求路径，不进入 Admin JSON 响应、通知正文或测试发送结果。
 - 通知发送失败不阻塞 Agent 心跳、状态和探测数据写入，避免通知渠道故障拖垮采集入口。
+- 渠道凭据在 SQLite 中使用外部 32-byte key 加密；ciphertext 带 key id。Controller 也支持 key ring：
+  旧 key 留在 ring 时旧密文可读，新写入只使用 `active_key_id`，因此可以先部署新旧双 key、改写/轮换
+  渠道凭据，再移除旧 key。authority key ring 在验证旧 key 后会原子地把 DB fingerprint 绑定推进到
+  active key；DB 只保存 key id/fingerprint，不保存 authority key。
+- key ring 文件必须是普通文件且不得对 group/other 开放，JSON 格式为
+  `{"active_key_id":"2026-07","keys":{"2026-07":"<key>","2026-01":"<old-key>"}}`。
+  credential key value 可使用 32-byte raw、hex 或 base64；分别通过
+  `--notification-credential-keyring-file` / `ZENO_NOTIFICATION_CREDENTIAL_KEYRING_FILE` 和
+  `--notification-authority-keyring-file` / `ZENO_NOTIFICATION_AUTHORITY_KEYRING_FILE` 配置。
 - SQLite 文件权限仍是第一道边界；后续如加入专用服务用户，应继续限制 DB 读取权限。
 
 ## 日志红线

@@ -39,90 +39,72 @@ func (s *SQLiteStore) UpdateAdminSettings(ctx context.Context, update AdminSetti
 	if err := update.normalize(); err != nil {
 		return SiteSettings{}, err
 	}
-	settings, err := s.siteSettings(ctx)
-	if err != nil {
-		return SiteSettings{}, err
-	}
-	if update.SiteTitle != nil {
-		settings.SiteTitle = *update.SiteTitle
-	}
-	if update.SiteSubtitle != nil {
-		settings.SiteSubtitle = *update.SiteSubtitle
-	}
-	if update.LogoURL != nil {
-		settings.LogoURL = *update.LogoURL
-	}
-	if update.Theme != nil {
-		settings.Theme = *update.Theme
-	}
-	if update.AgentControllerURL != nil {
-		settings.AgentControllerURL = *update.AgentControllerURL
-	}
-	if update.BackgroundURL != nil {
-		settings.BackgroundURL = *update.BackgroundURL
-		if update.DesktopBackgroundURL == nil {
-			settings.DesktopBackgroundURL = *update.BackgroundURL
-		}
-	}
-	if update.DesktopBackgroundURL != nil {
-		settings.DesktopBackgroundURL = *update.DesktopBackgroundURL
-		settings.BackgroundURL = *update.DesktopBackgroundURL
-	}
-	if update.MobileBackgroundURL != nil {
-		settings.MobileBackgroundURL = *update.MobileBackgroundURL
-	}
-	if update.AppearancePreset != nil {
-		settings.AppearancePreset = *update.AppearancePreset
-	}
-	if update.CardOpacity != nil {
-		settings.CardOpacity = *update.CardOpacity
-	}
-	if update.CardBlur != nil {
-		settings.CardBlur = *update.CardBlur
-	}
-	if update.CardRadius != nil {
-		settings.CardRadius = *update.CardRadius
-	}
-	if update.BorderStrength != nil {
-		settings.BorderStrength = *update.BorderStrength
-	}
-	if update.ShadowStrength != nil {
-		settings.ShadowStrength = *update.ShadowStrength
-	}
-	if update.BackgroundOverlay != nil {
-		settings.BackgroundOverlay = *update.BackgroundOverlay
-	}
-	if update.ThemeColor != nil {
-		settings.ThemeColor = *update.ThemeColor
-	}
-	if update.CustomCode != nil {
-		settings.CustomCode = *update.CustomCode
-	}
-
 	now := time.Now().UTC().Unix()
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return SiteSettings{}, err
 	}
 	defer rollbackUnlessCommitted(tx)
-	values := map[string]string{
-		settingKeySiteTitle:            settings.SiteTitle,
-		settingKeySiteSubtitle:         settings.SiteSubtitle,
-		settingKeyLogoURL:              settings.LogoURL,
-		settingKeyTheme:                settings.Theme,
-		settingKeyAgentControllerURL:   settings.AgentControllerURL,
-		settingKeyBackgroundURL:        settings.BackgroundURL,
-		settingKeyDesktopBackgroundURL: settings.DesktopBackgroundURL,
-		settingKeyMobileBackgroundURL:  settings.MobileBackgroundURL,
-		settingKeyAppearancePreset:     settings.AppearancePreset,
-		settingKeyCardOpacity:          formatSettingsFloat(settings.CardOpacity),
-		settingKeyCardBlur:             formatSettingsFloat(settings.CardBlur),
-		settingKeyCardRadius:           formatSettingsFloat(settings.CardRadius),
-		settingKeyBorderStrength:       formatSettingsFloat(settings.BorderStrength),
-		settingKeyShadowStrength:       formatSettingsFloat(settings.ShadowStrength),
-		settingKeyBackgroundOverlay:    formatSettingsFloat(settings.BackgroundOverlay),
-		settingKeyThemeColor:           settings.ThemeColor,
-		settingKeyCustomCode:           settings.CustomCode,
+	// PATCH is deliberately sparse: persisting a read/modify/write snapshot of
+	// every setting lets two disjoint concurrent requests overwrite each other
+	// with stale values. Only keys represented by this request are upserted.
+	values := make(map[string]string)
+	if update.SiteTitle != nil {
+		values[settingKeySiteTitle] = *update.SiteTitle
+	}
+	if update.SiteSubtitle != nil {
+		values[settingKeySiteSubtitle] = *update.SiteSubtitle
+	}
+	if update.LogoURL != nil {
+		values[settingKeyLogoURL] = *update.LogoURL
+	}
+	if update.Theme != nil {
+		values[settingKeyTheme] = *update.Theme
+	}
+	if update.AgentControllerURL != nil {
+		values[settingKeyAgentControllerURL] = *update.AgentControllerURL
+	}
+	if update.BackgroundURL != nil {
+		values[settingKeyBackgroundURL] = *update.BackgroundURL
+		if update.DesktopBackgroundURL == nil {
+			values[settingKeyDesktopBackgroundURL] = *update.BackgroundURL
+		}
+	}
+	if update.DesktopBackgroundURL != nil {
+		// background_url is the legacy desktop alias and must remain in sync,
+		// but no unrelated setting is touched.
+		values[settingKeyDesktopBackgroundURL] = *update.DesktopBackgroundURL
+		values[settingKeyBackgroundURL] = *update.DesktopBackgroundURL
+	}
+	if update.MobileBackgroundURL != nil {
+		values[settingKeyMobileBackgroundURL] = *update.MobileBackgroundURL
+	}
+	if update.AppearancePreset != nil {
+		values[settingKeyAppearancePreset] = *update.AppearancePreset
+	}
+	if update.CardOpacity != nil {
+		values[settingKeyCardOpacity] = formatSettingsFloat(*update.CardOpacity)
+	}
+	if update.CardBlur != nil {
+		values[settingKeyCardBlur] = formatSettingsFloat(*update.CardBlur)
+	}
+	if update.CardRadius != nil {
+		values[settingKeyCardRadius] = formatSettingsFloat(*update.CardRadius)
+	}
+	if update.BorderStrength != nil {
+		values[settingKeyBorderStrength] = formatSettingsFloat(*update.BorderStrength)
+	}
+	if update.ShadowStrength != nil {
+		values[settingKeyShadowStrength] = formatSettingsFloat(*update.ShadowStrength)
+	}
+	if update.BackgroundOverlay != nil {
+		values[settingKeyBackgroundOverlay] = formatSettingsFloat(*update.BackgroundOverlay)
+	}
+	if update.ThemeColor != nil {
+		values[settingKeyThemeColor] = *update.ThemeColor
+	}
+	if update.CustomCode != nil {
+		values[settingKeyCustomCode] = *update.CustomCode
 	}
 	for key, value := range values {
 		if _, err := tx.ExecContext(ctx, `
@@ -137,8 +119,9 @@ func (s *SQLiteStore) UpdateAdminSettings(ctx context.Context, update AdminSetti
 		return SiteSettings{}, err
 	}
 	tx = nil
-	settings.UpdatedAt = time.Unix(now, 0).UTC().Format(time.RFC3339)
-	return settings, nil
+	// Re-read after commit so the response includes concurrent disjoint updates
+	// rather than the stale pre-PATCH snapshot.
+	return s.siteSettings(ctx)
 }
 
 func (s *SQLiteStore) siteSettings(ctx context.Context) (SiteSettings, error) {

@@ -170,6 +170,9 @@ func TestSummaryEndpointReturnsMockHomeCardsWithoutSecrets(t *testing.T) {
 	if len(summary.Services) == 0 || summary.Services[0].Name == "" || summary.Services[0].AssignedNodeCount == 0 {
 		t.Fatalf("summary services = %+v, want public monitor service status", summary.Services)
 	}
+	if strings.Contains(raw, `"address"`) || strings.Contains(raw, `"port"`) || strings.Contains(raw, "149.154.171.5") || strings.Contains(raw, "cq-unicom.example") {
+		t.Fatalf("public summary leaked probe destination details: %s", raw)
+	}
 
 	if strings.Contains(strings.ToLower(raw), "token") || strings.Contains(strings.ToLower(raw), "secret") {
 		t.Fatalf("public summary leaked token/secret wording: %s", raw)

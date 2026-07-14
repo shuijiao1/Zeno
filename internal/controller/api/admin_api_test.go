@@ -5,6 +5,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -83,6 +84,7 @@ func TestAdminLoginCreatesSessionAndPasswordUpdateInvalidatesOldPassword(t *test
 
 	loginRecorder := httptest.NewRecorder()
 	loginRequest := httptest.NewRequest(http.MethodPost, "/api/admin/v1/login", strings.NewReader(`{"username":"admin","password":"admin-pass"}`))
+	loginRequest.Header.Set("Content-Type", "application/json")
 	handler.ServeHTTP(loginRecorder, loginRequest)
 	if loginRecorder.Code != http.StatusOK {
 		t.Fatalf("login status = %d, want 200; body=%s", loginRecorder.Code, loginRecorder.Body.String())
@@ -128,6 +130,7 @@ func TestAdminLoginCreatesSessionAndPasswordUpdateInvalidatesOldPassword(t *test
 
 	oldLoginRecorder := httptest.NewRecorder()
 	oldLoginRequest := httptest.NewRequest(http.MethodPost, "/api/admin/v1/login", strings.NewReader(`{"username":"admin","password":"admin-pass"}`))
+	oldLoginRequest.Header.Set("Content-Type", "application/json")
 	handler.ServeHTTP(oldLoginRecorder, oldLoginRequest)
 	if oldLoginRecorder.Code != http.StatusUnauthorized {
 		t.Fatalf("old password status = %d, want 401", oldLoginRecorder.Code)
@@ -135,6 +138,7 @@ func TestAdminLoginCreatesSessionAndPasswordUpdateInvalidatesOldPassword(t *test
 
 	newLoginRecorder := httptest.NewRecorder()
 	newLoginRequest := httptest.NewRequest(http.MethodPost, "/api/admin/v1/login", strings.NewReader(`{"username":"admin","password":"new-admin-pass"}`))
+	newLoginRequest.Header.Set("Content-Type", "application/json")
 	handler.ServeHTTP(newLoginRecorder, newLoginRequest)
 	if newLoginRecorder.Code != http.StatusOK {
 		t.Fatalf("new password status = %d, want 200; body=%s", newLoginRecorder.Code, newLoginRecorder.Body.String())
@@ -161,6 +165,7 @@ func TestAdminLoginCreatesSessionAndPasswordUpdateInvalidatesOldPassword(t *test
 
 	oldUsernameRecorder := httptest.NewRecorder()
 	oldUsernameRequest := httptest.NewRequest(http.MethodPost, "/api/admin/v1/login", strings.NewReader(`{"username":"admin","password":"new-admin-pass"}`))
+	oldUsernameRequest.Header.Set("Content-Type", "application/json")
 	handler.ServeHTTP(oldUsernameRecorder, oldUsernameRequest)
 	if oldUsernameRecorder.Code != http.StatusUnauthorized {
 		t.Fatalf("old username status = %d, want 401", oldUsernameRecorder.Code)
@@ -195,6 +200,7 @@ func TestAdminSessionExpiresAfterOneDay(t *testing.T) {
 
 	loginRecorder := httptest.NewRecorder()
 	loginRequest := httptest.NewRequest(http.MethodPost, "/api/admin/v1/login", strings.NewReader(`{"username":"admin","password":"admin-pass"}`))
+	loginRequest.Header.Set("Content-Type", "application/json")
 	handler.ServeHTTP(loginRecorder, loginRequest)
 	if loginRecorder.Code != http.StatusOK {
 		t.Fatalf("login status = %d, want 200; body=%s", loginRecorder.Code, loginRecorder.Body.String())
@@ -716,7 +722,7 @@ func TestAdminNodeCreateAddsEditableNodeWithoutReturningSecrets(t *testing.T) {
 	}
 }
 
-func TestAdminNodeInstallCommandReusesStoredCredential(t *testing.T) {
+func TestAdminNodeInstallCommandIssuesOneTimeEnrollmentWithoutRotatingActiveAgent(t *testing.T) {
 	store, err := OpenSQLiteStore(filepath.Join(t.TempDir(), "zeno.db"))
 	if err != nil {
 		t.Fatalf("open sqlite store: %v", err)
@@ -742,9 +748,11 @@ func TestAdminNodeInstallCommandReusesStoredCredential(t *testing.T) {
 		t.Fatalf("status = %d, want 200; body=%s", recorder.Code, recorder.Body.String())
 	}
 	var response struct {
-		NodeID   string            `json:"node_id"`
-		Command  string            `json:"command"`
-		Commands map[string]string `json:"commands"`
+		NodeID              string            `json:"node_id"`
+		Command             string            `json:"command"`
+		Commands            map[string]string `json:"commands"`
+		EnrollmentExpiresAt string            `json:"enrollment_expires_at"`
+		EnrollmentOneTime   bool              `json:"enrollment_one_time"`
 	}
 	if err := json.NewDecoder(bytes.NewBufferString(recorder.Body.String())).Decode(&response); err != nil {
 		t.Fatalf("decode install command: %v", err)
@@ -758,12 +766,26 @@ func TestAdminNodeInstallCommandReusesStoredCredential(t *testing.T) {
 	if !strings.Contains(response.Commands["macos"], "https://zeno.shuijiao.de/agent/install.sh") || !strings.Contains(response.Commands["windows"], "https://zeno.shuijiao.de/agent/install.ps1") || !strings.Contains(response.Commands["windows"], "$env:ZENO_AGENT_VERSION='testsha'") {
 		t.Fatalf("install commands should include macOS and Windows proxied variants: %#v", response.Commands)
 	}
-	if !strings.Contains(response.Command, "ZENO_AGENT_TOKEN='") || !strings.Contains(response.Command, "sudo env") {
+	if !strings.Contains(response.Command, "ZENO_ENROLLMENT_TOKEN='") || strings.Contains(response.Command, "ZENO_AGENT_TOKEN='") || !strings.Contains(response.Command, "sudo env") {
 		t.Fatalf("install command should use Zeno agent names and paths: %s", response.Command)
 	}
+	if !response.EnrollmentOneTime || response.EnrollmentExpiresAt == "" {
+		t.Fatalf("install response should describe expiring one-time enrollment: %+v", response)
+	}
 	credential := extractQuotedInstallCredential(t, response.Command)
-	if credential != "old-agent-token" {
-		t.Fatalf("install command credential = %q, want stored credential", credential)
+	if credential == "old-agent-token" || credential == "" {
+		t.Fatalf("install command leaked or omitted enrollment credential: %q", credential)
+	}
+	allowed, err := store.AuthorizeAgent(ctx, "hytron", "old-agent-token")
+	if err != nil || !allowed {
+		t.Fatalf("existing runtime credential must remain active while enrollment is pending: allowed=%v err=%v", allowed, err)
+	}
+	allowed, err = store.AuthorizeAgent(ctx, "hytron", credential)
+	if err != nil {
+		t.Fatalf("authorize enrollment credential as runtime: %v", err)
+	}
+	if allowed {
+		t.Fatal("one-time enrollment credential must not authorize Agent API")
 	}
 
 	secondRecorder := httptest.NewRecorder()
@@ -781,16 +803,22 @@ func TestAdminNodeInstallCommandReusesStoredCredential(t *testing.T) {
 	if err := json.NewDecoder(bytes.NewBufferString(secondRecorder.Body.String())).Decode(&secondResponse); err != nil {
 		t.Fatalf("decode second install command: %v", err)
 	}
-	if secondCredential := extractQuotedInstallCredential(t, secondResponse.Command); secondCredential != credential {
-		t.Fatalf("second install credential = %q, want %q", secondCredential, credential)
+	secondCredential := extractQuotedInstallCredential(t, secondResponse.Command)
+	if secondCredential == credential || secondCredential == "" {
+		t.Fatalf("second command must supersede the first enrollment: first=%q second=%q", credential, secondCredential)
 	}
-
-	allowed, err := store.AuthorizeAgent(ctx, "hytron", credential)
-	if err != nil {
-		t.Fatalf("authorize generated credential: %v", err)
+	if err := store.RedeemAgentEnrollment(ctx, "hytron", credential, strings.Repeat("a", 64)); !errors.Is(err, errAgentEnrollmentUnavailable) {
+		t.Fatalf("superseded enrollment redemption error = %v, want unavailable", err)
 	}
-	if !allowed {
-		t.Fatalf("generated credential should authorize agent")
+	newRuntimeToken := strings.Repeat("b", 64)
+	if err := store.RedeemAgentEnrollment(ctx, "hytron", secondCredential, newRuntimeToken); err != nil {
+		t.Fatalf("redeem current enrollment: %v", err)
+	}
+	if allowed, err := store.AuthorizeAgent(ctx, "hytron", newRuntimeToken); err != nil || !allowed {
+		t.Fatalf("pending runtime credential should activate: allowed=%v err=%v", allowed, err)
+	}
+	if allowed, err := store.AuthorizeAgent(ctx, "hytron", "old-agent-token"); err != nil || allowed {
+		t.Fatalf("old runtime credential should retire after activation: allowed=%v err=%v", allowed, err)
 	}
 }
 
@@ -864,7 +892,7 @@ func TestAdminNodeInstallCommandPrefersConfiguredAgentControllerURL(t *testing.T
 
 func extractQuotedInstallCredential(t *testing.T, command string) string {
 	t.Helper()
-	marker := "ZENO_AGENT_TOKEN='"
+	marker := "ZENO_ENROLLMENT_TOKEN='"
 	start := strings.Index(command, marker)
 	if start < 0 {
 		t.Fatalf("install command does not contain quoted credential: %s", command)

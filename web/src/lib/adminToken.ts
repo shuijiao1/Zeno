@@ -4,6 +4,12 @@ export const adminTokenMaxAgeMs = 24 * 60 * 60 * 1000
 
 let memoryAdminToken = ''
 let memoryAdminTokenStoredAt = 0
+let memoryAdminTokenGeneration = 0
+
+export type AdminTokenIdentity = Readonly<{
+  token: string
+  generation: number
+}>
 
 function nowMs(): number {
   return Date.now()
@@ -22,7 +28,8 @@ function isFresh(storedAt: number, now = nowMs()): boolean {
   return Number.isFinite(storedAt) && storedAt > 0 && now - storedAt <= adminTokenMaxAgeMs
 }
 
-function rememberInMemory(token: string, storedAt = nowMs()) {
+function rememberInMemory(token: string, storedAt = nowMs(), advanceGeneration = false) {
+  if (advanceGeneration || token !== memoryAdminToken) memoryAdminTokenGeneration += 1
   memoryAdminToken = token
   memoryAdminTokenStoredAt = storedAt
 }
@@ -81,7 +88,10 @@ export function rememberAdminToken(token: string, storedAt = nowMs()) {
     clearStoredAdminToken()
     return
   }
-  rememberInMemory(token, storedAt)
+  // Explicit writes establish a new token generation even when the token text
+  // happens to be identical. This keeps an older in-flight request from
+  // invalidating a freshly established admin session.
+  rememberInMemory(token, storedAt, true)
   const session = storage('sessionStorage')
   try {
     session?.setItem(adminTokenStorageKey, token)
@@ -95,6 +105,7 @@ export function rememberAdminToken(token: string, storedAt = nowMs()) {
 }
 
 export function clearStoredAdminToken() {
+  memoryAdminTokenGeneration += 1
   memoryAdminToken = ''
   memoryAdminTokenStoredAt = 0
   for (const kind of ['sessionStorage', 'localStorage'] as const) {
@@ -104,4 +115,20 @@ export function clearStoredAdminToken() {
       store?.removeItem(adminTokenStoredAtKey)
     } catch {}
   }
+}
+
+export function captureAdminTokenIdentity(token: string): AdminTokenIdentity {
+  return Object.freeze({ token, generation: memoryAdminTokenGeneration })
+}
+
+export function isAdminTokenIdentityCurrent(identity: AdminTokenIdentity): boolean {
+  return identity.token !== ''
+    && identity.token === memoryAdminToken
+    && identity.generation === memoryAdminTokenGeneration
+}
+
+export function clearStoredAdminTokenIfCurrent(identity: AdminTokenIdentity): boolean {
+  if (!isAdminTokenIdentityCurrent(identity)) return false
+  clearStoredAdminToken()
+  return true
 }

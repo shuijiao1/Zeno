@@ -5,9 +5,12 @@ import (
 	"database/sql"
 	"database/sql/driver"
 	"fmt"
+	"net/http"
+	"net/http/httptest"
 	"path/filepath"
 	"reflect"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -118,6 +121,188 @@ func TestSummaryQueryCountDoesNotGrowWithNodesOrServices(t *testing.T) {
 	}
 }
 
+func TestSummaryAggregateDirtyMarkDoesNotBlockInflightSQLAndOldGenerationDoesNotCommit(t *testing.T) {
+	store, counter := openCountingSummaryStore(t)
+	defer store.Close()
+	seedSummaryScaleFixture(t, store, 1, 1)
+
+	oldStarted := make(chan struct{})
+	oldRelease := make(chan struct{})
+	newStarted := make(chan struct{})
+	newRelease := make(chan struct{})
+	const homeAggregateQuery = "WITH eligible_nodes AS"
+	counter.blockQuery(homeAggregateQuery, oldStarted, oldRelease)
+	counter.blockQuery(homeAggregateQuery, newStarted, newRelease)
+
+	done := make(chan error, 1)
+	go func() {
+		_, _, _, err := store.summaryAggregates(context.Background())
+		done <- err
+	}()
+	select {
+	case <-oldStarted:
+	case <-time.After(time.Second):
+		t.Fatal("old aggregate build did not start")
+	}
+
+	markDone := make(chan struct{})
+	go func() {
+		store.markSummaryAggregatesDirty()
+		close(markDone)
+	}()
+	select {
+	case <-markDone:
+	case <-time.After(100 * time.Millisecond):
+		t.Fatal("probe aggregate dirty mark blocked behind aggregate SQL")
+	}
+	close(oldRelease)
+	select {
+	case <-newStarted:
+	case <-time.After(time.Second):
+		t.Fatal("current-generation aggregate rebuild did not start")
+	}
+
+	store.summaryAggregateMu.Lock()
+	oldCommitted := !store.summaryAggregateUpdated.IsZero()
+	store.summaryAggregateMu.Unlock()
+	if oldCommitted {
+		t.Fatal("obsolete aggregate generation committed before current rebuild")
+	}
+	close(newRelease)
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatalf("aggregate rebuild: %v", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("aggregate rebuild did not finish")
+	}
+	store.summaryAggregateMu.Lock()
+	currentCommitted := !store.summaryAggregateUpdated.IsZero()
+	store.summaryAggregateMu.Unlock()
+	if !currentCommitted {
+		t.Fatal("current aggregate generation was not committed")
+	}
+}
+
+func TestAgentProbeResults202DoesNotWaitForInflightAggregateSQL(t *testing.T) {
+	store, counter := openCountingSummaryStore(t)
+	defer store.Close()
+	seedSummaryScaleFixture(t, store, 1, 1)
+	// The aggregate query reserves one database/sql connection before the test
+	// driver pauses it. Keep a second connection available so this test isolates
+	// the aggregate cache lock from SQLite connection-pool contention.
+	store.db.SetMaxOpenConns(2)
+
+	aggregateStarted := make(chan struct{})
+	aggregateRelease := make(chan struct{})
+	counter.blockQuery("WITH eligible_nodes AS", aggregateStarted, aggregateRelease)
+	aggregateDone := make(chan error, 1)
+	go func() {
+		_, _, _, err := store.summaryAggregates(context.Background())
+		aggregateDone <- err
+	}()
+	select {
+	case <-aggregateStarted:
+	case <-time.After(time.Second):
+		t.Fatal("aggregate query did not start")
+	}
+
+	handler := NewHandler(HandlerOptions{Store: store})
+	defer cleanupTestHandler(t, handler)
+	payload := fmt.Sprintf(`{"rounds":[{"round_id":"nonblocking-aggregate","target_id":"target-00","ts":%d,"type":"tcp","samples":[{"seq":1,"success":true,"latency_ms":12.5}]}]}`, time.Now().UTC().Unix())
+	request := httptest.NewRequest(http.MethodPost, "/api/agent/v1/probe-results", strings.NewReader(payload))
+	request.Header.Set("X-Node-ID", "node-00")
+	request.Header.Set("Authorization", "Bearer node-00-token")
+	request.Header.Set("Content-Type", "application/json")
+	recorder := httptest.NewRecorder()
+	responseDone := make(chan struct{})
+	go func() {
+		handler.ServeHTTP(recorder, request)
+		close(responseDone)
+	}()
+	select {
+	case <-responseDone:
+	case <-time.After(500 * time.Millisecond):
+		close(aggregateRelease)
+		t.Fatal("Agent 202 waited for in-flight aggregate SQL")
+	}
+
+	close(aggregateRelease)
+	if recorder.Code != http.StatusAccepted {
+		t.Fatalf("probe response status = %d, want 202; body=%s", recorder.Code, recorder.Body.String())
+	}
+	select {
+	case err := <-aggregateDone:
+		if err != nil {
+			t.Fatalf("aggregate after probe invalidation: %v", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("aggregate query did not finish after release")
+	}
+}
+
+func TestSummaryAggregateDirtyMarkRetainsBoundedSnapshot(t *testing.T) {
+	store, counter := openCountingSummaryStore(t)
+	defer store.Close()
+	seedSummaryScaleFixture(t, store, 1, 1)
+	if _, _, _, err := store.summaryAggregates(context.Background()); err != nil {
+		t.Fatalf("prime aggregate cache: %v", err)
+	}
+
+	store.markSummaryAggregatesDirty()
+	counter.reset()
+	if _, _, _, err := store.summaryAggregates(context.Background()); err != nil {
+		t.Fatalf("dirty aggregate within rebuild window: %v", err)
+	}
+	if queries := counter.count(); queries != 0 {
+		t.Fatalf("dirty aggregate rebuilt inside %s window with %d queries", summaryAggregateFreshFor, queries)
+	}
+
+	store.summaryAggregateMu.Lock()
+	store.summaryAggregateUpdated = time.Now().Add(-summaryAggregateFreshFor)
+	store.summaryAggregateMu.Unlock()
+	counter.reset()
+	if _, _, _, err := store.summaryAggregates(context.Background()); err != nil {
+		t.Fatalf("dirty aggregate after rebuild window: %v", err)
+	}
+	if queries := counter.count(); queries != 4 {
+		t.Fatalf("expired dirty aggregate queries = %d, want one four-statement rebuild", queries)
+	}
+}
+
+func TestSummaryAggregatesSingleflightConcurrentExpiredCache(t *testing.T) {
+	store, counter := openCountingSummaryStore(t)
+	defer store.Close()
+	seedSummaryScaleFixture(t, store, 2, 2)
+	counter.reset()
+
+	const callers = 12
+	start := make(chan struct{})
+	errors := make(chan error, callers)
+	var wait sync.WaitGroup
+	wait.Add(callers)
+	for range callers {
+		go func() {
+			defer wait.Done()
+			<-start
+			_, _, _, err := store.summaryAggregates(context.Background())
+			errors <- err
+		}()
+	}
+	close(start)
+	wait.Wait()
+	close(errors)
+	for err := range errors {
+		if err != nil {
+			t.Fatalf("concurrent aggregate: %v", err)
+		}
+	}
+	if queries := counter.count(); queries != 4 {
+		t.Fatalf("concurrent aggregate queries = %d, want one four-statement build", queries)
+	}
+}
+
 func legacySummaryForTest(ctx context.Context, store *SQLiteStore) (SummaryResponse, error) {
 	nodes, err := store.nodes(ctx)
 	if err != nil {
@@ -144,13 +329,13 @@ func legacySummaryForTest(ctx context.Context, store *SQLiteStore) (SummaryRespo
 
 func legacyServiceTargetsForTest(ctx context.Context, store *SQLiteStore) ([]ServiceTarget, error) {
 	rows, err := store.db.QueryContext(ctx, `
-		SELECT pt.id, pt.name, pt.type, pt.address, pt.port,
+		SELECT pt.id, pt.name, pt.type,
 		       COUNT(DISTINCT CASE WHEN n.id IS NOT NULL AND COALESCE(npt.enabled, 0) = 1 AND n.disabled = 0 THEN n.id END) AS assigned_nodes
 		FROM probe_targets pt
 		LEFT JOIN node_probe_targets npt ON npt.target_id = pt.id
 		LEFT JOIN nodes n ON n.id = npt.node_id
 		WHERE pt.enabled = 1
-		GROUP BY pt.id, pt.name, pt.type, pt.address, pt.port, pt.display_order
+		GROUP BY pt.id, pt.name, pt.type, pt.display_order
 		ORDER BY pt.display_order ASC, pt.name ASC, pt.id ASC
 	`)
 	if err != nil {
@@ -161,11 +346,9 @@ func legacyServiceTargetsForTest(ctx context.Context, store *SQLiteStore) ([]Ser
 	targets := []ServiceTarget{}
 	for rows.Next() {
 		var target ServiceTarget
-		var port sql.NullInt64
-		if err := rows.Scan(&target.ID, &target.Name, &target.Type, &target.Address, &port, &target.AssignedNodeCount); err != nil {
+		if err := rows.Scan(&target.ID, &target.Name, &target.Type, &target.AssignedNodeCount); err != nil {
 			return nil, err
 		}
-		target.Port = intSQLPtr(port)
 		targets = append(targets, target)
 	}
 	if err := rows.Err(); err != nil {
@@ -299,9 +482,17 @@ func nullableFloatValue(value *float64) any {
 
 func float64Ptr(value float64) *float64 { return &value }
 
+type summaryQueryBlock struct {
+	contains string
+	started  chan<- struct{}
+	release  <-chan struct{}
+}
+
 type summaryQueryCounter struct {
 	enabled atomic.Bool
 	queries atomic.Int64
+	mu      sync.Mutex
+	blocks  []summaryQueryBlock
 }
 
 func (counter *summaryQueryCounter) reset() {
@@ -318,6 +509,29 @@ func (counter *summaryQueryCounter) add(query string) {
 	if counter.enabled.Load() && strings.TrimSpace(query) != "" {
 		counter.queries.Add(1)
 	}
+	counter.mu.Lock()
+	var block *summaryQueryBlock
+	for index := range counter.blocks {
+		if !strings.Contains(query, counter.blocks[index].contains) {
+			continue
+		}
+		matched := counter.blocks[index]
+		counter.blocks = append(counter.blocks[:index], counter.blocks[index+1:]...)
+		block = &matched
+		break
+	}
+	counter.mu.Unlock()
+	if block == nil {
+		return
+	}
+	close(block.started)
+	<-block.release
+}
+
+func (counter *summaryQueryCounter) blockQuery(contains string, started chan<- struct{}, release <-chan struct{}) {
+	counter.mu.Lock()
+	counter.blocks = append(counter.blocks, summaryQueryBlock{contains: contains, started: started, release: release})
+	counter.mu.Unlock()
 }
 
 var summaryCountingDriverSequence atomic.Uint64

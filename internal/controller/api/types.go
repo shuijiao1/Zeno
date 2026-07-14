@@ -84,8 +84,6 @@ type ServiceTarget struct {
 	ID                 string   `json:"id"`
 	Name               string   `json:"name"`
 	Type               string   `json:"type"`
-	Address            string   `json:"address"`
-	Port               *int     `json:"port,omitempty"`
 	AssignedNodeCount  int      `json:"assigned_node_count"`
 	ReportingNodeCount int      `json:"reporting_node_count"`
 	MedianMS           *float64 `json:"median_ms"`

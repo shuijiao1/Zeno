@@ -14,7 +14,9 @@ services:
     environment:
       TZ: ${TZ:-Asia/Shanghai}
       ZENO_NOTIFICATIONS_DISABLED: ${ZENO_NOTIFICATIONS_DISABLED:-false}
-      ZENO_NOTIFICATION_CREDENTIAL_KEY_FILE: /run/secrets/zeno_notification_credential_key
+      ZENO_NOTIFICATION_AUTHORITY_KEYRING_FILE: /run/secrets/zeno_notification_authority_keyring.json
+      ZENO_NOTIFICATION_CREDENTIAL_KEYRING_FILE: /run/secrets/zeno_notification_credential_keyring.json
+      ZENO_TRUSTED_PROXIES: ${ZENO_TRUSTED_PROXIES:-172.30.250.1/32}
     ports:
       - "127.0.0.1:${ZENO_HOST_PORT:-18980}:18980"
     volumes:
@@ -26,3 +28,13 @@ services:
       timeout: 5s
       retries: 3
       start_period: 5m
+    networks:
+      zeno_proxy:
+        ipv4_address: ${ZENO_CONTAINER_IP:-172.30.250.2}
+networks:
+  zeno_proxy:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: ${ZENO_DOCKER_SUBNET:-172.30.250.0/29}
+          gateway: ${ZENO_DOCKER_GATEWAY:-172.30.250.1}
