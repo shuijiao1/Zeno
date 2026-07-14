@@ -919,6 +919,9 @@ export async function requestAdminNodeInstallCommand(adminToken: string, nodeId:
     },
   })
   if (!response.ok) {
+    if (response.status === 409) {
+      throw new Error('当前后台访问地址无法用于 Agent 接入，请在系统设置中填写 Agent 可访问的接入地址。')
+    }
     throw new Error(`admin node install command failed: ${response.status}`)
   }
   const data = await response.json() as ApiAdminNodeInstallCommandResponse

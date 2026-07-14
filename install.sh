@@ -521,8 +521,8 @@ resolve_target_image() {
   if [[ "$REQUESTED_IMAGE" == ghcr.io/shuijiao1/zeno:* || "$REQUESTED_IMAGE" == ghcr.io/shuijiao1/zeno@sha256:* ]]; then
     [ "$source_label" = "https://github.com/shuijiao1/Zeno" ] || fail "官方镜像 source label 不匹配，拒绝安装"
     [[ "$revision_label" =~ ^[0-9a-f]{40}$ ]] || fail "官方镜像 revision label 无效，拒绝安装"
-    [[ "$version_label" =~ ^[0-9]+\.[0-9]+\.[0-9]+([.-][A-Za-z0-9][A-Za-z0-9.-]*)?$ ]] || fail "官方镜像 version label 无效，拒绝安装"
-    TARGET_VERSION_LABEL="$version_label"
+    [[ "$version_label" =~ ^v?[0-9]+\.[0-9]+\.[0-9]+([.-][A-Za-z0-9][A-Za-z0-9.-]*)?$ ]] || fail "官方镜像 version label 无效，拒绝安装"
+    TARGET_VERSION_LABEL="${version_label#v}"
   fi
 
   if [[ "$REQUESTED_IMAGE" == *@sha256:* ]]; then
@@ -580,7 +580,11 @@ verify_official_image_attestation() {
   local verifier="$extract_dir/gh_${gh_version}_linux_${gh_arch}/bin/gh"
   [ -x "$verifier" ] || fail "provenance verifier 缺少可执行文件"
   local certificate_identity="https://github.com/shuijiao1/Zeno/.github/workflows/docker.yml@refs/tags/v${TARGET_VERSION_LABEL}"
-  "$verifier" attestation verify "oci://${IMAGE}" --repo "$REPO" --bundle-from-oci --cert-identity "$certificate_identity" --deny-self-hosted-runners >/dev/null \
+  if "$verifier" attestation verify "oci://${IMAGE}" --repo "$REPO" --bundle-from-oci --cert-identity "$certificate_identity" --deny-self-hosted-runners >/dev/null 2>&1; then
+    return 0
+  fi
+  echo "警告: OCI 内置 provenance 不匹配 GitHub workflow identity，改用 GitHub attestation API 验证。" >&2
+  "$verifier" attestation verify "oci://${IMAGE}" --repo "$REPO" --cert-identity "$certificate_identity" --deny-self-hosted-runners >/dev/null \
     || fail "官方镜像 provenance 验证失败"
 }
 

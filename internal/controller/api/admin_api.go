@@ -369,7 +369,7 @@ func (h *handler) handleAdminNodeInstallCommand(w http.ResponseWriter, r *http.R
 	if controllerURL == "" {
 		fallbackURL := h.requestBaseURL(r)
 		parsedFallback, parseErr := url.Parse(fallbackURL)
-		if parseErr != nil || !loopbackURLHost(parsedFallback.Hostname()) {
+		if parseErr != nil || (!loopbackURLHost(parsedFallback.Hostname()) && !directIPURLHost(parsedFallback)) || !validAgentControllerURL(fallbackURL) {
 			writeError(w, http.StatusConflict, "configure agent controller url before generating install commands")
 			return
 		}

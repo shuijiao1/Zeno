@@ -890,6 +890,31 @@ func TestAdminNodeInstallCommandPrefersConfiguredAgentControllerURL(t *testing.T
 	}
 }
 
+func TestAdminNodeInstallCommandFallsBackToDirectIPAddressAndPort(t *testing.T) {
+	store, err := OpenSQLiteStore(filepath.Join(t.TempDir(), "zeno.db"))
+	if err != nil {
+		t.Fatalf("open sqlite store: %v", err)
+	}
+	defer store.Close()
+	if err := store.SeedPreviewData(context.Background(), PreviewSeedOptions{NodeID: "hytron", DisplayName: "Hytron", AgentToken: "old-agent-token"}); err != nil {
+		t.Fatalf("seed preview data: %v", err)
+	}
+
+	recorder := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodPost, "/api/admin/v1/nodes/hytron/install-command", nil)
+	request.Host = "203.0.113.10:18980"
+	request.Header.Set("X-Forwarded-Proto", "http")
+	request.Header.Set("X-Admin-Token", "admin-pass")
+	NewHandler(HandlerOptions{Store: store, AdminTokenHash: HashAdminToken("admin-pass")}).ServeHTTP(recorder, request)
+
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200; body=%s", recorder.Code, recorder.Body.String())
+	}
+	if !strings.Contains(recorder.Body.String(), "ZENO_CONTROLLER_URL='http://203.0.113.10:18980'") {
+		t.Fatalf("install command should use the direct IP and port: %s", recorder.Body.String())
+	}
+}
+
 func extractQuotedInstallCredential(t *testing.T, command string) string {
 	t.Helper()
 	marker := "ZENO_ENROLLMENT_TOKEN='"

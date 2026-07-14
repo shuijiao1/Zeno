@@ -286,10 +286,15 @@ func validAgentControllerURL(value string) bool {
 	if err != nil || parsed.Host == "" {
 		return false
 	}
-	if parsed.Scheme != "https" && !(parsed.Scheme == "http" && loopbackURLHost(parsed.Hostname())) {
+	if parsed.Scheme != "https" && !(parsed.Scheme == "http" && (loopbackURLHost(parsed.Hostname()) || directIPURLHost(parsed))) {
 		return false
 	}
 	return parsed.User == nil && parsed.RawQuery == "" && parsed.Fragment == ""
+}
+
+func directIPURLHost(parsed *url.URL) bool {
+	host := strings.TrimSpace(strings.Trim(parsed.Hostname(), "[]"))
+	return net.ParseIP(host) != nil && parsed.Port() != ""
 }
 
 func loopbackURLHost(host string) bool {

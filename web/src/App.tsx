@@ -844,7 +844,7 @@ export function App() {
     const requestTokenIdentity = captureAdminTokenIdentity(requestToken)
     return requestAdminNodeInstallCommand(requestToken, nodeId)
       .catch((error: unknown) => {
-        handleAdminRequestError(error, requestTokenIdentity)
+        if (isAdminUnauthorizedError(error)) expireAdminSession(requestTokenIdentity)
         throw error
       })
   }

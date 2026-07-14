@@ -610,6 +610,9 @@ class InstallSafetyTest(unittest.TestCase):
         self.assertIn('atomic_install_file', script)
         self.assertIn('verify_official_image_attestation', script)
         self.assertIn('gh_sha="762569efe785082b7d1feb06995efece1a9cecce16da8503ac6fdbcbea04085b"', script)
+        self.assertIn('^v?[0-9]+\\.[0-9]+\\.[0-9]+', script)
+        self.assertIn('TARGET_VERSION_LABEL="${version_label#v}"', script)
+        self.assertIn('改用 GitHub attestation API 验证', script)
         self.assertNotIn('|| true', script)
 
     def test_release_workflow_publishes_github_signed_image_attestation(self):

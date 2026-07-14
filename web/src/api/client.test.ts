@@ -1726,4 +1726,14 @@ describe('requestAdminNodeInstallCommand', () => {
       },
     })
   })
+
+  it('explains how to fix a missing Agent controller URL without exposing a raw 409', async () => {
+    globalThis.fetch = vi.fn(async () => new Response(JSON.stringify({
+      error: 'configure agent controller url before generating install commands',
+    }), { status: 409, headers: { 'Content-Type': 'application/json' } })) as unknown as typeof fetch
+
+    await expect(requestAdminNodeInstallCommand('admin-pass', 'mechrevo')).rejects.toThrow(
+      '当前后台访问地址无法用于 Agent 接入，请在系统设置中填写 Agent 可访问的接入地址。',
+    )
+  })
 })
