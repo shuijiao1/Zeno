@@ -336,6 +336,15 @@ func (s *SQLiteStore) ensureSchema(ctx context.Context) error {
 			updated_at INTEGER NOT NULL,
 			PRIMARY KEY (node_id, month, billing_epoch)
 		);`,
+		`CREATE TABLE IF NOT EXISTS traffic_lifetime (
+			node_id TEXT PRIMARY KEY REFERENCES nodes(id) ON DELETE CASCADE,
+			in_bytes INTEGER NOT NULL DEFAULT 0,
+			out_bytes INTEGER NOT NULL DEFAULT 0,
+			last_in_total_bytes INTEGER,
+			last_out_total_bytes INTEGER,
+			last_sample_ts INTEGER,
+			updated_at INTEGER NOT NULL
+		);`,
 		`CREATE TABLE IF NOT EXISTS probe_targets (
 			id TEXT PRIMARY KEY,
 			name TEXT NOT NULL,
@@ -634,6 +643,9 @@ func (s *SQLiteStore) ensureSchema(ctx context.Context) error {
 	`); err != nil {
 		return err
 	}
+	if err := s.backfillLifetimeTraffic(ctx); err != nil {
+		return err
+	}
 	alertRuleStateColumns := map[string]string{
 		"last_value": "REAL",
 	}
@@ -826,6 +838,39 @@ func (s *SQLiteStore) migrateTrafficMonthlySchema(ctx context.Context) error {
 	}
 	tx = nil
 	return nil
+}
+
+func (s *SQLiteStore) backfillLifetimeTraffic(ctx context.Context) error {
+	// Existing installations may retain only partial raw history. Seed lifetime
+	// totals from the latest valid interface counters and use that same sample as
+	// the new baseline rather than trying to reconstruct pruned history.
+	_, err := s.db.ExecContext(ctx, `
+		INSERT OR IGNORE INTO traffic_lifetime (
+			node_id, in_bytes, out_bytes, last_in_total_bytes,
+			last_out_total_bytes, last_sample_ts, updated_at
+		)
+		SELECT n.id,
+		       latest_sample.net_in_total_bytes,
+		       latest_sample.net_out_total_bytes,
+		       latest_sample.net_in_total_bytes,
+		       latest_sample.net_out_total_bytes,
+		       latest_sample.ts,
+		       CASE WHEN latest_sample.received_at > 0 THEN latest_sample.received_at ELSE latest_sample.ts END
+		FROM nodes n
+		JOIN state_samples latest_sample ON latest_sample.id = (
+			SELECT latest.id
+			FROM state_samples latest
+			WHERE latest.node_id = n.id
+			  AND latest.net_in_total_bytes IS NOT NULL
+			  AND latest.net_out_total_bytes IS NOT NULL
+			ORDER BY latest.ts DESC, latest.id DESC
+			LIMIT 1
+		)
+		WHERE NOT EXISTS (
+			SELECT 1 FROM traffic_lifetime lifetime WHERE lifetime.node_id = n.id
+		)
+	`)
+	return err
 }
 
 func (s *SQLiteStore) tableColumns(ctx context.Context, table string) (map[string]bool, error) {
@@ -1813,6 +1858,7 @@ func (s *SQLiteStore) nodes(ctx context.Context) ([]Node, error) {
 		       h.os_name, h.os_version, h.kernel, h.arch, h.virtualization, h.cpu_model, h.cpu_cores, h.memory_total_bytes, h.disk_total_bytes, h.boot_time,
 		       ss.cpu_percent, ss.load1, ss.load5, ss.load15, ss.uptime_seconds, ss.memory_used_bytes, ss.disk_used_bytes,
 		       ss.net_in_speed_bps, ss.net_out_speed_bps, ss.net_in_total_bytes, ss.net_out_total_bytes,
+		       lifetime.in_bytes, lifetime.out_bytes,
 		       (
 		         SELECT tm.billable_bytes
 		         FROM traffic_monthly tm
@@ -1842,6 +1888,7 @@ func (s *SQLiteStore) nodes(ctx context.Context) ([]Node, error) {
 		LEFT JOIN state_samples ss ON ss.id = (
 			SELECT id FROM state_samples WHERE node_id = n.id ORDER BY ts DESC, id DESC LIMIT 1
 		)
+		LEFT JOIN traffic_lifetime lifetime ON lifetime.node_id = n.id
 		WHERE n.disabled = 0
 		ORDER BY n.display_order ASC, n.id ASC
 	`, int64(nodeHeartbeatOfflineAfter/time.Second))
@@ -1858,8 +1905,8 @@ func (s *SQLiteStore) nodes(ctx context.Context) ([]Node, error) {
 		var expiryPermanent int
 		var monthlyResetDay, cpuCores, memoryTotal, diskTotal, bootTime, lastSeenAt, uptimeSeconds sql.NullInt64
 		var cpuPercent, load1, load5, load15, netInSpeed, netOutSpeed sql.NullFloat64
-		var memoryUsed, diskUsed, netInTotal, netOutTotal, billable, quota, offlineDurationSec sql.NullInt64
-		if err := rows.Scan(&id, &displayName, &status, &countryCode, &expiryDate, &expiryPermanent, &billingCycle, &billingMode, &monthlyResetDay, &lastSeenAt, &osName, &osVersion, &kernel, &arch, &virtualization, &cpuModel, &cpuCores, &memoryTotal, &diskTotal, &bootTime, &cpuPercent, &load1, &load5, &load15, &uptimeSeconds, &memoryUsed, &diskUsed, &netInSpeed, &netOutSpeed, &netInTotal, &netOutTotal, &billable, &quota, &offlineDurationSec); err != nil {
+		var memoryUsed, diskUsed, netInTotal, netOutTotal, netInLifetime, netOutLifetime, billable, quota, offlineDurationSec sql.NullInt64
+		if err := rows.Scan(&id, &displayName, &status, &countryCode, &expiryDate, &expiryPermanent, &billingCycle, &billingMode, &monthlyResetDay, &lastSeenAt, &osName, &osVersion, &kernel, &arch, &virtualization, &cpuModel, &cpuCores, &memoryTotal, &diskTotal, &bootTime, &cpuPercent, &load1, &load5, &load15, &uptimeSeconds, &memoryUsed, &diskUsed, &netInSpeed, &netOutSpeed, &netInTotal, &netOutTotal, &netInLifetime, &netOutLifetime, &billable, &quota, &offlineDurationSec); err != nil {
 			return nil, err
 		}
 		resetDay := 1
@@ -1894,6 +1941,8 @@ func (s *SQLiteStore) nodes(ctx context.Context) ([]Node, error) {
 			NetOutSpeedBps:       floatPtr(netOutSpeed),
 			NetInTotalBytes:      intPtr(netInTotal),
 			NetOutTotalBytes:     intPtr(netOutTotal),
+			NetInLifetimeBytes:   intPtr(netInLifetime),
+			NetOutLifetimeBytes:  intPtr(netOutLifetime),
 			BillingMode:          nullStringOr(billingMode, "both"),
 			MonthlyResetDay:      resetDay,
 			MonthlyPeriodStart:   period.StartDate,

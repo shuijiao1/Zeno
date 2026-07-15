@@ -33,6 +33,8 @@ describe('normalizeSummary', () => {
           net_out_speed_bps: 2048,
           net_in_total_bytes: 4096,
           net_out_total_bytes: 8192,
+          net_in_lifetime_bytes: 16384,
+          net_out_lifetime_bytes: 32768,
           billing_mode: 'max',
           monthly_reset_day: 15,
           monthly_period_start: '2026-06-15',
@@ -83,6 +85,8 @@ describe('normalizeSummary', () => {
     expect(summary.nodes[0].load5).toBe(0.35)
     expect(summary.nodes[0].load15).toBe(0.28)
     expect(summary.nodes[0].uptimeSeconds).toBe(3600)
+    expect(summary.nodes[0].netInLifetimeBytes).toBe(16384)
+    expect(summary.nodes[0].netOutLifetimeBytes).toBe(32768)
     expect(summary.nodes[0].osVersion).toBe('13')
     expect(summary.nodes[0].kernel).toBe('6.12.0')
     expect(summary.nodes[0].virtualization).toBe('kvm')

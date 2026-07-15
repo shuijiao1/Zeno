@@ -6,6 +6,7 @@ import (
 	"database/sql"
 	"encoding/hex"
 	"encoding/json"
+	"math"
 	"net"
 	"strings"
 	"time"
@@ -608,6 +609,9 @@ func insertAgentStateSampleTx(ctx context.Context, tx *sql.Tx, nodeID string, st
 	// billing baseline here is essential for first-sample failures: otherwise a
 	// later recovery would bill the machine's full lifetime counter as new use.
 	if state.NetTotalsValid == nil || *state.NetTotalsValid {
+		if err := upsertLifetimeTraffic(ctx, tx, nodeID, state.NetInTotalBytes, state.NetOutTotalBytes, sampleTS.Unix(), receivedUnix); err != nil {
+			return false, err
+		}
 		if err := upsertMonthlyTraffic(ctx, tx, nodeID, month, billingEpoch, monthlyResetDay, billingMode, state.NetInTotalBytes, state.NetOutTotalBytes, sampleTS.Unix(), receivedUnix); err != nil {
 			return false, err
 		}
@@ -709,6 +713,55 @@ func normalizeAgentCountryCode(value string) string {
 		}
 	}
 	return trimmed
+}
+
+func upsertLifetimeTraffic(ctx context.Context, tx *sql.Tx, nodeID string, inTotal, outTotal, sampleTS, now int64) error {
+	var lifetimeIn, lifetimeOut int64
+	var previousIn, previousOut, lastSampleTS sql.NullInt64
+	err := tx.QueryRowContext(ctx, `
+		SELECT in_bytes, out_bytes, last_in_total_bytes, last_out_total_bytes, last_sample_ts
+		FROM traffic_lifetime
+		WHERE node_id = ?
+	`, nodeID).Scan(&lifetimeIn, &lifetimeOut, &previousIn, &previousOut, &lastSampleTS)
+	if err == sql.ErrNoRows {
+		_, err = tx.ExecContext(ctx, `
+			INSERT INTO traffic_lifetime (
+				node_id, in_bytes, out_bytes, last_in_total_bytes,
+				last_out_total_bytes, last_sample_ts, updated_at
+			)
+			VALUES (?, ?, ?, ?, ?, ?, ?)
+		`, nodeID, inTotal, outTotal, inTotal, outTotal, sampleTS, now)
+		return err
+	}
+	if err != nil {
+		return err
+	}
+	if lastSampleTS.Valid && sampleTS <= lastSampleTS.Int64 {
+		return nil
+	}
+
+	deltaIn := nonNegativeDelta(previousIn, inTotal)
+	deltaOut := nonNegativeDelta(previousOut, outTotal)
+	lifetimeIn = saturatingAddNonNegativeInt64(lifetimeIn, deltaIn)
+	lifetimeOut = saturatingAddNonNegativeInt64(lifetimeOut, deltaOut)
+	_, err = tx.ExecContext(ctx, `
+		UPDATE traffic_lifetime
+		SET in_bytes = ?,
+		    out_bytes = ?,
+		    last_in_total_bytes = ?,
+		    last_out_total_bytes = ?,
+		    last_sample_ts = ?,
+		    updated_at = ?
+		WHERE node_id = ?
+	`, lifetimeIn, lifetimeOut, inTotal, outTotal, sampleTS, now, nodeID)
+	return err
+}
+
+func saturatingAddNonNegativeInt64(value, delta int64) int64 {
+	if value >= math.MaxInt64-delta {
+		return math.MaxInt64
+	}
+	return value + delta
 }
 
 func upsertMonthlyTraffic(ctx context.Context, tx *sql.Tx, nodeID, month string, billingEpoch int64, resetDay int, billingMode string, inTotal, outTotal, sampleTS, now int64) error {

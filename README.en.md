@@ -16,7 +16,7 @@ It has two parts: a Controller for the web UI, APIs, SQLite storage and notifica
 ## Features
 
 - **Server overview**: online status, OS info, CPU, memory, disk, load, uptime and Agent version.
-- **Live resource metrics**: upload/download speed, traffic counters, CPU / memory / disk usage and history.
+- **Live resource metrics**: upload/download speed, controller-persisted lifetime traffic, CPU / memory / disk usage and history. Lifetime traffic survives server and interface restarts.
 - **Monthly traffic accounting**: calculated from network counter deltas, with per-node reset day and billing mode.
 - **Latency and service probes**: ICMP Ping, TCP Ping and HTTP GET with latency, packet loss and history charts.
 - **Public status page**: server cards, top summary, node details and service latency details for desktop and mobile.

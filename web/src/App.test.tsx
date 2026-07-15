@@ -1,6 +1,6 @@
 import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it } from 'vitest'
-import { AdminCredentialField, AdminDashboard, HomeTopPanel, adminTokenMaxAgeMs, applyCustomCode, documentBrandingForSettings, isAdminUnauthorizedError, orderHomeNodes, shellStyleForSettings, shouldRefreshHomeRealtimeSnapshot, validateAdminSettingsInput } from './App'
+import { AdminCredentialField, AdminDashboard, HomeTopPanel, adminTokenMaxAgeMs, applyCustomCode, documentBrandingForSettings, homeTrafficTotalsForNodes, isAdminUnauthorizedError, orderHomeNodes, shellStyleForSettings, shouldRefreshHomeRealtimeSnapshot, validateAdminSettingsInput } from './App'
 import type { AdminAlertRule, AdminNode, AdminNotificationChannel, AdminProbeTarget, AdminSettings, HomeCardNode } from './types'
 
 const overviewProps = {
@@ -12,6 +12,40 @@ const overviewProps = {
   upSpeed: 128,
   downSpeed: 256,
 }
+
+const trafficNode: HomeCardNode = {
+  id: 'traffic-node',
+  displayName: 'Traffic Node',
+  status: 'online',
+  os: 'debian',
+  cpuPercent: 1,
+  memoryUsedBytes: 1,
+  memoryTotalBytes: 2,
+  diskUsedBytes: 1,
+  diskTotalBytes: 2,
+  netInSpeedBps: 1,
+  netOutSpeedBps: 1,
+  netInTotalBytes: 100,
+  netOutTotalBytes: 200,
+  netInLifetimeBytes: 1_000,
+  netOutLifetimeBytes: 2_000,
+  monthlyBillableBytes: 1,
+  monthlyQuotaBytes: 2,
+}
+
+describe('homeTrafficTotalsForNodes', () => {
+  it('uses controller-persisted lifetime traffic instead of reboot-scoped interface counters', () => {
+    expect(homeTrafficTotalsForNodes([trafficNode, { ...trafficNode, id: 'second', netInLifetimeBytes: 3_000, netOutLifetimeBytes: 4_000 }])).toEqual({
+      totalUp: 6_000,
+      totalDown: 4_000,
+    })
+  })
+
+  it('falls back to raw counters for a cached summary created before lifetime totals existed', () => {
+    const legacyNode = { ...trafficNode, netInLifetimeBytes: undefined, netOutLifetimeBytes: undefined }
+    expect(homeTrafficTotalsForNodes([legacyNode])).toEqual({ totalUp: 200, totalDown: 100 })
+  })
+})
 
 const hytronNode: AdminNode = {
   id: 'hytron',

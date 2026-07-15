@@ -101,13 +101,35 @@ CREATE INDEX idx_state_samples_node_ts ON state_samples(node_id, ts);
 CREATE TABLE traffic_monthly (
   node_id TEXT NOT NULL REFERENCES nodes(id),
   month TEXT NOT NULL,
+  billing_epoch INTEGER NOT NULL DEFAULT 0,
+  reset_day INTEGER NOT NULL DEFAULT 1,
+  billing_mode TEXT NOT NULL DEFAULT 'both',
   in_bytes INTEGER NOT NULL DEFAULT 0,
   out_bytes INTEGER NOT NULL DEFAULT 0,
   billable_bytes INTEGER NOT NULL DEFAULT 0,
   last_in_total_bytes INTEGER,
   last_out_total_bytes INTEGER,
+  last_sample_ts INTEGER,
   updated_at INTEGER NOT NULL,
-  PRIMARY KEY (node_id, month)
+  PRIMARY KEY (node_id, month, billing_epoch)
+);
+```
+
+## traffic_lifetime
+
+首页永久累计流量。首次有效 state 样本把当时的网卡 counter 作为起点，之后只累加非负 counter delta；counter 因服务器、Agent 或网卡重启而降低时，本次 delta 记为 0，同时把较小值设为下一次采样的基线。因此 `in_bytes` / `out_bytes` 不会因重启倒退，也不受月重置日、计费口径或 billing epoch 变化影响。
+
+旧数据库升级时，Controller 仅使用每台节点最新的有效 raw counter 进行一次性回填，并以该样本作为后续基线，不尝试从可能已裁剪的历史记录中重建永久累计值。
+
+```sql
+CREATE TABLE traffic_lifetime (
+  node_id TEXT PRIMARY KEY REFERENCES nodes(id) ON DELETE CASCADE,
+  in_bytes INTEGER NOT NULL DEFAULT 0,
+  out_bytes INTEGER NOT NULL DEFAULT 0,
+  last_in_total_bytes INTEGER,
+  last_out_total_bytes INTEGER,
+  last_sample_ts INTEGER,
+  updated_at INTEGER NOT NULL
 );
 ```
 

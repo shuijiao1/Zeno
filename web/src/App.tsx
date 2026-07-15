@@ -159,6 +159,13 @@ function sum(values: Array<number | null | undefined>): number {
   return values.reduce<number>((total, value) => total + (value ?? 0), 0)
 }
 
+export function homeTrafficTotalsForNodes(nodes: HomeCardNode[]): { totalUp: number; totalDown: number } {
+  return {
+    totalUp: sum(nodes.map((node) => node.netOutLifetimeBytes ?? node.netOutTotalBytes)),
+    totalDown: sum(nodes.map((node) => node.netInLifetimeBytes ?? node.netInTotalBytes)),
+  }
+}
+
 function homeRealtimeSnapshotForNodes(nodes: HomeCardNode[]): HomeRealtimeSnapshot {
   return {
     nodes,
@@ -1078,8 +1085,7 @@ export function App() {
   const totalCount = homeRealtimeNodes.length
   const onlineCount = homeRealtimeNodes.filter((node) => node.status === 'online').length
   const offlineCount = homeRealtimeNodes.filter((node) => node.status === 'offline').length
-  const totalUp = sum(homeRealtimeNodes.map((node) => node.netOutTotalBytes))
-  const totalDown = sum(homeRealtimeNodes.map((node) => node.netInTotalBytes))
+  const { totalUp, totalDown } = homeTrafficTotalsForNodes(homeRealtimeNodes)
   const currentRealtimeSnapshot = homeRealtimeSnapshot ?? homeRealtimeSnapshotForNodes(homeRealtimeNodes)
   const upSpeed = currentRealtimeSnapshot.upSpeed
   const downSpeed = currentRealtimeSnapshot.downSpeed
