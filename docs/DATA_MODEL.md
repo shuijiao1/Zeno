@@ -117,7 +117,7 @@ CREATE TABLE traffic_monthly (
 
 ## traffic_lifetime
 
-首页永久累计流量。首次有效 state 样本把当时的网卡 counter 作为起点，之后只累加非负 counter delta；counter 因服务器、Agent 或网卡重启而降低时，本次 delta 记为 0，同时把较小值设为下一次采样的基线。因此 `in_bytes` / `out_bytes` 不会因重启倒退，也不受月重置日、计费口径或 billing epoch 变化影响。
+首页永久累计流量。首次有效 state 样本把当时的网卡 counter 作为起点，之后按 counter delta 累计；counter 因服务器、Agent 或网卡重启而降低时，把重置后的较小 counter 视为重置后已经产生的流量并计入永久累计，同时将其设为下一次采样的基线。因此 `in_bytes` / `out_bytes` 不会因重启倒退或漏掉重置后的首次上报，也不受月重置日、计费口径或 billing epoch 变化影响。
 
 旧数据库升级时，Controller 仅使用每台节点最新的有效 raw counter 进行一次性回填，并以该样本作为后续基线，不尝试从可能已裁剪的历史记录中重建永久累计值。
 
