@@ -740,8 +740,8 @@ func upsertLifetimeTraffic(ctx context.Context, tx *sql.Tx, nodeID string, inTot
 		return nil
 	}
 
-	deltaIn := nonNegativeDelta(previousIn, inTotal)
-	deltaOut := nonNegativeDelta(previousOut, outTotal)
+	deltaIn := lifetimeTrafficDelta(previousIn, inTotal)
+	deltaOut := lifetimeTrafficDelta(previousOut, outTotal)
 	lifetimeIn = saturatingAddNonNegativeInt64(lifetimeIn, deltaIn)
 	lifetimeOut = saturatingAddNonNegativeInt64(lifetimeOut, deltaOut)
 	_, err = tx.ExecContext(ctx, `
@@ -755,6 +755,16 @@ func upsertLifetimeTraffic(ctx context.Context, tx *sql.Tx, nodeID string, inTot
 		WHERE node_id = ?
 	`, lifetimeIn, lifetimeOut, inTotal, outTotal, sampleTS, now, nodeID)
 	return err
+}
+
+func lifetimeTrafficDelta(previous sql.NullInt64, current int64) int64 {
+	if !previous.Valid {
+		return 0
+	}
+	if current < previous.Int64 {
+		return current
+	}
+	return current - previous.Int64
 }
 
 func saturatingAddNonNegativeInt64(value, delta int64) int64 {

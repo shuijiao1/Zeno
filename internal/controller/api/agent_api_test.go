@@ -2341,14 +2341,85 @@ func TestLifetimeTrafficContinuesAcrossNetworkCounterReset(t *testing.T) {
 		t.Fatalf("nodes len = %d, want 1", len(summary.Nodes))
 	}
 	node := summary.Nodes[0]
-	if node.NetInLifetimeBytes == nil || *node.NetInLifetimeBytes != 1_700 {
-		t.Fatalf("lifetime receive = %v, want 1700 after counter reset", node.NetInLifetimeBytes)
+	if node.NetInLifetimeBytes == nil || *node.NetInLifetimeBytes != 1_800 {
+		t.Fatalf("lifetime receive = %v, want 1800 after counter reset", node.NetInLifetimeBytes)
 	}
-	if node.NetOutLifetimeBytes == nil || *node.NetOutLifetimeBytes != 2_900 {
-		t.Fatalf("lifetime send = %v, want 2900 after counter reset", node.NetOutLifetimeBytes)
+	if node.NetOutLifetimeBytes == nil || *node.NetOutLifetimeBytes != 3_100 {
+		t.Fatalf("lifetime send = %v, want 3100 after counter reset", node.NetOutLifetimeBytes)
 	}
 	if node.NetInTotalBytes == nil || *node.NetInTotalBytes != 300 || node.NetOutTotalBytes == nil || *node.NetOutTotalBytes != 500 {
 		t.Fatalf("raw network totals = in:%v out:%v, want latest counters 300/500", node.NetInTotalBytes, node.NetOutTotalBytes)
+	}
+	var monthlyIn, monthlyOut int64
+	if err := store.db.QueryRowContext(ctx, `
+		SELECT in_bytes, out_bytes FROM traffic_monthly WHERE node_id = 'hytron'
+	`).Scan(&monthlyIn, &monthlyOut); err != nil {
+		t.Fatalf("query monthly traffic: %v", err)
+	}
+	if monthlyIn != 700 || monthlyOut != 900 {
+		t.Fatalf("monthly traffic = %d/%d, want legacy reset semantics 700/900", monthlyIn, monthlyOut)
+	}
+}
+
+func TestLifetimeTrafficIgnoresEqualTimestampAndInvalidCounters(t *testing.T) {
+	store, err := OpenSQLiteStore(filepath.Join(t.TempDir(), "zeno.db"))
+	if err != nil {
+		t.Fatalf("open sqlite store: %v", err)
+	}
+	defer store.Close()
+	ctx := context.Background()
+	if err := store.SeedPreviewData(ctx, PreviewSeedOptions{NodeID: "hytron", DisplayName: "Hytron", CountryCode: "HK", AgentToken: "test-agent-token"}); err != nil {
+		t.Fatalf("seed preview data: %v", err)
+	}
+
+	now := time.Now().UTC().Truncate(time.Second)
+	valid := true
+	invalid := false
+	post := func(ts int64, inTotal, outTotal int64, totalsValid *bool) {
+		t.Helper()
+		state := AgentStateRequest{
+			TS:               ts,
+			CPUPercent:       1,
+			MemoryUsedBytes:  1,
+			MemoryTotalBytes: 2,
+			DiskUsedBytes:    1,
+			DiskTotalBytes:   2,
+			NetInTotalBytes:  inTotal,
+			NetOutTotalBytes: outTotal,
+			NetInSpeedBps:    1,
+			NetOutSpeedBps:   1,
+			NetTotalsValid:   totalsValid,
+			UptimeSeconds:    1,
+		}
+		if err := store.InsertAgentState(ctx, "hytron", state); err != nil {
+			t.Fatalf("insert state at %d: %v", ts, err)
+		}
+	}
+
+	post(now.Unix(), 1_000, 2_000, &valid)
+	post(now.Unix(), 9_000, 9_000, &valid)
+	post(now.Add(time.Second).Unix(), 50, 60, &invalid)
+	post(now.Add(2*time.Second).Unix(), 1_100, 2_200, &valid)
+
+	var lifetimeIn, lifetimeOut, previousIn, previousOut, lastSampleTS int64
+	if err := store.db.QueryRowContext(ctx, `
+		SELECT in_bytes, out_bytes, last_in_total_bytes, last_out_total_bytes, last_sample_ts
+		FROM traffic_lifetime WHERE node_id = 'hytron'
+	`).Scan(&lifetimeIn, &lifetimeOut, &previousIn, &previousOut, &lastSampleTS); err != nil {
+		t.Fatalf("query lifetime traffic: %v", err)
+	}
+	if lifetimeIn != 1_100 || lifetimeOut != 2_200 || previousIn != 1_100 || previousOut != 2_200 || lastSampleTS != now.Add(2*time.Second).Unix() {
+		t.Fatalf("lifetime state = %d/%d baseline=%d/%d ts=%d, want 1100/2200 with only the final valid newer sample applied", lifetimeIn, lifetimeOut, previousIn, previousOut, lastSampleTS)
+	}
+	var invalidIn, invalidOut sql.NullInt64
+	if err := store.db.QueryRowContext(ctx, `
+		SELECT net_in_total_bytes, net_out_total_bytes
+		FROM state_samples WHERE ts = ?
+	`, now.Add(time.Second).Unix()).Scan(&invalidIn, &invalidOut); err != nil {
+		t.Fatalf("query invalid state sample: %v", err)
+	}
+	if invalidIn.Valid || invalidOut.Valid {
+		t.Fatalf("invalid totals persisted as real counters: in=%v out=%v", invalidIn, invalidOut)
 	}
 }
 
@@ -2382,11 +2453,31 @@ func TestLifetimeTrafficBackfillStartsFromLatestRawCounters(t *testing.T) {
 			t.Fatalf("insert historical state %d: %v", index, err)
 		}
 	}
+	invalid := false
+	if err := store.InsertAgentState(ctx, "hytron", AgentStateRequest{
+		TS:               now.Add(4 * time.Second).Unix(),
+		CPUPercent:       1,
+		MemoryUsedBytes:  1,
+		MemoryTotalBytes: 2,
+		DiskUsedBytes:    1,
+		DiskTotalBytes:   2,
+		NetInTotalBytes:  9_999,
+		NetOutTotalBytes: 9_999,
+		NetInSpeedBps:    1,
+		NetOutSpeedBps:   1,
+		NetTotalsValid:   &invalid,
+		UptimeSeconds:    1,
+	}); err != nil {
+		t.Fatalf("insert latest invalid state: %v", err)
+	}
 	if _, err := store.db.ExecContext(ctx, `DROP TABLE traffic_lifetime`); err != nil {
 		t.Fatalf("drop lifetime table to simulate an existing database: %v", err)
 	}
 	if err := store.ensureSchema(ctx); err != nil {
 		t.Fatalf("migrate existing database: %v", err)
+	}
+	if err := store.ensureSchema(ctx); err != nil {
+		t.Fatalf("rerun lifetime migration: %v", err)
 	}
 
 	summary, err := store.Summary(ctx)
@@ -2396,6 +2487,100 @@ func TestLifetimeTrafficBackfillStartsFromLatestRawCounters(t *testing.T) {
 	node := summary.Nodes[0]
 	if node.NetInLifetimeBytes == nil || *node.NetInLifetimeBytes != 300 || node.NetOutLifetimeBytes == nil || *node.NetOutLifetimeBytes != 500 {
 		t.Fatalf("backfilled lifetime totals = in:%v out:%v, want latest raw counters 300/500", node.NetInLifetimeBytes, node.NetOutLifetimeBytes)
+	}
+}
+
+func TestSummaryLeavesLifetimeTrafficUnknownBeforeFirstValidSample(t *testing.T) {
+	store, err := OpenSQLiteStore(filepath.Join(t.TempDir(), "zeno.db"))
+	if err != nil {
+		t.Fatalf("open sqlite store: %v", err)
+	}
+	defer store.Close()
+	ctx := context.Background()
+	if err := store.SeedPreviewData(ctx, PreviewSeedOptions{NodeID: "hytron", DisplayName: "Hytron", CountryCode: "HK", AgentToken: "test-agent-token"}); err != nil {
+		t.Fatalf("seed preview data: %v", err)
+	}
+
+	summary, err := store.Summary(ctx)
+	if err != nil {
+		t.Fatalf("summary: %v", err)
+	}
+	if len(summary.Nodes) != 1 {
+		t.Fatalf("nodes len = %d, want 1", len(summary.Nodes))
+	}
+	if summary.Nodes[0].NetInLifetimeBytes != nil || summary.Nodes[0].NetOutLifetimeBytes != nil {
+		t.Fatalf("lifetime totals before first valid sample = in:%v out:%v, want unknown", summary.Nodes[0].NetInLifetimeBytes, summary.Nodes[0].NetOutLifetimeBytes)
+	}
+}
+
+func TestConcurrentDuplicateStateDoesNotDoubleCountLifetimeTraffic(t *testing.T) {
+	store, err := OpenSQLiteStore(filepath.Join(t.TempDir(), "zeno.db"))
+	if err != nil {
+		t.Fatalf("open sqlite store: %v", err)
+	}
+	defer store.Close()
+	ctx := context.Background()
+	if err := store.SeedPreviewData(ctx, PreviewSeedOptions{NodeID: "hytron", DisplayName: "Hytron", CountryCode: "HK", AgentToken: "test-agent-token"}); err != nil {
+		t.Fatalf("seed preview data: %v", err)
+	}
+
+	now := time.Now().UTC().Truncate(time.Second)
+	state := AgentStateRequest{
+		TS:               now.Unix(),
+		CPUPercent:       1,
+		MemoryUsedBytes:  1,
+		MemoryTotalBytes: 2,
+		DiskUsedBytes:    1,
+		DiskTotalBytes:   2,
+		NetInTotalBytes:  1_000,
+		NetOutTotalBytes: 2_000,
+		NetInSpeedBps:    1,
+		NetOutSpeedBps:   1,
+		UptimeSeconds:    1,
+	}
+	if err := store.InsertAgentState(ctx, "hytron", state); err != nil {
+		t.Fatalf("insert baseline state: %v", err)
+	}
+	state.TS = now.Add(time.Minute).Unix()
+	state.SampleID = "same-lifetime-sample"
+	state.NetInTotalBytes = 1_500
+	state.NetOutTotalBytes = 2_600
+
+	const workers = 16
+	errs := make(chan error, workers)
+	var wg sync.WaitGroup
+	for range workers {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			errs <- store.InsertAgentState(ctx, "hytron", state)
+		}()
+	}
+	wg.Wait()
+	close(errs)
+	for err := range errs {
+		if err != nil {
+			t.Fatalf("insert concurrent duplicate: %v", err)
+		}
+	}
+
+	var lifetimeIn, lifetimeOut int64
+	if err := store.db.QueryRowContext(ctx, `
+		SELECT in_bytes, out_bytes FROM traffic_lifetime WHERE node_id = 'hytron'
+	`).Scan(&lifetimeIn, &lifetimeOut); err != nil {
+		t.Fatalf("query lifetime traffic: %v", err)
+	}
+	if lifetimeIn != 1_500 || lifetimeOut != 2_600 {
+		t.Fatalf("lifetime traffic = %d/%d, want one application of concurrent duplicate", lifetimeIn, lifetimeOut)
+	}
+	var count int
+	if err := store.db.QueryRowContext(ctx, `
+		SELECT COUNT(*) FROM state_samples WHERE node_id = 'hytron' AND sample_id = 'same-lifetime-sample'
+	`).Scan(&count); err != nil {
+		t.Fatalf("count duplicate samples: %v", err)
+	}
+	if count != 1 {
+		t.Fatalf("duplicate state rows = %d, want 1", count)
 	}
 }
 
