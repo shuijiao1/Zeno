@@ -67,7 +67,7 @@ http://127.0.0.1:18980
 ```bash
 ZENO_INSTALL_DIR=/opt/zeno \
 ZENO_HOST_PORT=18980 \
-ZENO_IMAGE=ghcr.io/shuijiao1/zeno:v0.8.0 \
+ZENO_IMAGE=ghcr.io/shuijiao1/zeno:v0.9.0 \
 bash <(curl -fsSL https://zeno.shuijiao.de)
 ```
 
@@ -110,7 +110,7 @@ Agent 只负责上报，不会修改 Controller，也不会打开远程命令入
 使用明确版本重新运行安全安装器；它会执行 provenance 校验、离线备份、SQLite 检查和失败自动恢复：
 
 ```bash
-sudo env ZENO_IMAGE=ghcr.io/shuijiao1/zeno:v0.8.0 \
+sudo env ZENO_IMAGE=ghcr.io/shuijiao1/zeno:v0.9.0 \
   bash -o pipefail -c 'curl -fsSL https://zeno.shuijiao.de | bash'
 ```
 

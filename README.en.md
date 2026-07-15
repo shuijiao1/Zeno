@@ -67,7 +67,7 @@ Optional environment variables:
 ```bash
 ZENO_INSTALL_DIR=/opt/zeno \
 ZENO_HOST_PORT=18980 \
-ZENO_IMAGE=ghcr.io/shuijiao1/zeno:v0.8.0 \
+ZENO_IMAGE=ghcr.io/shuijiao1/zeno:v0.9.0 \
 bash <(curl -fsSL https://zeno.shuijiao.de)
 ```
 
@@ -110,7 +110,7 @@ See [`docs/UPGRADE.md`](docs/UPGRADE.md) for upgrade and rollback notes.
 Run the safety installer again with an explicit version. It verifies provenance, creates an offline backup, checks SQLite, and automatically restores a failed upgrade:
 
 ```bash
-sudo env ZENO_IMAGE=ghcr.io/shuijiao1/zeno:v0.8.0 \
+sudo env ZENO_IMAGE=ghcr.io/shuijiao1/zeno:v0.9.0 \
   bash -o pipefail -c 'curl -fsSL https://zeno.shuijiao.de | bash'
 ```
 
