@@ -68,8 +68,8 @@ Public API 只返回展示所需数据：
 - HTTPS。
 - Controller 不裸奔公网高危端口。
 - Admin API 设置强 token。
-- SQLite 文件权限限制在服务用户内。
-- systemd unit 使用专用用户时优先。
+- 使用官方 Docker Compose 安装器和固定非 root 运行用户。
+- SQLite 文件权限限制在运行用户内，secrets 保持 root 持有并只向运行组开放只读权限。
 
 ## 通知渠道凭据
 

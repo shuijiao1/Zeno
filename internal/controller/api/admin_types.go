@@ -917,6 +917,7 @@ type AdminNodeUpdateRequest struct {
 	PublicIPv6        *string            `json:"public_ipv6,omitempty"`
 	MonthlyQuotaBytes adminOptionalInt64 `json:"monthly_quota_bytes,omitempty"`
 	Disabled          *bool              `json:"disabled,omitempty"`
+	ProbeTargetIDs    []string           `json:"probe_target_ids,omitempty"`
 }
 
 func (request *AdminNodeUpdateRequest) normalize() error {
@@ -1015,6 +1016,23 @@ func (request *AdminNodeUpdateRequest) normalize() error {
 	}
 	if request.Disabled != nil {
 		changed = true
+	}
+	if request.ProbeTargetIDs != nil {
+		changed = true
+		seen := make(map[string]struct{}, len(request.ProbeTargetIDs))
+		normalized := make([]string, 0, len(request.ProbeTargetIDs))
+		for _, targetID := range request.ProbeTargetIDs {
+			targetID = strings.TrimSpace(targetID)
+			if targetID == "" {
+				return errInvalidAdminNodeUpdate
+			}
+			if _, exists := seen[targetID]; exists {
+				return errInvalidAdminNodeUpdate
+			}
+			seen[targetID] = struct{}{}
+			normalized = append(normalized, targetID)
+		}
+		request.ProbeTargetIDs = normalized
 	}
 	if !changed {
 		return errInvalidAdminNodeUpdate

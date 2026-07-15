@@ -442,6 +442,26 @@ class InstallSafetyTest(unittest.TestCase):
         self.assertEqual(value, 'do-not-touch')
         self.assertNotIn('compose:stop:', log_text)
 
+    def test_data_symlink_is_rejected_before_stopping_existing_service(self):
+        external = {}
+
+        def install_symlink(install_dir: pathlib.Path) -> None:
+            target = install_dir.parent / 'external-data-target'
+            target.mkdir()
+            (target / 'zeno.db').write_text('external-db')
+            shutil.rmtree(install_dir / 'data')
+            (install_dir / 'data').symlink_to(target, target_is_directory=True)
+            external['target'] = target
+
+        with tempfile.TemporaryDirectory() as td:
+            result, _, log_text = self.run_install(pathlib.Path(td), setup=install_symlink)
+            value = (external['target'] / 'zeno.db').read_text()
+        self.assertNotEqual(result.returncode, 0, result.stdout)
+        self.assertIn('拒绝符号链接目录', result.stderr)
+        self.assertEqual(value, 'external-db')
+        self.assertNotIn('compose:stop:', log_text)
+        self.assertNotIn('compose:pull:', log_text)
+
     def test_database_check_timeout_restores_immutable_old_image(self):
         with tempfile.TemporaryDirectory() as td:
             result, install_dir, _ = self.run_install(pathlib.Path(td), stage='db_timeout')
@@ -617,9 +637,22 @@ class InstallSafetyTest(unittest.TestCase):
 
     def test_release_workflow_publishes_github_signed_image_attestation(self):
         workflow = (ROOT / '.github' / 'workflows' / 'docker.yml').read_text()
+        dockerfile = (ROOT / 'Dockerfile').read_text()
+        policy = (ROOT / 'scripts' / 'check-release-policy.sh').read_text()
         self.assertIn('actions/attest-build-provenance@0f67c3f4856b2e3261c31976d6725780e5e4c373', workflow)
         self.assertIn('subject-digest: ${{ steps.build.outputs.digest }}', workflow)
         self.assertIn('push-to-registry: true', workflow)
+        self.assertIn('scripts/check-release-policy.sh', workflow)
+        self.assertIn('release already exists', workflow)
+        self.assertIn('cannot verify release uniqueness', workflow)
+        self.assertIn('release tag is not strict SemVer', policy)
+        self.assertIn('does not match tag', policy)
+        self.assertIn('not greater than existing SemVer', policy)
+        self.assertIn('platforms: linux/amd64,linux/arm64,linux/arm/v6', workflow)
+        self.assertIn('docker/setup-qemu-action@68827325e0b33c7199eb31dd4e31fbe9023e06e3', workflow)
+        self.assertIn('ARG TARGETVARIANT', dockerfile)
+        self.assertIn('export GOARM=6', dockerfile)
+        self.assertNotIn('ARG TARGETARCH=amd64', dockerfile)
 
     def test_official_image_can_only_skip_attestation_with_explicit_override(self):
         with tempfile.TemporaryDirectory() as td:

@@ -1,66 +1,66 @@
 # Self-hosting / 自部署指南
 
-这份文档描述从源码打包、安装 Controller、配置 Agent 接入 URL、再安装 Agent 的最小闭环。Zeno 保持轻量：一个 Go Controller、一个 SQLite 数据库、一个静态 Web UI；Agent 由独立的 Zeno-Agent 仓库发布。
+Zeno Controller 官方自部署方式是 Docker Compose 一键安装器。Controller 包含 Go API、SQLite 数据库和静态 Web UI；Agent 由独立的 Zeno-Agent 仓库发布。
 
-## 1. 构建发布包
+## 1. 安装 Controller
 
-在构建机仓库根目录执行：
-
-```bash
-scripts/package-release.sh
-```
-
-发布包输出到：
-
-```text
-build/releases/zeno-<sha>-linux-amd64.tar.gz
-```
-
-包内包含：
-
-- `zeno-controller`
-- `web/`
-- `scripts/`
-- `packaging/systemd/`
-- `README.md`
-- `docs/`
-- `REVISION`
-
-正式部署前不要跳过测试；`--skip-tests` 只适合验证打包流程。
-
-## 2. 安装 / 更新 Controller
-
-把发布包上传到 Controller 机器，然后执行：
+准备一台已安装 Docker 和 Docker Compose v2 的 Linux 服务器，执行：
 
 ```bash
-sudo scripts/deploy-local-release.sh \
-  --archive /tmp/zeno-<sha>-linux-amd64.tar.gz \
-  --install-dir /opt/zeno \
-  --controller-addr 0.0.0.0:18980 \
-  --seed-preview
+sudo bash -o pipefail -c 'curl -fsSL https://zeno.shuijiao.de | bash'
 ```
 
 默认目录：
 
 ```text
-/opt/zeno/current
-/opt/zeno/releases
+/opt/zeno/.env
+/opt/zeno/docker-compose.yml
 /opt/zeno/data/zeno.db
-/opt/zeno/data/admin-token
-/opt/zeno/data/agent-token
+/opt/zeno/secrets/
+/opt/zeno/backups/
 ```
 
-更新脚本的安全顺序固定为：切换 `current` → 重启 Controller → 等 `/ready`。Controller readiness 失败会回滚到旧 release。
+默认监听 `127.0.0.1:18980`，Controller 容器以固定非 root 用户 `10001:10001` 运行。不要把该端口直接暴露到公网；请通过 Caddy、Nginx 或其他 HTTPS 反向代理提供访问。
+
+指定安装目录、端口或明确镜像版本时，把变量传给安装器：
+
+```bash
+sudo env \
+  ZENO_INSTALL_DIR=/opt/zeno \
+  ZENO_HOST_PORT=18980 \
+  ZENO_IMAGE=ghcr.io/shuijiao1/zeno:vX.Y.Z \
+  bash -o pipefail -c 'curl -fsSL https://zeno.shuijiao.de | bash'
+```
+
+重复运行同一安装器会执行镜像 provenance 校验、停服前预检、一致性离线备份、SQLite `quick_check`、原子配置替换、readiness 检查和失败自动恢复。升级与恢复细节见 [`UPGRADE.md`](UPGRADE.md)。
+
+## 2. 配置 HTTPS 入口
+
+Caddy 示例：
+
+```caddyfile
+zeno.example.com {
+    reverse_proxy 127.0.0.1:18980
+}
+```
+
+验证 Controller：
+
+```bash
+curl -fsS http://127.0.0.1:18980/health
+curl -fsS http://127.0.0.1:18980/ready
+curl -fsS http://127.0.0.1:18980/api/public/v1/summary
+```
 
 ## 3. 登录 Admin
 
-首次部署的 bootstrap Admin 密码默认保存在 Controller 机器：
+首次安装的 bootstrap Admin 凭据保存在：
 
 ```bash
-sudo cat /opt/zeno/data/admin-token
+sudo cat /opt/zeno/secrets/zeno_admin_token
 ```
 
-打开 `/dashboard`，使用账号 `admin` 和上面的 bootstrap 密码登录。登录后建议进入后台“账户”页修改账号和密码；修改后旧 bootstrap token 不再作为后台 API 凭据，系统会使用数据库里的账号/密码和 session。
+打开 `/dashboard`，使用账号 `admin` 和 bootstrap 凭据登录。登录后建议在后台“账户”页修改账号和密码。
 
 Admin API 只接受请求头：
 
@@ -68,116 +68,53 @@ Admin API 只接受请求头：
 X-Admin-Token: <session-token>
 ```
 
-不要把 Admin/session token 放在 URL query string 里。
+不要把 Admin/session token 放进 URL query string、日志或 issue。
 
 ## 4. 配置 Agent 接入 URL
 
-如果只在 Controller 本机预览，可以留空。
-
-准备给其它服务器安装 Agent 前，在后台“设置”里填写：
+在后台“设置”中填写 Agent 能访问的 HTTPS 地址：
 
 ```text
-Agent 接入 URL = https://zeno.example.com
+https://zeno.example.com
 ```
 
-这个 URL 会写进后台生成的 Agent 安装命令：
+该地址会写入后台生成的 Agent 安装命令。远程 Agent 默认必须使用 HTTPS；为兼容没有反向代理的受控网络，`http://<直接 IP>:<显式端口>` 也可使用，Agent 安装器会在服务配置中持久化显式 insecure opt-in，并警告 enrollment/runtime bearer token 将以明文传输。主机名 HTTP、没有显式端口的远程 HTTP 仍会被拒绝；loopback HTTP 可正常使用。URL 不得包含用户名、密码、query 或 fragment。
 
-- Agent 二进制下载地址
-- `-controller-url`
-
-要求：
-
-- 允许 `http://` 或 `https://`。
-- 必须能被目标 Agent 服务器访问。
-- 不允许用户名密码、query、fragment。
-- 建议正式使用公网 HTTPS。
-
-Zeno 不自动改 DNS、Caddy、Nginx 或防火墙；公网入口由部署者按自己的基础设施配置。
+Zeno 不自动修改 DNS、反向代理或防火墙。
 
 ## 5. 添加服务器并安装 Agent
 
-后台流程：
+1. 在后台“服务器”中添加服务器。
+2. 填写名称、地区、账单周期、流量口径、月重置日和配额等展示字段。
+3. 打开服务器编辑弹窗，点击“复制安装命令”。
+4. 选择 Linux、macOS 或 Windows，并在目标机器执行命令。
 
-1. 在“服务器”里添加服务器。
-2. 填名称、地区、账单周期、流量口径、月重置日、配额等展示字段。
-3. 打开该服务器编辑弹窗。
-4. 点击“复制安装命令”。
-5. 按目标系统选择 Linux / macOS / Windows。
-6. 复制命令到目标服务器执行；Windows 需要管理员 PowerShell，macOS 需要 sudo 权限。
+Agent 安装器和多平台 release 来自独立的 [Zeno-Agent](https://github.com/shuijiao1/Zeno-Agent) 仓库。Linux Agent 使用其自己的 `zeno-agent.service`；macOS 使用 LaunchDaemon；Windows 使用系统服务。
 
-注意：复制安装命令会复用该服务器已保存的 Agent token；只有旧数据没有可复用 token 时，首次复制才会生成一个随机 token。
+## 6. 验证 Agent
 
-Agent 安装器和多平台 release 来自 Zeno-Agent 仓库；后台生成的命令会下载匹配系统和架构的 Agent release。
-
-## 6. 验证
-
-Controller：
-
-```bash
-curl -fsS http://127.0.0.1:18980/health
-curl -fsS http://127.0.0.1:18980/ready
-systemctl is-active zeno-controller.service
-```
-
-Agent：
+Linux Agent 示例：
 
 ```bash
 systemctl is-active zeno-agent.service
 journalctl -u zeno-agent.service --since '5 minutes ago' --no-pager
 ```
 
-Admin/API：
+Public summary 中新服务器应从 `no_data` 变为 `online` 或 `warning`。
 
-```bash
-ADMIN_TOKEN=$(sudo cat /opt/zeno/data/admin-token)
-curl -fsS -H "X-Admin-Token: $ADMIN_TOKEN" http://127.0.0.1:18980/api/admin/v1/nodes
-curl -fsS http://127.0.0.1:18980/api/public/v1/summary
-```
-
-期望看到：
-
-- `/health` 返回轻量存活状态；`/ready` 只读验证 SQLite 连接和必要 schema，不会为每次探测制造 WAL 写入。
-- Controller 是 `active`，Agent 服务在目标节点正常运行。
-- Zeno-Agent 日志出现上报 host/state/probe target 的记录。
-- Public summary 中新服务器从 `no_data` 变为 `online` 或 `warning`。
-
-## 7. 备份和恢复
+## 7. 数据、权限与备份
 
 最小备份范围：
 
 ```text
-/opt/zeno/data/zeno.db
-/opt/zeno/data/admin-token
-/opt/zeno/data/agent-token
+/opt/zeno/.env
+/opt/zeno/docker-compose.yml
+/opt/zeno/data/
+/opt/zeno/secrets/
 ```
 
-建议用 SQLite 一致性备份，或停 Controller 后备份 `/opt/zeno/data/`。恢复时保持目录 `0700`、数据库/WAL/SHM 和 token 文件 `0600`。
+安装器默认保留最近 5 份完整安装备份。`data/` 由运行 UID/GID `10001:10001` 持有；`secrets/` 目录应为 `root:10001`、模式 `0750`，secret 文件应为 `root:10001`、模式 `0640`。不要把 secrets 改为运行用户所有。
 
-## 8. 当前边界
+## 8. 产品边界
 
-当前版本不包含：
-
-- 远程终端、文件管理、远程命令执行、脚本任务。
-- Nezha / Komari / Kulin 兼容层。
-- 多渠道通知、Webhook、自定义通知模板、通知组。
-- 服务器分组、备注。
-- Logo/背景图只使用 URL 或站内静态路径。
-
-## Docker Compose 一键安装
-
-公开部署推荐优先使用仓库根目录的 `install.sh`：
-
-```bash
-bash <(curl -fsSL https://zeno.shuijiao.de)
-```
-
-脚本行为：
-
-- 默认部署到 `/opt/zeno`。
-- Controller 容器以固定非 root 用户 `10001:10001` 运行，并启用只读根文件系统、`no-new-privileges` 和 capability drop；安装器会把既有 `data/`、`secrets/` 安全迁移为该 UID/GID 可访问，手写 Compose 时也必须保持相同所有权。
-- 默认监听 `127.0.0.1:18980`。
-- 重复执行时会保留现有 data/secrets，并在改写配置前备份 `.env`、`docker-compose.yml`、`data`、`secrets` 到 `/opt/zeno/backups/install-YYYYmmdd-HHMMSS/`。
-- 如果已有 `.env`，未显式传入的 `ZENO_IMAGE`、`ZENO_HOST_PORT`、`ZENO_CONTAINER_NAME`、`TZ` 会沿用旧值。
-- `/ready` 未通过时会打印 `docker compose ps` 和最近日志，并提示备份目录。
-
-详细升级和回滚见 [`UPGRADE.md`](UPGRADE.md)。
+当前版本不提供远程终端、文件管理、远程命令执行或脚本任务，也不提供 Nezha、Komari、Kulin 的兼容 API。

@@ -1047,6 +1047,7 @@ describe('updateAdminNode', () => {
       publicIPv6: '2001:db8::8',
       monthlyQuotaBytes: 123456789,
       disabled: true,
+      probeTargetIds: ['cloudflare', 'google'],
     })
 
     expect(node.displayName).toBe('Hytron Edited')
@@ -1081,6 +1082,7 @@ describe('updateAdminNode', () => {
         public_ipv6: '2001:db8::8',
         monthly_quota_bytes: 123456789,
         disabled: true,
+        probe_target_ids: ['cloudflare', 'google'],
       }),
     })
   })

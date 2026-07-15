@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -21,6 +22,18 @@ type blockingSummaryJSONStore struct {
 	calls   atomic.Int32
 	started chan struct{}
 	release chan struct{}
+}
+
+type continuouslyInvalidatingSummaryJSONStore struct {
+	mockStore
+	handler *handler
+	calls   atomic.Int32
+}
+
+func (store *continuouslyInvalidatingSummaryJSONStore) Summary(context.Context) (SummaryResponse, error) {
+	call := store.calls.Add(1)
+	store.handler.invalidateSummaryCache()
+	return SummaryResponse{Nodes: []Node{{ID: fmt.Sprintf("snapshot-%d", call)}}, Services: []ServiceTarget{}, LatencyPoints: []LatencyPoint{}}, nil
 }
 
 func (store *blockingSummaryJSONStore) Summary(context.Context) (SummaryResponse, error) {
@@ -137,6 +150,30 @@ func TestSummaryJSONInvalidationPreventsOldFlightCommit(t *testing.T) {
 	cached, ok := h.cachedSummaryJSON(summaryCacheHTTPFreshFor)
 	if !ok || string(cached) != string(payload) {
 		t.Fatalf("cached payload = %s ok=%v, want current generation", cached, ok)
+	}
+}
+
+func TestSummaryJSONContinuousInvalidationReturnsBoundedSnapshot(t *testing.T) {
+	store := &continuouslyInvalidatingSummaryJSONStore{}
+	h := &handler{store: store}
+	store.handler = h
+
+	started := time.Now()
+	payload, err := h.summaryJSONForHTTP(context.Background())
+	if err != nil {
+		t.Fatalf("summary JSON under continuous invalidation: %v", err)
+	}
+	if elapsed := time.Since(started); elapsed > time.Second {
+		t.Fatalf("bounded summary build took %s", elapsed)
+	}
+	if got := store.calls.Load(); got != summaryGenerationMaxRetries+1 {
+		t.Fatalf("Summary calls = %d, want bounded %d", got, summaryGenerationMaxRetries+1)
+	}
+	if !strings.Contains(string(payload), `"id":"snapshot-2"`) {
+		t.Fatalf("payload = %s, want latest completed snapshot", payload)
+	}
+	if _, ok := h.cachedSummaryJSON(summaryCacheHTTPFreshFor); ok {
+		t.Fatal("continuously invalidated snapshot was committed to cache")
 	}
 }
 

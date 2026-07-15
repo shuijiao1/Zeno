@@ -4,10 +4,12 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 )
@@ -43,6 +45,116 @@ func TestLegacyAgentPlaintextCredentialIsRemovedWithoutInvalidatingRuntimeHash(t
 	allowed, err := store.AuthorizeAgent(context.Background(), "legacy", "legacy-runtime-token")
 	if err != nil || !allowed {
 		t.Fatalf("legacy runtime hash was invalidated: allowed=%v err=%v", allowed, err)
+	}
+}
+
+func TestAuthorizeAgentInvalidTokensStayReadOnlyDuringConcurrentWriter(t *testing.T) {
+	store, err := OpenSQLiteStore(filepath.Join(t.TempDir(), "zeno.db"))
+	if err != nil {
+		t.Fatalf("open store: %v", err)
+	}
+	defer store.Close()
+	store.db.SetMaxOpenConns(40)
+	if err := store.SeedPreviewData(context.Background(), PreviewSeedOptions{NodeID: "node-a", DisplayName: "Node A", AgentToken: "valid-token"}); err != nil {
+		t.Fatalf("seed node: %v", err)
+	}
+
+	writer, err := store.db.Conn(context.Background())
+	if err != nil {
+		t.Fatalf("reserve writer connection: %v", err)
+	}
+	defer writer.Close()
+	if _, err := writer.ExecContext(context.Background(), `BEGIN IMMEDIATE`); err != nil {
+		t.Fatalf("hold sqlite writer: %v", err)
+	}
+	defer writer.ExecContext(context.Background(), `ROLLBACK`)
+
+	const invalidCallers = 24
+	start := make(chan struct{})
+	errCh := make(chan error, invalidCallers+1)
+	var wait sync.WaitGroup
+	for index := 0; index < invalidCallers; index++ {
+		wait.Add(1)
+		go func(index int) {
+			defer wait.Done()
+			<-start
+			ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
+			defer cancel()
+			allowed, err := store.AuthorizeAgent(ctx, "node-a", fmt.Sprintf("invalid-%d", index))
+			if err != nil {
+				errCh <- fmt.Errorf("invalid token %d: %w", index, err)
+			} else if allowed {
+				errCh <- fmt.Errorf("invalid token %d was authorized", index)
+			}
+		}(index)
+	}
+	wait.Add(1)
+	go func() {
+		defer wait.Done()
+		<-start
+		ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
+		defer cancel()
+		allowed, err := store.AuthorizeAgent(ctx, "node-a", "valid-token")
+		if err != nil {
+			errCh <- fmt.Errorf("valid token: %w", err)
+		} else if !allowed {
+			errCh <- errors.New("valid token was rejected")
+		}
+	}()
+	close(start)
+	wait.Wait()
+	close(errCh)
+	for err := range errCh {
+		t.Error(err)
+	}
+}
+
+func TestAuthorizeAgentConcurrentPendingPromotionIsAtomic(t *testing.T) {
+	store, err := OpenSQLiteStore(filepath.Join(t.TempDir(), "zeno.db"))
+	if err != nil {
+		t.Fatalf("open store: %v", err)
+	}
+	defer store.Close()
+	if err := store.SeedPreviewData(context.Background(), PreviewSeedOptions{NodeID: "node-a", DisplayName: "Node A", AgentToken: "old-token"}); err != nil {
+		t.Fatalf("seed node: %v", err)
+	}
+	const pendingToken = "new-pending-token"
+	if _, err := store.db.Exec(`UPDATE nodes SET pending_token_hash = ?, pending_token_expires_at = ? WHERE id = ?`, hashAgentToken(pendingToken), time.Now().Add(time.Minute).Unix(), "node-a"); err != nil {
+		t.Fatalf("stage pending token: %v", err)
+	}
+
+	const callers = 24
+	start := make(chan struct{})
+	results := make(chan error, callers)
+	var wait sync.WaitGroup
+	for range callers {
+		wait.Add(1)
+		go func() {
+			defer wait.Done()
+			<-start
+			allowed, err := store.AuthorizeAgent(context.Background(), "node-a", pendingToken)
+			if err != nil {
+				results <- err
+			} else if !allowed {
+				results <- errors.New("pending token was rejected during concurrent promotion")
+			}
+		}()
+	}
+	close(start)
+	wait.Wait()
+	close(results)
+	for err := range results {
+		t.Error(err)
+	}
+	if allowed, err := store.AuthorizeAgent(context.Background(), "node-a", "old-token"); err != nil || allowed {
+		t.Fatalf("old token remained valid after promotion: allowed=%v err=%v", allowed, err)
+	}
+	var pendingHash *string
+	if err := store.db.QueryRow(`SELECT pending_token_hash FROM nodes WHERE id = ?`, "node-a").Scan(&pendingHash); err != nil {
+		t.Fatalf("read pending hash: %v", err)
+	}
+	if pendingHash != nil {
+		t.Fatalf("pending token hash was not cleared: %q", *pendingHash)
 	}
 }
 
@@ -269,6 +381,30 @@ func TestAgentQuotaSupportsNormalCadenceAndIsolatesAbusiveNodes(t *testing.T) {
 		release()
 	}
 	for _, release := range releases {
+		release()
+	}
+
+	globalReleases := make([]func(), 0, agentWriteMaxGlobalConcurrent)
+	for index := 0; index < agentWriteMaxGlobalConcurrent; index++ {
+		release, _, ok := manager.admitWrite(fmt.Sprintf("global-node-%d", index), 1)
+		if !ok {
+			t.Fatalf("global write admission rejected node %d before the bound", index)
+		}
+		globalReleases = append(globalReleases, release)
+	}
+	if release, retryAfter, ok := manager.admitWrite("global-overflow", 1); ok {
+		release()
+		t.Fatal("global multi-node write admission bound was bypassed")
+	} else if retryAfter != time.Second {
+		t.Fatalf("global admission retry-after = %s, want fast one-second retry", retryAfter)
+	}
+	globalReleases[0]()
+	if release, _, ok := manager.admitWrite("global-after-release", 1); !ok {
+		t.Fatal("global write slot was not released")
+	} else {
+		release()
+	}
+	for _, release := range globalReleases[1:] {
 		release()
 	}
 }

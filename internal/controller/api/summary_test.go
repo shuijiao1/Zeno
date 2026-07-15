@@ -185,6 +185,53 @@ func TestSummaryAggregateDirtyMarkDoesNotBlockInflightSQLAndOldGenerationDoesNot
 	}
 }
 
+func TestSummaryAggregatesContinuousInvalidationReturnsAfterBoundedRetry(t *testing.T) {
+	store, counter := openCountingSummaryStore(t)
+	defer store.Close()
+	seedSummaryScaleFixture(t, store, 1, 1)
+
+	firstStarted := make(chan struct{})
+	firstRelease := make(chan struct{})
+	secondStarted := make(chan struct{})
+	secondRelease := make(chan struct{})
+	counter.blockQuery("WITH eligible_nodes AS", firstStarted, firstRelease)
+	counter.blockQuery("WITH eligible_nodes AS", secondStarted, secondRelease)
+
+	done := make(chan error, 1)
+	go func() {
+		_, _, _, err := store.summaryAggregates(context.Background())
+		done <- err
+	}()
+	select {
+	case <-firstStarted:
+	case <-time.After(time.Second):
+		t.Fatal("first aggregate build did not start")
+	}
+	store.markSummaryAggregatesDirty()
+	close(firstRelease)
+	select {
+	case <-secondStarted:
+	case <-time.After(time.Second):
+		t.Fatal("bounded aggregate retry did not start")
+	}
+	store.markSummaryAggregatesDirty()
+	close(secondRelease)
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatalf("bounded aggregate snapshot: %v", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("aggregate build kept retrying under continuous invalidation")
+	}
+	store.summaryAggregateMu.Lock()
+	committed := !store.summaryAggregateUpdated.IsZero()
+	store.summaryAggregateMu.Unlock()
+	if committed {
+		t.Fatal("invalidated aggregate snapshot was committed to cache")
+	}
+}
+
 func TestAgentProbeResults202DoesNotWaitForInflightAggregateSQL(t *testing.T) {
 	store, counter := openCountingSummaryStore(t)
 	defer store.Close()

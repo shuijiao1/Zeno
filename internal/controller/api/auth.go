@@ -186,9 +186,30 @@ func (s *SQLiteStore) AuthorizeAgent(ctx context.Context, nodeID, token string) 
 	}
 	computed := hashAgentToken(token)
 	now := time.Now().UTC().Unix()
+	var storedHash string
+	var pendingHash sql.NullString
+	var pendingExpiresAt sql.NullInt64
+	err := s.db.QueryRowContext(ctx, `
+		SELECT token_hash, pending_token_hash, pending_token_expires_at
+		FROM nodes
+		WHERE id = ? AND disabled = 0
+	`, nodeID).Scan(&storedHash, &pendingHash, &pendingExpiresAt)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return false, nil
+		}
+		return false, err
+	}
+	if subtle.ConstantTimeCompare([]byte(storedHash), []byte(computed)) == 1 {
+		return true, nil
+	}
+	if !pendingHash.Valid || !pendingExpiresAt.Valid || pendingExpiresAt.Int64 <= now || subtle.ConstantTimeCompare([]byte(pendingHash.String), []byte(computed)) != 1 {
+		return false, nil
+	}
 	// Enrollment stages a second hash without invalidating the currently
 	// running Agent. The first authenticated use of the staged credential
-	// atomically promotes it and retires the old hash.
+	// atomically promotes it and retires the old hash. The read-only checks above
+	// ensure an invalid credential never enters SQLite's single-writer path.
 	result, err := s.db.ExecContext(ctx, `
 		UPDATE nodes
 		SET token_hash = pending_token_hash,
@@ -208,7 +229,9 @@ func (s *SQLiteStore) AuthorizeAgent(ctx context.Context, nodeID, token string) 
 	} else if affected == 1 {
 		return true, nil
 	}
-	var storedHash string
+	// A concurrent request may have promoted the same pending credential after
+	// our read. Re-read the current hash so every request carrying that valid
+	// credential succeeds without weakening the conditional promotion.
 	err = s.db.QueryRowContext(ctx, `
 		SELECT token_hash
 		FROM nodes

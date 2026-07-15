@@ -353,6 +353,95 @@ func TestAdminNodePatchUpdatesEditableFieldsAndReturnsSafeDTO(t *testing.T) {
 	}
 }
 
+func TestAdminNodePatchReplacesProbeAssignmentsInOneRequest(t *testing.T) {
+	store, err := OpenSQLiteStore(filepath.Join(t.TempDir(), "zeno.db"))
+	if err != nil {
+		t.Fatalf("open sqlite store: %v", err)
+	}
+	defer store.Close()
+	ctx := context.Background()
+	if err := store.SeedPreviewData(ctx, PreviewSeedOptions{NodeID: "hytron", DisplayName: "Hytron", CountryCode: "HK", AgentToken: "test-agent-token"}); err != nil {
+		t.Fatalf("seed preview data: %v", err)
+	}
+	if _, err := store.CreateAdminProbeTarget(ctx, AdminProbeTargetCreateRequest{
+		ID: "batch-target-a", Name: "Batch A", Type: "ping", Address: "1.1.1.1", Count: 3, TimeoutMS: 1000, IntervalSec: 30,
+		Assignments: []AdminProbeTargetAssignmentUpdate{{NodeID: "hytron", Enabled: true}},
+	}); err != nil {
+		t.Fatalf("create assigned target: %v", err)
+	}
+	if _, err := store.CreateAdminProbeTarget(ctx, AdminProbeTargetCreateRequest{
+		ID: "batch-target-b", Name: "Batch B", Type: "ping", Address: "8.8.8.8", Count: 3, TimeoutMS: 1000, IntervalSec: 30,
+	}); err != nil {
+		t.Fatalf("create unassigned target: %v", err)
+	}
+
+	recorder := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodPatch, "/api/admin/v1/nodes/hytron", bytes.NewBufferString(`{
+		"display_name":"Hytron Fast",
+		"home_probe_target_id":"batch-target-b",
+		"probe_target_ids":["batch-target-b"]
+	}`))
+	request.Header.Set("X-Admin-Token", "admin-pass")
+	NewHandler(HandlerOptions{Store: store, AdminTokenHash: HashAdminToken("admin-pass")}).ServeHTTP(recorder, request)
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200; body=%s", recorder.Code, recorder.Body.String())
+	}
+
+	targets, err := store.EnabledProbeTargets(ctx, "hytron")
+	if err != nil {
+		t.Fatalf("enabled targets: %v", err)
+	}
+	if len(targets) != 1 || targets[0].ID != "batch-target-b" {
+		t.Fatalf("enabled targets = %+v, want only batch-target-b", targets)
+	}
+	nodes, err := store.AdminNodes(ctx)
+	if err != nil {
+		t.Fatalf("admin nodes: %v", err)
+	}
+	if len(nodes) != 1 || nodes[0].DisplayName != "Hytron Fast" || nodes[0].HomeProbeTargetID != "batch-target-b" {
+		t.Fatalf("updated node = %+v, want node fields and home target committed together", nodes)
+	}
+}
+
+func TestAdminNodePatchRejectsHomeTargetOutsideBatchSelection(t *testing.T) {
+	store, err := OpenSQLiteStore(filepath.Join(t.TempDir(), "zeno.db"))
+	if err != nil {
+		t.Fatalf("open sqlite store: %v", err)
+	}
+	defer store.Close()
+	ctx := context.Background()
+	if err := store.SeedPreviewData(ctx, PreviewSeedOptions{NodeID: "hytron", DisplayName: "Hytron", CountryCode: "HK", AgentToken: "test-agent-token"}); err != nil {
+		t.Fatalf("seed preview data: %v", err)
+	}
+	for _, target := range []AdminProbeTargetCreateRequest{
+		{ID: "batch-target-a", Name: "Batch A", Type: "ping", Address: "1.1.1.1", Count: 3, TimeoutMS: 1000, IntervalSec: 30},
+		{ID: "batch-target-b", Name: "Batch B", Type: "ping", Address: "8.8.8.8", Count: 3, TimeoutMS: 1000, IntervalSec: 30},
+	} {
+		if _, err := store.CreateAdminProbeTarget(ctx, target); err != nil {
+			t.Fatalf("create target %s: %v", target.ID, err)
+		}
+	}
+
+	recorder := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodPatch, "/api/admin/v1/nodes/hytron", bytes.NewBufferString(`{
+		"display_name":"Must Not Persist",
+		"home_probe_target_id":"batch-target-a",
+		"probe_target_ids":["batch-target-b"]
+	}`))
+	request.Header.Set("X-Admin-Token", "admin-pass")
+	NewHandler(HandlerOptions{Store: store, AdminTokenHash: HashAdminToken("admin-pass")}).ServeHTTP(recorder, request)
+	if recorder.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400; body=%s", recorder.Code, recorder.Body.String())
+	}
+	nodes, err := store.AdminNodes(ctx)
+	if err != nil {
+		t.Fatalf("admin nodes: %v", err)
+	}
+	if len(nodes) != 1 || nodes[0].DisplayName != "Hytron" || nodes[0].HomeProbeTargetID != "" {
+		t.Fatalf("invalid batch partially persisted node = %+v", nodes)
+	}
+}
+
 func TestAdminNodeBillingIPAndDisplayOrderFieldsFlowThroughAdminAndPublicSummary(t *testing.T) {
 	store, err := OpenSQLiteStore(filepath.Join(t.TempDir(), "zeno.db"))
 	if err != nil {

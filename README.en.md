@@ -67,7 +67,7 @@ Optional environment variables:
 ```bash
 ZENO_INSTALL_DIR=/opt/zeno \
 ZENO_HOST_PORT=18980 \
-ZENO_IMAGE=ghcr.io/shuijiao1/zeno:latest \
+ZENO_IMAGE=ghcr.io/shuijiao1/zeno:v0.8.0 \
 bash <(curl -fsSL https://zeno.shuijiao.de)
 ```
 
@@ -107,12 +107,11 @@ The Agent only reports metrics and probe results. It does not modify the Control
 
 See [`docs/UPGRADE.md`](docs/UPGRADE.md) for upgrade and rollback notes.
 
-For Docker Compose deployments:
+Run the safety installer again with an explicit version. It verifies provenance, creates an offline backup, checks SQLite, and automatically restores a failed upgrade:
 
 ```bash
-cd /opt/zeno
-docker compose pull
-docker compose up -d
+sudo env ZENO_IMAGE=ghcr.io/shuijiao1/zeno:v0.8.0 \
+  bash -o pipefail -c 'curl -fsSL https://zeno.shuijiao.de | bash'
 ```
 
 Health check:
@@ -126,8 +125,8 @@ curl -fsS http://127.0.0.1:18980/ready
 ## Data and security
 
 - SQLite database: `/opt/zeno/data/zeno.db`.
-- Admin and Agent tokens: `/opt/zeno/secrets/`, expected to stay `600`.
-- The official Compose stack runs as non-root UID/GID `10001:10001`; `data/` and `secrets/` must be owned by that UID/GID, and the installer migrates existing directories automatically.
+- Admin and Agent tokens: `/opt/zeno/secrets/`; secret files should remain `root:10001` with mode `0640`.
+- The official Compose stack runs as non-root UID/GID `10001:10001`. `data/` is owned by that UID/GID; `secrets/` remains root-owned and read-only to the runtime group. The installer hardens existing directories automatically.
 - Back up `/opt/zeno/data` and `/opt/zeno/secrets` regularly.
 - Keep the Controller bound locally and expose it through an HTTPS reverse proxy.
 - See [`docs/SECURITY.md`](docs/SECURITY.md) for public deployment, token rotation and security boundaries.
@@ -157,7 +156,7 @@ CGO_ENABLED=0 go build -o zeno-controller ./cmd/controller
 - Agent: separate Zeno-Agent release (Linux systemd / macOS LaunchDaemon / Windows service)
 - Web: React + TypeScript + Vite
 - Deployment: Docker Compose
-- Communication: Agent-initiated HTTPS/JSON reporting, with separate Public/Admin/Agent APIs
+- Communication: agent-initiated HTTPS/JSON reporting; controlled networks may explicitly opt in to direct-IP HTTP with an explicit port, with separate Public/Admin/Agent APIs
 
 ---
 

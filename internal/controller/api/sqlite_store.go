@@ -238,10 +238,6 @@ func (s *SQLiteStore) ensureSchema(ctx context.Context) error {
 		`PRAGMA foreign_keys = ON;`,
 		`PRAGMA journal_mode = WAL;`,
 		`PRAGMA busy_timeout = 5000;`,
-		`CREATE TABLE IF NOT EXISTS readiness_probe (
-			id INTEGER PRIMARY KEY CHECK (id = 1),
-			checked_at INTEGER NOT NULL
-		);`,
 		`CREATE TABLE IF NOT EXISTS nodes (
 			id TEXT PRIMARY KEY,
 			display_name TEXT NOT NULL,
@@ -501,9 +497,6 @@ func (s *SQLiteStore) ensureSchema(ctx context.Context) error {
 			return err
 		}
 	}
-	if err := s.pruneRetiredTables(ctx); err != nil {
-		return err
-	}
 	if err := s.migrateNotificationChannels(ctx); err != nil {
 		return err
 	}
@@ -669,10 +662,6 @@ func (s *SQLiteStore) migrateLegacyAgentCredentials(ctx context.Context) error {
 		WHERE install_token IS NOT NULL
 	`)
 	return err
-}
-
-func (s *SQLiteStore) pruneRetiredTables(ctx context.Context) error {
-	return nil
 }
 
 func (s *SQLiteStore) migrateNotificationChannels(ctx context.Context) error {
@@ -956,6 +945,7 @@ func (s *SQLiteStore) Summary(ctx context.Context) (SummaryResponse, error) {
 }
 
 func (s *SQLiteStore) summaryAggregates(ctx context.Context) (map[string]*LatencySummary, []ServiceTarget, map[string][]LatencySummary, error) {
+	retries := 0
 	for {
 		if err := ctx.Err(); err != nil {
 			return nil, nil, nil, err
@@ -981,7 +971,11 @@ func (s *SQLiteStore) summaryAggregates(ctx context.Context) (map[string]*Latenc
 			currentGeneration := s.summaryAggregateGeneration
 			s.summaryAggregateMu.Unlock()
 			if currentGeneration != flight.generation {
-				continue
+				if retries < summaryGenerationMaxRetries {
+					retries++
+					continue
+				}
+				return flight.home, flight.services, flight.nodeLatency, flight.err
 			}
 			return flight.home, flight.services, flight.nodeLatency, flight.err
 		}
@@ -1022,9 +1016,14 @@ func (s *SQLiteStore) summaryAggregates(ctx context.Context) (map[string]*Latenc
 
 		if currentGeneration != generation {
 			// Invalidation raced this snapshot. Do not let it repopulate the cache;
-			// retry in the current generation so callers after invalidation do not
-			// publish the obsolete result.
-			continue
+			// retry once in the current generation. If writes continue, the second
+			// completed query is still a usable point-in-time snapshot and must be
+			// returned rather than allowing unbounded aggregate rebuilds.
+			if retries < summaryGenerationMaxRetries {
+				retries++
+				continue
+			}
+			return homeSummaries, services, latencySummaries, err
 		}
 		return homeSummaries, services, latencySummaries, err
 	}
@@ -1611,25 +1610,51 @@ func (s *SQLiteStore) UpdateAdminNode(ctx context.Context, nodeID string, update
 	if err := update.normalize(); err != nil {
 		return AdminNode{}, err
 	}
+
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return AdminNode{}, err
+	}
+	defer rollbackUnlessCommitted(tx)
+
 	var exists int
-	if err := s.db.QueryRowContext(ctx, `SELECT 1 FROM nodes WHERE id = ?`, nodeID).Scan(&exists); err != nil {
+	if err := tx.QueryRowContext(ctx, `SELECT 1 FROM nodes WHERE id = ?`, nodeID).Scan(&exists); err != nil {
 		if err == sql.ErrNoRows {
 			return AdminNode{}, errNodeNotFound
 		}
 		return AdminNode{}, err
 	}
+
+	selectedTargetIDs := make(map[string]struct{}, len(update.ProbeTargetIDs))
+	if update.ProbeTargetIDs != nil {
+		for _, targetID := range update.ProbeTargetIDs {
+			var targetExists int
+			if err := tx.QueryRowContext(ctx, `SELECT 1 FROM probe_targets WHERE id = ?`, targetID).Scan(&targetExists); err != nil {
+				if err == sql.ErrNoRows {
+					return AdminNode{}, errInvalidAdminNodeUpdate
+				}
+				return AdminNode{}, err
+			}
+			selectedTargetIDs[targetID] = struct{}{}
+		}
+	}
 	if update.HomeProbeTargetID != nil && *update.HomeProbeTargetID != "" {
 		var targetExists int
-		if err := s.db.QueryRowContext(ctx, `SELECT 1 FROM probe_targets WHERE id = ?`, *update.HomeProbeTargetID).Scan(&targetExists); err != nil {
+		if err := tx.QueryRowContext(ctx, `SELECT 1 FROM probe_targets WHERE id = ?`, *update.HomeProbeTargetID).Scan(&targetExists); err != nil {
 			if err == sql.ErrNoRows {
 				return AdminNode{}, errInvalidAdminNodeUpdate
 			}
 			return AdminNode{}, err
 		}
+		if update.ProbeTargetIDs != nil {
+			if _, selected := selectedTargetIDs[*update.HomeProbeTargetID]; !selected {
+				return AdminNode{}, errInvalidAdminNodeUpdate
+			}
+		}
 	}
 
-	sets := make([]string, 0, 12)
-	args := make([]any, 0, 13)
+	sets := make([]string, 0, 13)
+	args := make([]any, 0, 14)
 	billingRebaseConditions := make([]string, 0, 2)
 	billingRebaseArgs := make([]any, 0, 2)
 	if update.DisplayName != nil {
@@ -1704,14 +1729,72 @@ func (s *SQLiteStore) UpdateAdminNode(ctx context.Context, nodeID string, update
 		sets = append(sets, "billing_traffic_epoch = billing_traffic_epoch + CASE WHEN "+strings.Join(billingRebaseConditions, " OR ")+" THEN 1 ELSE 0 END")
 		args = append(args, billingRebaseArgs...)
 	}
-	if len(sets) == 0 {
-		return AdminNode{}, errInvalidAdminNodeUpdate
+
+	var usageBefore map[string]probeNodeUsage
+	if update.ProbeTargetIDs != nil {
+		usageBefore, err = probeNodeUsagesTx(ctx, tx)
+		if err != nil {
+			return AdminNode{}, err
+		}
 	}
-	sets = append(sets, "updated_at = ?")
-	args = append(args, time.Now().UTC().Unix(), nodeID)
-	if _, err := s.db.ExecContext(ctx, "UPDATE nodes SET "+strings.Join(sets, ", ")+" WHERE id = ?", args...); err != nil {
+
+	if len(sets) > 0 || update.ProbeTargetIDs != nil {
+		sets = append(sets, "updated_at = ?")
+		args = append(args, time.Now().UTC().Unix(), nodeID)
+		if _, err := tx.ExecContext(ctx, "UPDATE nodes SET "+strings.Join(sets, ", ")+" WHERE id = ?", args...); err != nil {
+			return AdminNode{}, err
+		}
+	}
+
+	if update.ProbeTargetIDs != nil {
+		if _, err := tx.ExecContext(ctx, `UPDATE node_probe_targets SET enabled = 0 WHERE node_id = ?`, nodeID); err != nil {
+			return AdminNode{}, err
+		}
+		for _, targetID := range update.ProbeTargetIDs {
+			if _, err := tx.ExecContext(ctx, `
+				INSERT INTO node_probe_targets (node_id, target_id, enabled)
+				VALUES (?, ?, 1)
+				ON CONFLICT(node_id, target_id) DO UPDATE SET enabled = 1
+			`, nodeID, targetID); err != nil {
+				return AdminNode{}, err
+			}
+		}
+		if update.HomeProbeTargetID == nil {
+			if len(update.ProbeTargetIDs) == 0 {
+				if _, err := tx.ExecContext(ctx, `UPDATE nodes SET home_probe_target_id = NULL WHERE id = ?`, nodeID); err != nil {
+					return AdminNode{}, err
+				}
+			} else {
+				placeholders := make([]string, len(update.ProbeTargetIDs))
+				homeArgs := make([]any, 0, len(update.ProbeTargetIDs)+1)
+				homeArgs = append(homeArgs, nodeID)
+				for index, targetID := range update.ProbeTargetIDs {
+					placeholders[index] = "?"
+					homeArgs = append(homeArgs, targetID)
+				}
+				query := `UPDATE nodes SET home_probe_target_id = NULL WHERE id = ? AND home_probe_target_id IS NOT NULL AND home_probe_target_id NOT IN (` + strings.Join(placeholders, ",") + `)`
+				if _, err := tx.ExecContext(ctx, query, homeArgs...); err != nil {
+					return AdminNode{}, err
+				}
+			}
+		}
+		usageAfter, err := probeNodeUsagesTx(ctx, tx)
+		if err != nil {
+			return AdminNode{}, err
+		}
+		if err := validateProbeNodeUsageTransition(usageBefore, usageAfter); err != nil {
+			return AdminNode{}, err
+		}
+		if err := bumpProbeConfigVersionTx(ctx, tx); err != nil {
+			return AdminNode{}, err
+		}
+	}
+
+	if err := tx.Commit(); err != nil {
 		return AdminNode{}, err
 	}
+	tx = nil
+
 	nodes, err := s.AdminNodes(ctx)
 	if err != nil {
 		return AdminNode{}, err

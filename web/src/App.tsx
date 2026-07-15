@@ -417,8 +417,11 @@ export function App() {
   const [adminState, setAdminState] = useState<AdminLoadState>({ kind: 'idle' })
   const [showAdminLoading, setShowAdminLoading] = useState(false)
   const [settings, setSettings] = useState<AdminSettings>(defaultSettings)
+  const [settingsReady, setSettingsReady] = useState(false)
+  const [backgroundAssetsReady, setBackgroundAssetsReady] = useState(false)
   const [themeOverride, setThemeOverride] = useState<AdminTheme | null>(() => storedThemeOverride())
   const [backgroundEnabled, setBackgroundEnabled] = useState(() => storedBackgroundEnabled())
+  const backgroundEnabledRef = useRef(backgroundEnabled)
 
   const clearAdminSession = (identity?: AdminTokenIdentity): boolean => {
     if (identity) {
@@ -443,9 +446,14 @@ export function App() {
     const settingsSnapshot = adminMutationEpochRef.current.snapshot()
     fetchPublicSettings()
       .then((loadedSettings) => {
-        if (!cancelled && adminMutationEpochRef.current.isCurrent(settingsSnapshot)) setSettings(loadedSettings)
+        if (!cancelled) {
+          if (adminMutationEpochRef.current.isCurrent(settingsSnapshot)) setSettings(loadedSettings)
+          setSettingsReady(true)
+        }
       })
-      .catch(() => {})
+      .catch(() => {
+        if (!cancelled) setSettingsReady(true)
+      })
     return () => {
       cancelled = true
     }
@@ -460,6 +468,41 @@ export function App() {
   }, [settings.customCode])
 
   useEffect(() => {
+    if (!settingsReady || typeof Image === 'undefined') return undefined
+    const urls = [...new Set([settings.desktopBackgroundUrl || settings.backgroundUrl, settings.mobileBackgroundUrl].map((value) => value.trim()).filter(Boolean))]
+    if (urls.length === 0) {
+      setBackgroundAssetsReady(true)
+      return undefined
+    }
+    let active = true
+    let remaining = urls.length
+    setBackgroundAssetsReady(false)
+    const images = urls.map((url) => {
+      const image = new Image()
+      image.decoding = 'async'
+      let settled = false
+      const finish = () => {
+        if (settled) return
+        settled = true
+        remaining -= 1
+        if (active && remaining === 0) setBackgroundAssetsReady(true)
+      }
+      image.onload = finish
+      image.onerror = finish
+      image.src = url
+      if (image.complete) queueMicrotask(finish)
+      return image
+    })
+    return () => {
+      active = false
+      images.forEach((image) => {
+        image.onload = null
+        image.onerror = null
+      })
+    }
+  }, [settingsReady, settings.backgroundUrl, settings.desktopBackgroundUrl, settings.mobileBackgroundUrl])
+
+  useEffect(() => {
     let cancelled = false
     const refreshHomeRealtimeSnapshot = (data: SummaryData) => {
       const now = monotonicNowMs()
@@ -467,7 +510,7 @@ export function App() {
       homeRealtimeLastUpdatedAtRef.current = now
       setHomeRealtimeSnapshot(homeRealtimeSnapshotForNodes(data.nodes))
     }
-    const applySummaryData = (data: SummaryData, source: 'http' | 'ws') => {
+    const applySummaryData = (data: SummaryData) => {
       const storedAt = Date.now()
       rememberSummary(data, storedAt)
       summaryRef.current = data
@@ -854,9 +897,21 @@ export function App() {
     (updatedNode) => {
       setAdminState((current) => {
         if (current.kind === 'ready') {
+          const selectedTargetIds = input.probeTargetIds === undefined ? null : new Set(input.probeTargetIds)
           return {
             ...current,
             nodes: sortAdminNodes(current.nodes.map((node) => node.id === updatedNode.id ? updatedNode : node)),
+            targets: selectedTargetIds === null ? current.targets : current.targets.map((target) => {
+              const existing = target.assignments.find((assignment) => assignment.nodeId === updatedNode.id)
+              const enabled = selectedTargetIds.has(target.id)
+              const nextAssignment = { nodeId: updatedNode.id, nodeDisplayName: updatedNode.displayName, enabled }
+              return {
+                ...target,
+                assignments: existing
+                  ? target.assignments.map((assignment) => assignment.nodeId === updatedNode.id ? nextAssignment : assignment)
+                  : enabled ? [...target.assignments, nextAssignment] : target.assignments,
+              }
+            }),
           }
         }
         return { kind: 'ready', account: { username: 'admin' }, nodes: [updatedNode], targets: [], notificationChannels: [], alertRules: [] }
@@ -1004,14 +1059,15 @@ export function App() {
   }
 
   const toggleBackground = () => {
-    setBackgroundEnabled((current) => {
-      const nextValue = !current
-      window.localStorage.setItem('zeno_background_enabled', String(nextValue))
-      return nextValue
-    })
+    const nextValue = !backgroundEnabledRef.current
+    backgroundEnabledRef.current = nextValue
+    window.localStorage.setItem('zeno_background_enabled', String(nextValue))
+    setBackgroundEnabled(nextValue)
   }
 
   const effectiveSettings = settingsForChrome(settings, themeOverride, backgroundEnabled)
+  const backgroundConfigured = (settings.desktopBackgroundUrl || settings.backgroundUrl || settings.mobileBackgroundUrl).trim() !== ''
+  const backgroundToggle = settingsReady && backgroundAssetsReady && backgroundConfigured ? toggleBackground : undefined
   const nodes = state.kind === 'ready' ? state.data.nodes : []
   const homeRealtimeNodes = homeRealtimeSnapshot?.nodes ?? nodes
   const homeNodes = orderHomeNodes(homeRealtimeNodes)
@@ -1058,7 +1114,7 @@ export function App() {
           onAdminAlertRuleUpdate={updateAdminAlertRuleDetails}
           onAdminSettingsUpdate={updateAdminSettingsDetails}
           onThemeChange={setThemeMode}
-          onBackgroundToggle={toggleBackground}
+          onBackgroundToggle={backgroundToggle}
           backgroundEnabled={backgroundEnabled}
         />
       )}
@@ -1081,7 +1137,7 @@ export function App() {
           onBack={navigateHome}
           onRangeChange={setNodeLatencyRange}
           onStateRangeChange={setStateRange}
-          topHeader={<DashboardHeader settings={effectiveSettings} onHome={navigateHome} onAdmin={navigateAdmin} onThemeChange={setThemeMode} onBackgroundToggle={toggleBackground} backgroundEnabled={backgroundEnabled} />}
+          topHeader={<DashboardHeader settings={effectiveSettings} onHome={navigateHome} onAdmin={navigateAdmin} onThemeChange={setThemeMode} onBackgroundToggle={backgroundToggle} backgroundEnabled={backgroundEnabled} />}
         />
       )}
 
@@ -1099,7 +1155,7 @@ export function App() {
           canUseExtendedRanges={hasAdminToken}
           onBack={navigateHome}
           onRangeChange={setServiceLatencyRange}
-          topHeader={<DashboardHeader settings={effectiveSettings} onHome={navigateHome} onAdmin={navigateAdmin} onThemeChange={setThemeMode} onBackgroundToggle={toggleBackground} backgroundEnabled={backgroundEnabled} />}
+          topHeader={<DashboardHeader settings={effectiveSettings} onHome={navigateHome} onAdmin={navigateAdmin} onThemeChange={setThemeMode} onBackgroundToggle={backgroundToggle} backgroundEnabled={backgroundEnabled} />}
         />
       )}
 
@@ -1121,7 +1177,7 @@ export function App() {
             onHome={navigateHome}
             onAdmin={navigateAdmin}
             onThemeChange={setThemeMode}
-            onBackgroundToggle={toggleBackground}
+            onBackgroundToggle={backgroundToggle}
             backgroundEnabled={backgroundEnabled}
           />
 
@@ -1332,7 +1388,11 @@ function DashboardHeader({ settings = defaultSettings, onHome, onAdmin, adminLab
             </div>
           )}
         </div>
-        <button className={`nav-icon-button${backgroundEnabled ? ' is-solid' : ''}`} type="button" aria-label={backgroundEnabled ? '关闭背景图' : '开启背景图'} onClick={onBackgroundToggle}><ImageMinusIcon /><span className="sr-only">开关背景图</span></button>
+        {onBackgroundToggle ? (
+          <button className={`nav-icon-button${backgroundEnabled ? ' is-solid' : ''}`} type="button" aria-label={backgroundEnabled ? '关闭背景图' : '开启背景图'} aria-pressed={backgroundEnabled} onClick={onBackgroundToggle}><ImageMinusIcon /><span className="sr-only">开关背景图</span></button>
+        ) : (
+          <span className="nav-icon-button nav-icon-button-placeholder" aria-hidden="true" />
+        )}
         {trailingAction}
       </nav>
     </header>
@@ -1461,7 +1521,6 @@ export function AdminDashboard({
                 onCreate={onAdminNodeCreate}
                 onUpdate={onAdminNodeUpdate}
                 onDelete={onAdminNodeDelete}
-                onTargetUpdate={onAdminProbeTargetUpdate}
                 onInstallCommand={onAdminInstallCommand}
               />
             )}
@@ -1746,7 +1805,7 @@ export function validateAdminSettingsInput(input: AdminSettingsUpdateInput): str
   if (!validSettingsImageURL(input.logoUrl ?? '')) return '头像 / Logo URL 只能是 https:// 链接或 /assets/... 站内路径。'
   if (!validSettingsImageURL(input.desktopBackgroundUrl ?? input.backgroundUrl ?? '')) return '电脑端背景图 URL 只能是 https:// 链接或 /assets/... 站内路径。'
   if (!validSettingsImageURL(input.mobileBackgroundUrl ?? '')) return '手机端背景图 URL 只能是 https:// 链接或 /assets/... 站内路径。'
-  if (!validAgentControllerURL(input.agentControllerUrl ?? '')) return 'Agent 接入 URL 只能是 http:// 或 https://，且不能包含用户名密码、query 或 fragment。'
+  if (!validAgentControllerURL(input.agentControllerUrl ?? '')) return 'Agent 接入 URL 必须使用 https://；loopback 或“直接 IP + 显式端口”可使用 http://，且不能包含用户名密码、query 或 fragment。'
   if (input.appearancePreset !== undefined && input.appearancePreset !== 'default' && input.appearancePreset !== 'gaussian_blur') return '外观模板无效。'
   if (!validSettingsNumber(input.cardOpacity, 0.2, 1)) return '卡片透明度无效。'
   if (!validSettingsNumber(input.cardBlur, 0, 40)) return '卡片模糊度无效。'
@@ -1784,13 +1843,22 @@ function validAgentControllerURL(value: string): boolean {
   if (trimmed === '') return true
   try {
     const parsed = new URL(trimmed)
-    return (parsed.protocol === 'http:' || parsed.protocol === 'https:') && parsed.hostname !== '' && parsed.username === '' && parsed.password === '' && parsed.search === '' && parsed.hash === ''
+    const host = parsed.hostname.toLowerCase().replace(/^\[|\]$/g, '')
+    const ipv4 = host.split('.')
+    const validIPv4 = ipv4.length === 4 && ipv4.every((part) => /^\d{1,3}$/.test(part) && Number(part) <= 255)
+    const loopbackIPv4 = validIPv4 && ipv4[0] === '127'
+    const loopback = host === 'localhost' || host === '::1' || loopbackIPv4
+    const authority = trimmed.match(/^http:\/\/([^/?#]+)/i)?.[1] ?? ''
+    const explicitPortMatch = authority.match(/^\[[^\]]+\]:(\d+)$/) ?? authority.match(/^[^:]+:(\d+)$/)
+    const explicitPort = explicitPortMatch ? Number(explicitPortMatch[1]) : 0
+    const directIPWithPort = (validIPv4 || host.includes(':')) && explicitPort >= 1 && explicitPort <= 65535
+    return (parsed.protocol === 'https:' || (parsed.protocol === 'http:' && (loopback || directIPWithPort))) && parsed.hostname !== '' && parsed.username === '' && parsed.password === '' && parsed.search === '' && parsed.hash === ''
   } catch {
     return false
   }
 }
 
-function AdminNodeSection({ nodes, targets, onCreate, onUpdate, onDelete, onTargetUpdate, onInstallCommand }: { nodes: AdminNode[]; targets: AdminProbeTarget[]; onCreate: (input: AdminNodeCreateInput) => Promise<AdminNode | void>; onUpdate: (nodeId: string, input: AdminNodeUpdateInput) => MaybePromise; onDelete: (nodeId: string) => MaybePromise; onTargetUpdate: (targetId: string, input: AdminProbeTargetUpdateInput) => MaybePromise; onInstallCommand: (nodeId: string) => Promise<AdminNodeInstallCommand> }) {
+function AdminNodeSection({ nodes, targets, onCreate, onUpdate, onDelete, onInstallCommand }: { nodes: AdminNode[]; targets: AdminProbeTarget[]; onCreate: (input: AdminNodeCreateInput) => Promise<AdminNode | void>; onUpdate: (nodeId: string, input: AdminNodeUpdateInput) => MaybePromise; onDelete: (nodeId: string) => MaybePromise; onInstallCommand: (nodeId: string) => Promise<AdminNodeInstallCommand> }) {
   const [creatingNode, setCreatingNode] = useState(false)
   const [editingNodeId, setEditingNodeId] = useState<string | null>(null)
   const [sortingNodes, setSortingNodes] = useState(false)
@@ -1831,7 +1899,6 @@ function AdminNodeSection({ nodes, targets, onCreate, onUpdate, onDelete, onTarg
           targets={targets}
           onClose={() => setEditingNodeId(null)}
           onUpdate={onUpdate}
-          onTargetUpdate={onTargetUpdate}
           onInstallCommand={onInstallCommand}
         />
       )}
@@ -2181,7 +2248,7 @@ function AdminNodeCreateModal({ onCreate, onInstallCommand, onClose }: { onCreat
   )
 }
 
-function AdminNodeEditModal({ node, targets, onUpdate, onTargetUpdate, onInstallCommand, onClose }: { node: AdminNode; targets: AdminProbeTarget[]; onUpdate: (nodeId: string, input: AdminNodeUpdateInput) => MaybePromise; onTargetUpdate: (targetId: string, input: AdminProbeTargetUpdateInput) => MaybePromise; onInstallCommand: (nodeId: string) => Promise<AdminNodeInstallCommand>; onClose: () => void }) {
+function AdminNodeEditModal({ node, targets, onUpdate, onInstallCommand, onClose }: { node: AdminNode; targets: AdminProbeTarget[]; onUpdate: (nodeId: string, input: AdminNodeUpdateInput) => MaybePromise; onInstallCommand: (nodeId: string) => Promise<AdminNodeInstallCommand>; onClose: () => void }) {
   const [installCommandState, setInstallCommandState] = useState<InstallCommandState>({ kind: 'idle' })
   const [installCopyState, setInstallCopyState] = useState<InstallNoticeState>({ kind: 'idle' })
   const [submitting, setSubmitting] = useState(false)
@@ -2208,7 +2275,7 @@ function AdminNodeEditModal({ node, targets, onUpdate, onTargetUpdate, onInstall
     const selectedTargets = new Set(selectedTargetIds)
     setSubmitting(true)
     setFormError(null)
-    const requests: Array<MaybePromise> = [onUpdate(node.id, {
+    Promise.resolve(onUpdate(node.id, {
       displayName: displayName || node.displayName,
       homeProbeTargetId: selectedTargets.has(homeTargetId) ? homeTargetId : '',
       expiryDate: String(formData.get('expiry-date') ?? '').trim(),
@@ -2217,15 +2284,8 @@ function AdminNodeEditModal({ node, targets, onUpdate, onTargetUpdate, onInstall
       billingMode: String(formData.get('billing-mode') ?? node.billingMode),
       monthlyResetDay: parseMonthlyResetDay(String(formData.get('monthly-reset-day') ?? '')) ?? node.monthlyResetDay,
       monthlyQuotaBytes: parseQuota(String(formData.get('monthly-quota') ?? ''), String(formData.get('monthly-quota-unit') ?? quotaUnitForBytes(node.monthlyQuotaBytes))),
-    })]
-    sortedTargets.forEach((target) => {
-      const currentEnabled = target.assignments.some((assignment) => assignment.nodeId === node.id && assignment.enabled)
-      const nextEnabled = selectedTargets.has(target.id)
-      if (currentEnabled !== nextEnabled) {
-        requests.push(onTargetUpdate(target.id, { assignments: [{ nodeId: node.id, enabled: nextEnabled }] }))
-      }
-    })
-    Promise.all(requests.map((request) => Promise.resolve(request)))
+      probeTargetIds: [...selectedTargets],
+    }))
       .then(() => onClose())
       .catch((error: unknown) => setFormError(error instanceof Error ? error.message : '保存失败'))
       .finally(() => setSubmitting(false))
@@ -2618,7 +2678,7 @@ function AdminAlertRulesSection({ rules, nodes, onUpdate }: { rules: AdminAlertR
         <button className="admin-primary-action" type="button" onClick={() => setAddingRule(true)}>添加通知类型</button>
       </div>
       {addedRules.length === 0 && <div className="admin-state-card">还没有添加通知类型。</div>}
-      {addedRules.length > 0 && <AdminAlertRuleList rules={addedRules} nodes={nodes} onEdit={setEditingRule} onUpdate={onUpdate} />}
+      {addedRules.length > 0 && <AdminAlertRuleList rules={addedRules} onEdit={setEditingRule} onUpdate={onUpdate} />}
 
       {addingRule && (
         <AdminAlertRuleAddModal
@@ -2641,7 +2701,7 @@ function AdminAlertRulesSection({ rules, nodes, onUpdate }: { rules: AdminAlertR
   )
 }
 
-function AdminAlertRuleList({ rules, nodes, onEdit, onUpdate }: { rules: AdminAlertRule[]; nodes: AdminNode[]; onEdit: (rule: AdminAlertRule) => void; onUpdate: (ruleId: string, input: AdminAlertRuleUpdateInput) => MaybePromise }) {
+function AdminAlertRuleList({ rules, onEdit, onUpdate }: { rules: AdminAlertRule[]; onEdit: (rule: AdminAlertRule) => void; onUpdate: (ruleId: string, input: AdminAlertRuleUpdateInput) => MaybePromise }) {
   const confirmDelete = (rule: AdminAlertRule) => {
     const ok = typeof window === 'undefined' ? true : window.confirm(`确认删除通知类型「${rule.name}」？`)
     if (ok) onUpdate(rule.id, { enabled: false })

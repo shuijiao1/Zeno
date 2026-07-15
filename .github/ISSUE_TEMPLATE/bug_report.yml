@@ -28,7 +28,6 @@ body:
       label: 部署方式 / Deployment
       options:
         - Docker Compose
-        - Release binary / systemd
         - Source build
         - Other
     validations:

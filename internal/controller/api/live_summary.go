@@ -130,6 +130,8 @@ const (
 	summaryCacheHTTPFreshFor    = 30 * time.Second
 	summaryCacheIdleRefreshFor  = 15 * time.Second
 	summaryCacheBackgroundDelay = 350 * time.Millisecond
+	summaryHTTPQueryTimeout     = 5 * time.Second
+	summaryGenerationMaxRetries = 1
 	detailCacheFreshFor         = 3 * time.Second
 	detailPublishTimeout        = 5 * time.Second
 	websocketWriteTimeout       = 5 * time.Second
@@ -315,7 +317,9 @@ func (h *handler) summaryJSON(ctx context.Context) ([]byte, error) {
 }
 
 func (h *handler) summaryJSONForHTTP(ctx context.Context) ([]byte, error) {
-	return h.loadSummaryJSON(ctx, summaryCacheHTTPFreshFor, true)
+	queryCtx, cancel := context.WithTimeout(ctx, summaryHTTPQueryTimeout)
+	defer cancel()
+	return h.loadSummaryJSON(queryCtx, summaryCacheHTTPFreshFor, true)
 }
 
 // loadSummaryJSON coalesces the complete Summary query and JSON encoding. HTTP
@@ -324,6 +328,7 @@ func (h *handler) summaryJSONForHTTP(ctx context.Context) ([]byte, error) {
 // cache-miss race. Live publishers bypass the cached value but still join an
 // in-flight build for the same generation.
 func (h *handler) loadSummaryJSON(ctx context.Context, maxAge time.Duration, allowCached bool) ([]byte, error) {
+	retries := 0
 	for {
 		now := time.Now()
 		h.summaryCacheMu.Lock()
@@ -344,7 +349,11 @@ func (h *handler) loadSummaryJSON(ctx context.Context, maxAge time.Duration, all
 			currentGeneration := h.summaryCacheGeneration
 			h.summaryCacheMu.RUnlock()
 			if currentGeneration != flight.generation {
-				continue
+				if retries < summaryGenerationMaxRetries {
+					retries++
+					continue
+				}
+				return append([]byte(nil), flight.payload...), flight.err
 			}
 			return append([]byte(nil), flight.payload...), flight.err
 		}
@@ -377,7 +386,14 @@ func (h *handler) loadSummaryJSON(ctx context.Context, maxAge time.Duration, all
 			if ctx.Err() != nil {
 				return nil, ctx.Err()
 			}
-			continue
+			if retries < summaryGenerationMaxRetries {
+				retries++
+				continue
+			}
+			// A completed build remains a valid point-in-time snapshot. Do not
+			// cache it under a newer generation, but return it after the bounded
+			// retry so sustained writes cannot keep an HTTP/live caller looping.
+			return append([]byte(nil), payload...), err
 		}
 		return append([]byte(nil), payload...), err
 	}
@@ -495,7 +511,9 @@ func (h *handler) publishSummaryNow(ctx context.Context) {
 func (h *handler) publishSummaryNowFresh(ctx context.Context) {
 	h.invalidateSummaryAggregates()
 	h.invalidateSummaryCache()
-	h.publishSummaryNow(ctx)
+	// Cache invalidation must be synchronous so the next HTTP read is fresh, but
+	// rebuilding and broadcasting the summary should not hold up an admin save.
+	h.publishSummary(ctx)
 }
 
 func (h *handler) scheduleNodeStatePublish(nodeID string) {

@@ -200,33 +200,28 @@ Agent 使用 tokenless、可替换的轻量 HTTP provider 自动发现公网 IPv
 
 ## 部署
 
-Hytron 预览部署：
+Controller 使用 Docker Compose 安装器部署：
 
 ```text
-/opt/zeno/current -> /opt/zeno/releases/zeno-<sha>-linux-amd64
+/opt/zeno/.env
+/opt/zeno/docker-compose.yml
 /opt/zeno/data/zeno.db
-/opt/zeno/data/agent-token
-/opt/zeno/data/admin-token
-zeno-controller.service
-port 18980
+/opt/zeno/secrets/
+/opt/zeno/backups/
+127.0.0.1:18980
 ```
 
-发布包由 `scripts/package-release.sh` 生成，目标机由 `scripts/deploy-local-release.sh` 安装/更新。Agent 二进制和服务由独立 Zeno-Agent 项目发布。`scripts/import-guko-servers.py` 可把 GUKO `server-manager/servers.json` 导入 Zeno Admin nodes，只同步展示元数据，不删除节点、不轮换 Agent token。
+`install.sh` 负责镜像 provenance 校验、停服前预检、一致性备份、SQLite 检查、配置替换、readiness 和失败恢复。Agent 二进制和服务由独立 Zeno-Agent 项目发布。`scripts/import-guko-servers.py` 可把 GUKO `server-manager/servers.json` 导入 Zeno Admin nodes，只同步展示元数据，不删除节点、不轮换 Agent token。
 
 安全更新顺序：
 
-1. 本地测试和 build。
-2. 打包 release。
-3. 上传目标机 `/tmp`。
-4. 解压到 `/opt/zeno/releases/`。
-5. 切 `/opt/zeno/current`。
-6. 渲染 unit 并 `systemctl daemon-reload`。
-7. 重启 Controller 并等待 `/ready` OK。
-9. Controller 健康后启动 Agent。
-10. smoke Admin API / Agent journal / services。
-11. 清理远端 `/tmp/zeno-*.tar.gz`。
-
-Controller health 失败时必须回滚 symlink 和 unit，重启旧 Controller；不要在 Controller 不健康时启动 Agent。
+1. 本地测试和镜像构建门禁。
+2. 用明确 SemVer tag 或 digest 运行安装器。
+3. 安装器验证目标镜像并在停旧容器前完成路径和空间预检。
+4. 停旧容器，创建完整离线备份并执行 SQLite `quick_check`。
+5. 原子替换 Compose 配置并启动 Controller。
+6. 等待 `/ready`，然后 smoke Admin/Public API 和 Agent 上报。
+7. readiness 失败时从完整备份和固定旧镜像恢复。
 
 ## 下一步设计重点
 

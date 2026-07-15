@@ -67,7 +67,7 @@ http://127.0.0.1:18980
 ```bash
 ZENO_INSTALL_DIR=/opt/zeno \
 ZENO_HOST_PORT=18980 \
-ZENO_IMAGE=ghcr.io/shuijiao1/zeno:latest \
+ZENO_IMAGE=ghcr.io/shuijiao1/zeno:v0.8.0 \
 bash <(curl -fsSL https://zeno.shuijiao.de)
 ```
 
@@ -107,12 +107,11 @@ Agent 只负责上报，不会修改 Controller，也不会打开远程命令入
 
 完整升级和回滚说明见 [`docs/UPGRADE.md`](docs/UPGRADE.md)。
 
-Docker Compose 部署可以直接更新镜像：
+使用明确版本重新运行安全安装器；它会执行 provenance 校验、离线备份、SQLite 检查和失败自动恢复：
 
 ```bash
-cd /opt/zeno
-docker compose pull
-docker compose up -d
+sudo env ZENO_IMAGE=ghcr.io/shuijiao1/zeno:v0.8.0 \
+  bash -o pipefail -c 'curl -fsSL https://zeno.shuijiao.de | bash'
 ```
 
 检查健康状态：
@@ -126,8 +125,8 @@ curl -fsS http://127.0.0.1:18980/ready
 ## 数据与安全
 
 - SQLite 数据库默认位于 `/opt/zeno/data/zeno.db`。
-- 管理员 token 和 Agent token 默认位于 `/opt/zeno/secrets/`，权限应保持为 `600`。
-- 官方 Compose 以非 root UID/GID `10001:10001` 运行；`data/`、`secrets/` 必须由该 UID/GID 持有，一键安装器会自动迁移既有目录。
+- 管理员 token 和 Agent token 默认位于 `/opt/zeno/secrets/`，secret 文件应保持 `root:10001`、`0640`。
+- 官方 Compose 以非 root UID/GID `10001:10001` 运行；`data/` 由该 UID/GID 持有，`secrets/` 由 root 持有并只向运行组开放只读权限，一键安装器会自动加固既有目录。
 - 建议定期备份 `/opt/zeno/data` 和 `/opt/zeno/secrets`。
 - Controller 默认本机监听；公网访问应通过 HTTPS 反向代理。
 - 公网部署、token 轮换和安全边界见 [`docs/SECURITY.md`](docs/SECURITY.md)。
@@ -157,7 +156,7 @@ CGO_ENABLED=0 go build -o zeno-controller ./cmd/controller
 - Agent：独立 Zeno-Agent release（Linux systemd / macOS LaunchDaemon / Windows service）
 - Web：React + TypeScript + Vite
 - 部署：Docker Compose
-- 通信：Agent 主动 HTTPS/JSON 上报，Public/Admin API 与 Agent API 分离
+- 通信：Agent 主动 HTTPS/JSON 上报；受控网络可显式 opt-in 使用“直接 IP + 显式端口”HTTP，Public/Admin API 与 Agent API 分离
 
 ---
 

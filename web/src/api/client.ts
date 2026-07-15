@@ -434,6 +434,7 @@ export interface AdminNodeUpdateInput {
   publicIPv6?: string
   monthlyQuotaBytes?: number | null
   disabled?: boolean
+  probeTargetIds?: string[]
 }
 
 export interface AdminNodeCreateInput {
@@ -1079,6 +1080,7 @@ function serializeAdminNodeUpdate(input: AdminNodeUpdateInput) {
     ...(input.publicIPv6 !== undefined ? { public_ipv6: input.publicIPv6 } : {}),
     ...(input.monthlyQuotaBytes !== undefined ? { monthly_quota_bytes: input.monthlyQuotaBytes } : {}),
     ...(input.disabled !== undefined ? { disabled: input.disabled } : {}),
+    ...(input.probeTargetIds !== undefined ? { probe_target_ids: input.probeTargetIds } : {}),
   }
 }
 

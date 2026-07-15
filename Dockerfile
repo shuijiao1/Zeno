@@ -20,9 +20,11 @@ RUN go mod download
 COPY . ./
 COPY --from=web-builder /src/web/dist ./web/dist
 ARG VERSION=dev
-ARG TARGETOS=linux
-ARG TARGETARCH=amd64
-RUN CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} go build -trimpath -ldflags "-s -w" -o /out/zeno-controller ./cmd/controller
+ARG TARGETOS
+ARG TARGETARCH
+ARG TARGETVARIANT
+RUN if [ "${TARGETARCH}/${TARGETVARIANT}" = "arm/v6" ]; then export GOARM=6; fi \
+  && CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} go build -trimpath -ldflags "-s -w" -o /out/zeno-controller ./cmd/controller
 
 FROM debian:13.2-slim@sha256:4bcb9db66237237d03b55b969271728dd3d955eaaa254b9db8a3db94550b1885
 ARG VERSION=dev

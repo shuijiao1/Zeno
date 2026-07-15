@@ -480,8 +480,10 @@ svg { display: block; }
   font-size: 13px;
   font-weight: 500;
   cursor: pointer;
+  touch-action: manipulation;
   transition: background-color 150ms ease, border-color 150ms ease, color 150ms ease, box-shadow 150ms ease, transform 150ms ease;
 }
+.nav-icon-button-placeholder { visibility: hidden; pointer-events: none; }
 .admin-login-card button,
 .admin-primary-action,
 .admin-section-actions .admin-primary-action,

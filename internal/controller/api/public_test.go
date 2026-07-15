@@ -58,12 +58,12 @@ func TestReadyEndpointChecksSQLiteStore(t *testing.T) {
 	if !body["ok"] {
 		t.Fatalf("ready ok = false, want true")
 	}
-	var writes int
-	if err := store.db.QueryRowContext(context.Background(), `SELECT COUNT(*) FROM readiness_probe`).Scan(&writes); err != nil {
-		t.Fatalf("count readiness writes: %v", err)
+	var readinessTableCount int
+	if err := store.db.QueryRowContext(context.Background(), `SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = 'readiness_probe'`).Scan(&readinessTableCount); err != nil {
+		t.Fatalf("inspect readiness schema: %v", err)
 	}
-	if writes != 0 {
-		t.Fatalf("ready endpoint wrote %d rows, want read-only readiness check", writes)
+	if readinessTableCount != 0 {
+		t.Fatalf("fresh schema created retired readiness_probe table")
 	}
 }
 

@@ -518,7 +518,7 @@ X-Admin-Token: <admin-token>
 - `site_title` 不能为空，最长 64 个字符。
 - `site_subtitle` 可为空，最长 140 个字符。
 - `theme` 只能是 `system`、`dark` 或 `light`。
-- `agent_controller_url` 可为空；非空时必须是无用户名密码、无 query/fragment 的 `http://` 或 `https://` URL；为空时使用当前后台请求地址。
+- `agent_controller_url` 可为空；非空时不得包含用户名密码、query 或 fragment。远程地址默认使用 `https://`；真实 loopback host 可使用 `http://`，没有反向代理时也允许 `http://<直接 IP>:<显式端口>`。后者会由 Agent 安装器持久化显式 insecure opt-in，并以明文传输 enrollment/runtime bearer token；主机名 HTTP 和没有显式端口的远程 HTTP 会被拒绝。为空时可回退到当前后台地址，但仍执行同一规则。
 - `logo_url` 必须是站内绝对路径（如 `/assets/logo/id.png`）或 `https://` URL；当前首页/后台头部头像与 Logo 都使用这一字段。
 - `background_url` 是旧兼容字段，当前等价于电脑端背景图；`background_url`、`desktop_background_url`、`mobile_background_url` 均可为空，非空时必须是站内绝对路径或 `https://` URL。手机端背景留空时前端跟随电脑端背景。
 - `appearance_preset` 只能是 `default` 或 `gaussian_blur`。预设会在前端作为默认参数组合，具体样式仍由下面的数值字段控制。
@@ -606,11 +606,15 @@ X-Admin-Token: <admin-token>
   "public_ipv4": "198.51.100.8",
   "public_ipv6": "2001:db8::8",
   "monthly_quota_bytes": 1099511627776,
+  "home_probe_target_id": "cloudflare",
+  "probe_target_ids": ["cloudflare", "google"],
   "disabled": false
 }
 ```
 
 字段均可部分提交；`monthly_quota_bytes: null` 表示清空月配额；`expiry_date` / `billing_cycle` / `public_ipv4` / `public_ipv6` 提交空字符串表示清空。`billing_mode` 可选 `both`（入站+出站）、`in`（只算入站）、`out`（只算出站）、`max`（入/出取较大）；`monthly_reset_day` 范围 1–31。`display_name` 不能为空，`expiry_date` 非空时必须是 `YYYY-MM-DD`，`display_order` 必须是非负整数，公网 IP 会分别校验 IPv4 / IPv6。
+
+编辑服务器时可同时提交 `probe_target_ids`，后端会在同一事务内替换该服务器的延迟监控关联并更新 `home_probe_target_id`，避免前端为每个目标分别发送 PATCH。首页目标非空时必须包含在 `probe_target_ids` 中；空数组表示取消全部关联。
 
 响应：
 

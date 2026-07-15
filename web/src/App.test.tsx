@@ -327,6 +327,20 @@ describe('HomeTopPanel', () => {
     expect(html).not.toContain(['service', 'status', 'panel'].join('-'))
   })
 
+  it('only exposes the background control after it is ready and reports its pressed state', () => {
+    const waiting = renderToStaticMarkup(<HomeTopPanel {...overviewProps} settings={settings} onHome={() => {}} onAdmin={() => {}} />)
+    expect(waiting).toContain('nav-icon-button-placeholder')
+    expect(waiting).not.toContain('aria-label="开启背景图"')
+    expect(waiting).not.toContain('aria-label="关闭背景图"')
+
+    const ready = renderToStaticMarkup(
+      <HomeTopPanel {...overviewProps} settings={settings} onHome={() => {}} onAdmin={() => {}} onBackgroundToggle={() => {}} backgroundEnabled={false} />,
+    )
+    expect(ready).toContain('aria-label="开启背景图"')
+    expect(ready).toContain('aria-pressed="false"')
+    expect(ready).not.toContain('nav-icon-button-placeholder')
+  })
+
   it('treats no-data nodes as not online in the summary copy', () => {
     const html = renderToStaticMarkup(
       <HomeTopPanel
@@ -495,6 +509,11 @@ describe('AdminDashboard', () => {
     expect(validateAdminSettingsInput({ ...baseInput, mobileBackgroundUrl: '//example.com/bg.png' })).toContain('手机端背景图 URL')
     expect(validateAdminSettingsInput({ ...baseInput, agentControllerUrl: 'https://user:pass@example.com' })).toContain('Agent 接入 URL')
     expect(validateAdminSettingsInput({ ...baseInput, agentControllerUrl: 'https://zeno.example.com/?token=1' })).toContain('Agent 接入 URL')
+    expect(validateAdminSettingsInput({ ...baseInput, agentControllerUrl: 'http://203.0.113.10:18980' })).toBeNull()
+    expect(validateAdminSettingsInput({ ...baseInput, agentControllerUrl: 'http://[2001:db8::10]:18980' })).toBeNull()
+    expect(validateAdminSettingsInput({ ...baseInput, agentControllerUrl: 'http://203.0.113.10' })).toContain('Agent 接入 URL')
+    expect(validateAdminSettingsInput({ ...baseInput, agentControllerUrl: 'http://zeno.example.com:18980' })).toContain('Agent 接入 URL')
+    expect(validateAdminSettingsInput({ ...baseInput, agentControllerUrl: 'http://127.0.0.1:18980' })).toBeNull()
     expect(validateAdminSettingsInput({ ...baseInput, agentControllerUrl: 'https://zeno.example.com/' })).toBeNull()
     expect(validateAdminSettingsInput({ ...baseInput, appearancePreset: 'other' as never })).toContain('外观模板')
     expect(validateAdminSettingsInput({ ...baseInput, cardOpacity: 0.1 })).toContain('卡片透明度')

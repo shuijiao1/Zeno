@@ -19,6 +19,7 @@ const (
 	agentQuotaPresence     agentQuotaKind = "presence"
 
 	agentWriteMaxConcurrent           = 4
+	agentWriteMaxGlobalConcurrent     = 64
 	agentPresenceMaxConcurrentPerNode = 2
 	agentQuotaIdleRetention           = time.Hour
 	agentQuotaPruneInterval           = 5 * time.Minute
@@ -59,10 +60,11 @@ type agentNodeQuota struct {
 }
 
 type agentQuotaManager struct {
-	mu         sync.Mutex
-	nodes      map[string]*agentNodeQuota
-	now        func() time.Time
-	lastPruned time.Time
+	mu             sync.Mutex
+	nodes          map[string]*agentNodeQuota
+	writesInFlight int
+	now            func() time.Time
+	lastPruned     time.Time
 }
 
 func newAgentQuotaManager() *agentQuotaManager {
@@ -153,6 +155,10 @@ func (manager *agentQuotaManager) admitWrite(nodeID string, units float64) (func
 	now := manager.currentTime()
 	manager.mu.Lock()
 	quota := manager.nodeLocked(nodeID, now)
+	if manager.writesInFlight >= agentWriteMaxGlobalConcurrent {
+		manager.mu.Unlock()
+		return nil, time.Second, false
+	}
 	if quota.writesInFlight >= agentWriteMaxConcurrent {
 		manager.mu.Unlock()
 		return nil, time.Second, false
@@ -162,12 +168,16 @@ func (manager *agentQuotaManager) admitWrite(nodeID string, units float64) (func
 		return nil, retryAfter, false
 	}
 	quota.writesInFlight++
+	manager.writesInFlight++
 	manager.mu.Unlock()
 
 	var once sync.Once
 	return func() {
 		once.Do(func() {
 			manager.mu.Lock()
+			if manager.writesInFlight > 0 {
+				manager.writesInFlight--
+			}
 			if current := manager.nodes[nodeID]; current != nil && current.writesInFlight > 0 {
 				current.writesInFlight--
 				current.lastSeen = manager.currentTime()

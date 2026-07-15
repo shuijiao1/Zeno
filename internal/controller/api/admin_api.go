@@ -327,6 +327,9 @@ func (h *handler) handleAdminNodeResource(w http.ResponseWriter, r *http.Request
 		writeAdminError(w, err)
 		return
 	}
+	if update.ProbeTargetIDs != nil {
+		h.notifyProbeConfigChanged(r.Context())
+	}
 	h.publishSummaryNowFresh(r.Context())
 	writeJSON(w, http.StatusOK, AdminNodeResponse{Node: node})
 }
