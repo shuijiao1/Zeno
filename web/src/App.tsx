@@ -865,7 +865,9 @@ export function App() {
     return operation()
       .then((value) => applyResult(value))
       .catch((error: unknown) => {
-        handleAdminRequestError(error, requestTokenIdentity)
+        // Mutation forms surface their own errors. Keep the ready dashboard mounted so
+        // a failed save/delete does not replace the form with the page-level error state.
+        if (isAdminUnauthorizedError(error)) expireAdminSession(requestTokenIdentity)
         throw error
       })
       .finally(finishMutation)
@@ -1980,7 +1982,10 @@ function AdminNodeList({ nodes, onEdit, onDelete }: { nodes: AdminNode[]; onEdit
     {pendingDelete && (
       <AdminDeleteConfirmModal
         title="删除服务器"
-        description={`确认删除服务器「${pendingDelete.displayName}」？这会删除该服务器的历史上报和探测记录。`}
+        subjectLabel="服务器"
+        subjectName={pendingDelete.displayName}
+        subjectMeta={`公网 IP：${[pendingDelete.publicIPv4, pendingDelete.publicIPv6].filter(Boolean).join(' · ') || '—'}`}
+        impact="历史上报、流量与探测记录，以及与该服务器关联的监控配置会一并移除；延迟监控目标本身不受影响。"
         confirmLabel="删除服务器"
         onClose={() => setPendingDelete(null)}
         onConfirm={() => onDelete(pendingDelete.id)}
@@ -2511,7 +2516,10 @@ function AdminTargetList({ targets, onEdit, onDelete }: { targets: AdminProbeTar
     {pendingDelete && (
       <AdminDeleteConfirmModal
         title="删除延迟监控"
-        description={`确认删除延迟监控「${pendingDelete.name}」？这会删除该目标的历史探测记录。`}
+        subjectLabel="延迟监控"
+        subjectName={pendingDelete.name}
+        subjectMeta={`地址：${formatTargetEndpoint(pendingDelete)} · 范围：${formatTargetAssignmentSummary(pendingDelete)}`}
+        impact="所有服务器上的目标分配和历史探测记录都会一并删除；服务器本身不受影响。"
         confirmLabel="删除延迟监控"
         onClose={() => setPendingDelete(null)}
         onConfirm={() => onDelete(pendingDelete.id)}
@@ -3108,16 +3116,16 @@ export function AdminCredentialField({ name, placeholder }: { name: string; plac
   )
 }
 
-function AdminModal({ title, onClose, children }: { title: string; onClose: () => void; children: ReactNode }) {
+function AdminModal({ title, onClose, children, className, descriptionId, closeDisabled = false }: { title: string; onClose: () => void; children: ReactNode; className?: string; descriptionId?: string; closeDisabled?: boolean }) {
   return (
     <AdminModalLayer>
     <div className="admin-modal-backdrop" role="presentation">
-      <section className="admin-modal" role="dialog" aria-modal="true" aria-label={title}>
+      <section className={`admin-modal${className ? ` ${className}` : ''}`} role="dialog" aria-modal="true" aria-label={title} aria-describedby={descriptionId}>
         <header className="admin-modal-header">
           <div>
             <h3>{title}</h3>
           </div>
-          <button className="admin-modal-close" type="button" onClick={onClose} aria-label="关闭弹窗">×</button>
+          <button className="admin-modal-close" type="button" onClick={onClose} aria-label="关闭弹窗" disabled={closeDisabled}>×</button>
         </header>
         <div className="admin-modal-body">{children}</div>
       </section>
@@ -3126,12 +3134,14 @@ function AdminModal({ title, onClose, children }: { title: string; onClose: () =
   )
 }
 
-function AdminDeleteConfirmModal({ title, description, confirmLabel, onConfirm, onClose }: { title: string; description: string; confirmLabel: string; onConfirm: () => MaybePromise; onClose: () => void }) {
+export function AdminDeleteConfirmModal({ title, subjectLabel, subjectName, subjectMeta, impact, confirmLabel, onConfirm, onClose }: { title: string; subjectLabel: string; subjectName: string; subjectMeta?: string; impact: string; confirmLabel: string; onConfirm: () => MaybePromise; onClose: () => void }) {
   const [submitting, setSubmitting] = useState(false)
   const [formError, setFormError] = useState<string | null>(null)
+  const descriptionId = useId()
 
   const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
+    if (submitting) return
     setSubmitting(true)
     setFormError(null)
     Promise.resolve(onConfirm())
@@ -3141,11 +3151,24 @@ function AdminDeleteConfirmModal({ title, description, confirmLabel, onConfirm, 
   }
 
   return (
-    <AdminModal title={title} onClose={() => { if (!submitting) onClose() }}>
-      <form className="admin-delete-confirm" onSubmit={handleSubmit}>
-        <p>{description}</p>
+    <AdminModal title={title} className="admin-delete-modal" descriptionId={descriptionId} closeDisabled={submitting} onClose={() => { if (!submitting) onClose() }}>
+      <form className="admin-delete-confirm" aria-busy={submitting} onSubmit={handleSubmit}>
+        <div id={descriptionId} className="admin-delete-confirm__content">
+          <p className="admin-delete-confirm__lead">请确认要删除以下{subjectLabel}。此操作无法撤销。</p>
+          <div className="admin-delete-subject">
+            <span>{subjectLabel}</span>
+            <strong>{subjectName}</strong>
+            {subjectMeta && <small>{subjectMeta}</small>}
+          </div>
+          <div className="admin-delete-impact">
+            <strong>影响范围</strong>
+            <p>{impact}</p>
+          </div>
+        </div>
+        <div className={`admin-delete-feedback${formError ? ' is-error' : submitting ? ' is-pending' : ''}`} aria-live="polite" aria-atomic="true">
+          {formError ? `删除失败：${formError}` : submitting ? '正在删除，请稍候…' : '确认后将立即执行删除。'}
+        </div>
         <div className="admin-modal-actions">
-          {formError && <span className="admin-inline-note admin-modal-action-note is-error">{formError}</span>}
           <button type="button" disabled={submitting} onClick={onClose}>取消</button>
           <button className="is-danger" type="submit" disabled={submitting}>{submitting ? '删除中…' : confirmLabel}</button>
         </div>

@@ -109,55 +109,7 @@ func (s *SQLiteStore) DeleteAdminNode(ctx context.Context, nodeID string) error 
 	if nodeID == "" || strings.Contains(nodeID, "/") {
 		return errNodeNotFound
 	}
-	tx, err := s.db.BeginTx(ctx, nil)
-	if err != nil {
-		return err
-	}
-	defer rollbackUnlessCommitted(tx)
-
-	if _, err := tx.ExecContext(ctx, `DELETE FROM probe_samples WHERE round_id IN (SELECT id FROM probe_rounds WHERE node_id = ?)`, nodeID); err != nil {
-		return err
-	}
-	for _, statement := range []string{
-		`DELETE FROM probe_rounds WHERE node_id = ?`,
-		`DELETE FROM state_samples WHERE node_id = ?`,
-		`DELETE FROM traffic_monthly WHERE node_id = ?`,
-		`DELETE FROM traffic_lifetime WHERE node_id = ?`,
-		`DELETE FROM node_probe_targets WHERE node_id = ?`,
-		`DELETE FROM alert_rule_states WHERE node_id = ?`,
-		`DELETE FROM host_info WHERE node_id = ?`,
-	} {
-		if _, err := tx.ExecContext(ctx, statement, nodeID); err != nil {
-			return err
-		}
-	}
-	if _, err := tx.ExecContext(ctx, `
-		UPDATE alert_rules
-		SET enabled = 0, updated_at = ?
-		WHERE id IN (
-			SELECT scope.rule_id
-			FROM alert_rule_node_scopes scope
-			WHERE scope.node_id = ?
-			  AND (SELECT COUNT(*) FROM alert_rule_node_scopes all_scope WHERE all_scope.rule_id = scope.rule_id) = 1
-		)
-	`, time.Now().UTC().Unix(), nodeID); err != nil {
-		return err
-	}
-	result, err := tx.ExecContext(ctx, `DELETE FROM nodes WHERE id = ?`, nodeID)
-	if err != nil {
-		return err
-	}
-	affected, err := result.RowsAffected()
-	if err != nil {
-		return err
-	}
-	if affected == 0 {
-		return errNodeNotFound
-	}
-	if err := tx.Commit(); err != nil {
-		return err
-	}
-	return nil
+	return s.enqueueAdminNodeDeletion(ctx, nodeID)
 }
 
 func (s *SQLiteStore) adminNodeByID(ctx context.Context, nodeID string) (AdminNode, error) {

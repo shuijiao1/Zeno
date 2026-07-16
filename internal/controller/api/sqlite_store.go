@@ -29,6 +29,8 @@ type SQLiteStore struct {
 	renewalMu                     sync.Mutex
 	adminSessionPruneMu           sync.Mutex
 	adminSessionLastPruned        time.Time
+	adminDeletionCancel           context.CancelFunc
+	adminDeletionWG               sync.WaitGroup
 	notificationCredentialMu      sync.RWMutex
 	notificationCredentialKeyring *notificationCredentialKeyring
 	summaryAggregateMu            sync.Mutex
@@ -177,6 +179,7 @@ func OpenSQLiteStore(path string) (*SQLiteStore, error) {
 		_ = db.Close()
 		return nil, err
 	}
+	store.startAdminDeletionWorker()
 	return store, nil
 }
 
@@ -195,6 +198,7 @@ func sqliteDSN(path string) (string, error) {
 }
 
 func (s *SQLiteStore) Close() error {
+	s.stopAdminDeletionWorker()
 	return s.db.Close()
 }
 
@@ -502,6 +506,18 @@ func (s *SQLiteStore) ensureSchema(ctx context.Context) error {
 			created_at INTEGER NOT NULL,
 			last_seen_at INTEGER NOT NULL
 		);`,
+		`CREATE TABLE IF NOT EXISTS admin_deletion_jobs (
+			entity_kind TEXT NOT NULL CHECK (entity_kind IN ('node', 'probe_target')),
+			entity_id TEXT NOT NULL,
+			state TEXT NOT NULL DEFAULT 'pending' CHECK (state IN ('pending', 'running', 'completed')),
+			attempts INTEGER NOT NULL DEFAULT 0,
+			last_error TEXT NOT NULL DEFAULT '',
+			created_at INTEGER NOT NULL,
+			updated_at INTEGER NOT NULL,
+			completed_at INTEGER,
+			PRIMARY KEY (entity_kind, entity_id)
+		);`,
+		`CREATE INDEX IF NOT EXISTS idx_admin_deletion_jobs_state_updated ON admin_deletion_jobs(state, updated_at, entity_kind, entity_id);`,
 	}
 	for _, statement := range statements {
 		if _, err := s.db.ExecContext(ctx, statement); err != nil {
@@ -1178,6 +1194,28 @@ func (s *SQLiteStore) NodeState(ctx context.Context, nodeID string, window laten
 	return StateResponse{NodeID: nodeID, Range: window.Name, Points: points}, nil
 }
 
+const activeAdminNodeExistsSQL = `
+	SELECT 1 FROM nodes n
+	WHERE n.id = ?
+	  AND NOT EXISTS (
+		SELECT 1 FROM admin_deletion_jobs deletion
+		WHERE deletion.entity_kind = 'node'
+		  AND deletion.entity_id = n.id
+		  AND deletion.state IN ('pending', 'running')
+	  )
+`
+
+const activeAdminProbeTargetExistsSQL = `
+	SELECT 1 FROM probe_targets pt
+	WHERE pt.id = ?
+	  AND NOT EXISTS (
+		SELECT 1 FROM admin_deletion_jobs deletion
+		WHERE deletion.entity_kind = 'probe_target'
+		  AND deletion.entity_id = pt.id
+		  AND deletion.state IN ('pending', 'running')
+	  )
+`
+
 func (s *SQLiteStore) AdminNodes(ctx context.Context) ([]AdminNode, error) {
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT n.id, n.display_name, n.status, n.country_code, n.region, n.disabled,
@@ -1197,6 +1235,12 @@ func (s *SQLiteStore) AdminNodes(ctx context.Context) ([]AdminNode, error) {
 		       h.boot_time, h.agent_version
 		FROM nodes n
 		LEFT JOIN host_info h ON h.node_id = n.id
+		WHERE NOT EXISTS (
+			SELECT 1 FROM admin_deletion_jobs deletion
+			WHERE deletion.entity_kind = 'node'
+			  AND deletion.entity_id = n.id
+			  AND deletion.state IN ('pending', 'running')
+		)
 		ORDER BY n.display_order ASC, n.id ASC
 	`, int64(nodeHeartbeatOfflineAfter/time.Second))
 	if err != nil {
@@ -1276,10 +1320,22 @@ func (s *SQLiteStore) AdminNodes(ctx context.Context) ([]AdminNode, error) {
 func (s *SQLiteStore) AdminProbeTargets(ctx context.Context) ([]AdminProbeTarget, error) {
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT pt.id, pt.name, pt.type, pt.address, pt.port, pt.count, pt.timeout_ms, pt.interval_sec, pt.display_order, pt.enabled,
-		       npt.node_id, n.display_name, npt.enabled
+		       n.id, n.display_name, npt.enabled
 		FROM probe_targets pt
 		LEFT JOIN node_probe_targets npt ON npt.target_id = pt.id
 		LEFT JOIN nodes n ON n.id = npt.node_id
+		  AND NOT EXISTS (
+			SELECT 1 FROM admin_deletion_jobs node_deletion
+			WHERE node_deletion.entity_kind = 'node'
+			  AND node_deletion.entity_id = n.id
+			  AND node_deletion.state IN ('pending', 'running')
+		  )
+		WHERE NOT EXISTS (
+			SELECT 1 FROM admin_deletion_jobs deletion
+			WHERE deletion.entity_kind = 'probe_target'
+			  AND deletion.entity_id = pt.id
+			  AND deletion.state IN ('pending', 'running')
+		)
 		ORDER BY pt.display_order ASC, pt.id ASC, npt.node_id ASC
 	`)
 	if err != nil {
@@ -1367,7 +1423,7 @@ func (s *SQLiteStore) CreateAdminProbeTarget(ctx context.Context, create AdminPr
 	}
 	for _, assignment := range create.Assignments {
 		var nodeExists int
-		if err := tx.QueryRowContext(ctx, `SELECT 1 FROM nodes WHERE id = ?`, assignment.NodeID).Scan(&nodeExists); err != nil {
+		if err := tx.QueryRowContext(ctx, activeAdminNodeExistsSQL, assignment.NodeID).Scan(&nodeExists); err != nil {
 			if err == sql.ErrNoRows {
 				return AdminProbeTarget{}, errInvalidAdminTargetWrite
 			}
@@ -1413,7 +1469,17 @@ func (s *SQLiteStore) UpdateAdminProbeTarget(ctx context.Context, targetID strin
 	var currentType, currentAddress string
 	var currentPort sql.NullInt64
 	var currentCount, currentTimeoutMS, currentIntervalSec int
-	if err := s.db.QueryRowContext(ctx, `SELECT type, address, port, count, timeout_ms, interval_sec FROM probe_targets WHERE id = ?`, targetID).Scan(&currentType, &currentAddress, &currentPort, &currentCount, &currentTimeoutMS, &currentIntervalSec); err != nil {
+	if err := s.db.QueryRowContext(ctx, `
+		SELECT type, address, port, count, timeout_ms, interval_sec
+		FROM probe_targets pt
+		WHERE pt.id = ?
+		  AND NOT EXISTS (
+			SELECT 1 FROM admin_deletion_jobs deletion
+			WHERE deletion.entity_kind = 'probe_target'
+			  AND deletion.entity_id = pt.id
+			  AND deletion.state IN ('pending', 'running')
+		  )
+	`, targetID).Scan(&currentType, &currentAddress, &currentPort, &currentCount, &currentTimeoutMS, &currentIntervalSec); err != nil {
 		if err == sql.ErrNoRows {
 			return AdminProbeTarget{}, errProbeTargetNotFound
 		}
@@ -1508,6 +1574,13 @@ func (s *SQLiteStore) UpdateAdminProbeTarget(ctx context.Context, targetID strin
 	if _, err := tx.ExecContext(ctx, `UPDATE probe_config_meta SET version = version WHERE id = 1`); err != nil {
 		return AdminProbeTarget{}, err
 	}
+	var targetStillActive int
+	if err := tx.QueryRowContext(ctx, activeAdminProbeTargetExistsSQL, targetID).Scan(&targetStillActive); err != nil {
+		if err == sql.ErrNoRows {
+			return AdminProbeTarget{}, errProbeTargetNotFound
+		}
+		return AdminProbeTarget{}, err
+	}
 	usageBefore, err := probeNodeUsagesTx(ctx, tx)
 	if err != nil {
 		return AdminProbeTarget{}, err
@@ -1522,7 +1595,7 @@ func (s *SQLiteStore) UpdateAdminProbeTarget(ctx context.Context, targetID strin
 	if update.Assignments != nil {
 		for _, assignment := range update.Assignments {
 			var nodeExists int
-			if err := tx.QueryRowContext(ctx, `SELECT 1 FROM nodes WHERE id = ?`, assignment.NodeID).Scan(&nodeExists); err != nil {
+			if err := tx.QueryRowContext(ctx, activeAdminNodeExistsSQL, assignment.NodeID).Scan(&nodeExists); err != nil {
 				if err == sql.ErrNoRows {
 					return AdminProbeTarget{}, errInvalidAdminTargetWrite
 				}
@@ -1573,42 +1646,7 @@ func (s *SQLiteStore) DeleteAdminProbeTarget(ctx context.Context, targetID strin
 	if targetID == "" {
 		return errProbeTargetNotFound
 	}
-	tx, err := s.db.BeginTx(ctx, nil)
-	if err != nil {
-		return err
-	}
-	defer rollbackUnlessCommitted(tx)
-	if _, err := tx.ExecContext(ctx, `DELETE FROM probe_samples WHERE round_id IN (SELECT id FROM probe_rounds WHERE target_id = ?)`, targetID); err != nil {
-		return err
-	}
-	if _, err := tx.ExecContext(ctx, `DELETE FROM probe_rounds WHERE target_id = ?`, targetID); err != nil {
-		return err
-	}
-	if _, err := tx.ExecContext(ctx, `DELETE FROM node_probe_targets WHERE target_id = ?`, targetID); err != nil {
-		return err
-	}
-	if _, err := tx.ExecContext(ctx, `UPDATE nodes SET home_probe_target_id = NULL WHERE home_probe_target_id = ?`, targetID); err != nil {
-		return err
-	}
-	result, err := tx.ExecContext(ctx, `DELETE FROM probe_targets WHERE id = ?`, targetID)
-	if err != nil {
-		return err
-	}
-	affected, err := result.RowsAffected()
-	if err != nil {
-		return err
-	}
-	if affected == 0 {
-		return errProbeTargetNotFound
-	}
-	if err := bumpProbeConfigVersionTx(ctx, tx); err != nil {
-		return err
-	}
-	if err := tx.Commit(); err != nil {
-		return err
-	}
-	tx = nil
-	return nil
+	return s.enqueueAdminProbeTargetDeletion(ctx, targetID)
 }
 
 type probeNodeUsage struct {
@@ -1705,9 +1743,12 @@ func (s *SQLiteStore) UpdateAdminNode(ctx context.Context, nodeID string, update
 		return AdminNode{}, err
 	}
 	defer rollbackUnlessCommitted(tx)
+	if _, err := tx.ExecContext(ctx, `UPDATE probe_config_meta SET version = version WHERE id = 1`); err != nil {
+		return AdminNode{}, err
+	}
 
 	var exists int
-	if err := tx.QueryRowContext(ctx, `SELECT 1 FROM nodes WHERE id = ?`, nodeID).Scan(&exists); err != nil {
+	if err := tx.QueryRowContext(ctx, activeAdminNodeExistsSQL, nodeID).Scan(&exists); err != nil {
 		if err == sql.ErrNoRows {
 			return AdminNode{}, errNodeNotFound
 		}
@@ -1718,7 +1759,7 @@ func (s *SQLiteStore) UpdateAdminNode(ctx context.Context, nodeID string, update
 	if update.ProbeTargetIDs != nil {
 		for _, targetID := range update.ProbeTargetIDs {
 			var targetExists int
-			if err := tx.QueryRowContext(ctx, `SELECT 1 FROM probe_targets WHERE id = ?`, targetID).Scan(&targetExists); err != nil {
+			if err := tx.QueryRowContext(ctx, activeAdminProbeTargetExistsSQL, targetID).Scan(&targetExists); err != nil {
 				if err == sql.ErrNoRows {
 					return AdminNode{}, errInvalidAdminNodeUpdate
 				}
@@ -1729,7 +1770,7 @@ func (s *SQLiteStore) UpdateAdminNode(ctx context.Context, nodeID string, update
 	}
 	if update.HomeProbeTargetID != nil && *update.HomeProbeTargetID != "" {
 		var targetExists int
-		if err := tx.QueryRowContext(ctx, `SELECT 1 FROM probe_targets WHERE id = ?`, *update.HomeProbeTargetID).Scan(&targetExists); err != nil {
+		if err := tx.QueryRowContext(ctx, activeAdminProbeTargetExistsSQL, *update.HomeProbeTargetID).Scan(&targetExists); err != nil {
 			if err == sql.ErrNoRows {
 				return AdminNode{}, errInvalidAdminNodeUpdate
 			}

@@ -1803,6 +1803,7 @@ svg { display: block; }
   font-size: 20px;
   line-height: 1;
 }
+.admin-modal-close:disabled { cursor: not-allowed; opacity: .5; }
 .admin-modal-body {
   min-height: 0;
   overflow: auto;
@@ -1840,11 +1841,105 @@ svg { display: block; }
   padding-top: 14px;
   border-top: 1px solid var(--border);
 }
-.admin-delete-confirm p {
-  margin: 4px 0 0;
-  color: var(--foreground);
-  line-height: 1.7;
+.admin-modal.admin-delete-modal {
+  width: min(480px, 100%);
+  max-height: min(88vh, 620px);
 }
+.admin-delete-confirm { padding-top: 16px; }
+.admin-delete-confirm__lead {
+  margin: 0;
+  color: var(--muted);
+  font-size: 14px;
+  line-height: 1.65;
+}
+.admin-delete-subject {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: baseline;
+  gap: 4px 12px;
+  margin-top: 14px;
+  padding: 13px 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-card);
+  background: var(--control-bg);
+}
+.admin-delete-subject > span {
+  grid-row: 1 / span 2;
+  align-self: center;
+  padding: 3px 8px;
+  border-radius: var(--radius-pill);
+  background: color-mix(in srgb, var(--red) 8%, var(--surface-soft));
+  color: color-mix(in srgb, var(--red) 76%, var(--foreground));
+  font-size: 12px;
+  font-weight: 500;
+  white-space: nowrap;
+}
+.admin-delete-subject strong,
+.admin-delete-subject small {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.admin-delete-subject strong {
+  color: var(--foreground);
+  font-size: 16px;
+  font-weight: 600;
+  line-height: 1.4;
+}
+.admin-delete-subject small { color: var(--muted); font-size: 12px; line-height: 1.45; }
+.admin-delete-impact {
+  margin-top: 10px;
+  padding: 12px 14px;
+  border-left: 3px solid color-mix(in srgb, var(--red) 44%, var(--border));
+  border-radius: 3px var(--radius-field) var(--radius-field) 3px;
+  background: color-mix(in srgb, var(--red) 5%, var(--surface-soft));
+}
+.admin-delete-impact strong {
+  color: var(--foreground);
+  font-size: 13px;
+  font-weight: 600;
+}
+.admin-delete-impact p {
+  margin: 4px 0 0;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.6;
+}
+.admin-delete-feedback {
+  min-height: 38px;
+  max-height: 72px;
+  margin-top: 12px;
+  overflow: auto;
+  display: flex;
+  align-items: center;
+  padding: 8px 10px;
+  border: 1px solid transparent;
+  border-radius: var(--radius-field);
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1.45;
+}
+.admin-delete-feedback.is-pending {
+  border-color: color-mix(in srgb, var(--blue) 18%, var(--border));
+  background: color-mix(in srgb, var(--blue) 5%, var(--surface-soft));
+  color: var(--blue);
+}
+.admin-delete-feedback.is-error {
+  border-color: color-mix(in srgb, var(--red) 28%, var(--border));
+  background: color-mix(in srgb, var(--red) 7%, var(--surface-soft));
+  color: var(--red);
+}
+.admin-delete-modal .admin-modal-actions { margin-top: 4px; }
+.admin-delete-modal .admin-modal-actions button { min-width: 112px; }
+.admin-delete-modal .admin-modal-actions button.is-danger { min-width: 144px; }
+.admin-delete-confirm[aria-busy='true'] .admin-delete-confirm__content { opacity: .76; }
+.admin-delete-confirm__content { transition: opacity 150ms ease; }
+.admin-delete-modal .admin-modal-close:disabled,
+.admin-delete-confirm button:disabled { transform: none; }
+.admin-delete-modal .admin-modal-close:disabled { box-shadow: none; }
+.admin-delete-modal .admin-modal-actions button:disabled { opacity: .62; }
+.admin-delete-modal .admin-modal-actions button.is-danger:disabled { background: var(--red); color: #fff; }
 .admin-modal-actions button.is-danger {
   border-color: color-mix(in srgb, var(--red) 36%, var(--border));
   background: var(--red);
@@ -2693,6 +2788,16 @@ svg { display: block; }
   .admin-modal-header { padding: 14px; }
   .admin-modal-header h3 { font-size: 20px; }
   .admin-modal-body { padding: 0 12px; overflow: auto; }
+  .admin-modal.admin-delete-modal { height: auto; max-height: calc(100dvh - 16px); }
+  .admin-delete-modal .admin-modal-header { padding: 10px 10px 8px 14px; }
+  .admin-delete-modal .admin-modal-close { width: 44px; height: 44px; flex: 0 0 44px; }
+  .admin-delete-modal .admin-modal-body { padding: 0 14px; }
+  .admin-delete-confirm { padding-top: 14px; }
+  .admin-delete-confirm__lead { font-size: 13px; }
+  .admin-delete-subject { margin-top: 12px; padding: 12px; gap: 3px 10px; }
+  .admin-delete-subject strong { font-size: 15px; }
+  .admin-delete-impact { padding: 11px 12px; }
+  .admin-delete-feedback { margin-top: 10px; }
   .admin-modal-summary { grid-template-columns: 1fr; gap: 8px; }
   .admin-modal-summary div { padding: 10px; }
   .admin-node-edit-form,
@@ -2717,6 +2822,20 @@ svg { display: block; }
     backdrop-filter: blur(10px);
   }
   .admin-modal-actions button { flex: 1 1 132px; min-width: 0; }
+  .admin-delete-modal .admin-modal-actions {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1.15fr);
+    gap: 8px;
+    margin: 2px -14px 0;
+    padding-right: 14px;
+    padding-left: 14px;
+  }
+  .admin-delete-modal .admin-modal-actions button {
+    width: 100%;
+    min-width: 0;
+    min-height: 46px;
+    padding: 0 10px;
+  }
   .admin-settings-form > button[type="submit"] { width: 100%; margin-top: 14px; }
   .admin-target-assignment-list,
   .admin-rule-scope-list { grid-template-columns: 1fr; }

@@ -713,6 +713,7 @@ func TestAdminNodeDeleteRemovesNodeAndDependentData(t *testing.T) {
 	if strings.TrimSpace(recorder.Body.String()) != "" {
 		t.Fatalf("delete body = %q, want empty", recorder.Body.String())
 	}
+	waitForAdminDeletionCompleted(t, store, "node", "backup", 10*time.Second)
 	checks := []struct {
 		name  string
 		query string
@@ -1881,6 +1882,7 @@ func TestAdminProbeTargetDeleteRemovesTargetAndAssignments(t *testing.T) {
 			}
 		}
 	}
+	waitForAdminDeletionCompleted(t, store, "probe_target", "hytron-local", 10*time.Second)
 	var remainingRounds, remainingSamples int
 	if err := store.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM probe_rounds WHERE target_id = 'hytron-local'`).Scan(&remainingRounds); err != nil {
 		t.Fatalf("count remaining probe rounds: %v", err)

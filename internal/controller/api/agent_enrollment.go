@@ -2,7 +2,6 @@ package api
 
 import (
 	"context"
-	"database/sql"
 	"errors"
 	"mime"
 	"net/http"
@@ -56,9 +55,8 @@ func (s *SQLiteStore) issueAgentEnrollment(ctx context.Context, nodeID string) (
 	}
 	defer rollbackUnlessCommitted(tx)
 
-	var exists int
-	if err := tx.QueryRowContext(ctx, `SELECT 1 FROM nodes WHERE id = ?`, nodeID).Scan(&exists); err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
+	if err := lockAgentNodeWriteTx(ctx, tx, nodeID); err != nil {
+		if errors.Is(err, errNodeNotFound) {
 			return "", time.Time{}, errNodeNotFound
 		}
 		return "", time.Time{}, err
@@ -125,7 +123,8 @@ func (s *SQLiteStore) RedeemAgentEnrollment(ctx context.Context, nodeID, enrollm
 		  AND used_at IS NULL
 		  AND revoked_at IS NULL
 		  AND expires_at > ?
-	`, now.Unix(), hashAgentToken(enrollmentToken), nodeID, now.Unix())
+		  AND EXISTS (SELECT 1 FROM nodes WHERE id = ? AND disabled = 0)
+	`, now.Unix(), hashAgentToken(enrollmentToken), nodeID, now.Unix(), nodeID)
 	if err != nil {
 		return err
 	}
@@ -142,7 +141,7 @@ func (s *SQLiteStore) RedeemAgentEnrollment(ctx context.Context, nodeID, enrollm
 			pending_token_expires_at = ?,
 			install_token = NULL,
 			updated_at = ?
-		WHERE id = ?
+		WHERE id = ? AND disabled = 0
 	`, hashAgentToken(runtimeToken), now.Add(agentPendingActivationTTL).Unix(), now.Unix(), nodeID)
 	if err != nil {
 		return err

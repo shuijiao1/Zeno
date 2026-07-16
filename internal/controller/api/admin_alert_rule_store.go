@@ -420,8 +420,14 @@ func (s *SQLiteStore) alertRuleScopeNodeIDs(ctx context.Context, ruleID string) 
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT scope.node_id
 		FROM alert_rule_node_scopes scope
-		LEFT JOIN nodes n ON n.id = scope.node_id
+		JOIN nodes n ON n.id = scope.node_id
 		WHERE scope.rule_id = ?
+		  AND NOT EXISTS (
+			SELECT 1 FROM admin_deletion_jobs deletion
+			WHERE deletion.entity_kind = 'node'
+			  AND deletion.entity_id = n.id
+			  AND deletion.state IN ('pending', 'running')
+		  )
 		ORDER BY COALESCE(n.display_order, 0) ASC, scope.node_id ASC
 	`, ruleID)
 	if err != nil {
@@ -445,7 +451,7 @@ func (s *SQLiteStore) alertRuleScopeNodeIDs(ctx context.Context, ruleID string) 
 func replaceAlertRuleNodeScopes(ctx context.Context, tx *sql.Tx, ruleID string, nodeIDs []string, now int64) error {
 	for _, nodeID := range nodeIDs {
 		var exists int
-		if err := tx.QueryRowContext(ctx, `SELECT 1 FROM nodes WHERE id = ?`, nodeID).Scan(&exists); err != nil {
+		if err := tx.QueryRowContext(ctx, activeAdminNodeExistsSQL, nodeID).Scan(&exists); err != nil {
 			if err == sql.ErrNoRows {
 				return errInvalidAdminAlertRuleUpdate
 			}

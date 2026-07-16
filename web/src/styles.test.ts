@@ -122,6 +122,21 @@ describe('homepage and admin shell layout', () => {
     expect(styles).toContain('.admin-notification-list .admin-row-actions.admin-icon-actions,')
   })
 
+  it('keeps destructive confirmations compact, stable, and touch-friendly', () => {
+    expect(styles).toContain('.admin-modal.admin-delete-modal')
+    expect(styles).toContain('width: min(480px, 100%)')
+    expect(styles).toContain('.admin-delete-subject')
+    expect(styles).toContain('.admin-delete-impact')
+    expect(styles).toContain('.admin-delete-feedback')
+    expect(styles).toContain('min-height: 38px')
+    expect(styles).toContain('max-height: 72px')
+    expect(styles).toContain('.admin-delete-feedback.is-error')
+    expect(styles).toContain('.admin-modal.admin-delete-modal { height: auto; max-height: calc(100dvh - 16px); }')
+    expect(styles).toContain('.admin-delete-modal .admin-modal-close { width: 44px; height: 44px; flex: 0 0 44px; }')
+    expect(styles).toContain('grid-template-columns: minmax(0, 1fr) minmax(0, 1.15fr)')
+    expect(styles).toContain('min-height: 46px')
+  })
+
   it('keeps authenticated node management in compact lists without old card shells', () => {
     expect(styles).toContain('.admin-login-card')
     expect(styles).toContain('width: min(100%, 420px)')

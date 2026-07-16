@@ -193,9 +193,17 @@ func enabledProbeTargetsQuery(ctx context.Context, queryer probeTargetQueryer, n
 		SELECT pt.id, pt.name, pt.type, pt.address, pt.port, pt.count, pt.timeout_ms, pt.interval_sec
 		FROM probe_targets pt
 		JOIN node_probe_targets npt ON npt.target_id = pt.id
+		JOIN nodes n ON n.id = npt.node_id
 		WHERE npt.node_id = ?
+		  AND n.disabled = 0
 		  AND pt.enabled = 1
 		  AND npt.enabled = 1
+		  AND NOT EXISTS (
+			SELECT 1 FROM admin_deletion_jobs deletion
+			WHERE deletion.entity_kind = 'probe_target'
+			  AND deletion.entity_id = pt.id
+			  AND deletion.state IN ('pending', 'running')
+		  )
 		ORDER BY pt.display_order ASC, pt.id ASC
 	`, nodeID)
 	if err != nil {

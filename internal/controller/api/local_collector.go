@@ -394,8 +394,30 @@ func (s *SQLiteStore) insertProbeRoundsOnce(ctx context.Context, nodeID string, 
 	if _, err := tx.ExecContext(ctx, `UPDATE probe_config_meta SET version = version WHERE id = 1`); err != nil {
 		return err
 	}
+	if err := lockAgentNodeWriteTx(ctx, tx, nodeID); err != nil {
+		return err
+	}
 
 	for _, round := range rounds {
+		var targetEnabled int
+		if err := tx.QueryRowContext(ctx, `
+			SELECT 1
+			FROM probe_targets pt
+			JOIN node_probe_targets npt ON npt.target_id = pt.id
+			WHERE pt.id = ? AND pt.enabled = 1
+			  AND npt.node_id = ? AND npt.enabled = 1
+			  AND NOT EXISTS (
+				SELECT 1 FROM admin_deletion_jobs deletion
+				WHERE deletion.entity_kind = 'probe_target'
+				  AND deletion.entity_id = pt.id
+				  AND deletion.state IN ('pending', 'running')
+			  )
+		`, round.target.ID, nodeID).Scan(&targetEnabled); err != nil {
+			if err == sql.ErrNoRows {
+				return errInvalidAgentProbeResults
+			}
+			return err
+		}
 		if err := insertProbeRoundTx(ctx, tx, nodeID, round); err != nil {
 			return err
 		}
