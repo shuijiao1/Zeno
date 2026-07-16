@@ -125,8 +125,10 @@ describe('homepage and admin shell layout', () => {
   it('keeps destructive confirmations compact, stable, and touch-friendly', () => {
     expect(styles).toContain('.admin-modal.admin-delete-modal')
     expect(styles).toContain('width: min(480px, 100%)')
-    expect(styles).toContain('.admin-delete-subject')
-    expect(styles).toContain('.admin-delete-impact')
+    expect(styles).toContain('.admin-delete-confirm__lead')
+    expect(styles).toContain('.admin-delete-confirm__hint')
+    expect(styles).not.toContain('.admin-delete-subject')
+    expect(styles).not.toContain('.admin-delete-impact')
     expect(styles).toContain('.admin-delete-feedback')
     expect(styles).toContain('min-height: 38px')
     expect(styles).toContain('max-height: 72px')

@@ -25,14 +25,11 @@ describe('remoteInsecureAgentControllerURL', () => {
 })
 
 describe('AdminDeleteConfirmModal', () => {
-  it('names the delete subject and explains the irreversible impact in the dialog', () => {
+  it('keeps the delete confirmation short and names the subject', () => {
     const html = renderToStaticMarkup(
       <AdminDeleteConfirmModal
         title="删除延迟监控"
-        subjectLabel="延迟监控"
         subjectName="Zeno Health"
-        subjectMeta="https://example.com/health · 2 / 3 服务器启用"
-        impact="所有服务器上的目标分配和历史探测记录都会一并删除；服务器本身不受影响。"
         confirmLabel="删除延迟监控"
         onConfirm={() => {}}
         onClose={() => {}}
@@ -43,11 +40,11 @@ describe('AdminDeleteConfirmModal', () => {
     expect(html).toContain('role="dialog"')
     expect(html).toContain('aria-describedby=')
     expect(html).toContain('aria-busy="false"')
+    expect(html).toContain('确认删除')
     expect(html).toContain('Zeno Health')
-    expect(html).toContain('https://example.com/health · 2 / 3 服务器启用')
-    expect(html).toContain('影响范围')
-    expect(html).toContain('服务器本身不受影响')
-    expect(html).toContain('确认后将立即执行删除。')
+    expect(html).toContain('删除后无法恢复。')
+    expect(html).not.toContain('影响范围')
+    expect(html).not.toContain('确认后将立即执行删除。')
     expect(html).toContain('class="is-danger" type="submit"')
   })
 })

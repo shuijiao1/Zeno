@@ -1848,62 +1848,19 @@ svg { display: block; }
 .admin-delete-confirm { padding-top: 16px; }
 .admin-delete-confirm__lead {
   margin: 0;
-  color: var(--muted);
-  font-size: 14px;
-  line-height: 1.65;
-}
-.admin-delete-subject {
-  min-width: 0;
-  display: grid;
-  grid-template-columns: auto minmax(0, 1fr);
-  align-items: baseline;
-  gap: 4px 12px;
-  margin-top: 14px;
-  padding: 13px 14px;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-card);
-  background: var(--control-bg);
-}
-.admin-delete-subject > span {
-  grid-row: 1 / span 2;
-  align-self: center;
-  padding: 3px 8px;
-  border-radius: var(--radius-pill);
-  background: color-mix(in srgb, var(--red) 8%, var(--surface-soft));
-  color: color-mix(in srgb, var(--red) 76%, var(--foreground));
-  font-size: 12px;
-  font-weight: 500;
-  white-space: nowrap;
-}
-.admin-delete-subject strong,
-.admin-delete-subject small {
-  min-width: 0;
+  color: var(--foreground);
+  font-size: 15px;
+  line-height: 1.6;
   overflow-wrap: anywhere;
 }
-.admin-delete-subject strong {
-  color: var(--foreground);
-  font-size: 16px;
-  font-weight: 600;
-  line-height: 1.4;
-}
-.admin-delete-subject small { color: var(--muted); font-size: 12px; line-height: 1.45; }
-.admin-delete-impact {
-  margin-top: 10px;
-  padding: 12px 14px;
-  border-left: 3px solid color-mix(in srgb, var(--red) 44%, var(--border));
-  border-radius: 3px var(--radius-field) var(--radius-field) 3px;
-  background: color-mix(in srgb, var(--red) 5%, var(--surface-soft));
-}
-.admin-delete-impact strong {
-  color: var(--foreground);
-  font-size: 13px;
+.admin-delete-confirm__lead strong {
   font-weight: 600;
 }
-.admin-delete-impact p {
-  margin: 4px 0 0;
+.admin-delete-confirm__hint {
+  margin: 6px 0 0;
   color: var(--muted);
   font-size: 13px;
-  line-height: 1.6;
+  line-height: 1.5;
 }
 .admin-delete-feedback {
   min-height: 38px;
@@ -1930,7 +1887,7 @@ svg { display: block; }
   background: color-mix(in srgb, var(--red) 7%, var(--surface-soft));
   color: var(--red);
 }
-.admin-delete-modal .admin-modal-actions { margin-top: 4px; }
+.admin-delete-modal .admin-modal-actions { margin-top: 16px; }
 .admin-delete-modal .admin-modal-actions button { min-width: 112px; }
 .admin-delete-modal .admin-modal-actions button.is-danger { min-width: 144px; }
 .admin-delete-confirm[aria-busy='true'] .admin-delete-confirm__content { opacity: .76; }
@@ -2794,9 +2751,6 @@ svg { display: block; }
   .admin-delete-modal .admin-modal-body { padding: 0 14px; }
   .admin-delete-confirm { padding-top: 14px; }
   .admin-delete-confirm__lead { font-size: 13px; }
-  .admin-delete-subject { margin-top: 12px; padding: 12px; gap: 3px 10px; }
-  .admin-delete-subject strong { font-size: 15px; }
-  .admin-delete-impact { padding: 11px 12px; }
   .admin-delete-feedback { margin-top: 10px; }
   .admin-modal-summary { grid-template-columns: 1fr; gap: 8px; }
   .admin-modal-summary div { padding: 10px; }
@@ -2826,7 +2780,7 @@ svg { display: block; }
     display: grid;
     grid-template-columns: minmax(0, 1fr) minmax(0, 1.15fr);
     gap: 8px;
-    margin: 2px -14px 0;
+    margin: 16px -14px 0;
     padding-right: 14px;
     padding-left: 14px;
   }

@@ -1982,10 +1982,7 @@ function AdminNodeList({ nodes, onEdit, onDelete }: { nodes: AdminNode[]; onEdit
     {pendingDelete && (
       <AdminDeleteConfirmModal
         title="删除服务器"
-        subjectLabel="服务器"
         subjectName={pendingDelete.displayName}
-        subjectMeta={`公网 IP：${[pendingDelete.publicIPv4, pendingDelete.publicIPv6].filter(Boolean).join(' · ') || '—'}`}
-        impact="历史上报、流量与探测记录，以及与该服务器关联的监控配置会一并移除；延迟监控目标本身不受影响。"
         confirmLabel="删除服务器"
         onClose={() => setPendingDelete(null)}
         onConfirm={() => onDelete(pendingDelete.id)}
@@ -2516,10 +2513,7 @@ function AdminTargetList({ targets, onEdit, onDelete }: { targets: AdminProbeTar
     {pendingDelete && (
       <AdminDeleteConfirmModal
         title="删除延迟监控"
-        subjectLabel="延迟监控"
         subjectName={pendingDelete.name}
-        subjectMeta={`地址：${formatTargetEndpoint(pendingDelete)} · 范围：${formatTargetAssignmentSummary(pendingDelete)}`}
-        impact="所有服务器上的目标分配和历史探测记录都会一并删除；服务器本身不受影响。"
         confirmLabel="删除延迟监控"
         onClose={() => setPendingDelete(null)}
         onConfirm={() => onDelete(pendingDelete.id)}
@@ -3134,7 +3128,7 @@ function AdminModal({ title, onClose, children, className, descriptionId, closeD
   )
 }
 
-export function AdminDeleteConfirmModal({ title, subjectLabel, subjectName, subjectMeta, impact, confirmLabel, onConfirm, onClose }: { title: string; subjectLabel: string; subjectName: string; subjectMeta?: string; impact: string; confirmLabel: string; onConfirm: () => MaybePromise; onClose: () => void }) {
+export function AdminDeleteConfirmModal({ title, subjectName, confirmLabel, onConfirm, onClose }: { title: string; subjectName: string; confirmLabel: string; onConfirm: () => MaybePromise; onClose: () => void }) {
   const [submitting, setSubmitting] = useState(false)
   const [formError, setFormError] = useState<string | null>(null)
   const descriptionId = useId()
@@ -3154,20 +3148,14 @@ export function AdminDeleteConfirmModal({ title, subjectLabel, subjectName, subj
     <AdminModal title={title} className="admin-delete-modal" descriptionId={descriptionId} closeDisabled={submitting} onClose={() => { if (!submitting) onClose() }}>
       <form className="admin-delete-confirm" aria-busy={submitting} onSubmit={handleSubmit}>
         <div id={descriptionId} className="admin-delete-confirm__content">
-          <p className="admin-delete-confirm__lead">请确认要删除以下{subjectLabel}。此操作无法撤销。</p>
-          <div className="admin-delete-subject">
-            <span>{subjectLabel}</span>
-            <strong>{subjectName}</strong>
-            {subjectMeta && <small>{subjectMeta}</small>}
-          </div>
-          <div className="admin-delete-impact">
-            <strong>影响范围</strong>
-            <p>{impact}</p>
-          </div>
+          <p className="admin-delete-confirm__lead">确认删除「<strong>{subjectName}</strong>」？</p>
+          <p className="admin-delete-confirm__hint">删除后无法恢复。</p>
         </div>
-        <div className={`admin-delete-feedback${formError ? ' is-error' : submitting ? ' is-pending' : ''}`} aria-live="polite" aria-atomic="true">
-          {formError ? `删除失败：${formError}` : submitting ? '正在删除，请稍候…' : '确认后将立即执行删除。'}
-        </div>
+        {(formError || submitting) && (
+          <div className={`admin-delete-feedback${formError ? ' is-error' : ' is-pending'}`} aria-live="polite" aria-atomic="true">
+            {formError ? `删除失败：${formError}` : '正在删除…'}
+          </div>
+        )}
         <div className="admin-modal-actions">
           <button type="button" disabled={submitting} onClick={onClose}>取消</button>
           <button className="is-danger" type="submit" disabled={submitting}>{submitting ? '删除中…' : confirmLabel}</button>
