@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"crypto/sha256"
 	"errors"
 	"log"
 	"math"
@@ -136,6 +137,7 @@ func (h *handler) handleAgentProbeResults(w http.ResponseWriter, r *http.Request
 	}
 
 	prepared := make([]preparedAgentProbeRound, 0, len(request.Rounds))
+	totalErrorBytes := 0
 	for _, round := range request.Rounds {
 		roundID := strings.TrimSpace(round.RoundID)
 		if roundID != "" && !validAgentProbeRoundID(roundID) {
@@ -163,6 +165,7 @@ func (h *handler) handleAgentProbeResults(w http.ResponseWriter, r *http.Request
 		}
 		samples := make([]probe.Sample, 0, len(round.Samples))
 		seenSequences := make(map[int]struct{}, len(round.Samples))
+		roundErrorBytes := 0
 		for index, sample := range round.Samples {
 			seq := sample.Seq
 			if seq == 0 {
@@ -189,7 +192,18 @@ func (h *handler) handleAgentProbeResults(w http.ResponseWriter, r *http.Request
 				}
 				latency = &normalized
 			}
-			samples = append(samples, probe.Sample{Seq: seq, Success: sample.Success, LatencyMS: latency, Error: strings.TrimSpace(sample.Error)})
+			errorText := strings.TrimSpace(sample.Error)
+			if len(errorText) > maxProbeErrorBytes {
+				writeError(w, http.StatusBadRequest, "sample error too long")
+				return
+			}
+			roundErrorBytes += len(errorText)
+			totalErrorBytes += len(errorText)
+			if roundErrorBytes > maxProbeErrorBytesPerRound || totalErrorBytes > maxAgentProbeErrorBytesPerRequest {
+				writeError(w, http.StatusBadRequest, "probe error budget exceeded")
+				return
+			}
+			samples = append(samples, probe.Sample{Seq: seq, Success: sample.Success, LatencyMS: latency, Error: errorText})
 		}
 		if len(samples) == 0 {
 			writeError(w, http.StatusBadRequest, "samples required")
@@ -391,7 +405,7 @@ func (h *handler) handleAgentState(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid state id")
 		return
 	}
-	if invalidFloat(request.CPUPercent) || request.CPUPercent < 0 || request.CPUPercent > 100 || optionalFloatInvalidOrNegative(request.Load1) || optionalFloatInvalidOrNegative(request.Load5) || optionalFloatInvalidOrNegative(request.Load15) || request.MemoryUsedBytes < 0 || request.MemoryTotalBytes < 0 || optionalIntNegative(request.SwapUsedBytes) || optionalIntNegative(request.SwapTotalBytes) || request.DiskUsedBytes < 0 || request.DiskTotalBytes < 0 || request.NetInTotalBytes < 0 || request.NetOutTotalBytes < 0 || invalidFloat(request.NetInSpeedBps) || request.NetInSpeedBps < 0 || invalidFloat(request.NetOutSpeedBps) || request.NetOutSpeedBps < 0 || optionalIntNegative(request.ProcessCount) || optionalIntNegative(request.TCPConnectionCount) || optionalIntNegative(request.UDPConnectionCount) || request.UptimeSeconds < 0 {
+	if invalidFloat(request.CPUPercent) || request.CPUPercent < 0 || request.CPUPercent > 100 || optionalFloatInvalidOrNegative(request.Load1) || optionalFloatInvalidOrNegative(request.Load5) || optionalFloatInvalidOrNegative(request.Load15) || request.MemoryUsedBytes < 0 || request.MemoryTotalBytes < 0 || optionalIntNegative(request.SwapUsedBytes) || optionalIntNegative(request.SwapTotalBytes) || request.DiskUsedBytes < 0 || request.DiskTotalBytes < 0 || request.NetInTotalBytes < 0 || request.NetOutTotalBytes < 0 || !validNetworkCounterSource(request.NetCounterSource) || invalidFloat(request.NetInSpeedBps) || request.NetInSpeedBps < 0 || invalidFloat(request.NetOutSpeedBps) || request.NetOutSpeedBps < 0 || optionalIntNegative(request.ProcessCount) || optionalIntNegative(request.TCPConnectionCount) || optionalIntNegative(request.UDPConnectionCount) || request.UptimeSeconds < 0 {
 		writeError(w, http.StatusBadRequest, "invalid state values")
 		return
 	}
@@ -487,6 +501,22 @@ func validAgentStateSampleID(value string) bool {
 	return validAgentProbeRoundID(value)
 }
 
+func validNetworkCounterSource(value string) bool {
+	if value == "" {
+		return true
+	}
+	if len(value) != sha256.Size*2 {
+		return false
+	}
+	for _, character := range value {
+		if (character >= '0' && character <= '9') || (character >= 'a' && character <= 'f') {
+			continue
+		}
+		return false
+	}
+	return true
+}
+
 func invalidFloat(value float64) bool {
 	return math.IsNaN(value) || math.IsInf(value, 0)
 }
@@ -516,6 +546,12 @@ func (h *handler) authorizeAgentRequest(w http.ResponseWriter, r *http.Request) 
 		return nil, "", false
 	}
 	token := strings.TrimSpace(strings.TrimPrefix(authorization, "Bearer "))
+	release, retryAfter, admitted := h.agentAuthAdmission.admit(h.clientIPForRateLimit(r))
+	if !admitted {
+		writeAgentRateLimit(w, retryAfter)
+		return nil, "", false
+	}
+	defer release()
 	allowed, err := store.AuthorizeAgent(r.Context(), nodeID, token)
 	if err != nil {
 		logAgentAPIError(agentEndpointName(r.URL.Path), nodeID, "authorize", err)

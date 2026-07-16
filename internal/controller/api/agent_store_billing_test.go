@@ -3,7 +3,9 @@ package api
 import (
 	"context"
 	"database/sql"
+	"math"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -289,6 +291,140 @@ func TestInvalidNetworkCounterSamplesNeverAdvanceOrCreateBillingBaseline(t *test
 	}
 	if billable != 200 || lastIn != 1100 || lastOut != 2100 {
 		t.Fatalf("billing after 1000/2000 -> invalid -> 1100/2100 = billable %d last %d/%d, want 200 and 1100/2100", billable, lastIn, lastOut)
+	}
+}
+
+func TestLifetimeTrafficRebasesWhenCounterSourceChanges(t *testing.T) {
+	store, err := OpenSQLiteStore(filepath.Join(t.TempDir(), "zeno.db"))
+	if err != nil {
+		t.Fatalf("open sqlite store: %v", err)
+	}
+	defer store.Close()
+	ctx := context.Background()
+	if err := store.SeedPreviewData(ctx, PreviewSeedOptions{NodeID: "hytron", DisplayName: "Hytron", AgentToken: "token"}); err != nil {
+		t.Fatalf("seed node: %v", err)
+	}
+	now := time.Now().UTC().Truncate(time.Second)
+	state := AgentStateRequest{
+		TS: now.Unix(), CPUPercent: 1, MemoryUsedBytes: 1, MemoryTotalBytes: 2,
+		DiskUsedBytes: 1, DiskTotalBytes: 2, UptimeSeconds: 1,
+		NetInTotalBytes: 100, NetOutTotalBytes: 100, NetCounterSource: "source-a",
+	}
+	for index, totals := range [][2]int64{{100, 100}, {150, 160}, {1000, 2000}, {1010, 2020}} {
+		state.TS = now.Add(time.Duration(index) * time.Second).Unix()
+		state.NetInTotalBytes, state.NetOutTotalBytes = totals[0], totals[1]
+		if index >= 2 {
+			state.NetCounterSource = "source-b"
+		}
+		if err := store.InsertAgentState(ctx, "hytron", state); err != nil {
+			t.Fatalf("insert state %d: %v", index, err)
+		}
+	}
+	var lifetimeIn, lifetimeOut int64
+	var source string
+	if err := store.db.QueryRowContext(ctx, `SELECT in_bytes, out_bytes, counter_source FROM traffic_lifetime WHERE node_id = 'hytron'`).Scan(&lifetimeIn, &lifetimeOut, &source); err != nil {
+		t.Fatalf("read lifetime row: %v", err)
+	}
+	if lifetimeIn != 160 || lifetimeOut != 180 || source != "source-b" {
+		t.Fatalf("lifetime after source rebase = %d/%d source=%q, want 160/180 source-b", lifetimeIn, lifetimeOut, source)
+	}
+	var monthlyIn, monthlyOut, billable int64
+	if err := store.db.QueryRowContext(ctx, `SELECT in_bytes, out_bytes, billable_bytes FROM traffic_monthly WHERE node_id = 'hytron'`).Scan(&monthlyIn, &monthlyOut, &billable); err != nil {
+		t.Fatalf("read monthly row: %v", err)
+	}
+	if monthlyIn != 60 || monthlyOut != 80 || billable != 140 {
+		t.Fatalf("monthly traffic after source rebase = %d/%d billable=%d, want 60/80 billable=140", monthlyIn, monthlyOut, billable)
+	}
+}
+
+func TestTrafficPreservesKnownCounterSourceAcrossLegacyEmptySample(t *testing.T) {
+	store, err := OpenSQLiteStore(filepath.Join(t.TempDir(), "zeno.db"))
+	if err != nil {
+		t.Fatalf("open sqlite store: %v", err)
+	}
+	defer store.Close()
+	ctx := context.Background()
+	if err := store.SeedPreviewData(ctx, PreviewSeedOptions{NodeID: "hytron", DisplayName: "Hytron", AgentToken: "token"}); err != nil {
+		t.Fatalf("seed node: %v", err)
+	}
+	now := time.Now().UTC().Truncate(time.Second)
+	source := strings.Repeat("a", 64)
+	state := AgentStateRequest{
+		CPUPercent: 1, MemoryUsedBytes: 1, MemoryTotalBytes: 2,
+		DiskUsedBytes: 1, DiskTotalBytes: 2, UptimeSeconds: 1,
+	}
+	for index, sample := range []struct {
+		total  int64
+		source string
+	}{{100, source}, {150, ""}, {200, source}} {
+		state.TS = now.Add(time.Duration(index) * time.Second).Unix()
+		state.NetInTotalBytes, state.NetOutTotalBytes = sample.total, sample.total
+		state.NetCounterSource = sample.source
+		if err := store.InsertAgentState(ctx, "hytron", state); err != nil {
+			t.Fatalf("insert state %d: %v", index, err)
+		}
+	}
+	var lifetimeIn, lifetimeOut, monthlyIn, monthlyOut, billable int64
+	var lifetimeSource, monthlySource string
+	if err := store.db.QueryRowContext(ctx, `SELECT in_bytes, out_bytes, counter_source FROM traffic_lifetime WHERE node_id = 'hytron'`).Scan(&lifetimeIn, &lifetimeOut, &lifetimeSource); err != nil {
+		t.Fatalf("read lifetime: %v", err)
+	}
+	if err := store.db.QueryRowContext(ctx, `SELECT in_bytes, out_bytes, billable_bytes, counter_source FROM traffic_monthly WHERE node_id = 'hytron'`).Scan(&monthlyIn, &monthlyOut, &billable, &monthlySource); err != nil {
+		t.Fatalf("read monthly: %v", err)
+	}
+	if lifetimeIn != 200 || lifetimeOut != 200 || monthlyIn != 100 || monthlyOut != 100 || billable != 200 {
+		t.Fatalf("traffic lost across empty source: lifetime=%d/%d monthly=%d/%d billable=%d", lifetimeIn, lifetimeOut, monthlyIn, monthlyOut, billable)
+	}
+	if lifetimeSource != source || monthlySource != source {
+		t.Fatalf("known source was cleared: lifetime=%q monthly=%q", lifetimeSource, monthlySource)
+	}
+}
+
+func TestTrafficAggregateMigrationSaturatesCorruptRealAndNegativeValues(t *testing.T) {
+	databasePath := filepath.Join(t.TempDir(), "zeno.db")
+	store, err := OpenSQLiteStore(databasePath)
+	if err != nil {
+		t.Fatalf("open sqlite store: %v", err)
+	}
+	ctx := context.Background()
+	if err := store.SeedPreviewData(ctx, PreviewSeedOptions{NodeID: "hytron", DisplayName: "Hytron", AgentToken: "token"}); err != nil {
+		t.Fatalf("seed node: %v", err)
+	}
+	now := time.Now().UTC().Unix()
+	if _, err := store.db.ExecContext(ctx, `
+		INSERT INTO traffic_lifetime (node_id, in_bytes, out_bytes, updated_at) VALUES ('hytron', 0, 0, ?);
+		INSERT INTO traffic_monthly (node_id, month, billing_epoch, reset_day, billing_mode, in_bytes, out_bytes, billable_bytes, updated_at)
+		VALUES ('hytron', '2026-07', 0, 1, 'both', 0, 0, 0, ?)
+	`, now, now); err != nil {
+		t.Fatalf("seed traffic rows: %v", err)
+	}
+	if _, err := store.db.ExecContext(ctx, `
+		UPDATE traffic_lifetime SET in_bytes = 1.0e30, out_bytes = -1;
+		UPDATE traffic_monthly SET in_bytes = 1.0e30, out_bytes = -1, billable_bytes = -2
+	`); err != nil {
+		t.Fatalf("corrupt traffic rows: %v", err)
+	}
+	if err := store.Close(); err != nil {
+		t.Fatalf("close initial store: %v", err)
+	}
+	store, err = OpenSQLiteStore(databasePath)
+	if err != nil {
+		t.Fatalf("reopen migrated store: %v", err)
+	}
+	defer store.Close()
+	var lifetimeIn, lifetimeOut, monthlyIn, monthlyOut, billable int64
+	var lifetimeInType, lifetimeOutType, monthlyInType, monthlyOutType, billableType string
+	if err := store.db.QueryRow(`SELECT in_bytes, out_bytes, typeof(in_bytes), typeof(out_bytes) FROM traffic_lifetime WHERE node_id='hytron'`).Scan(&lifetimeIn, &lifetimeOut, &lifetimeInType, &lifetimeOutType); err != nil {
+		t.Fatalf("read lifetime: %v", err)
+	}
+	if err := store.db.QueryRow(`SELECT in_bytes, out_bytes, billable_bytes, typeof(in_bytes), typeof(out_bytes), typeof(billable_bytes) FROM traffic_monthly WHERE node_id='hytron'`).Scan(&monthlyIn, &monthlyOut, &billable, &monthlyInType, &monthlyOutType, &billableType); err != nil {
+		t.Fatalf("read monthly: %v", err)
+	}
+	if lifetimeIn != math.MaxInt64 || lifetimeOut != math.MaxInt64 || monthlyIn != math.MaxInt64 || monthlyOut != math.MaxInt64 || billable != math.MaxInt64 {
+		t.Fatalf("corrupt traffic not saturated: lifetime=%d/%d monthly=%d/%d billable=%d", lifetimeIn, lifetimeOut, monthlyIn, monthlyOut, billable)
+	}
+	if lifetimeInType != "integer" || lifetimeOutType != "integer" || monthlyInType != "integer" || monthlyOutType != "integer" || billableType != "integer" {
+		t.Fatalf("corrupt traffic types not repaired: lifetime=%s/%s monthly=%s/%s/%s", lifetimeInType, lifetimeOutType, monthlyInType, monthlyOutType, billableType)
 	}
 }
 

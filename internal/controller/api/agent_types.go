@@ -100,6 +100,7 @@ type AgentStateRequest struct {
 	NetInSpeedBps         float64  `json:"net_in_speed_bps"`
 	NetOutSpeedBps        float64  `json:"net_out_speed_bps"`
 	NetTotalsValid        *bool    `json:"net_totals_valid,omitempty"`
+	NetCounterSource      string   `json:"net_counter_source,omitempty"`
 	ProcessCount          *int64   `json:"process_count"`
 	TCPConnectionCount    *int64   `json:"tcp_connection_count"`
 	UDPConnectionCount    *int64   `json:"udp_connection_count"`

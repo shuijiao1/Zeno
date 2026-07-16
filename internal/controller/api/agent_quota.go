@@ -23,6 +23,9 @@ const (
 	agentPresenceMaxConcurrentPerNode = 2
 	agentQuotaIdleRetention           = time.Hour
 	agentQuotaPruneInterval           = 5 * time.Minute
+	agentAuthMaxConcurrent            = 64
+	agentAuthMaxKeys                  = 4096
+	agentAuthIdleRetention            = 10 * time.Minute
 )
 
 type agentBucketSpec struct {
@@ -46,6 +49,11 @@ var agentRequestBucketSpecs = map[agentQuotaKind]agentBucketSpec{
 
 var agentWriteBucketSpec = agentBucketSpec{refillPerSecond: 5, burst: 24}
 
+var (
+	agentAuthGlobalBucketSpec = agentBucketSpec{refillPerSecond: 100, burst: 200}
+	agentAuthPerIPBucketSpec  = agentBucketSpec{refillPerSecond: 20, burst: 40}
+)
+
 type agentTokenBucket struct {
 	tokens    float64
 	updatedAt time.Time
@@ -65,6 +73,113 @@ type agentQuotaManager struct {
 	writesInFlight int
 	now            func() time.Time
 	lastPruned     time.Time
+}
+
+type agentAuthAdmissionEntry struct {
+	bucket   agentTokenBucket
+	lastSeen time.Time
+}
+
+// agentAuthAdmissionManager bounds the database work performed before an
+// Agent credential has been authenticated. It is deliberately independent of
+// the per-node quota manager: unauthenticated callers must not be able to
+// create arbitrary node quota entries or bypass a limit by rotating node IDs.
+type agentAuthAdmissionManager struct {
+	mu       sync.Mutex
+	entries  map[string]*agentAuthAdmissionEntry
+	global   agentTokenBucket
+	inFlight int
+	now      func() time.Time
+}
+
+func newAgentAuthAdmissionManager() *agentAuthAdmissionManager {
+	return &agentAuthAdmissionManager{entries: make(map[string]*agentAuthAdmissionEntry), now: time.Now}
+}
+
+func (manager *agentAuthAdmissionManager) admit(key string) (func(), time.Duration, bool) {
+	if manager == nil {
+		return func() {}, 0, true
+	}
+	now := time.Now().UTC()
+	if manager.now != nil {
+		now = manager.now().UTC()
+	}
+	if key == "" {
+		key = "unknown"
+	}
+	manager.mu.Lock()
+	defer manager.mu.Unlock()
+	manager.pruneLocked(now)
+	if manager.inFlight >= agentAuthMaxConcurrent {
+		return nil, time.Second, false
+	}
+	entry := manager.entries[key]
+	isNewEntry := entry == nil
+	if entry == nil {
+		if len(manager.entries) >= agentAuthMaxKeys {
+			return nil, time.Second, false
+		}
+		entry = &agentAuthAdmissionEntry{}
+	}
+	// Refill and validate both buckets before consuming either one. A denied
+	// per-IP request must not drain the shared global bucket, otherwise one
+	// abusive source could temporarily prevent every healthy Agent from
+	// authenticating.
+	if retryAfter, ok := availableAgentBucket(&entry.bucket, agentAuthPerIPBucketSpec, 1, now); !ok {
+		return nil, retryAfter, false
+	}
+	if retryAfter, ok := availableAgentBucket(&manager.global, agentAuthGlobalBucketSpec, 1, now); !ok {
+		return nil, retryAfter, false
+	}
+	if isNewEntry {
+		manager.entries[key] = entry
+	}
+	entry.lastSeen = now
+	entry.bucket.tokens--
+	manager.global.tokens--
+	manager.inFlight++
+	var once sync.Once
+	return func() {
+		once.Do(func() {
+			manager.mu.Lock()
+			if manager.inFlight > 0 {
+				manager.inFlight--
+			}
+			if current := manager.entries[key]; current != nil {
+				current.lastSeen = time.Now().UTC()
+				if manager.now != nil {
+					current.lastSeen = manager.now().UTC()
+				}
+			}
+			manager.mu.Unlock()
+		})
+	}, 0, true
+}
+
+func availableAgentBucket(bucket *agentTokenBucket, spec agentBucketSpec, cost float64, now time.Time) (time.Duration, bool) {
+	refillAgentBucket(bucket, spec, now)
+	if cost <= 0 || bucket.tokens >= cost {
+		return 0, true
+	}
+	if spec.refillPerSecond <= 0 {
+		return time.Hour, false
+	}
+	waitSeconds := (cost - bucket.tokens) / spec.refillPerSecond
+	if waitSeconds < 1 {
+		waitSeconds = 1
+	}
+	return time.Duration(math.Ceil(waitSeconds)) * time.Second, false
+}
+
+func (manager *agentAuthAdmissionManager) pruneLocked(now time.Time) {
+	if len(manager.entries) < agentAuthMaxKeys {
+		return
+	}
+	for key, entry := range manager.entries {
+		if now.Sub(entry.lastSeen) > agentAuthIdleRetention {
+			delete(manager.entries, key)
+		}
+	}
 }
 
 func newAgentQuotaManager() *agentQuotaManager {

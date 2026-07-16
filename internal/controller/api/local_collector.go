@@ -13,17 +13,30 @@ import (
 	"math"
 	"net"
 	"net/http"
+	"net/url"
 	"os/exec"
 	"strconv"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/shuijiao1/zeno/internal/shared/probe"
 )
 
 type ProbeRunner func(ctx context.Context, target ProbeTarget) ([]probe.Sample, error)
 
-const localDrawableLatencyCap = 5 * time.Second
+var (
+	errProbeHTTPSDowngrade = errors.New("probe redirect from https to http refused")
+	errProbeRedirectLimit  = errors.New("probe redirect limit exceeded")
+	errProbeURLPolicy      = errors.New("probe URL violates transport policy")
+)
+
+const (
+	localDrawableLatencyCap           = 5 * time.Second
+	maxProbeErrorBytes                = 512
+	maxProbeErrorBytesPerRound        = 4 << 10
+	maxAgentProbeErrorBytesPerRequest = 32 << 10
+)
 
 type LocalProbeCollectorOptions struct {
 	NodeID      string
@@ -137,13 +150,39 @@ func RunHTTPProbe(ctx context.Context, target ProbeTarget) ([]probe.Sample, erro
 	if target.Type != "http_get" {
 		return nil, fmt.Errorf("target %s is not http_get", target.ID)
 	}
+	initialURL, err := url.ParseRequestURI(strings.TrimSpace(target.Address))
+	if err != nil || !validHTTPProbeURL(initialURL) {
+		return nil, errProbeURLPolicy
+	}
 	count := target.Count
 	if count <= 0 {
 		count = 1
 	}
 	timeout := normalizedLocalProbeTimeout(target.TimeoutMS)
 	observationTimeout := localLatencyObservationTimeout(timeout)
-	client := &http.Client{Timeout: observationTimeout}
+	client := &http.Client{
+		Timeout: observationTimeout,
+		CheckRedirect: func(request *http.Request, via []*http.Request) error {
+			if len(via) == 0 {
+				return nil
+			}
+			if len(via) >= 10 {
+				return errProbeRedirectLimit
+			}
+			previous := via[len(via)-1].URL
+			if previous != nil && strings.EqualFold(previous.Scheme, "https") && !strings.EqualFold(request.URL.Scheme, "https") {
+				return errProbeHTTPSDowngrade
+			}
+			if !validHTTPProbeURL(request.URL) {
+				return errProbeURLPolicy
+			}
+			if !sameHTTPProbeOrigin(previous, request.URL) {
+				request.Header = make(http.Header)
+				request.Header.Set("User-Agent", "Zeno-Controller")
+			}
+			return nil
+		},
+	}
 	samples := make([]probe.Sample, 0, count)
 	for seq := 1; seq <= count; seq++ {
 		select {
@@ -166,6 +205,11 @@ func RunHTTPProbe(ctx context.Context, target ProbeTarget) ([]probe.Sample, erro
 			samples = append(samples, failedMeasuredLocalProbeSample(seq, elapsedMS, classifyProbeError(err)))
 			continue
 		}
+		if response.Request == nil || !validHTTPProbeURL(response.Request.URL) {
+			_ = response.Body.Close()
+			samples = append(samples, failedMeasuredLocalProbeSample(seq, elapsedMS, "url_policy"))
+			continue
+		}
 		_, _ = io.Copy(io.Discard, response.Body)
 		_ = response.Body.Close()
 		if response.StatusCode < 200 || response.StatusCode >= 400 {
@@ -175,6 +219,32 @@ func RunHTTPProbe(ctx context.Context, target ProbeTarget) ([]probe.Sample, erro
 		samples = append(samples, measuredLocalProbeSample(seq, elapsedMS, timeout))
 	}
 	return samples, nil
+}
+
+func sameHTTPProbeOrigin(left, right *url.URL) bool {
+	if left == nil || right == nil {
+		return false
+	}
+	return strings.EqualFold(left.Scheme, right.Scheme) &&
+		strings.EqualFold(left.Hostname(), right.Hostname()) &&
+		effectiveHTTPProbePort(left) == effectiveHTTPProbePort(right)
+}
+
+func effectiveHTTPProbePort(value *url.URL) string {
+	if value == nil {
+		return ""
+	}
+	if port := value.Port(); port != "" {
+		return port
+	}
+	switch strings.ToLower(value.Scheme) {
+	case "http":
+		return "80"
+	case "https":
+		return "443"
+	default:
+		return ""
+	}
 }
 
 func RunPingProbe(ctx context.Context, target ProbeTarget) ([]probe.Sample, error) {
@@ -349,9 +419,31 @@ func (s *SQLiteStore) InsertAgentProbeResults(ctx context.Context, nodeID string
 	if len(rounds) == 0 {
 		return nil
 	}
+	if len(rounds) > maxAgentProbeRounds || !validAgentProbeErrorBudget(rounds) {
+		return errInvalidAgentProbeResults
+	}
 	return s.withAgentWrite(ctx, func(ctx context.Context) error {
 		return s.insertAgentProbeResultsOnce(ctx, nodeID, configVersion, rounds)
 	})
+}
+
+func validAgentProbeErrorBudget(rounds []preparedAgentProbeRound) bool {
+	totalErrorBytes := 0
+	for _, round := range rounds {
+		roundErrorBytes := 0
+		for _, sample := range round.samples {
+			errorText := strings.TrimSpace(sample.Error)
+			if len(errorText) > maxProbeErrorBytes {
+				return false
+			}
+			roundErrorBytes += len(errorText)
+			totalErrorBytes += len(errorText)
+			if roundErrorBytes > maxProbeErrorBytesPerRound || totalErrorBytes > maxAgentProbeErrorBytesPerRequest {
+				return false
+			}
+		}
+	}
+	return true
 }
 
 func (s *SQLiteStore) insertAgentProbeResultsOnce(ctx context.Context, nodeID string, configVersion int64, rounds []preparedAgentProbeRound) error {
@@ -420,12 +512,15 @@ func (s *SQLiteStore) insertAgentProbeResultsOnce(ctx context.Context, nodeID st
 
 func agentProbeSamplesForTarget(samples []probe.Sample, target ProbeTarget) []probe.Sample {
 	normalized := make([]probe.Sample, 0, len(samples))
+	remainingErrorBytes := maxProbeErrorBytesPerRound
 	effectiveTimeoutMS := target.TimeoutMS
 	if effectiveTimeoutMS <= 0 || effectiveTimeoutMS > int(localDrawableLatencyCap/time.Millisecond) {
 		effectiveTimeoutMS = int(localDrawableLatencyCap / time.Millisecond)
 	}
 	for _, sample := range samples {
 		copy := sample
+		copy.Error = boundedProbeErrorWithLimit(copy.Error, remainingErrorBytes)
+		remainingErrorBytes -= len(copy.Error)
 		if copy.LatencyMS != nil && *copy.LatencyMS > float64(effectiveTimeoutMS) {
 			copy.Success = false
 			copy.Error = "timeout"
@@ -436,6 +531,11 @@ func agentProbeSamplesForTarget(samples []probe.Sample, target ProbeTarget) []pr
 }
 
 func insertProbeRoundTx(ctx context.Context, tx *sql.Tx, nodeID string, round preparedAgentProbeRound) error {
+	remainingErrorBytes := maxProbeErrorBytesPerRound
+	for index := range round.samples {
+		round.samples[index].Error = boundedProbeErrorWithLimit(round.samples[index].Error, remainingErrorBytes)
+		remainingErrorBytes -= len(round.samples[index].Error)
+	}
 	stats, err := probe.ComputeStats(round.samples)
 	if err != nil {
 		return err
@@ -513,6 +613,24 @@ func insertProbeRoundTx(ctx context.Context, tx *sql.Tx, nodeID string, round pr
 		}
 	}
 	return nil
+}
+
+func boundedProbeErrorWithLimit(value string, limit int) string {
+	trimmed := strings.TrimSpace(value)
+	if limit <= 0 {
+		return ""
+	}
+	if limit > maxProbeErrorBytes {
+		limit = maxProbeErrorBytes
+	}
+	if len(trimmed) <= limit {
+		return trimmed
+	}
+	trimmed = trimmed[:limit]
+	for len(trimmed) > 0 && !utf8.ValidString(trimmed) {
+		trimmed = trimmed[:len(trimmed)-1]
+	}
+	return trimmed
 }
 
 const agentProbeRoundLookupSQL = `
@@ -1017,6 +1135,15 @@ func classifyProbeError(err error) string {
 	}
 	if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) {
 		return "timeout"
+	}
+	if errors.Is(err, errProbeHTTPSDowngrade) {
+		return "redirect_downgrade"
+	}
+	if errors.Is(err, errProbeRedirectLimit) {
+		return "redirect_limit"
+	}
+	if errors.Is(err, errProbeURLPolicy) {
+		return "url_policy"
 	}
 	if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
 		return "timeout"

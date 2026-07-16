@@ -667,6 +667,12 @@ func TestAdminNodeDeleteRemovesNodeAndDependentData(t *testing.T) {
 	`, now); err != nil {
 		t.Fatalf("seed backup traffic: %v", err)
 	}
+	if _, err := store.db.ExecContext(ctx, `
+		INSERT INTO traffic_lifetime (node_id, in_bytes, out_bytes, updated_at)
+		VALUES ('backup', 4, 5, ?)
+	`, now); err != nil {
+		t.Fatalf("seed backup lifetime traffic: %v", err)
+	}
 	roundResult, err := store.db.ExecContext(ctx, `
 		INSERT INTO probe_rounds (node_id, target_id, ts, type, sent, received, loss_percent)
 		VALUES ('backup', 'hytron-local', ?, 'tcping', 1, 1, 0)
@@ -715,6 +721,7 @@ func TestAdminNodeDeleteRemovesNodeAndDependentData(t *testing.T) {
 		{name: "host_info", query: `SELECT COUNT(*) FROM host_info WHERE node_id = 'backup'`},
 		{name: "state_samples", query: `SELECT COUNT(*) FROM state_samples WHERE node_id = 'backup'`},
 		{name: "traffic_monthly", query: `SELECT COUNT(*) FROM traffic_monthly WHERE node_id = 'backup'`},
+		{name: "traffic_lifetime", query: `SELECT COUNT(*) FROM traffic_lifetime WHERE node_id = 'backup'`},
 		{name: "node_probe_targets", query: `SELECT COUNT(*) FROM node_probe_targets WHERE node_id = 'backup'`},
 		{name: "probe_rounds", query: `SELECT COUNT(*) FROM probe_rounds WHERE node_id = 'backup'`},
 		{name: "probe_samples", query: `SELECT COUNT(*) FROM probe_samples WHERE round_id = ?`},
@@ -1001,6 +1008,9 @@ func TestAdminNodeInstallCommandFallsBackToDirectIPAddressAndPort(t *testing.T) 
 	}
 	if !strings.Contains(recorder.Body.String(), "ZENO_CONTROLLER_URL='http://203.0.113.10:18980'") {
 		t.Fatalf("install command should use the direct IP and port: %s", recorder.Body.String())
+	}
+	if !strings.Contains(recorder.Body.String(), "ZENO_ALLOW_INSECURE_HTTP") {
+		t.Fatalf("remote HTTP install command must carry an explicit plaintext transport opt-in: %s", recorder.Body.String())
 	}
 }
 

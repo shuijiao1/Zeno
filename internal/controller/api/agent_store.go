@@ -609,10 +609,10 @@ func insertAgentStateSampleTx(ctx context.Context, tx *sql.Tx, nodeID string, st
 	// billing baseline here is essential for first-sample failures: otherwise a
 	// later recovery would bill the machine's full lifetime counter as new use.
 	if state.NetTotalsValid == nil || *state.NetTotalsValid {
-		if err := upsertLifetimeTraffic(ctx, tx, nodeID, state.NetInTotalBytes, state.NetOutTotalBytes, sampleTS.Unix(), receivedUnix); err != nil {
+		if err := upsertLifetimeTraffic(ctx, tx, nodeID, state.NetInTotalBytes, state.NetOutTotalBytes, strings.TrimSpace(state.NetCounterSource), sampleTS.Unix(), receivedUnix); err != nil {
 			return false, err
 		}
-		if err := upsertMonthlyTraffic(ctx, tx, nodeID, month, billingEpoch, monthlyResetDay, billingMode, state.NetInTotalBytes, state.NetOutTotalBytes, sampleTS.Unix(), receivedUnix); err != nil {
+		if err := upsertMonthlyTraffic(ctx, tx, nodeID, month, billingEpoch, monthlyResetDay, billingMode, state.NetInTotalBytes, state.NetOutTotalBytes, strings.TrimSpace(state.NetCounterSource), sampleTS.Unix(), receivedUnix); err != nil {
 			return false, err
 		}
 	}
@@ -715,22 +715,23 @@ func normalizeAgentCountryCode(value string) string {
 	return trimmed
 }
 
-func upsertLifetimeTraffic(ctx context.Context, tx *sql.Tx, nodeID string, inTotal, outTotal, sampleTS, now int64) error {
+func upsertLifetimeTraffic(ctx context.Context, tx *sql.Tx, nodeID string, inTotal, outTotal int64, counterSource string, sampleTS, now int64) error {
 	var lifetimeIn, lifetimeOut int64
 	var previousIn, previousOut, lastSampleTS sql.NullInt64
+	var previousSource string
 	err := tx.QueryRowContext(ctx, `
-		SELECT in_bytes, out_bytes, last_in_total_bytes, last_out_total_bytes, last_sample_ts
+		SELECT in_bytes, out_bytes, last_in_total_bytes, last_out_total_bytes, counter_source, last_sample_ts
 		FROM traffic_lifetime
 		WHERE node_id = ?
-	`, nodeID).Scan(&lifetimeIn, &lifetimeOut, &previousIn, &previousOut, &lastSampleTS)
+	`, nodeID).Scan(&lifetimeIn, &lifetimeOut, &previousIn, &previousOut, &previousSource, &lastSampleTS)
 	if err == sql.ErrNoRows {
 		_, err = tx.ExecContext(ctx, `
 			INSERT INTO traffic_lifetime (
 				node_id, in_bytes, out_bytes, last_in_total_bytes,
-				last_out_total_bytes, last_sample_ts, updated_at
+				last_out_total_bytes, counter_source, last_sample_ts, updated_at
 			)
-			VALUES (?, ?, ?, ?, ?, ?, ?)
-		`, nodeID, inTotal, outTotal, inTotal, outTotal, sampleTS, now)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+		`, nodeID, inTotal, outTotal, inTotal, outTotal, counterSource, sampleTS, now)
 		return err
 	}
 	if err != nil {
@@ -738,6 +739,22 @@ func upsertLifetimeTraffic(ctx context.Context, tx *sql.Tx, nodeID string, inTot
 	}
 	if lastSampleTS.Valid && sampleTS <= lastSampleTS.Int64 {
 		return nil
+	}
+	if counterSource != "" && counterSource != previousSource {
+		_, err = tx.ExecContext(ctx, `
+			UPDATE traffic_lifetime
+			SET last_in_total_bytes = ?, last_out_total_bytes = ?, counter_source = ?, last_sample_ts = ?, updated_at = ?
+			WHERE node_id = ?
+		`, inTotal, outTotal, counterSource, sampleTS, now, nodeID)
+		return err
+	}
+	effectiveSource := counterSource
+	if effectiveSource == "" && previousSource != "" {
+		// An older Agent may temporarily report no source identity after a newer
+		// Agent established one. Preserve the last known source while accounting
+		// the monotonic interval; clearing it would make the next identified sample
+		// look like a source transition and silently drop that interval.
+		effectiveSource = previousSource
 	}
 
 	deltaIn := lifetimeTrafficDelta(previousIn, inTotal)
@@ -750,10 +767,11 @@ func upsertLifetimeTraffic(ctx context.Context, tx *sql.Tx, nodeID string, inTot
 		    out_bytes = ?,
 		    last_in_total_bytes = ?,
 		    last_out_total_bytes = ?,
+		    counter_source = ?,
 		    last_sample_ts = ?,
 		    updated_at = ?
 		WHERE node_id = ?
-	`, lifetimeIn, lifetimeOut, inTotal, outTotal, sampleTS, now, nodeID)
+	`, lifetimeIn, lifetimeOut, inTotal, outTotal, effectiveSource, sampleTS, now, nodeID)
 	return err
 }
 
@@ -768,24 +786,27 @@ func lifetimeTrafficDelta(previous sql.NullInt64, current int64) int64 {
 }
 
 func saturatingAddNonNegativeInt64(value, delta int64) int64 {
-	if value >= math.MaxInt64-delta {
+	if value < 0 || delta < 0 || value >= math.MaxInt64-delta {
 		return math.MaxInt64
 	}
 	return value + delta
 }
 
-func upsertMonthlyTraffic(ctx context.Context, tx *sql.Tx, nodeID, month string, billingEpoch int64, resetDay int, billingMode string, inTotal, outTotal, sampleTS, now int64) error {
+func upsertMonthlyTraffic(ctx context.Context, tx *sql.Tx, nodeID, month string, billingEpoch int64, resetDay int, billingMode string, inTotal, outTotal int64, counterSource string, sampleTS, now int64) error {
+	var aggregateIn, aggregateOut, aggregateBillable int64
 	var previousIn, previousOut, lastSampleTS sql.NullInt64
+	var previousSource string
 	err := tx.QueryRowContext(ctx, `
-		SELECT last_in_total_bytes, last_out_total_bytes, last_sample_ts
+		SELECT in_bytes, out_bytes, billable_bytes,
+		       last_in_total_bytes, last_out_total_bytes, counter_source, last_sample_ts
 		FROM traffic_monthly
 		WHERE node_id = ? AND month = ? AND billing_epoch = ?
-	`, nodeID, month, billingEpoch).Scan(&previousIn, &previousOut, &lastSampleTS)
+	`, nodeID, month, billingEpoch).Scan(&aggregateIn, &aggregateOut, &aggregateBillable, &previousIn, &previousOut, &previousSource, &lastSampleTS)
 	if err == sql.ErrNoRows {
 		_, err = tx.ExecContext(ctx, `
-			INSERT INTO traffic_monthly (node_id, month, billing_epoch, reset_day, billing_mode, in_bytes, out_bytes, billable_bytes, last_in_total_bytes, last_out_total_bytes, last_sample_ts, updated_at)
-			VALUES (?, ?, ?, ?, ?, 0, 0, 0, ?, ?, ?, ?)
-		`, nodeID, month, billingEpoch, normalizeBillingResetDay(resetDay), normalizeTrafficBillingMode(billingMode), inTotal, outTotal, sampleTS, now)
+			INSERT INTO traffic_monthly (node_id, month, billing_epoch, reset_day, billing_mode, in_bytes, out_bytes, billable_bytes, last_in_total_bytes, last_out_total_bytes, counter_source, last_sample_ts, updated_at)
+			VALUES (?, ?, ?, ?, ?, 0, 0, 0, ?, ?, ?, ?, ?)
+		`, nodeID, month, billingEpoch, normalizeBillingResetDay(resetDay), normalizeTrafficBillingMode(billingMode), inTotal, outTotal, counterSource, sampleTS, now)
 		return err
 	}
 	if err != nil {
@@ -794,21 +815,37 @@ func upsertMonthlyTraffic(ctx context.Context, tx *sql.Tx, nodeID, month string,
 	if lastSampleTS.Valid && sampleTS <= lastSampleTS.Int64 {
 		return nil
 	}
+	if counterSource != "" && counterSource != previousSource {
+		_, err = tx.ExecContext(ctx, `
+			UPDATE traffic_monthly
+			SET last_in_total_bytes = ?, last_out_total_bytes = ?, counter_source = ?, last_sample_ts = ?, updated_at = ?
+			WHERE node_id = ? AND month = ? AND billing_epoch = ?
+		`, inTotal, outTotal, counterSource, sampleTS, now, nodeID, month, billingEpoch)
+		return err
+	}
+	effectiveSource := counterSource
+	if effectiveSource == "" && previousSource != "" {
+		effectiveSource = previousSource
+	}
 
 	deltaIn := nonNegativeDelta(previousIn, inTotal)
 	deltaOut := nonNegativeDelta(previousOut, outTotal)
 	billable := billableTrafficDelta(billingMode, deltaIn, deltaOut)
+	aggregateIn = saturatingAddNonNegativeInt64(aggregateIn, deltaIn)
+	aggregateOut = saturatingAddNonNegativeInt64(aggregateOut, deltaOut)
+	aggregateBillable = saturatingAddNonNegativeInt64(aggregateBillable, billable)
 	_, err = tx.ExecContext(ctx, `
 		UPDATE traffic_monthly
-		SET in_bytes = in_bytes + ?,
-		    out_bytes = out_bytes + ?,
-		    billable_bytes = billable_bytes + ?,
+		SET in_bytes = ?,
+		    out_bytes = ?,
+		    billable_bytes = ?,
 		    last_in_total_bytes = ?,
 		    last_out_total_bytes = ?,
+		    counter_source = ?,
 		    last_sample_ts = ?,
 		    updated_at = ?
 		WHERE node_id = ? AND month = ? AND billing_epoch = ?
-	`, deltaIn, deltaOut, billable, inTotal, outTotal, sampleTS, now, nodeID, month, billingEpoch)
+	`, aggregateIn, aggregateOut, aggregateBillable, inTotal, outTotal, effectiveSource, sampleTS, now, nodeID, month, billingEpoch)
 	return err
 }
 
@@ -851,7 +888,7 @@ func billableTrafficDelta(mode string, deltaIn, deltaOut int64) int64 {
 		}
 		return deltaOut
 	default:
-		return deltaIn + deltaOut
+		return saturatingAddNonNegativeInt64(deltaIn, deltaOut)
 	}
 }
 

@@ -78,7 +78,7 @@ X-Admin-Token: <session-token>
 https://zeno.example.com
 ```
 
-该地址会写入后台生成的 Agent 安装命令。远程 Agent 默认必须使用 HTTPS；为兼容没有反向代理的受控网络，`http://<直接 IP>:<显式端口>` 也可使用，Agent 安装器会在服务配置中持久化显式 insecure opt-in，并警告 enrollment/runtime bearer token 将以明文传输。主机名 HTTP、没有显式端口的远程 HTTP 仍会被拒绝；loopback HTTP 可正常使用。URL 不得包含用户名、密码、query 或 fragment。
+该地址会写入后台生成的 Agent 安装命令。远程 Agent 默认必须使用 HTTPS；为兼容没有反向代理的受控网络，`http://<直接 IP>:<显式端口>` 也可使用。后台复制命令前会再次确认风险，生成命令显式传入 `ZENO_ALLOW_INSECURE_HTTP=1`，安装器才会在服务配置中持久化 runtime opt-in；enrollment/runtime bearer token 仍会明文传输。主机名 HTTP、没有显式端口的远程 HTTP 仍会被拒绝；loopback HTTP 可正常使用。URL 不得包含用户名、密码、query 或 fragment。
 
 Zeno 不自动修改 DNS、反向代理或防火墙。
 

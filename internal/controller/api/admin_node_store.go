@@ -6,6 +6,7 @@ import (
 	"encoding/base64"
 	"encoding/hex"
 	"fmt"
+	"net/url"
 	"strings"
 	"time"
 	"unicode"
@@ -121,6 +122,7 @@ func (s *SQLiteStore) DeleteAdminNode(ctx context.Context, nodeID string) error 
 		`DELETE FROM probe_rounds WHERE node_id = ?`,
 		`DELETE FROM state_samples WHERE node_id = ?`,
 		`DELETE FROM traffic_monthly WHERE node_id = ?`,
+		`DELETE FROM traffic_lifetime WHERE node_id = ?`,
 		`DELETE FROM node_probe_targets WHERE node_id = ?`,
 		`DELETE FROM alert_rule_states WHERE node_id = ?`,
 		`DELETE FROM host_info WHERE node_id = ?`,
@@ -235,11 +237,17 @@ func buildAgentInstallCommands(controllerURL, nodeID, enrollmentToken, agentVers
 	}
 	installURL := "https://zeno.shuijiao.de/agent/install.sh"
 	windowsInstallURL := "https://zeno.shuijiao.de/agent/install.ps1"
-	unixRunner := `bash -o pipefail -c 'curl -fsSL "$ZENO_INSTALL_URL" | sudo env ZENO_CONTROLLER_URL="$ZENO_CONTROLLER_URL" ZENO_NODE_ID="$ZENO_NODE_ID" ZENO_ENROLLMENT_TOKEN="$ZENO_ENROLLMENT_TOKEN" ZENO_AGENT_VERSION="$ZENO_AGENT_VERSION" bash'`
+	insecureEnv := ""
+	windowsInsecureEnv := ""
+	if parsed, err := url.Parse(controllerURL); err == nil && parsed.Scheme == "http" && !loopbackURLHost(parsed.Hostname()) {
+		insecureEnv = " ZENO_ALLOW_INSECURE_HTTP='1'"
+		windowsInsecureEnv = "$env:ZENO_ALLOW_INSECURE_HTTP='1'; "
+	}
+	unixRunner := `bash -o pipefail -c 'curl -fsSL "$ZENO_INSTALL_URL" | sudo env ZENO_CONTROLLER_URL="$ZENO_CONTROLLER_URL" ZENO_NODE_ID="$ZENO_NODE_ID" ZENO_ENROLLMENT_TOKEN="$ZENO_ENROLLMENT_TOKEN" ZENO_AGENT_VERSION="$ZENO_AGENT_VERSION" ZENO_ALLOW_INSECURE_HTTP="$ZENO_ALLOW_INSECURE_HTTP" bash'`
 	return AgentInstallCommands{
-		Linux:   fmt.Sprintf(`ZENO_INSTALL_URL=%s ZENO_CONTROLLER_URL=%s ZENO_NODE_ID=%s ZENO_ENROLLMENT_TOKEN=%s%s %s`, shellSingleQuote(installURL), shellSingleQuote(controllerURL), shellSingleQuote(nodeID), shellSingleQuote(enrollmentToken), versionEnv, unixRunner),
-		MacOS:   fmt.Sprintf(`ZENO_INSTALL_URL=%s ZENO_CONTROLLER_URL=%s ZENO_NODE_ID=%s ZENO_ENROLLMENT_TOKEN=%s%s %s`, shellSingleQuote(installURL), shellSingleQuote(controllerURL), shellSingleQuote(nodeID), shellSingleQuote(enrollmentToken), versionEnv, unixRunner),
-		Windows: fmt.Sprintf(`powershell -NoProfile -ExecutionPolicy Bypass -Command "$ErrorActionPreference='Stop'; %s$env:ZENO_CONTROLLER_URL=%s; $env:ZENO_NODE_ID=%s; $env:ZENO_ENROLLMENT_TOKEN=%s; irm %s | iex"`, windowsVersionEnv, powershellSingleQuote(controllerURL), powershellSingleQuote(nodeID), powershellSingleQuote(enrollmentToken), powershellSingleQuote(windowsInstallURL)),
+		Linux:   fmt.Sprintf(`ZENO_INSTALL_URL=%s ZENO_CONTROLLER_URL=%s ZENO_NODE_ID=%s ZENO_ENROLLMENT_TOKEN=%s%s%s %s`, shellSingleQuote(installURL), shellSingleQuote(controllerURL), shellSingleQuote(nodeID), shellSingleQuote(enrollmentToken), versionEnv, insecureEnv, unixRunner),
+		MacOS:   fmt.Sprintf(`ZENO_INSTALL_URL=%s ZENO_CONTROLLER_URL=%s ZENO_NODE_ID=%s ZENO_ENROLLMENT_TOKEN=%s%s%s %s`, shellSingleQuote(installURL), shellSingleQuote(controllerURL), shellSingleQuote(nodeID), shellSingleQuote(enrollmentToken), versionEnv, insecureEnv, unixRunner),
+		Windows: fmt.Sprintf(`powershell -NoProfile -ExecutionPolicy Bypass -Command "$ErrorActionPreference='Stop'; %s%s$env:ZENO_CONTROLLER_URL=%s; $env:ZENO_NODE_ID=%s; $env:ZENO_ENROLLMENT_TOKEN=%s; irm %s | iex"`, windowsVersionEnv, windowsInsecureEnv, powershellSingleQuote(controllerURL), powershellSingleQuote(nodeID), powershellSingleQuote(enrollmentToken), powershellSingleQuote(windowsInstallURL)),
 	}
 }
 

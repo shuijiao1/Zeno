@@ -41,6 +41,7 @@ type handler struct {
 	enrollmentLimiter      *adminLoginLimiter
 	trustedProxies         TrustedProxySet
 	agentQuotas            *agentQuotaManager
+	agentAuthAdmission     *agentAuthAdmissionManager
 	liveHub                *liveUpdateHub
 	presence               *agentPresenceManager
 	publicWSGate           *websocketGate
@@ -267,6 +268,7 @@ func NewHandler(options ...HandlerOptions) http.Handler {
 		enrollmentLimiter:    newAdminLoginLimiter(),
 		trustedProxies:       opts.TrustedProxies,
 		agentQuotas:          newAgentQuotaManager(),
+		agentAuthAdmission:   newAgentAuthAdmissionManager(),
 		liveHub:              newLiveUpdateHub(),
 		presence:             newAgentPresenceManager(),
 		publicWSGate:         newWebSocketGateWithPerKey(publicWebSocketMaxConnections, publicWebSocketMaxConnectionsPerIP),

@@ -1,6 +1,6 @@
 import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it } from 'vitest'
-import { AdminCredentialField, AdminDashboard, HomeTopPanel, adminTokenMaxAgeMs, applyCustomCode, documentBrandingForSettings, homeTrafficTotalsForNodes, isAdminUnauthorizedError, orderHomeNodes, shellStyleForSettings, shouldRefreshHomeRealtimeSnapshot, validateAdminSettingsInput } from './App'
+import { AdminCredentialField, AdminDashboard, HomeTopPanel, adminTokenMaxAgeMs, applyCustomCode, documentBrandingForSettings, homeTrafficTotalsForNodes, isAdminUnauthorizedError, orderHomeNodes, remoteInsecureAgentControllerURL, shellStyleForSettings, shouldRefreshHomeRealtimeSnapshot, validateAdminSettingsInput } from './App'
 import type { AdminAlertRule, AdminNode, AdminNotificationChannel, AdminProbeTarget, AdminSettings, HomeCardNode } from './types'
 
 const overviewProps = {
@@ -12,6 +12,17 @@ const overviewProps = {
   upSpeed: 128,
   downSpeed: 256,
 }
+
+describe('remoteInsecureAgentControllerURL', () => {
+  it('only marks non-loopback HTTP origins as plaintext remote transport', () => {
+    expect(remoteInsecureAgentControllerURL('http://203.0.113.10:18980')).toBe(true)
+    expect(remoteInsecureAgentControllerURL('http://[2001:db8::10]:18980')).toBe(true)
+    expect(remoteInsecureAgentControllerURL('http://localhost:18980')).toBe(false)
+    expect(remoteInsecureAgentControllerURL('http://127.0.0.2:18980')).toBe(false)
+    expect(remoteInsecureAgentControllerURL('http://[::1]:18980')).toBe(false)
+    expect(remoteInsecureAgentControllerURL('https://zeno.example.com')).toBe(false)
+  })
+})
 
 const trafficNode: HomeCardNode = {
   id: 'traffic-node',

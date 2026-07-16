@@ -332,6 +332,7 @@ func (s *SQLiteStore) ensureSchema(ctx context.Context) error {
 			billable_bytes INTEGER NOT NULL DEFAULT 0,
 			last_in_total_bytes INTEGER,
 			last_out_total_bytes INTEGER,
+			counter_source TEXT NOT NULL DEFAULT '',
 			last_sample_ts INTEGER,
 			updated_at INTEGER NOT NULL,
 			PRIMARY KEY (node_id, month, billing_epoch)
@@ -342,6 +343,7 @@ func (s *SQLiteStore) ensureSchema(ctx context.Context) error {
 			out_bytes INTEGER NOT NULL DEFAULT 0,
 			last_in_total_bytes INTEGER,
 			last_out_total_bytes INTEGER,
+			counter_source TEXT NOT NULL DEFAULT '',
 			last_sample_ts INTEGER,
 			updated_at INTEGER NOT NULL
 		);`,
@@ -530,6 +532,9 @@ func (s *SQLiteStore) ensureSchema(ctx context.Context) error {
 	if err := s.ensureStateSampleIdempotency(ctx); err != nil {
 		return err
 	}
+	if err := s.ensureColumn(ctx, "traffic_lifetime", "counter_source", "TEXT NOT NULL DEFAULT ''"); err != nil {
+		return err
+	}
 	if err := s.ensureColumn(ctx, "probe_rounds", "idempotency_key", "TEXT NOT NULL DEFAULT ''"); err != nil {
 		return err
 	}
@@ -622,6 +627,12 @@ func (s *SQLiteStore) ensureSchema(ctx context.Context) error {
 	if err := s.migrateTrafficMonthlySchema(ctx); err != nil {
 		return err
 	}
+	if err := s.ensureColumn(ctx, "traffic_monthly", "counter_source", "TEXT NOT NULL DEFAULT ''"); err != nil {
+		return err
+	}
+	if err := s.normalizeTrafficAggregateStorage(ctx); err != nil {
+		return err
+	}
 	probeTargetColumns := map[string]string{
 		"display_order": "INTEGER NOT NULL DEFAULT 0",
 	}
@@ -659,6 +670,34 @@ func (s *SQLiteStore) ensureSchema(ctx context.Context) error {
 	}
 	if err := s.pruneRetiredNotificationConfig(ctx); err != nil {
 		return err
+	}
+	return nil
+}
+
+func (s *SQLiteStore) normalizeTrafficAggregateStorage(ctx context.Context) error {
+	// SQLite promotes overflowing INTEGER arithmetic to REAL. Older Controller
+	// builds performed monthly accumulation inside SQL and could therefore leave
+	// a REAL value or a negative billable value after int64 overflow. Traffic is
+	// monotonic and non-negative, so the only safe recovery is saturation.
+	const maxInt64 = "9223372036854775807"
+	statements := []string{
+		`UPDATE traffic_monthly SET
+			in_bytes = CASE WHEN typeof(in_bytes) <> 'integer' OR in_bytes < 0 THEN ` + maxInt64 + ` ELSE in_bytes END,
+			out_bytes = CASE WHEN typeof(out_bytes) <> 'integer' OR out_bytes < 0 THEN ` + maxInt64 + ` ELSE out_bytes END,
+			billable_bytes = CASE WHEN typeof(billable_bytes) <> 'integer' OR billable_bytes < 0 THEN ` + maxInt64 + ` ELSE billable_bytes END
+		 WHERE typeof(in_bytes) <> 'integer' OR in_bytes < 0
+		    OR typeof(out_bytes) <> 'integer' OR out_bytes < 0
+		    OR typeof(billable_bytes) <> 'integer' OR billable_bytes < 0`,
+		`UPDATE traffic_lifetime SET
+			in_bytes = CASE WHEN typeof(in_bytes) <> 'integer' OR in_bytes < 0 THEN ` + maxInt64 + ` ELSE in_bytes END,
+			out_bytes = CASE WHEN typeof(out_bytes) <> 'integer' OR out_bytes < 0 THEN ` + maxInt64 + ` ELSE out_bytes END
+		 WHERE typeof(in_bytes) <> 'integer' OR in_bytes < 0
+		    OR typeof(out_bytes) <> 'integer' OR out_bytes < 0`,
+	}
+	for _, statement := range statements {
+		if _, err := s.db.ExecContext(ctx, statement); err != nil {
+			return err
+		}
 	}
 	return nil
 }
@@ -785,6 +824,10 @@ func (s *SQLiteStore) migrateTrafficMonthlySchema(ctx context.Context) error {
 	if columns["last_sample_ts"] {
 		lastSampleExpr = "last_sample_ts"
 	}
+	counterSourceExpr := "''"
+	if columns["counter_source"] {
+		counterSourceExpr = "COALESCE(counter_source, '')"
+	}
 
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
@@ -806,6 +849,7 @@ func (s *SQLiteStore) migrateTrafficMonthlySchema(ctx context.Context) error {
 			billable_bytes INTEGER NOT NULL DEFAULT 0,
 			last_in_total_bytes INTEGER,
 			last_out_total_bytes INTEGER,
+			counter_source TEXT NOT NULL DEFAULT '',
 			last_sample_ts INTEGER,
 			updated_at INTEGER NOT NULL,
 			PRIMARY KEY (node_id, month, billing_epoch)
@@ -817,13 +861,13 @@ func (s *SQLiteStore) migrateTrafficMonthlySchema(ctx context.Context) error {
 		INSERT OR REPLACE INTO traffic_monthly_new (
 			node_id, month, billing_epoch, reset_day, billing_mode,
 			in_bytes, out_bytes, billable_bytes, last_in_total_bytes,
-			last_out_total_bytes, last_sample_ts, updated_at
+			last_out_total_bytes, counter_source, last_sample_ts, updated_at
 		)
 		SELECT node_id, month, %s, %s, %s,
 		       in_bytes, out_bytes, billable_bytes, last_in_total_bytes,
-		       last_out_total_bytes, %s, updated_at
+		       last_out_total_bytes, %s, %s, updated_at
 		FROM traffic_monthly
-	`, billingEpochExpr, resetDayExpr, billingModeExpr, lastSampleExpr)
+	`, billingEpochExpr, resetDayExpr, billingModeExpr, counterSourceExpr, lastSampleExpr)
 	if _, err := tx.ExecContext(ctx, insertSQL); err != nil {
 		return err
 	}

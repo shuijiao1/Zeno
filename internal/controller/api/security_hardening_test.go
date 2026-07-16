@@ -409,6 +409,100 @@ func TestAgentQuotaSupportsNormalCadenceAndIsolatesAbusiveNodes(t *testing.T) {
 	}
 }
 
+func TestAgentAuthAdmissionBoundsPreAuthenticationDatabaseWork(t *testing.T) {
+	now := time.Now().UTC()
+	manager := newAgentAuthAdmissionManager()
+	manager.now = func() time.Time { return now }
+	for index := 0; index < int(agentAuthPerIPBucketSpec.burst); index++ {
+		release, _, ok := manager.admit("198.51.100.1")
+		if !ok {
+			t.Fatalf("per-IP admission rejected request %d before burst", index)
+		}
+		release()
+	}
+	if _, _, ok := manager.admit("198.51.100.1"); ok {
+		t.Fatal("per-IP authentication burst limit was bypassed")
+	}
+	if release, _, ok := manager.admit("198.51.100.2"); !ok {
+		t.Fatal("one abusive IP blocked an independent IP")
+	} else {
+		release()
+	}
+
+	concurrency := newAgentAuthAdmissionManager()
+	concurrency.now = func() time.Time { return now }
+	releases := make([]func(), 0, agentAuthMaxConcurrent)
+	for index := 0; index < agentAuthMaxConcurrent; index++ {
+		release, _, ok := concurrency.admit(fmt.Sprintf("203.0.113.%d", index))
+		if !ok {
+			t.Fatalf("global concurrency rejected request %d before bound", index)
+		}
+		releases = append(releases, release)
+	}
+	if _, _, ok := concurrency.admit("192.0.2.1"); ok {
+		t.Fatal("global pre-authentication concurrency bound was bypassed")
+	}
+	for _, release := range releases {
+		release()
+	}
+}
+
+func TestAgentAuthPerIPRejectionDoesNotDrainGlobalBucket(t *testing.T) {
+	now := time.Now().UTC()
+	manager := newAgentAuthAdmissionManager()
+	manager.now = func() time.Time { return now }
+	abusiveIP := "198.51.100.99"
+	for index := 0; index < int(agentAuthPerIPBucketSpec.burst); index++ {
+		release, _, ok := manager.admit(abusiveIP)
+		if !ok {
+			t.Fatalf("abusive IP rejected before its own burst at request %d", index)
+		}
+		release()
+	}
+	globalBefore := manager.global.tokens
+	for index := 0; index < 500; index++ {
+		if release, _, ok := manager.admit(abusiveIP); ok {
+			release()
+			t.Fatalf("per-IP exhausted source admitted request %d", index)
+		}
+	}
+	if manager.global.tokens != globalBefore {
+		t.Fatalf("per-IP rejections drained global tokens: before=%v after=%v", globalBefore, manager.global.tokens)
+	}
+	if release, _, ok := manager.admit("203.0.113.10"); !ok {
+		t.Fatal("abusive IP exhausted global authentication capacity")
+	} else {
+		release()
+	}
+}
+
+func TestAgentAuthGlobalRejectionDoesNotCreatePerIPEntries(t *testing.T) {
+	now := time.Now().UTC()
+	manager := newAgentAuthAdmissionManager()
+	manager.now = func() time.Time { return now }
+	manager.global = agentTokenBucket{tokens: 0, updatedAt: now}
+	for index := 0; index < agentAuthMaxKeys*2; index++ {
+		if release, _, ok := manager.admit(fmt.Sprintf("192.0.2.%d", index)); ok {
+			release()
+			t.Fatalf("request %d admitted with empty global bucket", index)
+		}
+	}
+	if len(manager.entries) != 0 {
+		t.Fatalf("globally rejected requests created %d per-IP entries", len(manager.entries))
+	}
+}
+
+func TestNetworkCounterSourceValidationIsBoundedAndCanonical(t *testing.T) {
+	if !validNetworkCounterSource("") || !validNetworkCounterSource(strings.Repeat("a", 64)) {
+		t.Fatal("valid empty or SHA-256 counter source was rejected")
+	}
+	for _, value := range []string{strings.Repeat("a", 63), strings.Repeat("a", 65), strings.Repeat("A", 64), strings.Repeat("z", 64)} {
+		if validNetworkCounterSource(value) {
+			t.Fatalf("invalid counter source accepted: %q", value)
+		}
+	}
+}
+
 func TestAgentEnrollmentStoreUsesUniformUnavailableError(t *testing.T) {
 	store, err := OpenSQLiteStore(filepath.Join(t.TempDir(), "zeno.db"))
 	if err != nil {

@@ -8,6 +8,7 @@ import (
 	"net"
 	"net/url"
 	"regexp"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -672,10 +673,30 @@ func normalizeAdminProbeTargetType(value string) (string, bool) {
 
 func validHTTPGetTargetAddress(address string) bool {
 	parsed, err := url.ParseRequestURI(strings.TrimSpace(address))
-	if err != nil || parsed.Host == "" {
+	if err != nil {
 		return false
 	}
-	return parsed.Scheme == "http" || parsed.Scheme == "https"
+	return validHTTPProbeURL(parsed)
+}
+
+func validHTTPProbeURL(parsed *url.URL) bool {
+	if parsed == nil || parsed.Host == "" || parsed.User != nil {
+		return false
+	}
+	if parsed.Port() != "" {
+		port, err := strconv.Atoi(parsed.Port())
+		if err != nil || !validPort(int64(port)) {
+			return false
+		}
+	}
+	switch strings.ToLower(parsed.Scheme) {
+	case "https":
+		return true
+	case "http":
+		return loopbackURLHost(parsed.Hostname()) || directIPURLHost(parsed)
+	default:
+		return false
+	}
 }
 
 func validPingTargetAddress(address string) bool {

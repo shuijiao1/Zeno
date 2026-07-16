@@ -483,6 +483,7 @@ export function App() {
     }
     let active = true
     let remaining = urls.length
+    const timers: number[] = []
     setBackgroundAssetsReady(false)
     const images = urls.map((url) => {
       const image = new Image()
@@ -491,9 +492,12 @@ export function App() {
       const finish = () => {
         if (settled) return
         settled = true
+        window.clearTimeout(timeoutID)
         remaining -= 1
         if (active && remaining === 0) setBackgroundAssetsReady(true)
       }
+      const timeoutID = window.setTimeout(finish, 8000)
+      timers.push(timeoutID)
       image.onload = finish
       image.onerror = finish
       image.src = url
@@ -502,6 +506,7 @@ export function App() {
     })
     return () => {
       active = false
+      timers.forEach((timerID) => window.clearTimeout(timerID))
       images.forEach((image) => {
         image.onload = null
         image.onerror = null
@@ -890,6 +895,10 @@ export function App() {
 
   const requestAdminInstallCommand = (nodeId: string): Promise<AdminNodeInstallCommand> => {
     if (adminToken === '') return Promise.reject(new Error('missing admin token'))
+    const controllerURL = settings.agentControllerUrl.trim() || (typeof window === 'undefined' ? '' : window.location.origin)
+    if (remoteInsecureAgentControllerURL(controllerURL) && typeof window !== 'undefined' && !window.confirm('当前 Agent 接入地址使用远程 HTTP，enrollment/runtime token 将以明文传输。仅应在可信隔离网络使用，确认继续生成安装命令？')) {
+      return Promise.reject(new Error('已取消生成明文 HTTP 安装命令。'))
+    }
     const requestToken = adminToken
     const requestTokenIdentity = captureAdminTokenIdentity(requestToken)
     return requestAdminNodeInstallCommand(requestToken, nodeId)
@@ -1074,7 +1083,7 @@ export function App() {
 
   const effectiveSettings = settingsForChrome(settings, themeOverride, backgroundEnabled)
   const backgroundConfigured = (settings.desktopBackgroundUrl || settings.backgroundUrl || settings.mobileBackgroundUrl).trim() !== ''
-  const backgroundToggle = settingsReady && backgroundAssetsReady && backgroundConfigured ? toggleBackground : undefined
+  const backgroundToggle = settingsReady && backgroundConfigured && (!backgroundEnabled || backgroundAssetsReady) ? toggleBackground : undefined
   const nodes = state.kind === 'ready' ? state.data.nodes : []
   const homeRealtimeNodes = homeRealtimeSnapshot?.nodes ?? nodes
   const homeNodes = orderHomeNodes(homeRealtimeNodes)
@@ -1859,6 +1868,19 @@ function validAgentControllerURL(value: string): boolean {
     const explicitPort = explicitPortMatch ? Number(explicitPortMatch[1]) : 0
     const directIPWithPort = (validIPv4 || host.includes(':')) && explicitPort >= 1 && explicitPort <= 65535
     return (parsed.protocol === 'https:' || (parsed.protocol === 'http:' && (loopback || directIPWithPort))) && parsed.hostname !== '' && parsed.username === '' && parsed.password === '' && parsed.search === '' && parsed.hash === ''
+  } catch {
+    return false
+  }
+}
+
+export function remoteInsecureAgentControllerURL(value: string): boolean {
+  try {
+    const parsed = new URL(value.trim())
+    if (parsed.protocol !== 'http:') return false
+    const host = parsed.hostname.toLowerCase().replace(/^\[|\]$/g, '').replace(/\.$/, '')
+    if (host === 'localhost' || host === '::1') return false
+    const ipv4 = host.split('.')
+    return !(ipv4.length === 4 && ipv4.every((part) => /^\d{1,3}$/.test(part) && Number(part) <= 255) && ipv4[0] === '127')
   } catch {
     return false
   }
