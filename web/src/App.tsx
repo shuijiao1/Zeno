@@ -1947,13 +1947,11 @@ function AdminNodeSection({ nodes, targets, onCreate, onUpdate, onDelete, onInst
 
 type AdminNodeOrderPatch = { nodeId: string; displayOrder: number }
 
-function AdminNodeList({ nodes, onEdit, onDelete }: { nodes: AdminNode[]; onEdit: (nodeId: string) => void; onDelete: (nodeId: string) => void }) {
-  const confirmDelete = (node: AdminNode) => {
-    const ok = typeof window === 'undefined' ? true : window.confirm(`确认删除服务器「${node.displayName}」？这会删除该服务器的历史上报和探测记录。`)
-    if (ok) onDelete(node.id)
-  }
+function AdminNodeList({ nodes, onEdit, onDelete }: { nodes: AdminNode[]; onEdit: (nodeId: string) => void; onDelete: (nodeId: string) => MaybePromise }) {
+  const [pendingDelete, setPendingDelete] = useState<AdminNode | null>(null)
 
   return (
+    <>
     <div className="admin-list" role="list" aria-label="服务器列表">
       <div className="admin-list-head" aria-hidden="true">
         <span>服务器</span>
@@ -1974,11 +1972,21 @@ function AdminNodeList({ nodes, onEdit, onDelete }: { nodes: AdminNode[]; onEdit
           <span data-label="Agent 版本">{node.agentVersion || '—'}</span>
           <div className="admin-row-actions admin-icon-actions">
             <button className="admin-row-action is-icon" type="button" aria-label={`编辑服务器 ${node.displayName}`} title="编辑服务器" onClick={() => onEdit(node.id)}><EditActionIcon /><span className="sr-only">编辑服务器</span></button>
-            <button className="admin-row-action is-icon is-danger" type="button" aria-label={`删除服务器 ${node.displayName}`} title="删除服务器" onClick={() => confirmDelete(node)}><TrashActionIcon /><span className="sr-only">删除服务器</span></button>
+            <button className="admin-row-action is-icon is-danger" type="button" aria-label={`删除服务器 ${node.displayName}`} title="删除服务器" onClick={() => setPendingDelete(node)}><TrashActionIcon /><span className="sr-only">删除服务器</span></button>
           </div>
         </article>
       ))}
     </div>
+    {pendingDelete && (
+      <AdminDeleteConfirmModal
+        title="删除服务器"
+        description={`确认删除服务器「${pendingDelete.displayName}」？这会删除该服务器的历史上报和探测记录。`}
+        confirmLabel="删除服务器"
+        onClose={() => setPendingDelete(null)}
+        onConfirm={() => onDelete(pendingDelete.id)}
+      />
+    )}
+    </>
   )
 }
 
@@ -2474,13 +2482,11 @@ function AdminTargetSection({ targets, nodes, onCreate, onUpdate, onDelete }: { 
   )
 }
 
-function AdminTargetList({ targets, onEdit, onDelete }: { targets: AdminProbeTarget[]; onEdit: (targetId: string) => void; onDelete: (targetId: string) => void }) {
-  const confirmDelete = (target: AdminProbeTarget) => {
-    const ok = typeof window === 'undefined' ? true : window.confirm(`确认删除延迟监控「${target.name}」？这会删除该目标的历史探测记录。`)
-    if (ok) onDelete(target.id)
-  }
+function AdminTargetList({ targets, onEdit, onDelete }: { targets: AdminProbeTarget[]; onEdit: (targetId: string) => void; onDelete: (targetId: string) => MaybePromise }) {
+  const [pendingDelete, setPendingDelete] = useState<AdminProbeTarget | null>(null)
 
   return (
+    <>
     <div className="admin-list admin-target-list" role="list" aria-label="延迟监控目标列表">
       <div className="admin-list-head" aria-hidden="true">
         <span>目标</span>
@@ -2497,11 +2503,21 @@ function AdminTargetList({ targets, onEdit, onDelete }: { targets: AdminProbeTar
           <span data-label="节点">{formatTargetAssignmentSummary(target)}</span>
           <div className="admin-row-actions admin-icon-actions">
             <button className="admin-row-action is-icon" type="button" aria-label={`编辑目标 ${target.name}`} title="编辑目标" onClick={() => onEdit(target.id)}><EditActionIcon /><span className="sr-only">编辑目标</span></button>
-            <button className="admin-row-action is-icon is-danger" type="button" aria-label={`删除目标 ${target.name}`} title="删除目标" onClick={() => confirmDelete(target)}><TrashActionIcon /><span className="sr-only">删除目标</span></button>
+            <button className="admin-row-action is-icon is-danger" type="button" aria-label={`删除目标 ${target.name}`} title="删除目标" onClick={() => setPendingDelete(target)}><TrashActionIcon /><span className="sr-only">删除目标</span></button>
           </div>
         </article>
       ))}
     </div>
+    {pendingDelete && (
+      <AdminDeleteConfirmModal
+        title="删除延迟监控"
+        description={`确认删除延迟监控「${pendingDelete.name}」？这会删除该目标的历史探测记录。`}
+        confirmLabel="删除延迟监控"
+        onClose={() => setPendingDelete(null)}
+        onConfirm={() => onDelete(pendingDelete.id)}
+      />
+    )}
+    </>
   )
 }
 
@@ -3107,6 +3123,34 @@ function AdminModal({ title, onClose, children }: { title: string; onClose: () =
       </section>
     </div>
     </AdminModalLayer>
+  )
+}
+
+function AdminDeleteConfirmModal({ title, description, confirmLabel, onConfirm, onClose }: { title: string; description: string; confirmLabel: string; onConfirm: () => MaybePromise; onClose: () => void }) {
+  const [submitting, setSubmitting] = useState(false)
+  const [formError, setFormError] = useState<string | null>(null)
+
+  const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    setSubmitting(true)
+    setFormError(null)
+    Promise.resolve(onConfirm())
+      .then(onClose)
+      .catch((error: unknown) => setFormError(error instanceof Error ? error.message : '删除失败'))
+      .finally(() => setSubmitting(false))
+  }
+
+  return (
+    <AdminModal title={title} onClose={() => { if (!submitting) onClose() }}>
+      <form className="admin-delete-confirm" onSubmit={handleSubmit}>
+        <p>{description}</p>
+        <div className="admin-modal-actions">
+          {formError && <span className="admin-inline-note admin-modal-action-note is-error">{formError}</span>}
+          <button type="button" disabled={submitting} onClick={onClose}>取消</button>
+          <button className="is-danger" type="submit" disabled={submitting}>{submitting ? '删除中…' : confirmLabel}</button>
+        </div>
+      </form>
+    </AdminModal>
   )
 }
 

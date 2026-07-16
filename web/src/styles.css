@@ -1840,6 +1840,20 @@ svg { display: block; }
   padding-top: 14px;
   border-top: 1px solid var(--border);
 }
+.admin-delete-confirm p {
+  margin: 4px 0 0;
+  color: var(--foreground);
+  line-height: 1.7;
+}
+.admin-modal-actions button.is-danger {
+  border-color: color-mix(in srgb, var(--red) 36%, var(--border));
+  background: var(--red);
+  color: #fff;
+}
+.admin-modal-actions button.is-danger:hover {
+  border-color: color-mix(in srgb, var(--red) 60%, var(--border));
+  background: color-mix(in srgb, var(--red) 88%, #000);
+}
 .admin-server-sort-list {
   display: grid;
   gap: 8px;
