@@ -112,6 +112,7 @@ export function buildKulinTargetSeries(points: LatencyPoint[]): KulinTargetSerie
 }
 
 function latencyDelay(point: LatencyPoint): number {
+  if (Number.isFinite(point.lossPercent) && point.lossPercent >= 100) return 0
   return typeof point.avgMs === 'number' && Number.isFinite(point.avgMs) ? point.avgMs : 0
 }
 

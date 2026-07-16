@@ -16,14 +16,15 @@ describe('calculateKulinPacketLoss', () => {
 })
 
 describe('buildKulinTargetSeries', () => {
-  it('uses avg_ms as Kulin avg_delay and draws missing avg_ms as 0 without median fallback', () => {
+  it('uses avg_ms as Kulin avg_delay and draws missing or timed-out samples as 0 without median fallback', () => {
     const series = buildKulinTargetSeries([
       { ts: '2026-07-02T00:00:00Z', targetId: 'alpha', targetName: 'Alpha', medianMs: 12, avgMs: 14, lossPercent: 0 },
       { ts: '2026-07-02T00:01:00Z', targetId: 'alpha', targetName: 'Alpha', medianMs: 99, lossPercent: 100 },
+      { ts: '2026-07-02T00:02:00Z', targetId: 'alpha', targetName: 'Alpha', medianMs: 5000, avgMs: 5000, lossPercent: 100 },
     ])
 
-    expect(series[0].points.map((point) => point.avg_delay)).toEqual([14, 0])
-    expect(series[0].points.map((point) => point.packet_loss)).toEqual([0, 100])
+    expect(series[0].points.map((point) => point.avg_delay)).toEqual([14, 0, 0])
+    expect(series[0].points.map((point) => point.packet_loss)).toEqual([0, 100, 100])
   })
 })
 
