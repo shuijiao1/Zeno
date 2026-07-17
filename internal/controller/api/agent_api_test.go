@@ -863,8 +863,8 @@ func TestAgentProbeResultsDeduplicateExactRetriesButKeepDistinctRoundsInSameSeco
 	conflictRequest.Header.Set("Authorization", "Bearer test-agent-token")
 	conflictRequest.Header.Set("Content-Type", "application/json")
 	NewHandler(HandlerOptions{Store: store}).ServeHTTP(conflictRecorder, conflictRequest)
-	if conflictRecorder.Code != http.StatusInternalServerError {
-		t.Fatalf("conflicting reuse status = %d, want 500; body=%s", conflictRecorder.Code, conflictRecorder.Body.String())
+	if conflictRecorder.Code != http.StatusConflict || !strings.Contains(conflictRecorder.Body.String(), "probe_round_conflict") {
+		t.Fatalf("conflicting reuse status = %d, want explicit 409; body=%s", conflictRecorder.Code, conflictRecorder.Body.String())
 	}
 	var rounds, samples int
 	if err := store.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM probe_rounds`).Scan(&rounds); err != nil {

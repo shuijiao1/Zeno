@@ -429,22 +429,23 @@ func (s *SQLiteStore) insertProbeRoundsOnce(ctx context.Context, nodeID string, 
 	return nil
 }
 
-func (s *SQLiteStore) InsertAgentProbeResults(ctx context.Context, nodeID string, configVersion int64, rounds []preparedAgentProbeRound) error {
+func (s *SQLiteStore) InsertAgentProbeResults(ctx context.Context, nodeID string, configVersion int64, rounds []preparedAgentProbeRound) (agentProbeInsertResult, error) {
 	if configVersion < 0 {
-		return errInvalidAgentProbeResults
+		return agentProbeInsertResult{}, errInvalidAgentProbeResults
 	}
 	if len(rounds) == 0 {
-		return nil
+		return agentProbeInsertResult{}, nil
 	}
 	if len(rounds) > maxAgentProbeRounds || !validAgentProbeErrorBudget(rounds) {
-		return errInvalidAgentProbeResults
+		return agentProbeInsertResult{}, errInvalidAgentProbeResults
 	}
-	if err := s.ensureTelemetryStorage(); err != nil {
+	var result agentProbeInsertResult
+	err := s.withAgentWrite(ctx, nodeID, func(ctx context.Context) error {
+		var err error
+		result, err = s.insertAgentProbeResultsOnce(ctx, nodeID, configVersion, rounds)
 		return err
-	}
-	return s.withAgentWrite(ctx, nodeID, func(ctx context.Context) error {
-		return s.insertAgentProbeResultsOnce(ctx, nodeID, configVersion, rounds)
 	})
+	return result, err
 }
 
 func validAgentProbeErrorBudget(rounds []preparedAgentProbeRound) bool {
@@ -466,10 +467,10 @@ func validAgentProbeErrorBudget(rounds []preparedAgentProbeRound) bool {
 	return true
 }
 
-func (s *SQLiteStore) insertAgentProbeResultsOnce(ctx context.Context, nodeID string, configVersion int64, rounds []preparedAgentProbeRound) error {
+func (s *SQLiteStore) insertAgentProbeResultsOnce(ctx context.Context, nodeID string, configVersion int64, rounds []preparedAgentProbeRound) (agentProbeInsertResult, error) {
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
-		return err
+		return agentProbeInsertResult{}, err
 	}
 	defer rollbackUnlessCommitted(tx)
 
@@ -478,7 +479,40 @@ func (s *SQLiteStore) insertAgentProbeResultsOnce(ctx context.Context, nodeID st
 	// batch insert in one serialized transaction boundary instead of accepting a
 	// handler-level pre-read that could race with an admin config change.
 	if _, err := tx.ExecContext(ctx, `UPDATE probe_config_meta SET version = version WHERE id = 1`); err != nil {
-		return err
+		return agentProbeInsertResult{}, err
+	}
+
+	// A committed Agent round is the durable acknowledgement. Classify every
+	// node-wide round id before consulting mutable config/target/timestamp state,
+	// so a lost HTTP response can be retried after the original snapshot ages.
+	existing, err := loadAgentProbeRoundsByIDTx(ctx, tx, nodeID, rounds)
+	if err != nil {
+		return agentProbeInsertResult{}, err
+	}
+	pending := make([]preparedAgentProbeRound, 0, len(rounds))
+	result := agentProbeInsertResult{}
+	for _, round := range rounds {
+		round.payloadHash = agentProbeRoundPayloadHash(round)
+		roundID := strings.TrimSpace(round.agentRoundID)
+		if found, ok := existing[roundID]; roundID != "" && ok {
+			if !found.matches(round) {
+				return agentProbeInsertResult{}, errAgentProbeRoundConflict
+			}
+			result.idempotent++
+			continue
+		}
+		pending = append(pending, round)
+	}
+	if len(pending) == 0 {
+		// The writer reservation and indexed read are sufficient to classify the
+		// replay. Leave the no-op transaction to the deferred rollback so an exact
+		// retry has no durable database side effect.
+		return result, nil
+	}
+	// Exact retries allocate no storage. Any mixed/new batch still checks the
+	// high-water guard before its first INSERT and rolls back as one transaction.
+	if err := s.ensureTelemetryStorage(); err != nil {
+		return agentProbeInsertResult{}, err
 	}
 	// configVersion == 0 is the legacy/unknown snapshot value used by older
 	// Agents. It intentionally skips stale-version comparison, but the current
@@ -486,48 +520,53 @@ func (s *SQLiteStore) insertAgentProbeResultsOnce(ctx context.Context, nodeID st
 	if configVersion > 0 {
 		var currentVersion int64
 		if err := tx.QueryRowContext(ctx, `SELECT version FROM probe_config_meta WHERE id = 1`).Scan(&currentVersion); err != nil {
-			return err
+			return agentProbeInsertResult{}, err
 		}
 		if currentVersion != configVersion {
-			return errAgentProbeConfigStale
+			return agentProbeInsertResult{}, errAgentProbeConfigStale
 		}
 	}
 
 	targets, err := enabledProbeTargetsTx(ctx, tx, nodeID)
 	if err != nil {
-		return err
+		return agentProbeInsertResult{}, err
 	}
 	targetsByID := make(map[string]ProbeTarget, len(targets))
 	for _, target := range targets {
 		targetsByID[target.ID] = target
 	}
-	for _, round := range rounds {
+	receivedAt := time.Now().UTC()
+	for _, round := range pending {
 		target, ok := targetsByID[round.targetID]
 		if !ok {
-			return errInvalidAgentProbeResults
+			return agentProbeInsertResult{}, errInvalidAgentProbeResults
 		}
 		if round.targetType != "" && round.targetType != target.Type {
-			return errInvalidAgentProbeResults
+			return agentProbeInsertResult{}, errInvalidAgentProbeResults
 		}
 		if len(round.samples) == 0 || len(round.samples) > target.Count || len(round.samples) > maxAgentProbeSamplesPerRound {
-			return errInvalidAgentProbeResults
+			return agentProbeInsertResult{}, errInvalidAgentProbeResults
+		}
+		if !agentProbeTimestampWithinSkew(round.ts, receivedAt) {
+			return agentProbeInsertResult{}, errInvalidAgentProbeResults
 		}
 		round.target = target
 		round.samples = agentProbeSamplesForTarget(round.samples, target)
-		round.payloadHash = probeRoundIdempotencyKey(round.samples)
-		round.idempotencyKey = "legacy:" + round.payloadHash
+		round.idempotencyKey = "legacy:" + probeRoundIdempotencyKey(round.samples)
 		if strings.TrimSpace(round.agentRoundID) != "" {
 			round.idempotencyKey = "agent:" + strings.TrimSpace(round.agentRoundID)
 		}
 		if err := insertProbeRoundTx(ctx, tx, nodeID, round); err != nil {
-			return err
+			return agentProbeInsertResult{}, err
 		}
+		result.inserted++
+		result.insertedTargetIDs = append(result.insertedTargetIDs, target.ID)
 	}
 	if err := tx.Commit(); err != nil {
-		return err
+		return agentProbeInsertResult{}, err
 	}
 	tx = nil
-	return nil
+	return result, nil
 }
 
 func agentProbeSamplesForTarget(samples []probe.Sample, target ProbeTarget) []probe.Sample {
@@ -665,6 +704,106 @@ const agentProbeRoundLookupSQL = `
 			  AND agent_round_id <> ''
 			LIMIT 1
 `
+
+const agentProbePayloadHashV2Prefix = "v2:"
+
+type existingAgentProbeRound struct {
+	targetID, targetType, payloadHash string
+	ts                                int64
+}
+
+func (existing existingAgentProbeRound) matches(round preparedAgentProbeRound) bool {
+	if strings.HasPrefix(existing.payloadHash, agentProbePayloadHashV2Prefix) {
+		return existing.targetID == strings.TrimSpace(round.targetID) &&
+			existing.ts == round.ts.UTC().Unix() &&
+			existing.payloadHash == round.payloadHash
+	}
+	legacyHash := strings.TrimPrefix(existing.payloadHash, "v1:")
+	return existing.targetID == strings.TrimSpace(round.targetID) &&
+		existing.ts == round.ts.UTC().Unix() &&
+		existing.targetType == strings.TrimSpace(round.targetType) &&
+		legacyHash == probeRoundIdempotencyKey(round.samples)
+}
+
+func loadAgentProbeRoundsByIDTx(ctx context.Context, tx *sql.Tx, nodeID string, rounds []preparedAgentProbeRound) (map[string]existingAgentProbeRound, error) {
+	roundIDs := make([]string, 0, len(rounds))
+	seen := make(map[string]struct{}, len(rounds))
+	for _, round := range rounds {
+		roundID := strings.TrimSpace(round.agentRoundID)
+		if roundID == "" {
+			continue
+		}
+		if _, ok := seen[roundID]; ok {
+			return nil, errInvalidAgentProbeResults
+		}
+		seen[roundID] = struct{}{}
+		roundIDs = append(roundIDs, roundID)
+	}
+	result := make(map[string]existingAgentProbeRound, len(roundIDs))
+	if len(roundIDs) == 0 {
+		return result, nil
+	}
+	placeholders := strings.TrimRight(strings.Repeat("?,", len(roundIDs)), ",")
+	args := make([]any, 0, len(roundIDs)+1)
+	args = append(args, nodeID)
+	for _, roundID := range roundIDs {
+		args = append(args, roundID)
+	}
+	rows, err := tx.QueryContext(ctx, `
+		SELECT agent_round_id, target_id, ts, type, payload_hash
+		FROM probe_rounds INDEXED BY idx_probe_rounds_agent_id
+		WHERE node_id = ? AND agent_round_id IN (`+placeholders+`)
+		  AND agent_round_id IS NOT NULL AND agent_round_id <> ''
+	`, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var roundID string
+		var existing existingAgentProbeRound
+		if err := rows.Scan(&roundID, &existing.targetID, &existing.ts, &existing.targetType, &existing.payloadHash); err != nil {
+			return nil, err
+		}
+		result[roundID] = existing
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return result, nil
+}
+
+func agentProbeRoundPayloadHash(round preparedAgentProbeRound) string {
+	digest := sha256.New()
+	writeProbeDigestBytes(digest, []byte(strings.TrimSpace(round.targetID)))
+	writeProbeDigestUint64(digest, uint64(round.ts.UTC().Unix()))
+	writeProbeDigestBytes(digest, []byte(strings.TrimSpace(round.targetType)))
+	for index, sample := range round.samples {
+		seq := sample.Seq
+		if seq == 0 {
+			seq = index + 1
+		}
+		writeProbeDigestUint64(digest, uint64(seq))
+		if sample.Success {
+			writeProbeDigestUint64(digest, 1)
+		} else {
+			writeProbeDigestUint64(digest, 0)
+		}
+		if sample.LatencyMS == nil {
+			writeProbeDigestUint64(digest, 0)
+		} else {
+			writeProbeDigestUint64(digest, 1)
+			writeProbeDigestUint64(digest, math.Float64bits(*sample.LatencyMS))
+		}
+		writeProbeDigestBytes(digest, []byte(strings.TrimSpace(sample.Error)))
+	}
+	return agentProbePayloadHashV2Prefix + hex.EncodeToString(digest.Sum(nil))
+}
+
+func writeProbeDigestBytes(digest hash.Hash, value []byte) {
+	writeProbeDigestUint64(digest, uint64(len(value)))
+	_, _ = digest.Write(value)
+}
 
 func probeRoundIdempotencyKey(samples []probe.Sample) string {
 	digest := sha256.New()
