@@ -51,13 +51,15 @@ const (
 	// this minimum rebuild window. With a live summary client, aggregate fields
 	// are therefore at most this interval plus one 3s publish cadence stale.
 	summaryAggregateFreshFor = 30 * time.Second
-	// Do not place every node behind a process-global mutex. SQLite remains the
-	// single-writer authority; short busy waits let independent nodes contend and
-	// return to their normal retry cadence without a 25-second global queue.
-	sqliteAgentWriteTimeout = 8 * time.Second
-	sqliteBusyRetryFor      = 6 * time.Second
-	sqliteBusyRetryInitial  = 25 * time.Millisecond
-	sqliteBusyRetryMax      = 250 * time.Millisecond
+	// Keep SQLite's one-writer authority behind a fair, bounded scheduler shared
+	// by Agent writes and recurring maintenance. Short busy waits still cover
+	// external SQLite writers without allowing an unbounded process-global queue.
+	sqliteAgentWriteTimeout    = 8 * time.Second
+	sqliteBusyRetryFor         = 6 * time.Second
+	sqliteBusyRetryInitial     = 25 * time.Millisecond
+	sqliteBusyRetryMax         = 250 * time.Millisecond
+	historyRetentionWriteKey   = "_history_retention"
+	notificationOutboxWriteKey = "_notification_outbox"
 )
 
 func (s *SQLiteStore) withAgentWrite(ctx context.Context, nodeID string, operation func(context.Context) error) error {

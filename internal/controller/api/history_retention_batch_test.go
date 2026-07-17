@@ -4,9 +4,53 @@ import (
 	"context"
 	"fmt"
 	"path/filepath"
+	"sync/atomic"
 	"testing"
 	"time"
 )
+
+type scheduledHistoryRetentionStore struct {
+	mockStore
+	calls atomic.Int64
+}
+
+func (store *scheduledHistoryRetentionStore) PruneRawHistory(context.Context, time.Time) error {
+	store.calls.Add(1)
+	return nil
+}
+
+func TestHistoryRetentionWaitsForConfiguredIntervalBeforeFirstPrune(t *testing.T) {
+	store := &scheduledHistoryRetentionStore{}
+	h := &handler{store: store}
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		h.runHistoryRetention(ctx, 50*time.Millisecond)
+	}()
+
+	time.Sleep(20 * time.Millisecond)
+	if calls := store.calls.Load(); calls != 0 {
+		cancel()
+		<-done
+		t.Fatalf("startup retention calls = %d, want 0 before the first interval", calls)
+	}
+	deadline := time.Now().Add(time.Second)
+	for store.calls.Load() == 0 && time.Now().Before(deadline) {
+		time.Sleep(5 * time.Millisecond)
+	}
+	if calls := store.calls.Load(); calls != 1 {
+		cancel()
+		<-done
+		t.Fatalf("retention calls after first interval = %d, want 1", calls)
+	}
+	cancel()
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("history retention did not stop after cancellation")
+	}
+}
 
 func TestPruneRawHistoryDeletesInBatchesAndKeepsRecentRows(t *testing.T) {
 	store, err := OpenSQLiteStore(filepath.Join(t.TempDir(), "zeno.db"))

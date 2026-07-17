@@ -12,6 +12,8 @@ const stalePendingNotificationDeliveryAfter = 7 * 24 * time.Hour
 
 const historyRetentionBatchSize = 1000
 
+const historyRetentionBatchPause = 10 * time.Millisecond
+
 type historyRetentionStore interface {
 	PruneRawHistory(ctx context.Context, before time.Time) error
 }
@@ -39,42 +41,67 @@ func (s *SQLiteStore) PruneRawHistory(ctx context.Context, before time.Time) err
 
 func (s *SQLiteStore) pruneRowsInBatches(ctx context.Context, query string, cutoff int64) error {
 	for {
-		result, err := s.db.ExecContext(ctx, query, cutoff, historyRetentionBatchSize)
-		if err != nil {
+		var removed int64
+		err := s.withAgentWrite(ctx, historyRetentionWriteKey, func(writeCtx context.Context) error {
+			result, err := s.db.ExecContext(writeCtx, query, cutoff, historyRetentionBatchSize)
+			if err != nil {
+				return err
+			}
+			removed, err = result.RowsAffected()
 			return err
-		}
-		removed, err := result.RowsAffected()
+		})
 		if err != nil {
 			return err
 		}
 		if removed < historyRetentionBatchSize {
 			return nil
 		}
+		if err := pauseHistoryRetentionBatch(ctx); err != nil {
+			return err
+		}
 	}
 }
 
 func (s *SQLiteStore) expirePendingNotificationDeliveriesInBatches(ctx context.Context, stalePendingCutoff, now int64) error {
 	for {
-		result, err := s.db.ExecContext(ctx, `
-			UPDATE notification_deliveries
-			SET state = 'failed', last_error = 'expired before delivery', lease_until = 0, claim_token = '', updated_at = ?
-			WHERE id IN (
-				SELECT id FROM notification_deliveries
-				WHERE state IN ('pending', 'leased') AND created_at < ?
-				ORDER BY id
-				LIMIT ?
-			)
-		`, now, stalePendingCutoff, historyRetentionBatchSize)
-		if err != nil {
+		var updated int64
+		err := s.withAgentWrite(ctx, historyRetentionWriteKey, func(writeCtx context.Context) error {
+			result, err := s.db.ExecContext(writeCtx, `
+				UPDATE notification_deliveries
+				SET state = 'failed', last_error = 'expired before delivery', lease_until = 0, claim_token = '', updated_at = ?
+				WHERE id IN (
+					SELECT id FROM notification_deliveries
+					WHERE state IN ('pending', 'leased') AND created_at < ?
+					ORDER BY id
+					LIMIT ?
+				)
+			`, now, stalePendingCutoff, historyRetentionBatchSize)
+			if err != nil {
+				return err
+			}
+			updated, err = result.RowsAffected()
 			return err
-		}
-		updated, err := result.RowsAffected()
+		})
 		if err != nil {
 			return err
 		}
 		if updated < historyRetentionBatchSize {
 			return nil
 		}
+		if err := pauseHistoryRetentionBatch(ctx); err != nil {
+			return err
+		}
+	}
+}
+
+func pauseHistoryRetentionBatch(ctx context.Context) error {
+	timer := time.NewTimer(historyRetentionBatchPause)
+	defer timer.Stop()
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-timer.C:
+		return nil
 	}
 }
 
@@ -90,7 +117,6 @@ func (h *handler) runHistoryRetention(ctx context.Context, interval time.Duratio
 			log.Printf("history retention cleanup failed: %v", err)
 		}
 	}
-	prune()
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
 	for {

@@ -251,9 +251,9 @@ func (s *SQLiteStore) PendingNotificationDeliveries(ctx context.Context, now tim
 	for scanned := 0; scanned < notificationDeliveryScanLimit; scanned++ {
 		var delivery queuedNotificationDelivery
 		var found, quarantined bool
-		err := retrySQLiteBusy(ctx, func() error {
+		err := s.withAgentWrite(ctx, notificationOutboxWriteKey, func(writeCtx context.Context) error {
 			var claimErr error
-			delivery, found, quarantined, claimErr = s.claimNextNotificationDelivery(ctx, now)
+			delivery, found, quarantined, claimErr = s.claimNextNotificationDelivery(writeCtx, now)
 			return claimErr
 		})
 		if err != nil {
@@ -450,6 +450,12 @@ func (s *SQLiteStore) claimNextNotificationDelivery(ctx context.Context, now tim
 }
 
 func (s *SQLiteStore) RecordNotificationDeliveryAttempt(ctx context.Context, delivery queuedNotificationDelivery, sendErr error, now time.Time) error {
+	return s.withAgentWrite(ctx, notificationOutboxWriteKey, func(writeCtx context.Context) error {
+		return s.recordNotificationDeliveryAttemptOnce(writeCtx, delivery, sendErr, now)
+	})
+}
+
+func (s *SQLiteStore) recordNotificationDeliveryAttemptOnce(ctx context.Context, delivery queuedNotificationDelivery, sendErr error, now time.Time) error {
 	nowUnix := now.UTC().Unix()
 	if sendErr == nil {
 		result, err := s.db.ExecContext(ctx, `
