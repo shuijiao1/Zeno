@@ -24,6 +24,8 @@ var (
 	errInvalidAdminNotificationChannelWrite = errors.New("invalid admin notification channel write")
 	errNotificationChannelNotFound          = errors.New("notification channel not found")
 	errNotificationChannelAlreadyExists     = errors.New("notification channel already exists")
+	errNotificationDeliveryNotFound         = errors.New("notification delivery not found")
+	errNotificationDeliveryNotFailed        = errors.New("notification delivery is not failed")
 	errInvalidAdminNotificationTypeWrite    = errors.New("invalid admin notification type write")
 	errNotificationTypeNotFound             = errors.New("notification type not found")
 	errNotificationTypeGone                 = errors.New("notification type compatibility endpoint gone")
@@ -42,7 +44,7 @@ type AdminLoginRequest struct {
 
 type AdminLoginResponse struct {
 	Username string `json:"username"`
-	Token    string `json:"token"`
+	Token    string `json:"token,omitempty"`
 }
 
 type AdminAccountResponse struct {
@@ -750,6 +752,11 @@ type AdminAlertRuleResponse struct {
 
 type AdminNotificationTestResponse struct {
 	Delivery AdminNotificationDelivery `json:"delivery"`
+}
+
+type AdminNotificationRetryResponse struct {
+	DeliveryID int64  `json:"delivery_id"`
+	State      string `json:"state"`
 }
 
 type AdminNotificationChannelCreateRequest struct {

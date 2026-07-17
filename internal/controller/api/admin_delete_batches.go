@@ -368,12 +368,6 @@ func (s *SQLiteStore) processAdminProbeTargetDeletionBatch(ctx context.Context, 
 }
 
 func (s *SQLiteStore) finalizeAdminNodeDeletion(ctx context.Context, nodeID string) error {
-	unlockAgentWrites, err := s.lockAgentWrite(ctx)
-	if err != nil {
-		return err
-	}
-	defer unlockAgentWrites()
-
 	return retrySQLiteBusy(ctx, func() error {
 		tx, err := s.db.BeginTx(ctx, nil)
 		if err != nil {
@@ -437,12 +431,6 @@ func (s *SQLiteStore) finalizeAdminNodeDeletion(ctx context.Context, nodeID stri
 }
 
 func (s *SQLiteStore) finalizeAdminProbeTargetDeletion(ctx context.Context, targetID string) error {
-	unlockAgentWrites, err := s.lockAgentWrite(ctx)
-	if err != nil {
-		return err
-	}
-	defer unlockAgentWrites()
-
 	return retrySQLiteBusy(ctx, func() error {
 		tx, err := s.db.BeginTx(ctx, nil)
 		if err != nil {

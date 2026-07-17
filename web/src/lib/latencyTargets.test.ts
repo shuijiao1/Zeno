@@ -30,7 +30,7 @@ describe('summarizeLatencyTargets', () => {
     })
   })
 
-  it('draws all-loss samples as 0ms targets', () => {
+  it('keeps all-loss samples latency empty while preserving packet loss', () => {
     const targets = summarizeLatencyTargets([
       { ts: '2026-07-02T12:00:00Z', targetId: 'dc2', targetName: 'DC2', medianMs: null, lossPercent: 100 },
       { ts: '2026-07-02T12:02:00Z', targetId: 'dc2', targetName: 'DC2', medianMs: null, lossPercent: 100 },
@@ -41,9 +41,18 @@ describe('summarizeLatencyTargets', () => {
         targetId: 'dc2',
         targetName: 'DC2',
         sampleCount: 2,
-        avgMs: 0,
+        avgMs: null,
         lossPercent: 100,
       },
     ])
+  })
+
+  it('does not count empty grid buckets as zero-loss samples', () => {
+    const targets = summarizeLatencyTargets([
+      { ts: '2026-07-02T12:00:00Z', targetId: 'dc2', targetName: 'DC2', medianMs: null, avgMs: null, lossPercent: 0 },
+      { ts: '2026-07-02T12:01:00Z', targetId: 'dc2', targetName: 'DC2', medianMs: 190, avgMs: 190, lossPercent: 10 },
+    ])
+
+    expect(targets[0]).toMatchObject({ sampleCount: 1, avgMs: 190, lossPercent: 10 })
   })
 })

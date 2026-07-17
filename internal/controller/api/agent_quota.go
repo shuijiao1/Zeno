@@ -47,7 +47,7 @@ var agentRequestBucketSpecs = map[agentQuotaKind]agentBucketSpec{
 	agentQuotaPresence:     {refillPerSecond: 0.2, burst: 4},
 }
 
-var agentWriteBucketSpec = agentBucketSpec{refillPerSecond: 5, burst: 24}
+var agentWriteBucketSpec = agentBucketSpec{refillPerSecond: 5, burst: 80}
 
 var (
 	agentAuthGlobalBucketSpec = agentBucketSpec{refillPerSecond: 100, burst: 200}
@@ -356,13 +356,21 @@ func (h *handler) admitAgentWrite(w http.ResponseWriter, nodeID string, units fl
 	return release, true
 }
 
-func agentProbeWriteUnits(request AgentProbeResultsRequest) float64 {
+func agentProbeWriteUnits(request AgentProbeResultsRequest, payloadBytes int64) float64 {
 	sampleCount := 0
+	estimatedBytes := 0
 	for _, round := range request.Rounds {
 		sampleCount += len(round.Samples)
+		estimatedBytes += len(round.RoundID) + len(round.TargetID) + len(round.Type) + 64
+		for _, sample := range round.Samples {
+			estimatedBytes += len(sample.Error) + 48
+		}
 	}
-	// One transaction plus bounded round/sample work. A maximum legitimate
-	// 32x32 batch costs 14 units and fits the burst, then refills within the
-	// supported five-second minimum probe interval alongside one-second state.
-	return 2 + math.Ceil(float64(len(request.Rounds))/8) + math.Ceil(float64(sampleCount)/128)
+	if payloadBytes <= 0 {
+		payloadBytes = int64(estimatedBytes)
+	}
+	// Charge both row work and actual request bytes. The 512-byte unit makes a
+	// maximum valid batch fit one bounded burst, while sustained oversized text
+	// consumes the bucket far faster than normal short Agent error labels.
+	return 2 + math.Ceil(float64(len(request.Rounds))/8) + math.Ceil(float64(sampleCount)/128) + math.Ceil(float64(payloadBytes)/512)
 }

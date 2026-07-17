@@ -198,7 +198,7 @@ func TestNotificationOutboxPausesDisabledChannelsAndResumesWithoutRetryBurn(t *t
 	}
 }
 
-func TestNotificationOutboxCanReplayFailedDeliveries(t *testing.T) {
+func TestNotificationOutboxFailedDeliveryKeepsLowFrequencyAutomaticRetry(t *testing.T) {
 	store, err := OpenSQLiteStore(filepath.Join(t.TempDir(), "zeno.db"))
 	if err != nil {
 		t.Fatalf("open sqlite store: %v", err)
@@ -217,22 +217,40 @@ func TestNotificationOutboxCanReplayFailedDeliveries(t *testing.T) {
 	if err := insertNotificationDeliveriesTxForTest(ctx, store, notificationEvent{EventType: "node_offline", Label: "离线", NodeID: "hytron", NodeName: "Hytron", PreviousStatus: "online", Status: "offline"}, notificationDispatchChannel{ID: channel.ID, Name: channel.Name, Type: "telegram", Destination: channel.Destination, Credential: "credential"}); err != nil {
 		t.Fatalf("insert delivery: %v", err)
 	}
-	if _, err := store.db.ExecContext(ctx, `UPDATE notification_deliveries SET state = 'failed', attempts = ?, last_error = 'exhausted'`, notificationDeliveryMaxAttempts); err != nil {
-		t.Fatalf("mark failed: %v", err)
+	now := time.Now().UTC().Truncate(time.Second)
+	claimed, err := store.PendingNotificationDeliveries(ctx, now, 1)
+	if err != nil || len(claimed) != 1 {
+		t.Fatalf("claim initial delivery: %+v err=%v", claimed, err)
 	}
-	replayed, err := store.ReplayFailedNotificationDeliveries(ctx, time.Now().UTC(), 10)
-	if err != nil {
-		t.Fatalf("replay failed: %v", err)
+	claimed[0].Attempts = notificationDeliveryMaxAttempts - 1
+	if err := store.RecordNotificationDeliveryAttempt(ctx, claimed[0], errors.New("Telegram unavailable"), now); err != nil {
+		t.Fatalf("record exhausted attempt: %v", err)
 	}
-	if replayed != 1 {
-		t.Fatalf("replayed=%d, want 1", replayed)
+	var state string
+	var attempts int
+	var nextAttemptAt int64
+	if err := store.db.QueryRowContext(ctx, `SELECT state, attempts, next_attempt_at FROM notification_deliveries`).Scan(&state, &attempts, &nextAttemptAt); err != nil {
+		t.Fatalf("read exhausted delivery: %v", err)
 	}
-	claimed, err := store.PendingNotificationDeliveries(ctx, time.Now().UTC(), 10)
-	if err != nil {
-		t.Fatalf("claim replayed: %v", err)
+	if state != "failed" || attempts != notificationDeliveryMaxAttempts || nextAttemptAt != now.Add(notificationDeliveryLongRetryDelay).Unix() {
+		t.Fatalf("exhausted delivery state=%q attempts=%d next=%d, want failed/%d/%d", state, attempts, nextAttemptAt, notificationDeliveryMaxAttempts, now.Add(notificationDeliveryLongRetryDelay).Unix())
 	}
-	if len(claimed) != 1 || claimed[0].Attempts != notificationDeliveryMaxAttempts {
-		t.Fatalf("claimed replayed = %+v, want failed delivery replayable without losing attempts", claimed)
+	tooEarly, err := store.PendingNotificationDeliveries(ctx, now.Add(notificationDeliveryLongRetryDelay-time.Second), 1)
+	if err != nil || len(tooEarly) != 0 {
+		t.Fatalf("claim before long retry: %+v err=%v", tooEarly, err)
+	}
+	claimed, err = store.PendingNotificationDeliveries(ctx, now.Add(notificationDeliveryLongRetryDelay), 1)
+	if err != nil || len(claimed) != 1 || claimed[0].Attempts != notificationDeliveryMaxAttempts {
+		t.Fatalf("automatic long retry claim = %+v err=%v", claimed, err)
+	}
+	if err := store.RecordNotificationDeliveryAttempt(ctx, claimed[0], nil, now.Add(notificationDeliveryLongRetryDelay)); err != nil {
+		t.Fatalf("record long retry success: %v", err)
+	}
+	if err := store.db.QueryRowContext(ctx, `SELECT state, attempts FROM notification_deliveries`).Scan(&state, &attempts); err != nil {
+		t.Fatalf("read delivered retry: %v", err)
+	}
+	if state != "delivered" || attempts != notificationDeliveryMaxAttempts+1 {
+		t.Fatalf("long retry result state=%q attempts=%d, want delivered/%d", state, attempts, notificationDeliveryMaxAttempts+1)
 	}
 }
 

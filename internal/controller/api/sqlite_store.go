@@ -25,7 +25,8 @@ type summaryAggregateFlight struct {
 
 type SQLiteStore struct {
 	db                            *sql.DB
-	agentWriteMu                  sync.Mutex
+	agentWrites                   agentWriteScheduler
+	telemetryStorage              *telemetryStorageGuard
 	renewalMu                     sync.Mutex
 	adminSessionPruneMu           sync.Mutex
 	adminSessionLastPruned        time.Time
@@ -50,25 +51,23 @@ const (
 	// this minimum rebuild window. With a live summary client, aggregate fields
 	// are therefore at most this interval plus one 3s publish cadence stale.
 	summaryAggregateFreshFor = 30 * time.Second
-	// Agent HTTP clients use a 30s total timeout. Keep server-side SQLite busy
-	// recovery below that budget even when an individual SQLite call consumes the
-	// configured 5s busy_timeout before returning SQLITE_BUSY.
-	sqliteAgentWriteTimeout  = 25 * time.Second
-	sqliteBusyRetryFor       = 20 * time.Second
-	sqliteBusyRetryInitial   = 25 * time.Millisecond
-	sqliteBusyRetryMax       = 250 * time.Millisecond
-	sqliteAgentWriteLockPoll = 10 * time.Millisecond
+	// Do not place every node behind a process-global mutex. SQLite remains the
+	// single-writer authority; short busy waits let independent nodes contend and
+	// return to their normal retry cadence without a 25-second global queue.
+	sqliteAgentWriteTimeout = 8 * time.Second
+	sqliteBusyRetryFor      = 6 * time.Second
+	sqliteBusyRetryInitial  = 25 * time.Millisecond
+	sqliteBusyRetryMax      = 250 * time.Millisecond
 )
 
-func (s *SQLiteStore) withAgentWrite(ctx context.Context, operation func(context.Context) error) error {
+func (s *SQLiteStore) withAgentWrite(ctx context.Context, nodeID string, operation func(context.Context) error) error {
 	writeCtx, cancel := context.WithTimeout(ctx, sqliteAgentWriteTimeout)
 	defer cancel()
-
-	unlock, err := s.lockAgentWrite(writeCtx)
+	release, err := s.agentWrites.acquire(writeCtx, nodeID)
 	if err != nil {
 		return err
 	}
-	defer unlock()
+	defer release()
 
 	return retrySQLiteBusy(writeCtx, func() error {
 		if err := writeCtx.Err(); err != nil {
@@ -76,25 +75,6 @@ func (s *SQLiteStore) withAgentWrite(ctx context.Context, operation func(context
 		}
 		return operation(writeCtx)
 	})
-}
-
-func (s *SQLiteStore) lockAgentWrite(ctx context.Context) (func(), error) {
-	if s.agentWriteMu.TryLock() {
-		return s.agentWriteMu.Unlock, nil
-	}
-
-	ticker := time.NewTicker(sqliteAgentWriteLockPoll)
-	defer ticker.Stop()
-	for {
-		select {
-		case <-ctx.Done():
-			return nil, ctx.Err()
-		case <-ticker.C:
-			if s.agentWriteMu.TryLock() {
-				return s.agentWriteMu.Unlock, nil
-			}
-		}
-	}
 }
 
 func retrySQLiteBusy(ctx context.Context, operation func() error) error {
@@ -174,7 +154,7 @@ func OpenSQLiteStore(path string) (*SQLiteStore, error) {
 		_ = db.Close()
 		return nil, err
 	}
-	store := &SQLiteStore{db: db}
+	store := &SQLiteStore{db: db, telemetryStorage: newTelemetryStorageGuard(path)}
 	if err := store.ensureSchema(context.Background()); err != nil {
 		_ = db.Close()
 		return nil, err
@@ -193,7 +173,7 @@ func sqliteDSN(path string) (string, error) {
 	}
 	values := url.Values{}
 	values.Add("_pragma", "foreign_keys(1)")
-	values.Add("_pragma", "busy_timeout(5000)")
+	values.Add("_pragma", "busy_timeout(1000)")
 	return (&url.URL{Scheme: "file", Path: absolutePath, RawQuery: values.Encode()}).String(), nil
 }
 
@@ -241,7 +221,7 @@ func (s *SQLiteStore) ensureSchema(ctx context.Context) error {
 	statements := []string{
 		`PRAGMA foreign_keys = ON;`,
 		`PRAGMA journal_mode = WAL;`,
-		`PRAGMA busy_timeout = 5000;`,
+		`PRAGMA busy_timeout = 1000;`,
 		`CREATE TABLE IF NOT EXISTS nodes (
 			id TEXT PRIMARY KEY,
 			display_name TEXT NOT NULL,
@@ -2100,10 +2080,8 @@ func (s *SQLiteStore) latestLatencySummaryForTarget(ctx context.Context, nodeID,
 			summaryTargetID = rowTargetID
 			targetName = rowTargetName
 			latestTS = ts
-		}
-		if latestAvg == nil && (avg.Valid || median.Valid) {
-			latestAvg = floatPtr(avg)
 			latestMedian = floatPtr(median)
+			latestAvg = floatPtr(avg)
 			if latestAvg == nil {
 				latestAvg = latestMedian
 			}
@@ -2201,7 +2179,7 @@ func (s *SQLiteStore) latestHomeLatencySummaries(ctx context.Context) (map[strin
 			GROUP BY eligible.node_id
 		)
 		SELECT eligible.node_id, eligible.target_id, pt.name,
-		       value.median_ms, value.avg_ms, loss_by_node.loss_percent, latest.ts
+		       latest.median_ms, latest.avg_ms, loss_by_node.loss_percent, latest.ts
 		FROM eligible_nodes eligible
 		JOIN probe_targets pt ON pt.id = eligible.target_id
 		JOIN probe_rounds latest ON latest.id = (
@@ -2213,18 +2191,8 @@ func (s *SQLiteStore) latestHomeLatencySummaries(ctx context.Context) (map[strin
 			ORDER BY candidate.ts DESC, candidate.id DESC
 			LIMIT 1
 		)
-		LEFT JOIN probe_rounds value ON value.id = (
-			SELECT candidate.id
-			FROM probe_rounds candidate
-			WHERE candidate.node_id = eligible.node_id
-			  AND candidate.target_id = eligible.target_id
-			  AND candidate.ts >= ?
-			  AND (candidate.avg_ms IS NOT NULL OR candidate.median_ms IS NOT NULL)
-			ORDER BY candidate.ts DESC, candidate.id DESC
-			LIMIT 1
-		)
 		JOIN loss_by_node ON loss_by_node.node_id = eligible.node_id
-	`, since, since, since)
+	`, since, since)
 	if err != nil {
 		return nil, err
 	}

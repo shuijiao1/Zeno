@@ -44,8 +44,9 @@ export function LatencyChart({
   const baseView = useMemo(() => selectKulinChartView(series, allRows, activeTargetIds), [series, allRows, activeTargetKey])
   const rows = useMemo(() => (peakCut ? applyKulinPeakCut(baseView.rows, baseView.lineKeys) : baseView.rows), [baseView, peakCut])
   const timestamps = useMemo(() => rows.map((row) => row.created_at), [rows])
-  const xStep = timestamps.length > 1 ? (width - pad.left - pad.right) / (timestamps.length - 1) : 0
-  const xByTimestamp = useMemo(() => new Map(timestamps.map((timestamp, index) => [timestamp, pad.left + index * xStep])), [timestamps, xStep])
+  const timeStart = timestamps[0] ?? 0
+  const timeEnd = timestamps.at(-1) ?? timeStart
+  const timeSpan = Math.max(0, timeEnd - timeStart)
   const maxAxisTicks = width <= 480 ? 4 : 14
   const axisTicks = useMemo(() => axisTicksForTimestamps(timestamps, maxAxisTicks), [timestamps, maxAxisTicks])
   const plotHeight = height - pad.top - pad.bottom
@@ -61,7 +62,10 @@ export function LatencyChart({
     : series), [series, activeTargetKey])
   const [hoverColumn, setHoverColumn] = useState<HoverColumn | null>(null)
 
-  const x = (createdAt: number) => xByTimestamp.get(createdAt) ?? pad.left
+  const x = (createdAt: number) => {
+    if (timeSpan <= 0) return pad.left
+    return pad.left + ((createdAt - timeStart) / timeSpan) * (width - pad.left - pad.right)
+  }
   const yDelay = (value: number) => pad.top + (1 - (value - domain.min) / (domain.max - domain.min)) * plotHeight
   const yLoss = (value: number) => pad.top + (1 - Math.max(0, Math.min(100, value)) / 100) * plotHeight
 
@@ -73,8 +77,7 @@ export function LatencyChart({
     if (hoverColumns.length === 0 || timestamps.length === 0) return null
     const plotWidth = width - pad.left - pad.right
     const ratio = plotWidth > 0 ? Math.max(0, Math.min(1, (svgX - pad.left) / plotWidth)) : 0
-    const timestampIndex = Math.max(0, Math.min(timestamps.length - 1, Math.round(ratio * (timestamps.length - 1))))
-    const targetTimestamp = timestamps[timestampIndex]
+    const targetTimestamp = timeStart + ratio * timeSpan
     let low = 0
     let high = hoverColumns.length - 1
     while (low < high) {
@@ -281,6 +284,7 @@ function linePath(rows: KulinChartRow[], key: string, x: (createdAt: number) => 
     .map((row) => {
       const value = rowNumber(row, key)
       if (value === null) {
+        hasOpenSegment = false
         return ''
       }
       const command = hasOpenSegment ? 'L' : 'M'

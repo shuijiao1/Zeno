@@ -48,7 +48,7 @@ func (s *SQLiteStore) RecordProbeConfigApplied(ctx context.Context, nodeID strin
 	if version <= 0 {
 		return errProbeConfigAckInvalid
 	}
-	return s.withAgentWrite(ctx, func(ctx context.Context) error {
+	return s.withAgentWrite(ctx, nodeID, func(ctx context.Context) error {
 		return s.recordProbeConfigAppliedOnce(ctx, nodeID, version, now)
 	})
 }

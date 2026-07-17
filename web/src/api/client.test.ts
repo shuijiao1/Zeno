@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createAdminNode, createAdminNotificationChannel, createAdminProbeTarget, deleteAdminNode, deleteAdminNotificationChannel, deleteAdminProbeTarget, fetchAdminAccount, fetchAdminAlertRules, fetchAdminNodes, fetchAdminNotificationChannels, fetchAdminProbeTargets, fetchAdminSettings, fetchPublicSettings, fetchServiceLatency, loginAdmin, logoutAdmin, normalizeAdminAlertRules, normalizeAdminNodes, normalizeAdminNotificationChannels, normalizeAdminProbeTargets, normalizeSettings, normalizeNodeLatency, normalizeNodeState, normalizeServiceLatency, normalizeSummary, requestAdminNodeInstallCommand, subscribeNodeLatency, subscribeNodeState, subscribeServiceLatency, subscribeSummary, testAdminNotificationChannel, updateAdminAccount, updateAdminAlertRule, updateAdminNode, updateAdminNotificationChannel, updateAdminProbeTarget, updateAdminSettings } from './client'
+import { adminCookieSessionMarker } from '../lib/adminToken'
 
 describe('normalizeSummary', () => {
   it('maps controller snake_case JSON into frontend camelCase models', () => {
@@ -62,7 +63,7 @@ describe('normalizeSummary', () => {
         },
       ],
       services: [
-        { id: 'google', name: 'Google', type: 'http_get', address: 'https://www.google.com/generate_204', port: null, assigned_node_count: 10, reporting_node_count: 9, median_ms: 1.2, loss_percent: 0, updated_at: '2026-07-02T12:00:00Z' },
+        { id: 'google', name: 'Google', type: 'http_get', assigned_node_count: 10, reporting_node_count: 9, median_ms: 1.2, loss_percent: 0, updated_at: '2026-07-02T12:00:00Z' },
       ],
       latency_points: [
         { ts: '2026-07-02T12:00:00Z', target_id: 'google', target_name: 'Google', median_ms: null, loss_percent: 100 },
@@ -97,6 +98,7 @@ describe('normalizeSummary', () => {
     expect(summary.latencyPoints[0].lossPercent).toBe(100)
     expect(summary.services[0].name).toBe('Google')
     expect(summary.services[0].reportingNodeCount).toBe(9)
+    expect(summary.services[0].avgMs).toBeNull()
   })
 
   it('normalizes null collections from empty preview stores', () => {
@@ -265,7 +267,7 @@ describe('detail websocket subscriptions', () => {
 
     instances[0].emit({ node_id: 'hytron', range: '1d', points: [{ ts: '2026-07-05T07:00:00Z', target_id: 'google', target_name: 'Google', median_ms: 1.2, loss_percent: 0 }] })
     instances[1].emit({ node_id: 'hytron', range: '1h', points: [{ ts: '2026-07-05T07:00:00Z', cpu_percent: 12, load1: 0.1, load5: 0.2, load15: 0.3, memory_used_bytes: 100, memory_total_bytes: 200, swap_used_bytes: 0, swap_total_bytes: 0, disk_used_bytes: 300, disk_total_bytes: 400, net_in_total_bytes: 500, net_out_total_bytes: 600, net_in_speed_bps: 700, net_out_speed_bps: 800, process_count: 90, tcp_connection_count: 10, udp_connection_count: 5, uptime_seconds: 60 }] })
-    instances[2].emit({ target: { id: 'google', name: 'Google', type: 'http_get', address: 'https://www.google.com/generate_204', port: null, assigned_node_count: 1, reporting_node_count: 1, median_ms: 1.2, loss_percent: 0, updated_at: '2026-07-05T07:00:00Z' }, range: '7d', points: [{ ts: '2026-07-05T07:00:00Z', node_id: 'hytron', node_name: 'Hytron', median_ms: 1.3, loss_percent: 0 }] })
+    instances[2].emit({ target: { id: 'google', name: 'Google', type: 'http_get', assigned_node_count: 1, reporting_node_count: 1, median_ms: 1.2, loss_percent: 0, updated_at: '2026-07-05T07:00:00Z' }, range: '7d', points: [{ ts: '2026-07-05T07:00:00Z', node_id: 'hytron', node_name: 'Hytron', median_ms: 1.3, loss_percent: 0 }] })
 
     expect(onNodeLatency).toHaveBeenCalledWith(expect.objectContaining({ nodeId: 'hytron', range: '1d' }))
     expect(onNodeState).toHaveBeenCalledWith(expect.objectContaining({ nodeId: 'hytron', range: '1h', points: [expect.objectContaining({ netOutSpeedBps: 800 })] }))
@@ -281,7 +283,7 @@ describe('detail websocket subscriptions', () => {
 describe('normalizeServiceLatency', () => {
   it('maps service latency points into chart-compatible node series', () => {
     const data = normalizeServiceLatency({
-      target: { id: 'google', name: 'Google', type: 'http_get', address: 'https://www.google.com/generate_204', port: null, assigned_node_count: 10, reporting_node_count: 9, median_ms: 1.2, loss_percent: 0, updated_at: '2026-07-02T12:00:00Z' },
+      target: { id: 'google', name: 'Google', type: 'http_get', assigned_node_count: 10, reporting_node_count: 9, median_ms: 1.2, loss_percent: 0, updated_at: '2026-07-02T12:00:00Z' },
       range: '1d',
       points: [
         { ts: '2026-07-02T12:00:00Z', node_id: 'hytron', node_name: 'Hytron', median_ms: 1.4, loss_percent: 0 },
@@ -296,7 +298,7 @@ describe('normalizeServiceLatency', () => {
 
   it('expands compact Kulin-style node series into chart-compatible points', () => {
     const data = normalizeServiceLatency({
-      target: { id: 'google', name: 'Google', type: 'http_get', address: 'https://www.google.com/generate_204', port: null, assigned_node_count: 10, reporting_node_count: 9, median_ms: 1.2, loss_percent: 0, updated_at: '2026-07-02T12:00:00Z' },
+      target: { id: 'google', name: 'Google', type: 'http_get', assigned_node_count: 10, reporting_node_count: 9, median_ms: 1.2, loss_percent: 0, updated_at: '2026-07-02T12:00:00Z' },
       range: '1d',
       series: [
         {
@@ -317,7 +319,7 @@ describe('normalizeServiceLatency', () => {
 
   it('expands service latency series with shared timestamps', () => {
     const data = normalizeServiceLatency({
-      target: { id: 'google', name: 'Google', type: 'http_get', address: 'https://www.google.com/generate_204', port: null, assigned_node_count: 10, reporting_node_count: 9, median_ms: 1.2, loss_percent: 0, updated_at: '2026-07-02T12:00:00Z' },
+      target: { id: 'google', name: 'Google', type: 'http_get', assigned_node_count: 10, reporting_node_count: 9, median_ms: 1.2, loss_percent: 0, updated_at: '2026-07-02T12:00:00Z' },
       range: '1d',
       created_at: [Date.parse('2026-07-02T12:00:00Z'), Date.parse('2026-07-02T12:01:00Z')],
       series: [
@@ -780,37 +782,38 @@ describe('admin auth client', () => {
     vi.restoreAllMocks()
   })
 
-  it('logs in, logs out, and updates the admin account', async () => {
+  it('uses the HttpOnly cookie marker and CSRF header for browser auth without retaining response tokens', async () => {
     const fetchMock = vi.fn(async (url: string | URL | Request, init?: RequestInit) => {
       const textUrl = String(url)
-      if (textUrl.endsWith('/login')) return new Response(JSON.stringify({ username: 'admin', token: 'session-token' }), { status: 200, headers: { 'Content-Type': 'application/json' } })
+      if (textUrl.endsWith('/login')) return new Response(JSON.stringify({ username: 'admin' }), { status: 200, headers: { 'Content-Type': 'application/json' } })
       if (textUrl.endsWith('/account') && !init?.method) return new Response(JSON.stringify({ account: { username: 'admin' } }), { status: 200, headers: { 'Content-Type': 'application/json' } })
-      if (textUrl.endsWith('/account')) return new Response(JSON.stringify({ username: 'zeno-admin', token: 'account-session-token' }), { status: 200, headers: { 'Content-Type': 'application/json' } })
+      if (textUrl.endsWith('/account')) return new Response(JSON.stringify({ username: 'zeno-admin' }), { status: 200, headers: { 'Content-Type': 'application/json' } })
       return new Response(null, { status: 204 })
     })
     globalThis.fetch = fetchMock as unknown as typeof fetch
 
-    await expect(loginAdmin('admin', 'admin-pass')).resolves.toEqual({ username: 'admin', token: 'session-token' })
-    await expect(fetchAdminAccount('session-token')).resolves.toEqual({ username: 'admin' })
-    await expect(updateAdminAccount('session-token', 'zeno-admin', 'admin-pass', 'new-admin-pass')).resolves.toEqual({ username: 'zeno-admin', token: 'account-session-token' })
-    await expect(logoutAdmin('account-session-token')).resolves.toBeUndefined()
+    await expect(loginAdmin('admin', 'admin-pass')).resolves.toEqual({ username: 'admin', token: adminCookieSessionMarker })
+    await expect(fetchAdminAccount(adminCookieSessionMarker)).resolves.toEqual({ username: 'admin' })
+    await expect(updateAdminAccount(adminCookieSessionMarker, 'zeno-admin', 'admin-pass', 'new-admin-pass')).resolves.toEqual({ username: 'zeno-admin', token: adminCookieSessionMarker })
+    await expect(logoutAdmin(adminCookieSessionMarker)).resolves.toBeUndefined()
 
     expect(fetchMock).toHaveBeenNthCalledWith(1, '/api/admin/v1/login', {
       method: 'POST',
-      headers: { Accept: 'application/json', 'Content-Type': 'application/json' },
+      credentials: 'same-origin',
+      headers: { Accept: 'application/json', 'Content-Type': 'application/json', 'X-Zeno-CSRF': '1' },
       body: JSON.stringify({ username: 'admin', password: 'admin-pass' }),
     })
     expect(fetchMock).toHaveBeenNthCalledWith(2, '/api/admin/v1/account', {
-      headers: { Accept: 'application/json', 'X-Admin-Token': 'session-token' },
+      headers: { Accept: 'application/json', 'X-Zeno-CSRF': '1' },
     })
     expect(fetchMock).toHaveBeenNthCalledWith(3, '/api/admin/v1/account', {
       method: 'POST',
-      headers: { Accept: 'application/json', 'Content-Type': 'application/json', 'X-Admin-Token': 'session-token' },
+      headers: { Accept: 'application/json', 'Content-Type': 'application/json', 'X-Zeno-CSRF': '1' },
       body: JSON.stringify({ username: 'zeno-admin', current_password: 'admin-pass', new_password: 'new-admin-pass' }),
     })
     expect(fetchMock).toHaveBeenNthCalledWith(4, '/api/admin/v1/logout', {
       method: 'POST',
-      headers: { 'X-Admin-Token': 'account-session-token' },
+      headers: { 'X-Zeno-CSRF': '1' },
     })
   })
 

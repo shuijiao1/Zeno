@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from 'vitest'
-import { adminTokenStorageKey, adminTokenStoredAtKey, captureAdminTokenIdentity, clearStoredAdminToken, clearStoredAdminTokenIfCurrent, loadStoredAdminToken, rememberAdminToken } from './adminToken'
+import { adminCookieSessionMarker, adminTokenStorageKey, adminTokenStoredAtKey, captureAdminTokenIdentity, clearStoredAdminToken, clearStoredAdminTokenIfCurrent, loadStoredAdminToken, rememberAdminToken } from './adminToken'
 
 function makeStorage() {
   const values = new Map<string, string>()
@@ -14,94 +14,76 @@ function installWindowStorage() {
   const previousWindow = globalThis.window
   const localStorage = makeStorage()
   const sessionStorage = makeStorage()
-  Object.defineProperty(globalThis, 'window', {
-    configurable: true,
-    value: { localStorage, sessionStorage },
-  })
+  Object.defineProperty(globalThis, 'window', { configurable: true, value: { localStorage, sessionStorage } })
   return { localStorage, sessionStorage, restore: () => Object.defineProperty(globalThis, 'window', { configurable: true, value: previousWindow }) }
 }
 
-afterEach(() => {
-  clearStoredAdminToken()
-})
+afterEach(() => clearStoredAdminToken())
 
-describe('admin token storage', () => {
-  it('stores new admin tokens in sessionStorage instead of long-lived localStorage', () => {
+describe('HttpOnly admin session state', () => {
+  it('removes replayable legacy tokens and persists no new token in browser storage', () => {
     const { localStorage, sessionStorage, restore } = installWindowStorage()
     try {
-      const storedAt = Date.now()
-      rememberAdminToken('session-token', storedAt)
+      localStorage.setItem(adminTokenStorageKey, 'legacy-local-token')
+      localStorage.setItem(adminTokenStoredAtKey, '123')
+      sessionStorage.setItem(adminTokenStorageKey, 'legacy-session-token')
+      sessionStorage.setItem(adminTokenStoredAtKey, '456')
 
-      expect(sessionStorage.getItem(adminTokenStorageKey)).toBe('session-token')
-      expect(sessionStorage.getItem(adminTokenStoredAtKey)).toBe(String(storedAt))
+      expect(loadStoredAdminToken()).toBe('')
+      rememberAdminToken('server-token-must-not-be-kept')
+
+      expect(loadStoredAdminToken()).toBe(adminCookieSessionMarker)
       expect(localStorage.getItem(adminTokenStorageKey)).toBeNull()
-      expect(loadStoredAdminToken()).toBe('session-token')
+      expect(sessionStorage.getItem(adminTokenStorageKey)).toBeNull()
+      expect(localStorage.getItem(adminTokenStoredAtKey)).toBeNull()
+      expect(sessionStorage.getItem(adminTokenStoredAtKey)).toBeNull()
     } finally {
       restore()
     }
   })
 
-  it('migrates fresh legacy localStorage tokens into sessionStorage and removes the legacy copy', () => {
-    const { localStorage, sessionStorage, restore } = installWindowStorage()
-    try {
-      const storedAt = Date.now()
-      localStorage.setItem(adminTokenStorageKey, 'legacy-token')
-      localStorage.setItem(adminTokenStoredAtKey, String(storedAt))
-
-      expect(loadStoredAdminToken()).toBe('legacy-token')
-      expect(sessionStorage.getItem(adminTokenStorageKey)).toBe('legacy-token')
-      expect(localStorage.getItem(adminTokenStorageKey)).toBeNull()
-    } finally {
-      restore()
-    }
-  })
-
-  it('treats browser storage access failures as an empty session', () => {
+  it('treats browser storage access failures as an empty or in-memory-only session', () => {
     const previousWindow = globalThis.window
     const blockedStorage = {
       getItem: () => { throw new DOMException('blocked', 'SecurityError') },
       setItem: () => { throw new DOMException('blocked', 'SecurityError') },
       removeItem: () => { throw new DOMException('blocked', 'SecurityError') },
     }
-    Object.defineProperty(globalThis, 'window', {
-      configurable: true,
-      value: { localStorage: blockedStorage, sessionStorage: blockedStorage },
-    })
+    Object.defineProperty(globalThis, 'window', { configurable: true, value: { localStorage: blockedStorage, sessionStorage: blockedStorage } })
     try {
       expect(loadStoredAdminToken()).toBe('')
-      expect(() => rememberAdminToken('token')).not.toThrow()
+      expect(() => rememberAdminToken()).not.toThrow()
+      expect(loadStoredAdminToken()).toBe(adminCookieSessionMarker)
       expect(() => clearStoredAdminToken()).not.toThrow()
     } finally {
       Object.defineProperty(globalThis, 'window', { configurable: true, value: previousWindow })
     }
   })
 
-  it('does not let a late unauthorized response clear a newly rotated token', () => {
-    const { sessionStorage, restore } = installWindowStorage()
+  it('uses generations so a late 401 cannot clear a renewed cookie session marker', () => {
+    const { restore } = installWindowStorage()
     try {
-      rememberAdminToken('old-token')
-      const oldRequestIdentity = captureAdminTokenIdentity('old-token')
-
-      rememberAdminToken('new-token')
+      rememberAdminToken()
+      const oldRequestIdentity = captureAdminTokenIdentity(adminCookieSessionMarker)
+      rememberAdminToken()
 
       expect(clearStoredAdminTokenIfCurrent(oldRequestIdentity)).toBe(false)
-      expect(loadStoredAdminToken()).toBe('new-token')
-      expect(sessionStorage.getItem(adminTokenStorageKey)).toBe('new-token')
+      expect(loadStoredAdminToken()).toBe(adminCookieSessionMarker)
     } finally {
       restore()
     }
   })
 
-  it('uses generations to protect a renewed session even if the token text is reused', () => {
-    const { restore } = installWindowStorage()
+  it('clears the current in-memory marker on a 401 without leaving browser credentials', () => {
+    const { localStorage, sessionStorage, restore } = installWindowStorage()
     try {
-      rememberAdminToken('same-token')
-      const oldRequestIdentity = captureAdminTokenIdentity('same-token')
+      rememberAdminToken()
+      const identity = captureAdminTokenIdentity(adminCookieSessionMarker)
 
-      rememberAdminToken('same-token')
-
-      expect(clearStoredAdminTokenIfCurrent(oldRequestIdentity)).toBe(false)
-      expect(loadStoredAdminToken()).toBe('same-token')
+      expect(clearStoredAdminTokenIfCurrent(identity)).toBe(true)
+      expect(loadStoredAdminToken()).toBe('')
+      expect(localStorage.getItem(adminTokenStorageKey)).toBeNull()
+      expect(sessionStorage.getItem(adminTokenStorageKey)).toBeNull()
     } finally {
       restore()
     }

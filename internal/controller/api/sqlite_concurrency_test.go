@@ -304,7 +304,7 @@ func TestAgentHighFrequencyWritersSerializeAndRetrySQLiteBusy(t *testing.T) {
 
 func TestAgentSQLiteBusyRetryBudgetStaysBelowAgentClientTimeout(t *testing.T) {
 	const agentClientTimeout = 30 * time.Second
-	const configuredSQLiteBusyTimeout = 5 * time.Second
+	const configuredSQLiteBusyTimeout = 1 * time.Second
 	if sqliteAgentWriteTimeout >= agentClientTimeout {
 		t.Fatalf("agent write timeout %s must stay below agent client timeout %s", sqliteAgentWriteTimeout, agentClientTimeout)
 	}

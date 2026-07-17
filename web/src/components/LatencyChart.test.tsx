@@ -87,7 +87,7 @@ describe('LatencyChart', () => {
     expect(yAxisValues.some((value) => value > 1000)).toBe(true)
   })
 
-  it('draws null avg_ms samples at 0ms without falling back to median_ms', () => {
+  it('breaks the line at null avg_ms samples without falling back to median_ms', () => {
     const gapPoints = [
       { ts: '2026-07-02T00:00:00Z', targetId: 'alpha', targetName: 'Alpha', avgMs: 12, medianMs: 10, lossPercent: 0 },
       { ts: '2026-07-02T00:01:00Z', targetId: 'alpha', targetName: 'Alpha', avgMs: null, medianMs: 999, lossPercent: 0 },
@@ -97,8 +97,8 @@ describe('LatencyChart', () => {
     const html = renderToStaticMarkup(<LatencyChart points={gapPoints} activeTargetIds={['alpha']} />)
     const lineMatch = html.match(/<path[^>]+d="([^"]+)"[^>]+stroke="#22c55e"/)
 
-    expect(lineMatch?.[1].match(/M/g)).toHaveLength(1)
-    expect(lineMatch?.[1].match(/L/g)).toHaveLength(2)
+    expect(lineMatch?.[1].match(/M/g)).toHaveLength(2)
+    expect(lineMatch?.[1].match(/L/g) ?? []).toHaveLength(0)
   })
 
   it('keeps the full Kulin-style 1 day minute grid instead of thinning visible points', () => {

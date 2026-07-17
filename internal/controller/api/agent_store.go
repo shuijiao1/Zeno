@@ -19,7 +19,7 @@ func (s *SQLiteStore) RecordAgentHeartbeat(ctx context.Context, nodeID string, t
 
 func (s *SQLiteStore) RecordAgentHeartbeatTransition(ctx context.Context, nodeID string, ts time.Time, status, agentVersion string) (notificationStatusTransition, error) {
 	var transition notificationStatusTransition
-	err := s.withAgentWrite(ctx, func(ctx context.Context) error {
+	err := s.withAgentWrite(ctx, nodeID, func(ctx context.Context) error {
 		var err error
 		transition, err = s.recordAgentHeartbeatTransitionOnce(ctx, nodeID, ts, status, agentVersion)
 		return err
@@ -132,7 +132,7 @@ func (s *SQLiteStore) RecordAgentPresenceOfflineTransition(ctx context.Context, 
 
 func (s *SQLiteStore) recordAgentPresenceTransition(ctx context.Context, nodeID string, ts time.Time, status string) (notificationStatusTransition, error) {
 	var transition notificationStatusTransition
-	err := s.withAgentWrite(ctx, func(ctx context.Context) error {
+	err := s.withAgentWrite(ctx, nodeID, func(ctx context.Context) error {
 		var err error
 		transition, err = s.recordAgentPresenceTransitionOnce(ctx, nodeID, ts, status)
 		return err
@@ -185,7 +185,7 @@ func (s *SQLiteStore) StaleAgentOfflineNodeIDs(ctx context.Context, now time.Tim
 func (s *SQLiteStore) RecordStaleAgentOfflineTransition(ctx context.Context, nodeID string, now time.Time) (notificationStatusTransition, bool, error) {
 	var transition notificationStatusTransition
 	var changed bool
-	err := s.withAgentWrite(ctx, func(ctx context.Context) error {
+	err := s.withAgentWrite(ctx, nodeID, func(ctx context.Context) error {
 		var err error
 		transition, changed, err = s.recordStaleAgentOfflineTransitionOnce(ctx, nodeID, now)
 		return err
@@ -364,7 +364,7 @@ func storedNodeStatusForNotification(status string) string {
 }
 
 func (s *SQLiteStore) UpsertAgentHost(ctx context.Context, nodeID string, host AgentHostRequest) error {
-	return s.withAgentWrite(ctx, func(ctx context.Context) error {
+	return s.withAgentWrite(ctx, nodeID, func(ctx context.Context) error {
 		return s.upsertAgentHostOnce(ctx, nodeID, host)
 	})
 }
@@ -428,7 +428,10 @@ func (s *SQLiteStore) upsertAgentHostOnce(ctx context.Context, nodeID string, ho
 }
 
 func (s *SQLiteStore) InsertAgentState(ctx context.Context, nodeID string, state AgentStateRequest) error {
-	return s.withAgentWrite(ctx, func(ctx context.Context) error {
+	if err := s.ensureTelemetryStorage(); err != nil {
+		return err
+	}
+	return s.withAgentWrite(ctx, nodeID, func(ctx context.Context) error {
 		return s.insertAgentStateOnce(ctx, nodeID, state)
 	})
 }
@@ -456,9 +459,12 @@ func (s *SQLiteStore) insertAgentStateOnce(ctx context.Context, nodeID string, s
 }
 
 func (s *SQLiteStore) RecordAgentStateReport(ctx context.Context, nodeID string, state AgentStateRequest) (bool, notificationStatusTransition, error) {
+	if err := s.ensureTelemetryStorage(); err != nil {
+		return false, notificationStatusTransition{}, err
+	}
 	var accepted bool
 	var transition notificationStatusTransition
-	err := s.withAgentWrite(ctx, func(ctx context.Context) error {
+	err := s.withAgentWrite(ctx, nodeID, func(ctx context.Context) error {
 		var err error
 		accepted, transition, err = s.recordAgentStateReportOnce(ctx, nodeID, state)
 		return err

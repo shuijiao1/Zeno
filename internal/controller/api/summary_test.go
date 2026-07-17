@@ -46,8 +46,8 @@ func TestSummaryBatchQueriesMatchLegacySemantics(t *testing.T) {
 	if byNode["node-a"].LatencySummary == nil {
 		t.Fatalf("node-a home latency summary is nil")
 	}
-	if got, want := *byNode["node-a"].LatencySummary.AvgMS, 12.0; got != want {
-		t.Fatalf("node-a home AvgMS = %v, want median fallback %v", got, want)
+	if byNode["node-a"].LatencySummary.AvgMS != nil {
+		t.Fatalf("node-a home AvgMS = %v, want latest all-loss round to remain unavailable", *byNode["node-a"].LatencySummary.AvgMS)
 	}
 	if got, want := *byNode["node-a"].LatencySummary.LossPercent, 50.0; got != want {
 		t.Fatalf("node-a home 24h loss = %v, want %v", got, want)

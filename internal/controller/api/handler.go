@@ -311,6 +311,7 @@ func NewHandler(options ...HandlerOptions) http.Handler {
 	mux.HandleFunc("/api/admin/v1/settings", h.handleAdminSettings)
 	mux.HandleFunc("/api/admin/v1/notification-channels", h.handleAdminNotificationChannels)
 	mux.HandleFunc("/api/admin/v1/notification-channels/", h.handleAdminNotificationChannelResource)
+	mux.HandleFunc("/api/admin/v1/notification-deliveries/", h.handleAdminNotificationDeliveryResource)
 	mux.HandleFunc("/api/admin/v1/alert-rules", h.handleAdminAlertRules)
 	mux.HandleFunc("/api/admin/v1/alert-rules/", h.handleAdminAlertRuleResource)
 	mux.HandleFunc("/api/admin/v1/notification-types/", h.handleAdminNotificationTypeResource)
@@ -412,6 +413,9 @@ func (h *handler) Cleanup(ctx context.Context) error {
 
 func (h *handler) withSecurityHeaders(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, adminCookieErr := r.Cookie(adminSessionCookieName)
+		hasAdminCookie := adminCookieErr == nil
+		hasAdminHeader := strings.TrimSpace(r.Header.Get("X-Admin-Token")) != ""
 		w.Header().Set("X-Content-Type-Options", "nosniff")
 		w.Header().Set("X-Frame-Options", "DENY")
 		w.Header().Set("Referrer-Policy", "no-referrer")
@@ -420,14 +424,17 @@ func (h *handler) withSecurityHeaders(next http.Handler) http.Handler {
 		if h.requestUsesHTTPS(r) {
 			w.Header().Set("Strict-Transport-Security", "max-age=31536000")
 		}
-		if strings.HasPrefix(r.URL.Path, "/api/admin/") || r.URL.Path == "/api/agent/v1/enroll" || strings.TrimSpace(r.Header.Get("X-Admin-Token")) != "" {
+		if strings.HasPrefix(r.URL.Path, "/api/admin/") || r.URL.Path == "/api/agent/v1/enroll" || hasAdminHeader || hasAdminCookie {
 			w.Header().Set("Cache-Control", "no-store")
 		}
 		if r.URL.Path == "/api/agent/v1/enroll" {
 			w.Header().Set("Pragma", "no-cache")
 		}
-		if strings.TrimSpace(r.Header.Get("X-Admin-Token")) != "" {
+		if hasAdminHeader {
 			w.Header().Add("Vary", "X-Admin-Token")
+		}
+		if hasAdminCookie {
+			w.Header().Add("Vary", "Cookie")
 		}
 		next.ServeHTTP(w, r)
 	})

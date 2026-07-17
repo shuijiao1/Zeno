@@ -23,6 +23,11 @@ const (
 	notificationDeliveryScanLimit   = 32
 	notificationDeliveryMaxAttempts = 5
 	notificationDeliveryLease       = 30 * time.Second
+	// Deliveries that exhaust the fast retry budget remain retryable at a low
+	// frequency. They intentionally stay in the failed state between attempts so
+	// operators can identify and manually retry them without creating a tight
+	// retry loop during a prolonged Telegram outage.
+	notificationDeliveryLongRetryDelay = 6 * time.Hour
 )
 
 var errNotificationDeliveryLeaseLost = errors.New("notification delivery lease lost")
@@ -240,8 +245,8 @@ func notificationEventEnabledTx(ctx context.Context, tx *sql.Tx, eventType, node
 func (s *SQLiteStore) PendingNotificationDeliveries(ctx context.Context, now time.Time, limit int) ([]queuedNotificationDelivery, error) {
 	// Claim a single row so the 5s serial send timeout stays well within the 30s
 	// lease. Continue past a bounded number of malformed rows: one bad encrypted
-	// credential is terminally isolated and cannot roll back or block the next
-	// healthy channel in the claim scan.
+	// credential is isolated on the low-frequency retry cadence and cannot roll
+	// back or block the next healthy channel in the claim scan.
 	now = now.UTC()
 	for scanned := 0; scanned < notificationDeliveryScanLimit; scanned++ {
 		delivery, found, quarantined, err := s.claimNextNotificationDelivery(ctx, now)
@@ -327,28 +332,6 @@ func (s *SQLiteStore) claimNextNotificationDelivery(ctx context.Context, now tim
 	`, nowUnix); err != nil {
 		return queuedNotificationDelivery{}, false, false, err
 	}
-	// If a predecessor permanently failed, a later recovery is meaningless to a
-	// recipient who never received the incident. Make that recovery terminal
-	// rather than allowing it to overtake the failed offline/warning delivery.
-	if _, err := tx.ExecContext(ctx, `
-		UPDATE notification_deliveries AS recovery
-		SET state = 'canceled', last_error = 'predecessor delivery failed',
-		    lease_until = 0, claim_token = '', updated_at = ?
-		WHERE recovery.state IN ('pending', 'paused')
-		  AND recovery.status = 'online' AND recovery.previous_status <> ''
-		  AND TRIM(recovery.causal_predecessor_event_id) <> ''
-		  AND EXISTS (
-		    SELECT 1 FROM notification_deliveries predecessor
-		    WHERE predecessor.channel_id = recovery.channel_id
-		      AND predecessor.channel_version = recovery.channel_version
-		      AND predecessor.destination_fingerprint = recovery.destination_fingerprint
-		      AND predecessor.event_id = recovery.causal_predecessor_event_id
-		      AND predecessor.state = 'failed'
-		  )
-	`, nowUnix); err != nil {
-		return queuedNotificationDelivery{}, false, false, err
-	}
-
 	var deliveryID int64
 	err = tx.QueryRowContext(ctx, `
 		SELECT d.id
@@ -357,7 +340,7 @@ func (s *SQLiteStore) claimNextNotificationDelivery(ctx context.Context, now tim
 		  ON c.id = d.channel_id
 		 AND c.delivery_version = d.channel_version
 		 AND c.destination_fingerprint = d.destination_fingerprint
-		WHERE d.state = 'pending' AND d.next_attempt_at <= ?
+		WHERE d.state IN ('pending', 'failed') AND d.next_attempt_at <= ?
 		  AND c.enabled = 1
 		  AND TRIM(c.destination) <> '' AND TRIM(c.credential) <> ''
 		  AND (
@@ -386,7 +369,7 @@ func (s *SQLiteStore) claimNextNotificationDelivery(ctx context.Context, now tim
 	result, err := tx.ExecContext(ctx, `
 		UPDATE notification_deliveries
 		SET state = 'leased', lease_until = ?, claim_token = ?, updated_at = ?
-		WHERE id = ? AND state = 'pending'
+		WHERE id = ? AND state IN ('pending', 'failed')
 	`, leaseUntil, claimToken, nowUnix, deliveryID)
 	if err != nil {
 		return queuedNotificationDelivery{}, false, false, err
@@ -427,20 +410,21 @@ func (s *SQLiteStore) claimNextNotificationDelivery(ctx context.Context, now tim
 	}
 	credential, err := s.decryptNotificationCredentialFromStorage(delivery.Channel.ID, "telegram", storedCredential)
 	if err != nil {
+		attempts := delivery.Attempts + 1
+		if attempts < notificationDeliveryMaxAttempts {
+			attempts = notificationDeliveryMaxAttempts
+		}
 		result, updateErr := tx.ExecContext(ctx, `
 			UPDATE notification_deliveries
 			SET state = 'failed', attempts = ?, last_error = 'notification credential unavailable',
-			    lease_until = 0, claim_token = '', updated_at = ?
+			    next_attempt_at = ?, lease_until = 0, claim_token = '', updated_at = ?
 			WHERE id = ? AND state = 'leased' AND claim_token = ?
-		`, notificationDeliveryMaxAttempts, nowUnix, delivery.ID, claimToken)
+		`, attempts, now.Add(notificationDeliveryLongRetryDelay).Unix(), nowUnix, delivery.ID, claimToken)
 		if updateErr != nil {
 			return queuedNotificationDelivery{}, false, false, updateErr
 		}
 		if updateErr = requireOneNotificationDeliveryRow(result); updateErr != nil {
 			return queuedNotificationDelivery{}, false, false, updateErr
-		}
-		if err := cancelDependentNotificationRecoveriesTx(ctx, tx, delivery, nowUnix); err != nil {
-			return queuedNotificationDelivery{}, false, false, err
 		}
 		if err := tx.Commit(); err != nil {
 			return queuedNotificationDelivery{}, false, false, err
@@ -496,11 +480,6 @@ func (s *SQLiteStore) RecordNotificationDeliveryAttempt(ctx context.Context, del
 	if err := requireOneNotificationDeliveryRow(result); err != nil {
 		return err
 	}
-	if state == "failed" {
-		if err := cancelDependentNotificationRecoveriesTx(ctx, tx, delivery, nowUnix); err != nil {
-			return err
-		}
-	}
 	if err := tx.Commit(); err != nil {
 		return err
 	}
@@ -522,52 +501,33 @@ func requireOneNotificationDeliveryRow(result sql.Result) error {
 	return nil
 }
 
-func cancelDependentNotificationRecoveriesTx(ctx context.Context, tx *sql.Tx, delivery queuedNotificationDelivery, nowUnix int64) error {
-	_, err := tx.ExecContext(ctx, `
-		UPDATE notification_deliveries
-		SET state = 'canceled', last_error = 'predecessor delivery failed',
-		    lease_until = 0, claim_token = '', updated_at = ?
-		WHERE id > ? AND channel_id = ? AND channel_version = ?
-		  AND destination_fingerprint = ? AND event_type = ? AND node_id = ?
-		  AND causal_predecessor_event_id = ?
-		  AND status = 'online' AND previous_status = ?
-		  AND state IN ('pending', 'paused')
-	`, nowUnix, delivery.ID, delivery.Channel.ID, delivery.Channel.DeliveryVersion,
-		delivery.Channel.DestinationFingerprint, delivery.Event.EventType,
-		delivery.Event.NodeID, delivery.Event.EventID, delivery.Event.Status)
-	return err
-}
-
-func (s *SQLiteStore) ReplayFailedNotificationDeliveries(ctx context.Context, now time.Time, limit int) (int, error) {
-	if limit <= 0 || limit > notificationDeliveryBatchSize {
-		limit = notificationDeliveryBatchSize
+func (s *SQLiteStore) RetryFailedNotificationDelivery(ctx context.Context, deliveryID int64, now time.Time) error {
+	if deliveryID <= 0 {
+		return errNotificationDeliveryNotFound
 	}
 	result, err := s.db.ExecContext(ctx, `
 		UPDATE notification_deliveries
 		SET state = 'pending', next_attempt_at = ?, lease_until = 0, claim_token = '', last_error = '', updated_at = ?
-		WHERE id IN (
-			SELECT d.id
-			FROM notification_deliveries d
-			JOIN notification_channels c
-			  ON c.id = d.channel_id
-			 AND c.delivery_version = d.channel_version
-			 AND c.destination_fingerprint = d.destination_fingerprint
-			WHERE d.state = 'failed'
-			  AND c.enabled = 1
-			  AND TRIM(c.destination) <> ''
-			  AND TRIM(c.credential) <> ''
-			ORDER BY d.updated_at ASC, d.id ASC
-			LIMIT ?
-		)
-	`, now.UTC().Unix(), now.UTC().Unix(), limit)
+		WHERE id = ? AND state = 'failed'
+	`, now.UTC().Unix(), now.UTC().Unix(), deliveryID)
 	if err != nil {
-		return 0, err
+		return err
 	}
 	affected, err := result.RowsAffected()
 	if err != nil {
-		return 0, err
+		return err
 	}
-	return int(affected), nil
+	if affected == 1 {
+		return nil
+	}
+	var state string
+	if err := s.db.QueryRowContext(ctx, `SELECT state FROM notification_deliveries WHERE id = ?`, deliveryID).Scan(&state); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return errNotificationDeliveryNotFound
+		}
+		return err
+	}
+	return errNotificationDeliveryNotFailed
 }
 
 func notificationClaimToken(now time.Time) string {
@@ -586,8 +546,10 @@ func notificationRetryDelay(attempt int) time.Duration {
 		return 5 * time.Second
 	case 3:
 		return 30 * time.Second
-	default:
+	case 4:
 		return 2 * time.Minute
+	default:
+		return notificationDeliveryLongRetryDelay
 	}
 }
 

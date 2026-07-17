@@ -32,11 +32,14 @@ export function summarizeLatencyTargets(points: LatencyPoint[]): LatencyTargetSu
     }
 
     acc.targetName = point.targetName
-    acc.sampleCount += 1
-    if (typeof point.avgMs === 'number' && Number.isFinite(point.avgMs)) {
-      acc.latestDelay = point.avgMs
+    const delay = point.avgMs
+    const hasDelay = typeof delay === 'number' && Number.isFinite(delay)
+    const missingBucket = !hasDelay && point.lossPercent === 0
+    if (!missingBucket) acc.sampleCount += 1
+    if (hasDelay) {
+      acc.latestDelay = delay
     }
-    if (Number.isFinite(point.lossPercent)) {
+    if (!missingBucket && Number.isFinite(point.lossPercent)) {
       acc.lossTotal += point.lossPercent
       acc.lossCount += 1
     }
@@ -48,7 +51,7 @@ export function summarizeLatencyTargets(points: LatencyPoint[]): LatencyTargetSu
     targetId: acc.targetId,
     targetName: acc.targetName,
     sampleCount: acc.sampleCount,
-    avgMs: acc.latestDelay !== null ? round2(acc.latestDelay) : acc.sampleCount > 0 ? 0 : null,
+    avgMs: acc.latestDelay !== null ? round2(acc.latestDelay) : null,
     lossPercent: acc.lossCount > 0 ? round2(acc.lossTotal / acc.lossCount) : 0,
   }))
 }

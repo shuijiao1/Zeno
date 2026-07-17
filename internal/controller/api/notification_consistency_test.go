@@ -111,14 +111,18 @@ func TestNotificationRecoveryCannotOvertakeAttemptedOrFailedPredecessor(t *testi
 	}
 	claimed[0].Attempts = notificationDeliveryMaxAttempts - 1
 	if err := store.RecordNotificationDeliveryAttempt(ctx, claimed[0], errors.New("permanent failure"), attemptAt.Add(2*time.Second)); err != nil {
-		t.Fatalf("record terminal predecessor failure: %v", err)
+		t.Fatalf("record long-term predecessor failure: %v", err)
 	}
 	var recoveryState, recoveryError string
 	if err := store.db.QueryRowContext(ctx, `SELECT state, last_error FROM notification_deliveries WHERE status = 'online'`).Scan(&recoveryState, &recoveryError); err != nil {
 		t.Fatalf("read recovery: %v", err)
 	}
-	if recoveryState != "canceled" || recoveryError != "predecessor delivery failed" {
+	if recoveryState != "pending" || recoveryError != "" {
 		t.Fatalf("recovery state=%q error=%q", recoveryState, recoveryError)
+	}
+	blocked, err = store.PendingNotificationDeliveries(ctx, attemptAt.Add(3*time.Second), 1)
+	if err != nil || len(blocked) != 0 {
+		t.Fatalf("recovery overtook failed predecessor awaiting long retry: %+v err=%v", blocked, err)
 	}
 }
 

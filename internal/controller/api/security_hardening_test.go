@@ -14,6 +14,23 @@ import (
 	"time"
 )
 
+func TestPublicServiceTargetDTOOmitsProbeEndpoint(t *testing.T) {
+	payload, err := json.Marshal(ServiceTarget{ID: "private-target", Name: "Private Target", Type: "tcping"})
+	if err != nil {
+		t.Fatalf("marshal public service target: %v", err)
+	}
+	var fields map[string]any
+	if err := json.Unmarshal(payload, &fields); err != nil {
+		t.Fatalf("decode public service target: %v", err)
+	}
+	if _, exists := fields["address"]; exists {
+		t.Fatalf("public service target leaked address: %s", payload)
+	}
+	if _, exists := fields["port"]; exists {
+		t.Fatalf("public service target leaked port: %s", payload)
+	}
+}
+
 func TestLegacyAgentPlaintextCredentialIsRemovedWithoutInvalidatingRuntimeHash(t *testing.T) {
 	dbPath := filepath.Join(t.TempDir(), "zeno.db")
 	store, err := OpenSQLiteStore(dbPath)
@@ -350,16 +367,21 @@ func TestAgentQuotaSupportsNormalCadenceAndIsolatesAbusiveNodes(t *testing.T) {
 	for index := range maximumProbe.Rounds {
 		maximumProbe.Rounds[index].Samples = make([]AgentProbeSample, 32)
 	}
-	units := agentProbeWriteUnits(maximumProbe)
+	units := agentProbeWriteUnits(maximumProbe, 32<<10)
 	release, _, ok := manager.admitWrite("node-probe", units)
 	if !ok {
 		t.Fatalf("maximum valid probe batch cost %.0f was rejected", units)
 	}
 	release()
 	now = now.Add(5 * time.Second)
-	release, _, ok = manager.admitWrite("node-probe", units)
+	if release, _, ok = manager.admitWrite("node-probe", units); ok {
+		release()
+		t.Fatal("sustained maximum-byte probe batches bypassed byte-aware quota")
+	}
+	normalUnits := agentProbeWriteUnits(AgentProbeResultsRequest{Rounds: maximumProbe.Rounds[:4]}, 4<<10)
+	release, _, ok = manager.admitWrite("node-normal-probe", normalUnits)
 	if !ok {
-		t.Fatal("five-second maximum probe cadence was rejected")
+		t.Fatal("normal short-error probe payload was rejected")
 	}
 	release()
 

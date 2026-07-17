@@ -39,7 +39,7 @@ func TestComputeStatsAllSuccessfulSamples(t *testing.T) {
 	almostEqual(t, stats.StddevMS, math.Sqrt(200.0/3.0))
 }
 
-func TestComputeStatsPartialTimeoutCountsLossButKeepsMeasuredLatency(t *testing.T) {
+func TestComputeStatsPartialTimeoutCountsLossAndExcludesFailedLatency(t *testing.T) {
 	stats, err := ComputeStats([]Sample{
 		{Seq: 1, Success: true, LatencyMS: f64(10)},
 		{Seq: 2, Success: false, LatencyMS: f64(1200), Error: "timeout"},
@@ -56,9 +56,9 @@ func TestComputeStatsPartialTimeoutCountsLossButKeepsMeasuredLatency(t *testing.
 		t.Fatalf("loss = %.2f, want 50", stats.LossPercent)
 	}
 	almostEqual(t, stats.MinMS, 10)
-	almostEqual(t, stats.AvgMS, 420)
-	almostEqual(t, stats.MedianMS, 50)
-	almostEqual(t, stats.MaxMS, 1200)
+	almostEqual(t, stats.AvgMS, 30)
+	almostEqual(t, stats.MedianMS, 30)
+	almostEqual(t, stats.MaxMS, 50)
 }
 
 func TestComputeStatsAllUnmeasuredTimeoutsHaveNullLatencyStats(t *testing.T) {
@@ -77,7 +77,7 @@ func TestComputeStatsAllUnmeasuredTimeoutsHaveNullLatencyStats(t *testing.T) {
 	}
 }
 
-func TestComputeStatsAllMeasuredTimeoutsKeepLatencyStats(t *testing.T) {
+func TestComputeStatsAllMeasuredTimeoutsHaveNullLatencyStats(t *testing.T) {
 	stats, err := ComputeStats([]Sample{
 		{Seq: 1, Success: false, LatencyMS: f64(1500), Error: "timeout"},
 		{Seq: 2, Success: false, LatencyMS: f64(3500), Error: "timeout"},
@@ -88,10 +88,9 @@ func TestComputeStatsAllMeasuredTimeoutsKeepLatencyStats(t *testing.T) {
 	if stats.Sent != 2 || stats.Received != 0 || stats.LossPercent != 100 {
 		t.Fatalf("sent/received/loss = %d/%d/%.2f, want 2/0/100", stats.Sent, stats.Received, stats.LossPercent)
 	}
-	almostEqual(t, stats.MinMS, 1500)
-	almostEqual(t, stats.AvgMS, 2500)
-	almostEqual(t, stats.MedianMS, 2500)
-	almostEqual(t, stats.MaxMS, 3500)
+	if stats.MinMS != nil || stats.AvgMS != nil || stats.MedianMS != nil || stats.MaxMS != nil || stats.StddevMS != nil {
+		t.Fatalf("failed samples must not produce latency stats: %+v", stats)
+	}
 }
 
 func TestComputeStatsEvenMedian(t *testing.T) {

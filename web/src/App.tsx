@@ -1,21 +1,22 @@
 import { type CSSProperties, type DragEvent, type FormEvent, type ReactNode, useEffect, useId, useLayoutEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import copy from 'copy-to-clipboard'
-import { createAdminNode, createAdminNotificationChannel, createAdminProbeTarget, deleteAdminNode, deleteAdminNotificationChannel, deleteAdminProbeTarget, fetchAdminAccount, fetchAdminAlertRules, fetchAdminNodes, fetchAdminNotificationChannels, fetchAdminProbeTargets, fetchAdminSettings, fetchNodeLatency, fetchNodeState, fetchPublicSettings, fetchServiceLatency, fetchSummary, subscribeNodeLatency, subscribeNodeState, subscribeServiceLatency, subscribeSummary, loginAdmin, logoutAdmin, requestAdminNodeInstallCommand, testAdminNotificationChannel, updateAdminAccount, updateAdminAlertRule, updateAdminNode, updateAdminNotificationChannel, updateAdminProbeTarget, updateAdminSettings, type AdminAccountData, type AdminAlertRuleUpdateInput, type AdminNodeCreateInput, type AdminNodeUpdateInput, type AdminNotificationChannelCreateInput, type AdminNotificationChannelUpdateInput, type AdminProbeTargetInput, type AdminProbeTargetUpdateInput, type AdminSettingsUpdateInput, type NodeLatencyData, type NodeStateData, type ServiceLatencyData, type SummaryData } from './api/client'
+import { createAdminNode, createAdminNotificationChannel, createAdminProbeTarget, deleteAdminNode, deleteAdminNotificationChannel, deleteAdminProbeTarget, fetchAdminAlertRules, fetchAdminNodes, fetchAdminNotificationChannels, fetchAdminProbeTargets, fetchAdminSettings, fetchNodeLatency, fetchNodeState, fetchPublicSettings, fetchServiceLatency, fetchSummary, subscribeNodeLatency, subscribeNodeState, subscribeServiceLatency, subscribeSummary, requestAdminNodeInstallCommand, testAdminNotificationChannel, updateAdminAlertRule, updateAdminNode, updateAdminNotificationChannel, updateAdminProbeTarget, updateAdminSettings, type AdminAlertRuleUpdateInput, type AdminNodeCreateInput, type AdminNodeUpdateInput, type AdminNotificationChannelCreateInput, type AdminNotificationChannelUpdateInput, type AdminProbeTargetInput, type AdminProbeTargetUpdateInput, type AdminSettingsUpdateInput, type NodeLatencyData, type NodeStateData, type ServiceLatencyData, type SummaryData } from './api/client'
+import { fetchAdminAccount, loginAdmin, logoutAdmin, updateAdminAccount, type AdminAccountData } from './api/adminSession'
 import { LatencyDetail } from './components/LatencyDetail'
-import { LatencyChart } from './components/LatencyChart'
 import { ServerCard } from './components/ServerCard'
+import { ServiceDetail } from './components/ServiceDetail'
 import { ServerFlag } from './components/ServerFlag'
 import { startLiveRefresh } from './lib/liveRefresh'
 import { startResilientLiveData } from './lib/resilientLive'
 import { createMutationEpoch } from './lib/mutationEpoch'
-import { captureAdminTokenIdentity, clearStoredAdminToken, clearStoredAdminTokenIfCurrent, loadStoredAdminToken, rememberAdminToken, type AdminTokenIdentity } from './lib/adminToken'
+import { adminCookieSessionMarker, captureAdminTokenIdentity, clearStoredAdminToken, clearStoredAdminTokenIfCurrent, loadStoredAdminToken, rememberAdminToken, type AdminTokenIdentity } from './lib/adminToken'
 import { nodePath, parseDashboardRoute, type DashboardRoute } from './lib/route'
 import { applyCustomCode } from './lib/customCode'
-import { availableHistoryRanges, coerceHistoryRange, isHTTPUnauthorizedError, rangeRequiresAdmin } from './lib/historyRange'
+import { coerceHistoryRange, isHTTPUnauthorizedError, rangeRequiresAdmin } from './lib/historyRange'
 import { DetailMemoryCache, loadCachedDetailData, nodeLatencyCachePrefix, nodeStateCachePrefix, rememberDetailData, serviceLatencyCachePrefix } from './lib/detailCache'
 import { loadStoredSummary, rememberSummary } from './lib/summaryCache'
-import type { AdminAlertRule, AdminNode, AdminNodeInstallCommand, AdminNotificationChannel, AdminProbeTarget, AdminSettings, AdminTheme, AppearancePreset, HomeCardNode, LatencyPoint, ProbeType, ServiceTarget, StatePoint } from './types'
+import type { AdminAlertRule, AdminNode, AdminNodeInstallCommand, AdminNotificationChannel, AdminProbeTarget, AdminSettings, AdminTheme, AppearancePreset, HomeCardNode, LatencyPoint, ProbeType, StatePoint } from './types'
 
 export { applyCustomCode, extractSafeCustomCSS } from './lib/customCode'
 export { availableHistoryRanges, coerceHistoryRange, rangeRequiresAdmin } from './lib/historyRange'
@@ -418,6 +419,7 @@ export function App() {
   const homeRealtimeMountedAtRef = useRef(monotonicNowMs())
   const homeRealtimeLastUpdatedAtRef = useRef<number | null>(null)
   const adminMutationEpochRef = useRef(createMutationEpoch())
+  const adminSessionProbeRef = useRef(0)
   const [homeRealtimeSnapshot, setHomeRealtimeSnapshot] = useState<HomeRealtimeSnapshot | null>(() => state.kind === 'ready' ? homeRealtimeSnapshotForNodes(state.data.nodes) : null)
   const [adminToken, setAdminToken] = useState(loadStoredAdminToken)
   const [adminAuthState, setAdminAuthState] = useState<AdminAuthState>({ kind: 'idle' })
@@ -429,6 +431,22 @@ export function App() {
   const [themeOverride, setThemeOverride] = useState<AdminTheme | null>(() => storedThemeOverride())
   const [backgroundEnabled, setBackgroundEnabled] = useState(() => storedBackgroundEnabled())
   const backgroundEnabledRef = useRef(backgroundEnabled)
+
+  useEffect(() => {
+    let cancelled = false
+    const probe = ++adminSessionProbeRef.current
+    // HttpOnly cookies cannot be inspected by JavaScript. Probe the account
+    // endpoint once so a secure cookie session survives a page refresh without
+    // ever copying its replayable token into JS state or browser storage.
+    fetchAdminAccount(adminCookieSessionMarker)
+      .then(() => {
+        if (cancelled || probe !== adminSessionProbeRef.current) return
+        rememberAdminToken()
+        setAdminToken(adminCookieSessionMarker)
+      })
+      .catch(() => {})
+    return () => { cancelled = true }
+  }, [])
 
   const clearAdminSession = (identity?: AdminTokenIdentity): boolean => {
     if (identity) {
@@ -814,6 +832,7 @@ export function App() {
     const trimmedUsername = username.trim()
     const trimmedPassword = password.trim()
     if (trimmedUsername === '' || trimmedPassword === '') return
+    adminSessionProbeRef.current += 1
     setAdminAuthState({ kind: 'loading' })
     loginAdmin(trimmedUsername, trimmedPassword)
       .then((session) => {
@@ -827,6 +846,7 @@ export function App() {
   }
 
   const clearAdminToken = () => {
+    adminSessionProbeRef.current += 1
     if (adminToken === '') {
       clearAdminSession()
       setAdminAuthState({ kind: 'idle' })
@@ -1102,6 +1122,14 @@ export function App() {
   const downSpeed = currentRealtimeSnapshot.downSpeed
   const hasBackgroundImage = (effectiveSettings.desktopBackgroundUrl || effectiveSettings.backgroundUrl || effectiveSettings.mobileBackgroundUrl).trim() !== ''
   const hasAdminToken = adminToken !== ''
+  const publicDataMayBeStale = state.kind === 'ready' && (
+    state.stale === true
+    || (route.kind === 'node' && (
+      (latencyState.kind === 'ready' && latencyState.freshness?.stale === true)
+      || (stateHistoryState.kind === 'ready' && stateHistoryState.freshness?.stale === true)
+    ))
+    || (route.kind === 'service' && serviceLatencyState.kind === 'ready' && serviceLatencyState.freshness?.stale === true)
+  )
 
   return (
     <main className="kulin-shell" data-theme={effectiveSettings.theme} data-background={hasBackgroundImage ? 'on' : 'off'} style={shellStyleForSettings(effectiveSettings)}>
@@ -1138,6 +1166,7 @@ export function App() {
 
       {route.kind !== 'admin' && state.kind === 'loading' && <section className="state-panel">正在读取 Controller API…</section>}
       {route.kind !== 'admin' && state.kind === 'error' && <section className="state-panel is-error">API 读取失败：{state.message}</section>}
+      {route.kind !== 'admin' && publicDataMayBeStale && <div className="data-stale-notice" role="status">数据可能已过期</div>}
 
       {state.kind === 'ready' && route.kind === 'node' && selectedNode && (
         <LatencyDetail
@@ -1244,93 +1273,6 @@ export function HomeTopPanel({ settings = defaultSettings, onHome, onAdmin, onTh
       <HomeOverviewPanel settings={settings} {...overview} />
     </section>
   )
-}
-
-function ServiceDetail({ target, points, range, loading, error, canUseExtendedRanges = false, onBack, onRangeChange, topHeader }: { target: ServiceTarget; points: LatencyPoint[]; range: string; loading?: boolean; error?: string; canUseExtendedRanges?: boolean; onBack: () => void; onRangeChange: (range: string) => void; topHeader?: ReactNode }) {
-  const [peakCut, setPeakCut] = useState(false)
-  const serviceRangeOptions = availableHistoryRanges(canUseExtendedRanges)
-  const rangeLabel = serviceRangeOptions.find((option) => option.value === range)?.label ?? range
-  return (
-    <div className="kulin-container detail-container">
-      <section className="home-top-card detail-top-card" aria-label={`${target.name} service overview`}>
-        {topHeader}
-        <section className="detail-hero">
-          <div className="detail-hero__main">
-          <button className="detail-title-button" type="button" onClick={onBack}>
-            <span aria-hidden="true">‹</span>
-            <span>{target.name}</span>
-          </button>
-          <span className={`detail-status-pill status-${serviceTone(target)}`}>{target.reportingNodeCount} / {target.assignedNodeCount} 节点上报</span>
-        </div>
-          <section className="detail-fact-strip" aria-label={`${target.name} service facts`}>
-            <ServiceInfoFact label="类型" value={target.type} />
-            <ServiceInfoFact label="地址" value={formatServiceEndpoint(target)} wide />
-            <ServiceInfoFact label="最新延迟" value={formatServiceLatency(target.avgMs ?? 0)} />
-            <ServiceInfoFact label="丢包" value={formatServiceLoss(target.lossPercent)} />
-            <ServiceInfoFact label="更新时间" value={target.updatedAt ? formatAdminDate(target.updatedAt) : '--'} />
-          </section>
-        </section>
-      </section>
-
-      <section className="monitor-panel" aria-label={`${target.name} service latency`}>
-        <header className="monitor-heading">
-          <div>
-            <h3>{target.name} 多节点历史</h3>
-            <p>{rangeLabel} · 按节点分线展示</p>
-          </div>
-          <div className="monitor-heading-actions">
-            <div className="detail-range-row" aria-label="service latency range selector">
-              {serviceRangeOptions.map((option) => (
-                <button key={option.value} type="button" className={range === option.value ? 'is-active' : ''} onClick={() => onRangeChange(option.value)}>{option.label}</button>
-              ))}
-            </div>
-            <label className="peak-switch">
-              <input type="checkbox" aria-label="平滑" checked={peakCut} onChange={(event) => setPeakCut(event.target.checked)} />
-              <span />
-              <b>平滑</b>
-            </label>
-          </div>
-        </header>
-        {loading && <div className="detail-state">正在读取服务延迟…</div>}
-        {error && <div className="detail-state is-error">服务延迟读取失败：{error}</div>}
-        {!loading && !error && points.length === 0 && <div className="detail-state">暂无服务延迟历史</div>}
-        {!loading && !error && points.length > 0 && (
-          <LatencyChart points={points} title={`${target.name} 多节点延迟`} eyebrow={`${rangeLabel} · ${target.reportingNodeCount} 个节点`} compactHeader peakCut={peakCut} />
-        )}
-      </section>
-    </div>
-  )
-}
-
-function ServiceInfoFact({ label, value, wide = false }: { label: string; value: string; wide?: boolean }) {
-  return (
-    <article className={`detail-fact${wide ? ' is-wide' : ''}`} title={`${label}: ${value}`}>
-      <p>{label}</p>
-      <strong>{value}</strong>
-    </article>
-  )
-}
-
-function serviceTone(service: ServiceTarget): 'online' | 'warning' | 'offline' {
-  if (service.reportingNodeCount <= 0) return 'offline'
-  if (service.assignedNodeCount > 0 && service.reportingNodeCount < service.assignedNodeCount) return 'warning'
-  if (service.lossPercent !== null && service.lossPercent >= 20) return 'warning'
-  return 'online'
-}
-
-function formatServiceEndpoint(service: ServiceTarget): string {
-  if (service.port !== undefined) return `${service.address}:${service.port}`
-  return service.address
-}
-
-function formatServiceLatency(value: number | null | undefined): string {
-  if (value === null || value === undefined) return '--'
-  return `${Number.isInteger(value) ? value.toFixed(0) : value.toFixed(2)}ms`
-}
-
-function formatServiceLoss(value: number | null | undefined): string {
-  if (value === null || value === undefined) return '--'
-  return `${value.toFixed(2)}%`
 }
 
 function BrandLogo({ logoUrl, siteTitle }: { logoUrl?: string; siteTitle?: string }) {
@@ -3754,13 +3696,6 @@ function parseQuota(value: string, unit: string): number | null {
   if (!Number.isFinite(parsed) || parsed < 0) return null
   const multiplier = unit === 'TB' ? 1024 ** 4 : 1024 ** 3
   return Math.round(parsed * multiplier)
-}
-
-function formatAdminDate(value?: string): string {
-  if (!value) return '—'
-  const date = new Date(value)
-  if (Number.isNaN(date.getTime())) return value
-  return date.toLocaleString('zh-CN', { hour12: false })
 }
 
 export function HomeOverviewPanel({ totalCount, onlineCount, offlineCount: _offlineCount, totalUp, totalDown, upSpeed, downSpeed }: HomeOverviewPanelProps) {

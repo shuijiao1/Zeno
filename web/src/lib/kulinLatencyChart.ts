@@ -3,7 +3,7 @@ import type { LatencyPoint } from '../types'
 export interface KulinSeriesPoint {
   created_at: number
   avg_delay: number | null
-  packet_loss: number
+  packet_loss: number | null
 }
 
 export interface KulinTargetSeries {
@@ -102,18 +102,24 @@ export function buildKulinTargetSeries(points: LatencyPoint[]): KulinTargetSerie
     return {
       targetId,
       targetName: targetPoints[0]?.targetName ?? targetId,
-      points: targetPoints.map((point, index) => ({
-        created_at: Date.parse(point.ts),
-        avg_delay: latencyDelay(point),
-        packet_loss: Number.isFinite(point.lossPercent) ? point.lossPercent : calculatedPacketLoss[index],
-      })),
+      points: targetPoints.map((point, index) => {
+        const delay = latencyDelay(point)
+        const reportedLoss = Number.isFinite(point.lossPercent) ? point.lossPercent : calculatedPacketLoss[index]
+        return {
+          created_at: Date.parse(point.ts),
+          avg_delay: delay,
+          // A grid bucket with neither latency nor loss is missing data, not a
+          // successful zero-loss probe. Keep both chart dimensions empty.
+          packet_loss: delay === null && reportedLoss === 0 ? null : reportedLoss,
+        }
+      }),
     }
   })
 }
 
-function latencyDelay(point: LatencyPoint): number {
-  if (Number.isFinite(point.lossPercent) && point.lossPercent >= 100) return 0
-  return typeof point.avgMs === 'number' && Number.isFinite(point.avgMs) ? point.avgMs : 0
+function latencyDelay(point: LatencyPoint): number | null {
+  if (Number.isFinite(point.lossPercent) && point.lossPercent >= 100) return null
+  return typeof point.avgMs === 'number' && Number.isFinite(point.avgMs) ? point.avgMs : null
 }
 
 export function buildKulinChartRows(series: KulinTargetSeries[]): KulinChartRow[] {

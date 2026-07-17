@@ -1,4 +1,9 @@
 import type { AdminAlertRule, AdminNode, AdminNodeInstallCommand, AdminNotificationChannel, AdminNotificationDelivery, AdminProbeTarget, AdminSettings, AdminTheme, AppearancePreset, HomeCardNode, LatencyPoint, ProbeType, ServiceTarget, StatePoint } from '../types'
+import { adminCookieSessionMarker } from '../lib/adminToken'
+import { adminHeaders } from './adminSession'
+
+export { fetchAdminAccount, loginAdmin, logoutAdmin, updateAdminAccount } from './adminSession'
+export type { AdminAccountData, AdminLoginData } from './adminSession'
 
 interface ApiSettings {
   site_title: string
@@ -92,8 +97,6 @@ interface ApiServiceTarget {
   id: string
   name: string
   type: ProbeType
-  address: string
-  port?: number | null
   assigned_node_count: number
   reporting_node_count: number
   median_ms: number | null
@@ -264,24 +267,6 @@ interface ApiAdminAlertRule {
 
 export interface ApiAdminSettingsResponse {
   settings: ApiSettings
-}
-
-interface ApiAdminLoginResponse {
-  username: string
-  token: string
-}
-
-interface ApiAdminAccountResponse {
-  account: { username: string }
-}
-
-export interface AdminLoginData {
-  username: string
-  token: string
-}
-
-export interface AdminAccountData {
-  username: string
 }
 
 export interface ApiSummaryResponse {
@@ -598,7 +583,7 @@ export function subscribeServiceLatency(targetId: string, range: string, onLaten
 }
 
 function optionalAdminHeaders(adminToken?: string): HeadersInit {
-  return adminToken ? { Accept: 'application/json', 'X-Admin-Token': adminToken } : { Accept: 'application/json' }
+  return adminToken && adminToken !== adminCookieSessionMarker ? { Accept: 'application/json', 'X-Admin-Token': adminToken } : { Accept: 'application/json' }
 }
 
 export async function fetchNodeLatency(nodeId: string, range = '1h', adminToken?: string, signal?: AbortSignal): Promise<NodeLatencyData> {
@@ -625,69 +610,10 @@ export async function fetchNodeState(nodeId: string, range = '1h', adminToken?: 
   return normalizeNodeState(await response.json() as ApiStateResponse)
 }
 
-export async function loginAdmin(username: string, password: string): Promise<AdminLoginData> {
-  const response = await fetch('/api/admin/v1/login', {
-    method: 'POST',
-    headers: {
-      Accept: 'application/json',
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({ username, password }),
-  })
-  if (!response.ok) {
-    throw new Error(response.status === 429 ? '登录失败次数过多，请稍后再试。' : `admin login failed: ${response.status}`)
-  }
-  const data = await response.json() as ApiAdminLoginResponse
-  return { username: data.username, token: data.token }
-}
-
-export async function fetchAdminAccount(adminToken: string, signal?: AbortSignal): Promise<AdminAccountData> {
-  const response = await fetch('/api/admin/v1/account', {
-    signal,
-    headers: {
-      Accept: 'application/json',
-      'X-Admin-Token': adminToken,
-    },
-  })
-  if (!response.ok) throw new Error(`admin account failed: ${response.status}`)
-  const data = await response.json() as ApiAdminAccountResponse
-  return { username: data.account.username }
-}
-
-export async function logoutAdmin(adminToken: string): Promise<void> {
-  const response = await fetch('/api/admin/v1/logout', {
-    method: 'POST',
-    headers: {
-      'X-Admin-Token': adminToken,
-    },
-  })
-  if (!response.ok) throw new Error(`admin logout failed: ${response.status}`)
-}
-
-export async function updateAdminAccount(adminToken: string, username: string, currentPassword: string, newPassword: string): Promise<AdminLoginData> {
-  const response = await fetch('/api/admin/v1/account', {
-    method: 'POST',
-    headers: {
-      Accept: 'application/json',
-      'Content-Type': 'application/json',
-      'X-Admin-Token': adminToken,
-    },
-    body: JSON.stringify({ username, current_password: currentPassword, new_password: newPassword }),
-  })
-  if (!response.ok) {
-    throw new Error(`admin account update failed: ${response.status}`)
-  }
-  const data = await response.json() as ApiAdminLoginResponse
-  return { username: data.username, token: data.token }
-}
-
 export async function fetchAdminSettings(adminToken: string, signal?: AbortSignal): Promise<AdminSettings> {
   const response = await fetch('/api/admin/v1/settings', {
     signal,
-    headers: {
-      Accept: 'application/json',
-      'X-Admin-Token': adminToken,
-    },
+    headers: adminHeaders(adminToken, { Accept: 'application/json' }),
   })
   if (!response.ok) {
     throw new Error(`admin settings request failed: ${response.status}`)
@@ -699,11 +625,7 @@ export async function fetchAdminSettings(adminToken: string, signal?: AbortSigna
 export async function updateAdminSettings(adminToken: string, input: AdminSettingsUpdateInput): Promise<AdminSettings> {
   const response = await fetch('/api/admin/v1/settings', {
     method: 'PATCH',
-    headers: {
-      Accept: 'application/json',
-      'Content-Type': 'application/json',
-      'X-Admin-Token': adminToken,
-    },
+    headers: adminHeaders(adminToken, { Accept: 'application/json', 'Content-Type': 'application/json' }),
     body: JSON.stringify(serializeAdminSettingsUpdate(input)),
   })
   if (!response.ok) {
@@ -716,10 +638,7 @@ export async function updateAdminSettings(adminToken: string, input: AdminSettin
 export async function fetchAdminNodes(adminToken: string, signal?: AbortSignal): Promise<AdminNodesData> {
   const response = await fetch('/api/admin/v1/nodes', {
     signal,
-    headers: {
-      Accept: 'application/json',
-      'X-Admin-Token': adminToken,
-    },
+    headers: adminHeaders(adminToken, { Accept: 'application/json' }),
   })
   if (!response.ok) {
     throw new Error(`admin nodes request failed: ${response.status}`)
@@ -730,10 +649,7 @@ export async function fetchAdminNodes(adminToken: string, signal?: AbortSignal):
 export async function fetchAdminProbeTargets(adminToken: string, signal?: AbortSignal): Promise<AdminProbeTargetsData> {
   const response = await fetch('/api/admin/v1/probe-targets', {
     signal,
-    headers: {
-      Accept: 'application/json',
-      'X-Admin-Token': adminToken,
-    },
+    headers: adminHeaders(adminToken, { Accept: 'application/json' }),
   })
   if (!response.ok) {
     throw new Error(`admin probe targets request failed: ${response.status}`)
@@ -744,10 +660,7 @@ export async function fetchAdminProbeTargets(adminToken: string, signal?: AbortS
 export async function fetchAdminNotificationChannels(adminToken: string, signal?: AbortSignal): Promise<AdminNotificationChannelsData> {
   const response = await fetch('/api/admin/v1/notification-channels', {
     signal,
-    headers: {
-      Accept: 'application/json',
-      'X-Admin-Token': adminToken,
-    },
+    headers: adminHeaders(adminToken, { Accept: 'application/json' }),
   })
   if (!response.ok) {
     throw new Error(`admin notification channels request failed: ${response.status}`)
@@ -758,10 +671,7 @@ export async function fetchAdminNotificationChannels(adminToken: string, signal?
 export async function fetchAdminAlertRules(adminToken: string, signal?: AbortSignal): Promise<AdminAlertRulesData> {
   const response = await fetch('/api/admin/v1/alert-rules', {
     signal,
-    headers: {
-      Accept: 'application/json',
-      'X-Admin-Token': adminToken,
-    },
+    headers: adminHeaders(adminToken, { Accept: 'application/json' }),
   })
   if (!response.ok) {
     throw new Error(`admin alert rules request failed: ${response.status}`)
@@ -772,11 +682,7 @@ export async function fetchAdminAlertRules(adminToken: string, signal?: AbortSig
 export async function createAdminNode(adminToken: string, input: AdminNodeCreateInput): Promise<AdminNode> {
   const response = await fetch('/api/admin/v1/nodes', {
     method: 'POST',
-    headers: {
-      Accept: 'application/json',
-      'Content-Type': 'application/json',
-      'X-Admin-Token': adminToken,
-    },
+    headers: adminHeaders(adminToken, { Accept: 'application/json', 'Content-Type': 'application/json' }),
     body: JSON.stringify(serializeAdminNodeCreate(input)),
   })
   if (!response.ok) {
@@ -789,11 +695,7 @@ export async function createAdminNode(adminToken: string, input: AdminNodeCreate
 export async function createAdminProbeTarget(adminToken: string, input: AdminProbeTargetInput): Promise<AdminProbeTarget> {
   const response = await fetch('/api/admin/v1/probe-targets', {
     method: 'POST',
-    headers: {
-      Accept: 'application/json',
-      'Content-Type': 'application/json',
-      'X-Admin-Token': adminToken,
-    },
+    headers: adminHeaders(adminToken, { Accept: 'application/json', 'Content-Type': 'application/json' }),
     body: JSON.stringify(serializeAdminProbeTargetCreate(input)),
   })
   if (!response.ok) {
@@ -806,11 +708,7 @@ export async function createAdminProbeTarget(adminToken: string, input: AdminPro
 export async function updateAdminProbeTarget(adminToken: string, targetId: string, input: AdminProbeTargetUpdateInput): Promise<AdminProbeTarget> {
   const response = await fetch(`/api/admin/v1/probe-targets/${encodeURIComponent(targetId)}`, {
     method: 'PATCH',
-    headers: {
-      Accept: 'application/json',
-      'Content-Type': 'application/json',
-      'X-Admin-Token': adminToken,
-    },
+    headers: adminHeaders(adminToken, { Accept: 'application/json', 'Content-Type': 'application/json' }),
     body: JSON.stringify(serializeAdminProbeTargetUpdate(input)),
   })
   if (!response.ok) {
@@ -823,10 +721,7 @@ export async function updateAdminProbeTarget(adminToken: string, targetId: strin
 export async function deleteAdminProbeTarget(adminToken: string, targetId: string): Promise<void> {
   const response = await fetch(`/api/admin/v1/probe-targets/${encodeURIComponent(targetId)}`, {
     method: 'DELETE',
-    headers: {
-      Accept: 'application/json',
-      'X-Admin-Token': adminToken,
-    },
+    headers: adminHeaders(adminToken, { Accept: 'application/json' }),
   })
   if (!response.ok) {
     throw new Error(`admin probe target delete failed: ${response.status}`)
@@ -836,11 +731,7 @@ export async function deleteAdminProbeTarget(adminToken: string, targetId: strin
 export async function createAdminNotificationChannel(adminToken: string, input: AdminNotificationChannelCreateInput): Promise<AdminNotificationChannel> {
   const response = await fetch('/api/admin/v1/notification-channels', {
     method: 'POST',
-    headers: {
-      Accept: 'application/json',
-      'Content-Type': 'application/json',
-      'X-Admin-Token': adminToken,
-    },
+    headers: adminHeaders(adminToken, { Accept: 'application/json', 'Content-Type': 'application/json' }),
     body: JSON.stringify(serializeAdminNotificationChannelCreate(input)),
   })
   if (!response.ok) {
@@ -853,11 +744,7 @@ export async function createAdminNotificationChannel(adminToken: string, input: 
 export async function updateAdminNotificationChannel(adminToken: string, channelId: string, input: AdminNotificationChannelUpdateInput): Promise<AdminNotificationChannel> {
   const response = await fetch(`/api/admin/v1/notification-channels/${encodeURIComponent(channelId)}`, {
     method: 'PATCH',
-    headers: {
-      Accept: 'application/json',
-      'Content-Type': 'application/json',
-      'X-Admin-Token': adminToken,
-    },
+    headers: adminHeaders(adminToken, { Accept: 'application/json', 'Content-Type': 'application/json' }),
     body: JSON.stringify(serializeAdminNotificationChannelUpdate(input)),
   })
   if (!response.ok) {
@@ -870,10 +757,7 @@ export async function updateAdminNotificationChannel(adminToken: string, channel
 export async function deleteAdminNotificationChannel(adminToken: string, channelId: string): Promise<void> {
   const response = await fetch(`/api/admin/v1/notification-channels/${encodeURIComponent(channelId)}`, {
     method: 'DELETE',
-    headers: {
-      Accept: 'application/json',
-      'X-Admin-Token': adminToken,
-    },
+    headers: adminHeaders(adminToken, { Accept: 'application/json' }),
   })
   if (!response.ok) {
     throw new Error(`admin notification channel delete failed: ${response.status}`)
@@ -883,10 +767,7 @@ export async function deleteAdminNotificationChannel(adminToken: string, channel
 export async function testAdminNotificationChannel(adminToken: string, channelId: string): Promise<AdminNotificationDelivery> {
   const response = await fetch(`/api/admin/v1/notification-channels/${encodeURIComponent(channelId)}/test`, {
     method: 'POST',
-    headers: {
-      Accept: 'application/json',
-      'X-Admin-Token': adminToken,
-    },
+    headers: adminHeaders(adminToken, { Accept: 'application/json' }),
   })
   if (!response.ok) {
     throw new Error(`admin notification channel test failed: ${response.status}`)
@@ -899,11 +780,7 @@ export async function testAdminNotificationChannel(adminToken: string, channelId
 export async function updateAdminAlertRule(adminToken: string, ruleId: string, input: AdminAlertRuleUpdateInput): Promise<AdminAlertRule> {
   const response = await fetch(`/api/admin/v1/alert-rules/${encodeURIComponent(ruleId)}`, {
     method: 'PATCH',
-    headers: {
-      Accept: 'application/json',
-      'Content-Type': 'application/json',
-      'X-Admin-Token': adminToken,
-    },
+    headers: adminHeaders(adminToken, { Accept: 'application/json', 'Content-Type': 'application/json' }),
     body: JSON.stringify(serializeAdminAlertRuleUpdate(input)),
   })
   if (!response.ok) {
@@ -916,11 +793,7 @@ export async function updateAdminAlertRule(adminToken: string, ruleId: string, i
 export async function requestAdminNodeInstallCommand(adminToken: string, nodeId: string, controllerURL = typeof window === 'undefined' ? '' : window.location.origin): Promise<AdminNodeInstallCommand> {
   const response = await fetch(`/api/admin/v1/nodes/${encodeURIComponent(nodeId)}/install-command`, {
     method: 'POST',
-    headers: {
-      Accept: 'application/json',
-      'Content-Type': 'application/json',
-      'X-Admin-Token': adminToken,
-    },
+    headers: adminHeaders(adminToken, { Accept: 'application/json', 'Content-Type': 'application/json' }),
     body: JSON.stringify({ controller_url: controllerURL }),
   })
   if (!response.ok) {
@@ -936,11 +809,7 @@ export async function requestAdminNodeInstallCommand(adminToken: string, nodeId:
 export async function updateAdminNode(adminToken: string, nodeId: string, input: AdminNodeUpdateInput): Promise<AdminNode> {
   const response = await fetch(`/api/admin/v1/nodes/${encodeURIComponent(nodeId)}`, {
     method: 'PATCH',
-    headers: {
-      Accept: 'application/json',
-      'Content-Type': 'application/json',
-      'X-Admin-Token': adminToken,
-    },
+    headers: adminHeaders(adminToken, { Accept: 'application/json', 'Content-Type': 'application/json' }),
     body: JSON.stringify(serializeAdminNodeUpdate(input)),
   })
   if (!response.ok) {
@@ -953,10 +822,7 @@ export async function updateAdminNode(adminToken: string, nodeId: string, input:
 export async function deleteAdminNode(adminToken: string, nodeId: string): Promise<void> {
   const response = await fetch(`/api/admin/v1/nodes/${encodeURIComponent(nodeId)}`, {
     method: 'DELETE',
-    headers: {
-      Accept: 'application/json',
-      'X-Admin-Token': adminToken,
-    },
+    headers: adminHeaders(adminToken, { Accept: 'application/json' }),
   })
   if (!response.ok) {
     throw new Error(`admin node delete failed: ${response.status}`)
@@ -1292,12 +1158,10 @@ function normalizeServiceTarget(target: ApiServiceTarget): ServiceTarget {
     id: target.id,
     name: target.name,
     type: target.type,
-    address: target.address,
-    port: target.port ?? undefined,
     assignedNodeCount: target.assigned_node_count,
     reportingNodeCount: target.reporting_node_count,
     medianMs: target.median_ms,
-    avgMs: target.avg_ms ?? target.median_ms,
+    avgMs: target.avg_ms ?? null,
     lossPercent: target.loss_percent,
     updatedAt: target.updated_at,
   }

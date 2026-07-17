@@ -86,8 +86,6 @@ export interface ServiceTarget {
   id: string
   name: string
   type: ProbeType
-  address: string
-  port?: number
   assignedNodeCount: number
   reportingNodeCount: number
   medianMs: number | null

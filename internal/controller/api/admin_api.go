@@ -30,6 +30,7 @@ type adminStore interface {
 	CreateAdminNotificationChannel(ctx context.Context, create AdminNotificationChannelCreateRequest) (AdminNotificationChannel, error)
 	UpdateAdminNotificationChannel(ctx context.Context, channelID string, update AdminNotificationChannelUpdateRequest) (AdminNotificationChannel, error)
 	DeleteAdminNotificationChannel(ctx context.Context, channelID string) error
+	RetryFailedNotificationDelivery(ctx context.Context, deliveryID int64, now time.Time) error
 	UpdateAdminNotificationType(ctx context.Context, eventType string, update AdminNotificationTypeUpdateRequest) (AdminNotificationType, error)
 	UpdateAdminAlertRule(ctx context.Context, ruleID string, update AdminAlertRuleUpdateRequest) (AdminAlertRule, error)
 }
@@ -43,6 +44,54 @@ type adminAuthStore interface {
 	AdminAccountConfigured(ctx context.Context) (bool, error)
 }
 
+const (
+	adminSessionCookieName = "__Host-zeno_admin_session"
+	adminCSRFHeaderName    = "X-Zeno-CSRF"
+	adminCSRFHeaderValue   = "1"
+)
+
+func (h *handler) browserAdminRequest(r *http.Request) bool {
+	return strings.TrimSpace(r.Header.Get(adminCSRFHeaderName)) == adminCSRFHeaderValue
+}
+
+func (h *handler) sameOriginRequest(r *http.Request) bool {
+	origin := strings.TrimSpace(r.Header.Get("Origin"))
+	parsed, err := url.Parse(origin)
+	if err != nil || parsed.Scheme == "" || parsed.Host == "" || parsed.User != nil || parsed.Path != "" || parsed.RawQuery != "" || parsed.Fragment != "" {
+		return false
+	}
+	return strings.EqualFold(parsed.Scheme, h.requestProto(r)) && strings.EqualFold(parsed.Host, r.Host)
+}
+
+func (h *handler) allowBrowserAdminMutation(r *http.Request) bool {
+	return h.requestUsesHTTPS(r) && h.browserAdminRequest(r) && h.sameOriginRequest(r)
+}
+
+func setAdminSessionCookie(w http.ResponseWriter, token string) {
+	http.SetCookie(w, &http.Cookie{
+		Name: adminSessionCookieName, Value: token, Path: "/", MaxAge: int(adminSessionAbsoluteTimeout.Seconds()),
+		HttpOnly: true, Secure: true, SameSite: http.SameSiteStrictMode,
+	})
+}
+
+func clearAdminSessionCookie(w http.ResponseWriter) {
+	http.SetCookie(w, &http.Cookie{
+		Name: adminSessionCookieName, Value: "", Path: "/", MaxAge: -1,
+		HttpOnly: true, Secure: true, SameSite: http.SameSiteStrictMode,
+	})
+}
+
+func adminRequestToken(r *http.Request) (string, bool) {
+	if token := strings.TrimSpace(r.Header.Get("X-Admin-Token")); token != "" {
+		return token, false
+	}
+	cookie, err := r.Cookie(adminSessionCookieName)
+	if err != nil {
+		return "", false
+	}
+	return strings.TrimSpace(cookie.Value), true
+}
+
 func (h *handler) handleAdminLogin(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
@@ -54,6 +103,11 @@ func (h *handler) handleAdminLogin(w http.ResponseWriter, r *http.Request) {
 	}
 	if strings.EqualFold(strings.TrimSpace(r.Header.Get("Sec-Fetch-Site")), "cross-site") {
 		writeError(w, http.StatusForbidden, "cross-site login rejected")
+		return
+	}
+	browserRequest := h.browserAdminRequest(r)
+	if browserRequest && !h.allowBrowserAdminMutation(r) {
+		writeError(w, http.StatusForbidden, "cross-site or insecure login rejected")
 		return
 	}
 	mediaType, _, err := mime.ParseMediaType(r.Header.Get("Content-Type"))
@@ -100,7 +154,12 @@ func (h *handler) handleAdminLogin(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		loginSucceeded = true
-		writeJSON(w, http.StatusOK, AdminLoginResponse(session))
+		if browserRequest {
+			setAdminSessionCookie(w, session.Token)
+			writeJSON(w, http.StatusOK, AdminLoginResponse{Username: session.Username})
+		} else {
+			writeJSON(w, http.StatusOK, AdminLoginResponse(session))
+		}
 		return
 	}
 	passwordOK := adminPasswordMatches("", h.adminTokenHash, request.Password)
@@ -109,7 +168,12 @@ func (h *handler) handleAdminLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	loginSucceeded = true
-	writeJSON(w, http.StatusOK, AdminLoginResponse{Username: "admin", Token: strings.TrimSpace(request.Password)})
+	if browserRequest {
+		setAdminSessionCookie(w, strings.TrimSpace(request.Password))
+		writeJSON(w, http.StatusOK, AdminLoginResponse{Username: "admin"})
+	} else {
+		writeJSON(w, http.StatusOK, AdminLoginResponse{Username: "admin", Token: strings.TrimSpace(request.Password)})
+	}
 }
 
 func (h *handler) handleAdminLogout(w http.ResponseWriter, r *http.Request) {
@@ -117,12 +181,19 @@ func (h *handler) handleAdminLogout(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
 		return
 	}
-	token := strings.TrimSpace(r.Header.Get("X-Admin-Token"))
+	token, cookieAuth := adminRequestToken(r)
+	if cookieAuth && !h.allowBrowserAdminMutation(r) {
+		writeError(w, http.StatusForbidden, "cross-site request rejected")
+		return
+	}
 	if authStore, ok := h.store.(adminAuthStore); ok {
 		if err := authStore.RevokeAdminSession(r.Context(), token); err != nil {
 			writeError(w, http.StatusInternalServerError, "internal error")
 			return
 		}
+	}
+	if cookieAuth {
+		clearAdminSessionCookie(w)
 	}
 	w.WriteHeader(http.StatusNoContent)
 }
@@ -154,7 +225,13 @@ func (h *handler) handleAdminAccount(w http.ResponseWriter, r *http.Request) {
 			writeAdminError(w, err)
 			return
 		}
-		writeJSON(w, http.StatusOK, AdminLoginResponse(session))
+		_, cookieAuth := adminRequestToken(r)
+		if cookieAuth {
+			setAdminSessionCookie(w, session.Token)
+			writeJSON(w, http.StatusOK, AdminLoginResponse{Username: session.Username})
+		} else {
+			writeJSON(w, http.StatusOK, AdminLoginResponse(session))
+		}
 	default:
 		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
 	}
@@ -417,7 +494,17 @@ func (h *handler) authorizeAdminRequest(w http.ResponseWriter, r *http.Request) 
 		writeError(w, http.StatusNotFound, "not found")
 		return nil, false
 	}
-	provided := strings.TrimSpace(r.Header.Get("X-Admin-Token"))
+	provided, cookieAuth := adminRequestToken(r)
+	if cookieAuth {
+		if !h.requestUsesHTTPS(r) {
+			writeError(w, http.StatusUnauthorized, "unauthorized")
+			return nil, false
+		}
+		if r.Method != http.MethodGet && r.Method != http.MethodHead && !h.allowBrowserAdminMutation(r) {
+			writeError(w, http.StatusForbidden, "cross-site request rejected")
+			return nil, false
+		}
+	}
 	if authStore, ok := h.store.(adminAuthStore); ok {
 		authorized, err := authStore.AuthorizeAdminSession(r.Context(), provided)
 		if err != nil {
@@ -448,7 +535,11 @@ func (h *handler) authorizeAdminRequest(w http.ResponseWriter, r *http.Request) 
 // history endpoints while allowing the public dashboard to pass its existing
 // opaque admin session in X-Admin-Token.
 func (h *handler) authorizeExtendedHistoryRequest(w http.ResponseWriter, r *http.Request) bool {
-	provided := strings.TrimSpace(r.Header.Get("X-Admin-Token"))
+	provided, cookieAuth := adminRequestToken(r)
+	if cookieAuth && !h.requestUsesHTTPS(r) {
+		writeError(w, http.StatusUnauthorized, "unauthorized")
+		return false
+	}
 	if authStore, ok := h.store.(adminAuthStore); ok {
 		authorized, err := authStore.AuthorizeAdminSession(r.Context(), provided)
 		if err != nil {
@@ -524,7 +615,7 @@ func writeAdminError(w http.ResponseWriter, err error) {
 		writeError(w, http.StatusGone, "notification type is managed by alert rules")
 		return
 	}
-	if errors.Is(err, errNodeNotFound) || errors.Is(err, errProbeTargetNotFound) || errors.Is(err, errNotificationChannelNotFound) || errors.Is(err, errNotificationTypeNotFound) || errors.Is(err, errAlertRuleNotFound) {
+	if errors.Is(err, errNodeNotFound) || errors.Is(err, errProbeTargetNotFound) || errors.Is(err, errNotificationChannelNotFound) || errors.Is(err, errNotificationDeliveryNotFound) || errors.Is(err, errNotificationTypeNotFound) || errors.Is(err, errAlertRuleNotFound) {
 		writeError(w, http.StatusNotFound, "not found")
 		return
 	}
@@ -534,6 +625,10 @@ func writeAdminError(w http.ResponseWriter, err error) {
 	}
 	if errors.Is(err, errNotificationCredentialKeyRequired) {
 		writeError(w, http.StatusConflict, "notification key unavailable")
+		return
+	}
+	if errors.Is(err, errNotificationDeliveryNotFailed) {
+		writeError(w, http.StatusConflict, "notification delivery is not failed")
 		return
 	}
 	if errors.Is(err, errNodeAlreadyExists) || errors.Is(err, errProbeTargetAlreadyExists) || errors.Is(err, errNotificationChannelAlreadyExists) {

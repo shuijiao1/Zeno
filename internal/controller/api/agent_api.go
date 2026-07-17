@@ -137,6 +137,7 @@ func (h *handler) handleAgentProbeResults(w http.ResponseWriter, r *http.Request
 	}
 
 	prepared := make([]preparedAgentProbeRound, 0, len(request.Rounds))
+	seenTargetIDs := make(map[string]struct{}, len(request.Rounds))
 	totalErrorBytes := 0
 	for _, round := range request.Rounds {
 		roundID := strings.TrimSpace(round.RoundID)
@@ -149,6 +150,11 @@ func (h *handler) handleAgentProbeResults(w http.ResponseWriter, r *http.Request
 			writeError(w, http.StatusBadRequest, "unknown target")
 			return
 		}
+		if _, duplicate := seenTargetIDs[targetID]; duplicate {
+			writeError(w, http.StatusBadRequest, "duplicate target in probe batch")
+			return
+		}
+		seenTargetIDs[targetID] = struct{}{}
 		targetType := strings.TrimSpace(round.Type)
 		if round.TS <= 0 {
 			writeError(w, http.StatusBadRequest, "invalid timestamp")
@@ -211,7 +217,7 @@ func (h *handler) handleAgentProbeResults(w http.ResponseWriter, r *http.Request
 		}
 		prepared = append(prepared, preparedAgentProbeRound{targetID: targetID, targetType: targetType, ts: roundTS, agentRoundID: roundID, samples: samples})
 	}
-	releaseWrite, ok := h.admitAgentWrite(w, nodeID, agentProbeWriteUnits(request))
+	releaseWrite, ok := h.admitAgentWrite(w, nodeID, agentProbeWriteUnits(request, r.ContentLength))
 	if !ok {
 		return
 	}
@@ -225,6 +231,10 @@ func (h *handler) handleAgentProbeResults(w http.ResponseWriter, r *http.Request
 			}
 			if errors.Is(err, errInvalidAgentProbeResults) {
 				writeError(w, http.StatusBadRequest, "invalid probe round")
+				return
+			}
+			if errors.Is(err, errTelemetryStoragePressure) {
+				writeTelemetryStoragePressure(w)
 				return
 			}
 			logAgentAPIError("probe-results", nodeID, "insert_results", err)
@@ -243,7 +253,7 @@ func (h *handler) handleAgentProbeResults(w http.ResponseWriter, r *http.Request
 	h.invalidateSummaryCache()
 	h.publishSummary(r.Context())
 	h.scheduleNodeLatencyPublish(nodeID)
-	seenTargetIDs := map[string]struct{}{}
+	publishedTargetIDs := map[string]struct{}{}
 	for _, round := range prepared {
 		targetID := round.target.ID
 		if targetID == "" {
@@ -252,10 +262,10 @@ func (h *handler) handleAgentProbeResults(w http.ResponseWriter, r *http.Request
 		if targetID == "" {
 			continue
 		}
-		if _, ok := seenTargetIDs[targetID]; ok {
+		if _, ok := publishedTargetIDs[targetID]; ok {
 			continue
 		}
-		seenTargetIDs[targetID] = struct{}{}
+		publishedTargetIDs[targetID] = struct{}{}
 		h.scheduleServiceLatencyPublish(targetID)
 	}
 	writeJSON(w, http.StatusAccepted, map[string]any{"ok": true, "accepted": len(prepared)})
@@ -421,6 +431,10 @@ func (h *handler) handleAgentState(w http.ResponseWriter, r *http.Request) {
 				writeError(w, http.StatusBadRequest, "invalid state report")
 				return
 			}
+			if errors.Is(err, errTelemetryStoragePressure) {
+				writeTelemetryStoragePressure(w)
+				return
+			}
 			logAgentAPIError("state", nodeID, "record_report", err)
 			writeError(w, http.StatusInternalServerError, "internal error")
 			return
@@ -434,6 +448,10 @@ func (h *handler) handleAgentState(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := store.InsertAgentState(r.Context(), nodeID, request); err != nil {
+		if errors.Is(err, errTelemetryStoragePressure) {
+			writeTelemetryStoragePressure(w)
+			return
+		}
 		logAgentAPIError("state", nodeID, "insert_state", err)
 		writeError(w, http.StatusInternalServerError, "internal error")
 		return
@@ -450,6 +468,11 @@ func (h *handler) handleAgentState(w http.ResponseWriter, r *http.Request) {
 	h.publishSummary(r.Context())
 	h.scheduleNodeStatePublish(nodeID)
 	writeJSON(w, http.StatusAccepted, map[string]any{"ok": true})
+}
+
+func writeTelemetryStoragePressure(w http.ResponseWriter) {
+	w.Header().Set("Retry-After", "60")
+	writeError(w, http.StatusInsufficientStorage, "telemetry storage pressure")
 }
 
 func agentTimestampWithinSkew(ts, now time.Time) bool {

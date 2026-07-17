@@ -46,7 +46,16 @@ func (s *SQLiteStore) QueueDueRenewalNotifications(ctx context.Context, now time
 	// primary key remains the cross-process idempotency boundary.
 	s.renewalMu.Lock()
 	defer s.renewalMu.Unlock()
+	queued := 0
+	err := retrySQLiteBusy(ctx, func() error {
+		var err error
+		queued, err = s.queueDueRenewalNotificationsOnce(ctx, now)
+		return err
+	})
+	return queued, err
+}
 
+func (s *SQLiteStore) queueDueRenewalNotificationsOnce(ctx context.Context, now time.Time) (int, error) {
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return 0, err

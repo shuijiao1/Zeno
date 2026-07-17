@@ -517,7 +517,7 @@ func TestAgentProbeResultsStoresLatencyWithoutProbeAlertNotification(t *testing.
 	}
 }
 
-func TestAgentProbeResultsStoresMeasuredTimeoutLatencyForCharts(t *testing.T) {
+func TestAgentProbeResultsKeepsTimeoutLossWithoutLatency(t *testing.T) {
 	store, err := OpenSQLiteStore(filepath.Join(t.TempDir(), "zeno.db"))
 	if err != nil {
 		t.Fatalf("open sqlite store: %v", err)
@@ -544,12 +544,13 @@ func TestAgentProbeResultsStoresMeasuredTimeoutLatencyForCharts(t *testing.T) {
 	}
 
 	var received int
-	var loss, avg, median float64
+	var loss float64
+	var avg, median sql.NullFloat64
 	if err := store.db.QueryRowContext(ctx, `SELECT received, loss_percent, avg_ms, median_ms FROM probe_rounds WHERE node_id = 'hytron' AND target_id = 'google-dns' ORDER BY id DESC LIMIT 1`).Scan(&received, &loss, &avg, &median); err != nil {
 		t.Fatalf("query probe round: %v", err)
 	}
-	if received != 0 || loss != 100 || avg != 2500 || median != 2500 {
-		t.Fatalf("round received/loss/avg/median = %d/%.2f/%.2f/%.2f, want 0/100/2500/2500", received, loss, avg, median)
+	if received != 0 || loss != 100 || avg.Valid || median.Valid {
+		t.Fatalf("round received/loss/avg/median = %d/%.2f/%+v/%+v, want 0/100/null/null", received, loss, avg, median)
 	}
 }
 
@@ -577,12 +578,13 @@ func TestAgentProbeResultsCapsOverFiveSecondSamplesAndCountsTimeoutLoss(t *testi
 	}
 
 	var received int
-	var loss, avg float64
+	var loss float64
+	var avg sql.NullFloat64
 	if err := store.db.QueryRowContext(ctx, `SELECT received, loss_percent, avg_ms FROM probe_rounds WHERE target_id = 'google-dns' ORDER BY id DESC LIMIT 1`).Scan(&received, &loss, &avg); err != nil {
 		t.Fatalf("query probe round: %v", err)
 	}
-	if received != 0 || loss != 100 || avg != 5000 {
-		t.Fatalf("received/loss/avg = %d/%.0f/%.0f, want 0/100/5000", received, loss, avg)
+	if received != 0 || loss != 100 || avg.Valid {
+		t.Fatalf("received/loss/avg = %d/%.0f/%+v, want 0/100/null", received, loss, avg)
 	}
 }
 

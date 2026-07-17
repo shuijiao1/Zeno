@@ -13,7 +13,7 @@ type stateAlertRuleTransitionStore interface {
 
 func (s *SQLiteStore) RecordAgentStateAlertRuleTransition(ctx context.Context, nodeID string, ts time.Time, state AgentStateRequest) (notificationStatusTransition, error) {
 	var transition notificationStatusTransition
-	err := s.withAgentWrite(ctx, func(ctx context.Context) error {
+	err := s.withAgentWrite(ctx, nodeID, func(ctx context.Context) error {
 		var err error
 		transition, err = s.recordAgentStateAlertRuleTransitionOnce(ctx, nodeID, ts, state)
 		return err

@@ -280,8 +280,7 @@ func RunPingProbe(ctx context.Context, target ProbeTarget) ([]probe.Sample, erro
 			latency = &latencyValue
 		}
 		if time.Duration(*latency*float64(time.Millisecond)) > timeout {
-			capped := cappedLocalDrawableLatencyMS(*latency)
-			samples = append(samples, probe.Sample{Seq: seq, Success: false, LatencyMS: &capped, Error: "timeout"})
+			samples = append(samples, probe.Sample{Seq: seq, Success: false, Error: "timeout"})
 			continue
 		}
 		capped := cappedLocalDrawableLatencyMS(*latency)
@@ -345,17 +344,13 @@ func localLatencyObservationTimeout(timeout time.Duration) time.Duration {
 func measuredLocalProbeSample(seq int, elapsedMS float64, timeout time.Duration) probe.Sample {
 	latency := cappedLocalDrawableLatencyMS(elapsedMS)
 	if time.Duration(elapsedMS*float64(time.Millisecond)) > timeout {
-		return probe.Sample{Seq: seq, Success: false, LatencyMS: &latency, Error: "timeout"}
+		return probe.Sample{Seq: seq, Success: false, Error: "timeout"}
 	}
 	return probe.Sample{Seq: seq, Success: true, LatencyMS: &latency}
 }
 
 func failedMeasuredLocalProbeSample(seq int, elapsedMS float64, errText string) probe.Sample {
-	if errText != "timeout" {
-		return probe.Sample{Seq: seq, Success: false, Error: errText}
-	}
-	latency := cappedLocalDrawableLatencyMS(elapsedMS)
-	return probe.Sample{Seq: seq, Success: false, LatencyMS: &latency, Error: errText}
+	return probe.Sample{Seq: seq, Success: false, Error: errText}
 }
 
 func cappedLocalDrawableLatencyMS(elapsedMS float64) float64 {
@@ -377,7 +372,7 @@ func (s *SQLiteStore) InsertProbeRounds(ctx context.Context, nodeID string, roun
 	if len(rounds) == 0 {
 		return nil
 	}
-	return s.withAgentWrite(ctx, func(ctx context.Context) error {
+	return s.withAgentWrite(ctx, nodeID, func(ctx context.Context) error {
 		return s.insertProbeRoundsOnce(ctx, nodeID, rounds)
 	})
 }
@@ -444,7 +439,10 @@ func (s *SQLiteStore) InsertAgentProbeResults(ctx context.Context, nodeID string
 	if len(rounds) > maxAgentProbeRounds || !validAgentProbeErrorBudget(rounds) {
 		return errInvalidAgentProbeResults
 	}
-	return s.withAgentWrite(ctx, func(ctx context.Context) error {
+	if err := s.ensureTelemetryStorage(); err != nil {
+		return err
+	}
+	return s.withAgentWrite(ctx, nodeID, func(ctx context.Context) error {
 		return s.insertAgentProbeResultsOnce(ctx, nodeID, configVersion, rounds)
 	})
 }
@@ -541,6 +539,9 @@ func agentProbeSamplesForTarget(samples []probe.Sample, target ProbeTarget) []pr
 	}
 	for _, sample := range samples {
 		copy := sample
+		if !copy.Success {
+			copy.LatencyMS = nil
+		}
 		copy.Error = boundedProbeErrorWithLimit(copy.Error, remainingErrorBytes)
 		remainingErrorBytes -= len(copy.Error)
 		if copy.LatencyMS != nil && *copy.LatencyMS > float64(effectiveTimeoutMS) {

@@ -4,8 +4,11 @@ import { fileURLToPath } from 'node:url'
 import { dirname, join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 
-const stylesPath = join(dirname(fileURLToPath(import.meta.url)), 'styles.css')
-const styles = readFileSync(stylesPath, 'utf8')
+const stylesDirectory = dirname(fileURLToPath(import.meta.url))
+const styles = [
+  readFileSync(join(stylesDirectory, 'styles.css'), 'utf8'),
+  readFileSync(join(stylesDirectory, 'styles/detail.css'), 'utf8'),
+].join('\n')
 
 describe('mobile latency target layout', () => {
   it('keeps latency target buttons readable as card tiles on phones', () => {
