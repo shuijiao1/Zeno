@@ -249,7 +249,13 @@ func (s *SQLiteStore) PendingNotificationDeliveries(ctx context.Context, now tim
 	// back or block the next healthy channel in the claim scan.
 	now = now.UTC()
 	for scanned := 0; scanned < notificationDeliveryScanLimit; scanned++ {
-		delivery, found, quarantined, err := s.claimNextNotificationDelivery(ctx, now)
+		var delivery queuedNotificationDelivery
+		var found, quarantined bool
+		err := retrySQLiteBusy(ctx, func() error {
+			var claimErr error
+			delivery, found, quarantined, claimErr = s.claimNextNotificationDelivery(ctx, now)
+			return claimErr
+		})
 		if err != nil {
 			return nil, err
 		}
