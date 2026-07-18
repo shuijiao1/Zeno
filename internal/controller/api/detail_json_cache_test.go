@@ -28,7 +28,7 @@ func TestDetailJSONCacheCoalescesConcurrentLoads(t *testing.T) {
 	for range callers {
 		go func() {
 			defer wait.Done()
-			payload, err := cache.get(context.Background(), "node-latency:hytron:1d", time.Second, load)
+			payload, err := cache.get(context.Background(), "node-latency:example-node-a:1d", time.Second, load)
 			if err != nil {
 				results <- "error: " + err.Error()
 				return
@@ -57,7 +57,7 @@ func TestDetailJSONCacheRefreshWinsOverOlderInflightLoad(t *testing.T) {
 	releaseOld := make(chan struct{})
 	oldDone := make(chan string, 1)
 	go func() {
-		payload, err := cache.get(context.Background(), "node-state:hytron:1h", time.Second, func() ([]byte, error) {
+		payload, err := cache.get(context.Background(), "node-state:example-node-a:1h", time.Second, func() ([]byte, error) {
 			close(oldStarted)
 			<-releaseOld
 			return []byte(`{"value":"old"}`), nil
@@ -70,7 +70,7 @@ func TestDetailJSONCacheRefreshWinsOverOlderInflightLoad(t *testing.T) {
 	}()
 	<-oldStarted
 
-	payload, err := cache.refresh("node-state:hytron:1h", func() ([]byte, error) {
+	payload, err := cache.refresh("node-state:example-node-a:1h", func() ([]byte, error) {
 		return []byte(`{"value":"fresh"}`), nil
 	})
 	if err != nil {
@@ -84,7 +84,7 @@ func TestDetailJSONCacheRefreshWinsOverOlderInflightLoad(t *testing.T) {
 		t.Fatalf("invalidated in-flight caller received %s", oldResult)
 	}
 
-	payload, err = cache.get(context.Background(), "node-state:hytron:1h", time.Second, func() ([]byte, error) {
+	payload, err = cache.get(context.Background(), "node-state:example-node-a:1h", time.Second, func() ([]byte, error) {
 		return []byte(`{"value":"unexpected"}`), nil
 	})
 	if err != nil {

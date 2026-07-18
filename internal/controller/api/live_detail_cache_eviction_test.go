@@ -39,8 +39,8 @@ func TestDetailJSONCachePrunesExpiredEntriesAndEvictsKeys(t *testing.T) {
 
 func TestLiveUpdateHubDropsLastPayloadWhenTopicBecomesIdle(t *testing.T) {
 	hub := newLiveUpdateHub()
-	updates, unsubscribe := hub.subscribe("node-latency:hytron:1h")
-	hub.publish("node-latency:hytron:1h", []byte(`{"ok":true}`))
+	updates, unsubscribe := hub.subscribe("node-latency:example-node-a:1h")
+	hub.publish("node-latency:example-node-a:1h", []byte(`{"ok":true}`))
 	select {
 	case <-updates:
 	case <-time.After(time.Second):
@@ -48,8 +48,8 @@ func TestLiveUpdateHubDropsLastPayloadWhenTopicBecomesIdle(t *testing.T) {
 	}
 	unsubscribe()
 	hub.mu.Lock()
-	_, hasClients := hub.clients["node-latency:hytron:1h"]
-	_, hasLast := hub.last["node-latency:hytron:1h"]
+	_, hasClients := hub.clients["node-latency:example-node-a:1h"]
+	_, hasLast := hub.last["node-latency:example-node-a:1h"]
 	hub.mu.Unlock()
 	if hasClients || hasLast {
 		t.Fatalf("idle topic retained clients=%v last=%v", hasClients, hasLast)
@@ -58,7 +58,7 @@ func TestLiveUpdateHubDropsLastPayloadWhenTopicBecomesIdle(t *testing.T) {
 
 func TestAgentPresenceManagerDoesNotRetainDisconnectedNodeKeys(t *testing.T) {
 	manager := newAgentPresenceManager()
-	session := manager.connect("hytron")
+	session := manager.connect("example-node-a")
 	if !manager.disconnect(session) {
 		t.Fatal("disconnect returned false")
 	}

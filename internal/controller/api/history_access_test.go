@@ -13,8 +13,8 @@ func TestExtendedHistoryRequiresAdminToken(t *testing.T) {
 	const adminToken = "history-admin-token"
 	handler := NewHandler(HandlerOptions{AdminTokenHash: HashAdminToken(adminToken)})
 	paths := []string{
-		"/api/public/v1/nodes/hytron/latency?range=7d",
-		"/api/public/v1/nodes/hytron/state?range=30d",
+		"/api/public/v1/nodes/example-node-a/latency?range=7d",
+		"/api/public/v1/nodes/example-node-a/state?range=30d",
 		"/api/public/v1/services/google/latency?range=7d",
 	}
 	for _, path := range paths {
@@ -34,8 +34,8 @@ func TestExtendedHistoryRequiresAdminToken(t *testing.T) {
 	}
 
 	for _, path := range []string{
-		"/api/public/v1/nodes/hytron/latency?range=1d",
-		"/api/public/v1/nodes/hytron/state?range=1d",
+		"/api/public/v1/nodes/example-node-a/latency?range=1d",
+		"/api/public/v1/nodes/example-node-a/state?range=1d",
 	} {
 		recorder := httptest.NewRecorder()
 		handler.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, path, nil))

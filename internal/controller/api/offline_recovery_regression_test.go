@@ -18,7 +18,7 @@ func openOfflineRecoveryTestStore(t *testing.T) *SQLiteStore {
 	}
 	t.Cleanup(func() { _ = store.Close() })
 	enableTestNotificationCredentialEncryption(t, store)
-	if err := store.SeedPreviewData(context.Background(), PreviewSeedOptions{NodeID: "hytron", DisplayName: "Hytron", CountryCode: "HK", AgentToken: "test-agent-token"}); err != nil {
+	if err := store.SeedPreviewData(context.Background(), PreviewSeedOptions{NodeID: "example-node-a", DisplayName: "Example Node A", CountryCode: "HK", AgentToken: "test-agent-token"}); err != nil {
 		t.Fatalf("seed preview data: %v", err)
 	}
 	return store
@@ -29,13 +29,13 @@ func persistActiveOfflineIncident(t *testing.T, store *SQLiteStore, storedStatus
 	now := time.Now().UTC().Unix()
 	ctx := context.Background()
 	if _, err := store.db.ExecContext(ctx, `
-		UPDATE nodes SET status = ?, last_seen_at = ?, updated_at = ? WHERE id = 'hytron'
+		UPDATE nodes SET status = ?, last_seen_at = ?, updated_at = ? WHERE id = 'example-node-a'
 	`, storedStatus, now, now); err != nil {
 		t.Fatalf("set stored node status: %v", err)
 	}
 	if _, err := store.db.ExecContext(ctx, `
 		INSERT INTO alert_rule_states (node_id, rule_id, active, first_seen_at, last_seen_at, updated_at)
-		VALUES ('hytron', 'node_offline', 1, ?, ?, ?)
+		VALUES ('example-node-a', 'node_offline', 1, ?, ?, ?)
 		ON CONFLICT(node_id, rule_id) DO UPDATE SET active = 1, first_seen_at = excluded.first_seen_at,
 			last_seen_at = excluded.last_seen_at, updated_at = excluded.updated_at
 	`, now, now, now); err != nil {
@@ -43,7 +43,7 @@ func persistActiveOfflineIncident(t *testing.T, store *SQLiteStore, storedStatus
 	}
 	if _, err := store.db.ExecContext(ctx, `
 		INSERT OR REPLACE INTO notification_event_marks (event_type, node_id, mark, created_at)
-		VALUES ('node_offline', 'hytron', 'status-active:offline', ?)
+		VALUES ('node_offline', 'example-node-a', 'status-active:offline', ?)
 	`, now); err != nil {
 		t.Fatalf("persist offline incident mark: %v", err)
 	}
@@ -54,7 +54,7 @@ func assertOfflineIncidentRecovered(t *testing.T, store *SQLiteStore) {
 	ctx := context.Background()
 	var active int
 	if err := store.db.QueryRowContext(ctx, `
-		SELECT active FROM alert_rule_states WHERE node_id = 'hytron' AND rule_id = 'node_offline'
+		SELECT active FROM alert_rule_states WHERE node_id = 'example-node-a' AND rule_id = 'node_offline'
 	`).Scan(&active); err != nil {
 		t.Fatalf("query offline alert state: %v", err)
 	}
@@ -67,7 +67,7 @@ func assertOfflineIncidentRecovered(t *testing.T, store *SQLiteStore) {
 			SUM(CASE WHEN mark = 'status-active:offline' THEN 1 ELSE 0 END),
 			SUM(CASE WHEN mark = 'status-recovered:offline' THEN 1 ELSE 0 END)
 		FROM notification_event_marks
-		WHERE event_type = 'node_offline' AND node_id = 'hytron'
+		WHERE event_type = 'node_offline' AND node_id = 'example-node-a'
 	`).Scan(&activeMarks, &recoveredMarks); err != nil {
 		t.Fatalf("query offline incident marks: %v", err)
 	}
@@ -102,7 +102,7 @@ func TestAgentHeartbeatReconcilesOfflineIncidentAfterStoredStatusWasSilentlyOnli
 	store := openOfflineRecoveryTestStore(t)
 	persistActiveOfflineIncident(t, store, "online")
 
-	transition, err := store.RecordAgentHeartbeatTransition(context.Background(), "hytron", time.Now().UTC(), "online", "agent-test")
+	transition, err := store.RecordAgentHeartbeatTransition(context.Background(), "example-node-a", time.Now().UTC(), "online", "agent-test")
 	if err != nil {
 		t.Fatalf("record heartbeat transition: %v", err)
 	}
@@ -110,7 +110,7 @@ func TestAgentHeartbeatReconcilesOfflineIncidentAfterStoredStatusWasSilentlyOnli
 		t.Fatalf("heartbeat transition = %+v, want offline -> online", transition)
 	}
 	var active int
-	if err := store.db.QueryRow(`SELECT active FROM alert_rule_states WHERE node_id = 'hytron' AND rule_id = 'node_offline'`).Scan(&active); err != nil {
+	if err := store.db.QueryRow(`SELECT active FROM alert_rule_states WHERE node_id = 'example-node-a' AND rule_id = 'node_offline'`).Scan(&active); err != nil {
 		t.Fatalf("query offline alert state: %v", err)
 	}
 	if active != 0 {
@@ -120,7 +120,7 @@ func TestAgentHeartbeatReconcilesOfflineIncidentAfterStoredStatusWasSilentlyOnli
 
 func TestRecoveryNotificationRequiresAnActiveIncidentMark(t *testing.T) {
 	store := openOfflineRecoveryTestStore(t)
-	event := notificationEvent{EventType: "node_offline", NodeID: "hytron", NodeName: "Hytron", PreviousStatus: "offline", Status: "online"}
+	event := notificationEvent{EventType: "node_offline", NodeID: "example-node-a", NodeName: "Example Node A", PreviousStatus: "offline", Status: "online"}
 	queued, err := store.QueueNotificationEvent(context.Background(), event, []notificationDispatchChannel{{ID: "ops", Name: "Ops", Destination: "7579942307", Credential: "token", Type: "telegram"}})
 	if err != nil {
 		t.Fatalf("queue recovery: %v", err)
@@ -134,33 +134,33 @@ func TestHostAndProbeReportsDoNotSilentlyRecoverPersistedOfflineNode(t *testing.
 	store := openOfflineRecoveryTestStore(t)
 	ctx := context.Background()
 	staleSeen := time.Now().UTC().Add(-time.Minute).Unix()
-	if _, err := store.db.ExecContext(ctx, `UPDATE nodes SET status = 'offline', last_seen_at = ? WHERE id = 'hytron'`, staleSeen); err != nil {
+	if _, err := store.db.ExecContext(ctx, `UPDATE nodes SET status = 'offline', last_seen_at = ? WHERE id = 'example-node-a'`, staleSeen); err != nil {
 		t.Fatalf("set offline node: %v", err)
 	}
-	if err := store.UpsertAgentHost(ctx, "hytron", AgentHostRequest{OSName: "Linux", Arch: "amd64", AgentVersion: "agent-test"}); err != nil {
+	if err := store.UpsertAgentHost(ctx, "example-node-a", AgentHostRequest{OSName: "Linux", Arch: "amd64", AgentVersion: "agent-test"}); err != nil {
 		t.Fatalf("upsert host: %v", err)
 	}
 	var status string
-	if err := store.db.QueryRowContext(ctx, `SELECT status FROM nodes WHERE id = 'hytron'`).Scan(&status); err != nil {
+	if err := store.db.QueryRowContext(ctx, `SELECT status FROM nodes WHERE id = 'example-node-a'`).Scan(&status); err != nil {
 		t.Fatalf("query status after host: %v", err)
 	}
 	if status != "offline" {
 		t.Fatalf("status after host = %q, want offline until a transition-aware liveness report", status)
 	}
 	var hostLastSeen int64
-	if err := store.db.QueryRowContext(ctx, `SELECT last_seen_at FROM nodes WHERE id = 'hytron'`).Scan(&hostLastSeen); err != nil {
+	if err := store.db.QueryRowContext(ctx, `SELECT last_seen_at FROM nodes WHERE id = 'example-node-a'`).Scan(&hostLastSeen); err != nil {
 		t.Fatalf("query last seen after host: %v", err)
 	}
 
-	targets, err := store.EnabledProbeTargets(ctx, "hytron")
+	targets, err := store.EnabledProbeTargets(ctx, "example-node-a")
 	if err != nil || len(targets) == 0 {
 		t.Fatalf("enabled probe targets = %d, err=%v", len(targets), err)
 	}
-	if err := store.InsertProbeRound(ctx, "hytron", targets[0], time.Now().UTC(), []probe.Sample{{Seq: 1, Success: true, LatencyMS: floatValuePtr(12)}}); err != nil {
+	if err := store.InsertProbeRound(ctx, "example-node-a", targets[0], time.Now().UTC(), []probe.Sample{{Seq: 1, Success: true, LatencyMS: floatValuePtr(12)}}); err != nil {
 		t.Fatalf("insert probe round: %v", err)
 	}
 	var lastSeen int64
-	if err := store.db.QueryRowContext(ctx, `SELECT status, last_seen_at FROM nodes WHERE id = 'hytron'`).Scan(&status, &lastSeen); err != nil {
+	if err := store.db.QueryRowContext(ctx, `SELECT status, last_seen_at FROM nodes WHERE id = 'example-node-a'`).Scan(&status, &lastSeen); err != nil {
 		t.Fatalf("query node after probe: %v", err)
 	}
 	if status != "offline" {
@@ -176,7 +176,7 @@ func TestStaleOfflineScannerWaitsForStartupGrace(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	staleSeen := time.Now().UTC().Add(-time.Minute).Unix()
-	if _, err := store.db.ExecContext(ctx, `UPDATE nodes SET status = 'online', last_seen_at = ? WHERE id = 'hytron'`, staleSeen); err != nil {
+	if _, err := store.db.ExecContext(ctx, `UPDATE nodes SET status = 'online', last_seen_at = ? WHERE id = 'example-node-a'`, staleSeen); err != nil {
 		t.Fatalf("set stale node: %v", err)
 	}
 	h := &handler{store: store, liveHub: newLiveUpdateHub(), presence: newAgentPresenceManager(), notificationSender: &countingNotificationSender{}}
@@ -184,7 +184,7 @@ func TestStaleOfflineScannerWaitsForStartupGrace(t *testing.T) {
 
 	time.Sleep(25 * time.Millisecond)
 	var status string
-	if err := store.db.QueryRowContext(ctx, `SELECT status FROM nodes WHERE id = 'hytron'`).Scan(&status); err != nil {
+	if err := store.db.QueryRowContext(ctx, `SELECT status FROM nodes WHERE id = 'example-node-a'`).Scan(&status); err != nil {
 		t.Fatalf("query status during grace: %v", err)
 	}
 	if status != "online" {
@@ -193,7 +193,7 @@ func TestStaleOfflineScannerWaitsForStartupGrace(t *testing.T) {
 
 	deadline := time.Now().Add(500 * time.Millisecond)
 	for time.Now().Before(deadline) {
-		if err := store.db.QueryRowContext(ctx, `SELECT status FROM nodes WHERE id = 'hytron'`).Scan(&status); err != nil {
+		if err := store.db.QueryRowContext(ctx, `SELECT status FROM nodes WHERE id = 'example-node-a'`).Scan(&status); err != nil {
 			t.Fatalf("query status after grace: %v", err)
 		}
 		if status == "offline" {

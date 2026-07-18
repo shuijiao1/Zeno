@@ -170,7 +170,7 @@ func TestSummaryEndpointReturnsMockHomeCardsWithoutSecrets(t *testing.T) {
 	if len(summary.Services) == 0 || summary.Services[0].Name == "" || summary.Services[0].AssignedNodeCount == 0 {
 		t.Fatalf("summary services = %+v, want public monitor service status", summary.Services)
 	}
-	if strings.Contains(raw, `"address"`) || strings.Contains(raw, `"port"`) || strings.Contains(raw, "149.154.171.5") || strings.Contains(raw, "cq-unicom.example") {
+	if strings.Contains(raw, `"address"`) || strings.Contains(raw, `"port"`) || strings.Contains(raw, "203.0.113.5") || strings.Contains(raw, "cq-unicom.example") {
 		t.Fatalf("public summary leaked probe destination details: %s", raw)
 	}
 
@@ -186,7 +186,7 @@ func TestSummaryWebSocketPublishesAgentStateUpdates(t *testing.T) {
 	}
 	defer store.Close()
 	ctx := context.Background()
-	if err := store.SeedPreviewData(ctx, PreviewSeedOptions{NodeID: "hytron", DisplayName: "Hytron", CountryCode: "HK", AgentToken: "test-agent-token"}); err != nil {
+	if err := store.SeedPreviewData(ctx, PreviewSeedOptions{NodeID: "example-node-a", DisplayName: "Example Node A", CountryCode: "HK", AgentToken: "test-agent-token"}); err != nil {
 		t.Fatalf("seed preview data: %v", err)
 	}
 
@@ -216,7 +216,7 @@ func TestSummaryWebSocketPublishesAgentStateUpdates(t *testing.T) {
 	if err != nil {
 		t.Fatalf("new state request: %v", err)
 	}
-	request.Header.Set("X-Node-ID", "hytron")
+	request.Header.Set("X-Node-ID", "example-node-a")
 	request.Header.Set("Authorization", "Bearer test-agent-token")
 	request.Header.Set("Content-Type", "application/json")
 	stateResponse, err := server.Client().Do(request)
@@ -244,7 +244,7 @@ func TestAgentHeartbeatInvalidatesCachedSummary(t *testing.T) {
 	}
 	defer store.Close()
 	ctx := context.Background()
-	if err := store.SeedPreviewData(ctx, PreviewSeedOptions{NodeID: "hytron", DisplayName: "Hytron", CountryCode: "HK", AgentToken: "test-agent-token"}); err != nil {
+	if err := store.SeedPreviewData(ctx, PreviewSeedOptions{NodeID: "example-node-a", DisplayName: "Example Node A", CountryCode: "HK", AgentToken: "test-agent-token"}); err != nil {
 		t.Fatalf("seed preview data: %v", err)
 	}
 
@@ -266,7 +266,7 @@ func TestAgentHeartbeatInvalidatesCachedSummary(t *testing.T) {
 	if err != nil {
 		t.Fatalf("new heartbeat request: %v", err)
 	}
-	request.Header.Set("X-Node-ID", "hytron")
+	request.Header.Set("X-Node-ID", "example-node-a")
 	request.Header.Set("Authorization", "Bearer test-agent-token")
 	request.Header.Set("Content-Type", "application/json")
 	heartbeatResponse, err := server.Client().Do(request)
@@ -296,10 +296,10 @@ func TestAgentPresenceWebSocketDoesNotOverrideSummaryLiveness(t *testing.T) {
 	}
 	defer store.Close()
 	ctx := context.Background()
-	if err := store.SeedPreviewData(ctx, PreviewSeedOptions{NodeID: "hytron", DisplayName: "Hytron", CountryCode: "HK", AgentToken: "test-agent-token"}); err != nil {
+	if err := store.SeedPreviewData(ctx, PreviewSeedOptions{NodeID: "example-node-a", DisplayName: "Example Node A", CountryCode: "HK", AgentToken: "test-agent-token"}); err != nil {
 		t.Fatalf("seed preview data: %v", err)
 	}
-	if err := store.RecordAgentHeartbeat(ctx, "hytron", time.Now().UTC(), "online", "test-agent"); err != nil {
+	if err := store.RecordAgentHeartbeat(ctx, "example-node-a", time.Now().UTC(), "online", "test-agent"); err != nil {
 		t.Fatalf("record heartbeat: %v", err)
 	}
 	server := httptest.NewServer(NewHandler(HandlerOptions{Store: store}))
@@ -308,7 +308,7 @@ func TestAgentPresenceWebSocketDoesNotOverrideSummaryLiveness(t *testing.T) {
 
 	wsURL := "ws" + strings.TrimPrefix(server.URL, "http") + "/api/agent/v1/presence/ws"
 	header := http.Header{}
-	header.Set("X-Node-ID", "hytron")
+	header.Set("X-Node-ID", "example-node-a")
 	header.Set("Authorization", "Bearer test-agent-token")
 	conn, _, err := websocket.DefaultDialer.Dial(wsURL, header)
 	if err != nil {
@@ -327,11 +327,11 @@ func TestAgentPresenceWebSocketDoesNotForceStaleSummaryOnline(t *testing.T) {
 	}
 	defer store.Close()
 	ctx := context.Background()
-	if err := store.SeedPreviewData(ctx, PreviewSeedOptions{NodeID: "hytron", DisplayName: "Hytron", CountryCode: "HK", AgentToken: "test-agent-token"}); err != nil {
+	if err := store.SeedPreviewData(ctx, PreviewSeedOptions{NodeID: "example-node-a", DisplayName: "Example Node A", CountryCode: "HK", AgentToken: "test-agent-token"}); err != nil {
 		t.Fatalf("seed preview data: %v", err)
 	}
 	staleSeen := time.Now().UTC().Add(-nodeHeartbeatOfflineAfter - time.Second).Unix()
-	if _, err := store.db.ExecContext(ctx, `UPDATE nodes SET status = 'online', last_seen_at = ? WHERE id = 'hytron'`, staleSeen); err != nil {
+	if _, err := store.db.ExecContext(ctx, `UPDATE nodes SET status = 'online', last_seen_at = ? WHERE id = 'example-node-a'`, staleSeen); err != nil {
 		t.Fatalf("set stale heartbeat: %v", err)
 	}
 	server := httptest.NewServer(NewHandler(HandlerOptions{Store: store}))
@@ -340,7 +340,7 @@ func TestAgentPresenceWebSocketDoesNotForceStaleSummaryOnline(t *testing.T) {
 
 	wsURL := "ws" + strings.TrimPrefix(server.URL, "http") + "/api/agent/v1/presence/ws"
 	header := http.Header{}
-	header.Set("X-Node-ID", "hytron")
+	header.Set("X-Node-ID", "example-node-a")
 	header.Set("Authorization", "Bearer test-agent-token")
 	conn, _, err := websocket.DefaultDialer.Dial(wsURL, header)
 	if err != nil {
@@ -377,14 +377,14 @@ func TestNodeStateWebSocketPublishesAgentStateUpdates(t *testing.T) {
 	}
 	defer store.Close()
 	ctx := context.Background()
-	if err := store.SeedPreviewData(ctx, PreviewSeedOptions{NodeID: "hytron", DisplayName: "Hytron", CountryCode: "HK", AgentToken: "test-agent-token"}); err != nil {
+	if err := store.SeedPreviewData(ctx, PreviewSeedOptions{NodeID: "example-node-a", DisplayName: "Example Node A", CountryCode: "HK", AgentToken: "test-agent-token"}); err != nil {
 		t.Fatalf("seed preview data: %v", err)
 	}
 	baseTS := time.Now().UTC().Add(-5 * time.Minute).Unix()
 	for index := 0; index < 6; index++ {
 		if _, err := store.db.ExecContext(ctx, `
 			INSERT INTO state_samples (node_id, ts, cpu_percent, memory_used_bytes, memory_total_bytes, disk_used_bytes, disk_total_bytes, net_in_total_bytes, net_out_total_bytes, net_in_speed_bps, net_out_speed_bps, uptime_seconds)
-			VALUES ('hytron', ?, ?, 100, 200, 300, 400, 1000, 2000, 2468, 8642, 60)
+			VALUES ('example-node-a', ?, ?, 100, 200, 300, 400, 1000, 2000, 2468, 8642, 60)
 		`, baseTS+int64(index*30), 10+float64(index)); err != nil {
 			t.Fatalf("insert historical state sample: %v", err)
 		}
@@ -393,7 +393,7 @@ func TestNodeStateWebSocketPublishesAgentStateUpdates(t *testing.T) {
 	server := httptest.NewServer(NewHandler(HandlerOptions{Store: store}))
 	defer server.Close()
 
-	wsURL := "ws" + strings.TrimPrefix(server.URL, "http") + "/api/public/v1/nodes/hytron/state/ws?range=1d"
+	wsURL := "ws" + strings.TrimPrefix(server.URL, "http") + "/api/public/v1/nodes/example-node-a/state/ws?range=1d"
 	conn, response, err := websocket.DefaultDialer.Dial(wsURL, nil)
 	if err != nil {
 		t.Fatalf("open node state websocket: %v", err)
@@ -412,7 +412,7 @@ func TestNodeStateWebSocketPublishesAgentStateUpdates(t *testing.T) {
 	if err != nil {
 		t.Fatalf("new state request: %v", err)
 	}
-	request.Header.Set("X-Node-ID", "hytron")
+	request.Header.Set("X-Node-ID", "example-node-a")
 	request.Header.Set("Authorization", "Bearer test-agent-token")
 	request.Header.Set("Content-Type", "application/json")
 	stateResponse, err := server.Client().Do(request)
@@ -432,7 +432,7 @@ func TestNodeStateWebSocketPublishesAgentStateUpdates(t *testing.T) {
 	if err := json.Unmarshal(update, &stateUpdate); err != nil {
 		t.Fatalf("decode node state websocket update: %v", err)
 	}
-	if stateUpdate.NodeID != "hytron" || !statePointsContainNetOutSpeed(stateUpdate.Points, 8642) {
+	if stateUpdate.NodeID != "example-node-a" || !statePointsContainNetOutSpeed(stateUpdate.Points, 8642) {
 		t.Fatalf("node state websocket update = %q, want latest state point", string(update))
 	}
 	if got := len(stateUpdate.Points); got < 4 {
@@ -447,14 +447,14 @@ func TestLatencyWebSocketsPublishAgentProbeResults(t *testing.T) {
 	}
 	defer store.Close()
 	ctx := context.Background()
-	if err := store.SeedPreviewData(ctx, PreviewSeedOptions{NodeID: "hytron", DisplayName: "Hytron", CountryCode: "HK", AgentToken: "test-agent-token"}); err != nil {
+	if err := store.SeedPreviewData(ctx, PreviewSeedOptions{NodeID: "example-node-a", DisplayName: "Example Node A", CountryCode: "HK", AgentToken: "test-agent-token"}); err != nil {
 		t.Fatalf("seed preview data: %v", err)
 	}
 
 	server := httptest.NewServer(NewHandler(HandlerOptions{Store: store}))
 	defer server.Close()
 
-	nodeConn, nodeResponse, err := websocket.DefaultDialer.Dial("ws"+strings.TrimPrefix(server.URL, "http")+"/api/public/v1/nodes/hytron/latency/ws?range=1h", nil)
+	nodeConn, nodeResponse, err := websocket.DefaultDialer.Dial("ws"+strings.TrimPrefix(server.URL, "http")+"/api/public/v1/nodes/example-node-a/latency/ws?range=1h", nil)
 	if err != nil {
 		t.Fatalf("open node latency websocket: %v", err)
 	}
@@ -496,7 +496,7 @@ func TestLatencyWebSocketsPublishAgentProbeResults(t *testing.T) {
 	if err != nil {
 		t.Fatalf("new probe request: %v", err)
 	}
-	request.Header.Set("X-Node-ID", "hytron")
+	request.Header.Set("X-Node-ID", "example-node-a")
 	request.Header.Set("Authorization", "Bearer test-agent-token")
 	request.Header.Set("Content-Type", "application/json")
 	probeResponse, err := server.Client().Do(request)
@@ -527,7 +527,7 @@ func TestLatencyWebSocketsPublishAgentProbeResults(t *testing.T) {
 	if err := json.Unmarshal(serviceUpdate, &serviceLatencyUpdate); err != nil {
 		t.Fatalf("decode service latency update: %v", err)
 	}
-	if !serviceLatencyPointsContainAverage(serviceLatencyUpdate.Points, "hytron", 20) {
+	if !serviceLatencyPointsContainAverage(serviceLatencyUpdate.Points, "example-node-a", 20) {
 		t.Fatalf("service latency websocket update = %q, want posted probe average", string(serviceUpdate))
 	}
 }
@@ -563,7 +563,7 @@ func TestServiceLatencyEndpointReturnsNodeSeries(t *testing.T) {
 func TestNodeLatencyEndpointReturnsKulinStyleMonitorTargets(t *testing.T) {
 	handler := NewHandler()
 	recorder := httptest.NewRecorder()
-	request := httptest.NewRequest(http.MethodGet, "/api/public/v1/nodes/sharon/latency?range=1d", nil)
+	request := httptest.NewRequest(http.MethodGet, "/api/public/v1/nodes/example-harbor/latency?range=1d", nil)
 
 	handler.ServeHTTP(recorder, request)
 
@@ -580,7 +580,7 @@ func TestNodeLatencyEndpointReturnsKulinStyleMonitorTargets(t *testing.T) {
 	for _, point := range response.Points {
 		seen[point.TargetName] = true
 	}
-	wantNames := []string{"重庆联通", "重庆移动", "重庆电信", "DC5", "Google", "DC2", "DC1", "Akari TW", "Akari JP", "Akari HK", "Hytron", "HostDZire", "BAGE"}
+	wantNames := []string{"重庆联通", "重庆移动", "重庆电信", "DC5", "Google", "DC2", "DC1", "Akari TW", "Akari JP", "Akari HK", "Example Node A", "Example Compute", "Example Node B"}
 	for _, name := range wantNames {
 		if !seen[name] {
 			t.Fatalf("missing Kulin-style monitor target %q; saw=%v", name, seen)
@@ -592,10 +592,10 @@ func TestNodeLatencyEndpointReturnsKulinStyleMonitorTargets(t *testing.T) {
 }
 
 func TestNodeLatencyEndpointUsesRangeSpecificWindows(t *testing.T) {
-	realtime := requestLatency(t, "/api/public/v1/nodes/sharon/latency?range=1h")
-	oneDay := requestLatency(t, "/api/public/v1/nodes/sharon/latency?range=1d")
-	sevenDays := requestLatency(t, "/api/public/v1/nodes/sharon/latency?range=7d")
-	thirtyDays := requestLatency(t, "/api/public/v1/nodes/sharon/latency?range=30d")
+	realtime := requestLatency(t, "/api/public/v1/nodes/example-harbor/latency?range=1h")
+	oneDay := requestLatency(t, "/api/public/v1/nodes/example-harbor/latency?range=1d")
+	sevenDays := requestLatency(t, "/api/public/v1/nodes/example-harbor/latency?range=7d")
+	thirtyDays := requestLatency(t, "/api/public/v1/nodes/example-harbor/latency?range=30d")
 
 	if got := len(uniquePointTimes(realtime.Points)); got != 20 {
 		t.Fatalf("1h timestamps = %d, want 20 realtime three-minute buckets", got)
@@ -622,9 +622,9 @@ func TestNodeLatencyEndpointUsesRangeSpecificWindows(t *testing.T) {
 }
 
 func TestNodeStateEndpointUsesKulinHistoricalWindows(t *testing.T) {
-	oneDay := requestState(t, "/api/public/v1/nodes/hytron/state?range=1d")
-	sevenDays := requestState(t, "/api/public/v1/nodes/hytron/state?range=7d")
-	thirtyDays := requestState(t, "/api/public/v1/nodes/hytron/state?range=30d")
+	oneDay := requestState(t, "/api/public/v1/nodes/example-node-a/state?range=1d")
+	sevenDays := requestState(t, "/api/public/v1/nodes/example-node-a/state?range=7d")
+	thirtyDays := requestState(t, "/api/public/v1/nodes/example-node-a/state?range=30d")
 
 	if got := len(oneDay.Points); got != 2880 {
 		t.Fatalf("1d state points = %d, want 2880 thirty-second Kulin samples", got)
@@ -644,7 +644,7 @@ func TestNodeStateEndpointUsesKulinHistoricalWindows(t *testing.T) {
 func TestNodeLatencyEndpointPreservesLossOnlyPointsAsNullLatency(t *testing.T) {
 	handler := NewHandler()
 	recorder := httptest.NewRecorder()
-	request := httptest.NewRequest(http.MethodGet, "/api/public/v1/nodes/hytron/latency?range=1h", nil)
+	request := httptest.NewRequest(http.MethodGet, "/api/public/v1/nodes/example-node-a/latency?range=1h", nil)
 
 	handler.ServeHTTP(recorder, request)
 
@@ -656,8 +656,8 @@ func TestNodeLatencyEndpointPreservesLossOnlyPointsAsNullLatency(t *testing.T) {
 	if err := json.NewDecoder(recorder.Body).Decode(&response); err != nil {
 		t.Fatalf("decode latency response: %v", err)
 	}
-	if response.NodeID != "hytron" {
-		t.Fatalf("node_id = %q, want hytron", response.NodeID)
+	if response.NodeID != "example-node-a" {
+		t.Fatalf("node_id = %q, want example-node-a", response.NodeID)
 	}
 	if response.Range != "1h" {
 		t.Fatalf("range = %q, want 1h", response.Range)
@@ -819,7 +819,7 @@ func TestStaticWebFallbackServesIndexForDashboardRoutes(t *testing.T) {
 	}
 
 	spaRecorder := httptest.NewRecorder()
-	handler.ServeHTTP(spaRecorder, httptest.NewRequest(http.MethodGet, "/nodes/hytron", nil))
+	handler.ServeHTTP(spaRecorder, httptest.NewRequest(http.MethodGet, "/nodes/example-node-a", nil))
 	if spaRecorder.Code != http.StatusOK {
 		t.Fatalf("spa status = %d, want %d", spaRecorder.Code, http.StatusOK)
 	}

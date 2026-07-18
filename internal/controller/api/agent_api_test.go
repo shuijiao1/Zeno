@@ -28,14 +28,14 @@ func TestAgentProbeTargetsRequiresBearerToken(t *testing.T) {
 	}
 	defer store.Close()
 	ctx := context.Background()
-	if err := store.SeedPreviewData(ctx, PreviewSeedOptions{NodeID: "hytron", DisplayName: "Hytron", CountryCode: "HK", AgentToken: "test-agent-token"}); err != nil {
+	if err := store.SeedPreviewData(ctx, PreviewSeedOptions{NodeID: "example-node-a", DisplayName: "Example Node A", CountryCode: "HK", AgentToken: "test-agent-token"}); err != nil {
 		t.Fatalf("seed preview data: %v", err)
 	}
 
 	handler := NewHandler(HandlerOptions{Store: store})
 	recorder := httptest.NewRecorder()
 	request := httptest.NewRequest(http.MethodGet, "/api/agent/v1/probe-targets", nil)
-	request.Header.Set("X-Node-ID", "hytron")
+	request.Header.Set("X-Node-ID", "example-node-a")
 
 	handler.ServeHTTP(recorder, request)
 
@@ -70,13 +70,13 @@ func TestAgentStateResponseDoesNotWaitForLiveDetailRefresh(t *testing.T) {
 		t.Fatalf("open sqlite store: %v", err)
 	}
 	defer sqliteStore.Close()
-	if err := sqliteStore.SeedPreviewData(context.Background(), PreviewSeedOptions{NodeID: "hytron", DisplayName: "Hytron", CountryCode: "HK", AgentToken: "test-agent-token"}); err != nil {
+	if err := sqliteStore.SeedPreviewData(context.Background(), PreviewSeedOptions{NodeID: "example-node-a", DisplayName: "Example Node A", CountryCode: "HK", AgentToken: "test-agent-token"}); err != nil {
 		t.Fatalf("seed preview data: %v", err)
 	}
 	store := &blockingNodeStateStore{SQLiteStore: sqliteStore, started: make(chan struct{}), release: make(chan struct{})}
 	httpHandler := NewHandler(HandlerOptions{Store: store})
 	h := httpHandler.(*handler)
-	_, unsubscribe := h.liveHub.subscribe(nodeStateLiveTopic("hytron", "1h"))
+	_, unsubscribe := h.liveHub.subscribe(nodeStateLiveTopic("example-node-a", "1h"))
 	defer unsubscribe()
 
 	postAgentState(t, httpHandler.ServeHTTP, time.Now().UTC().Unix(), 12.5)
@@ -96,13 +96,13 @@ func TestAgentProbeTargetsReturnsEnabledTargetsAfterAuth(t *testing.T) {
 	}
 	defer store.Close()
 	ctx := context.Background()
-	if err := store.SeedPreviewData(ctx, PreviewSeedOptions{NodeID: "hytron", DisplayName: "Hytron", CountryCode: "HK", AgentToken: "test-agent-token"}); err != nil {
+	if err := store.SeedPreviewData(ctx, PreviewSeedOptions{NodeID: "example-node-a", DisplayName: "Example Node A", CountryCode: "HK", AgentToken: "test-agent-token"}); err != nil {
 		t.Fatalf("seed preview data: %v", err)
 	}
 
 	recorder := httptest.NewRecorder()
 	request := httptest.NewRequest(http.MethodGet, "/api/agent/v1/probe-targets", nil)
-	request.Header.Set("X-Node-ID", "hytron")
+	request.Header.Set("X-Node-ID", "example-node-a")
 	request.Header.Set("Authorization", "Bearer test-agent-token")
 	NewHandler(HandlerOptions{Store: store}).ServeHTTP(recorder, request)
 
@@ -132,7 +132,7 @@ func TestAgentProbeTargetsVersionErrorReturns500InsteadOfZero(t *testing.T) {
 	handler := NewHandler(HandlerOptions{Store: probeTargetsVersionErrorStore{}})
 	recorder := httptest.NewRecorder()
 	request := httptest.NewRequest(http.MethodGet, "/api/agent/v1/probe-targets", nil)
-	request.Header.Set("X-Node-ID", "hytron")
+	request.Header.Set("X-Node-ID", "example-node-a")
 	request.Header.Set("Authorization", "Bearer test-agent-token")
 
 	handler.ServeHTTP(recorder, request)
@@ -151,7 +151,7 @@ func TestAgentInternalErrorsEmitStructuredSafeLog(t *testing.T) {
 	handler := NewHandler(HandlerOptions{Store: agentAuthorizeErrorStore{}})
 	recorder := httptest.NewRecorder()
 	request := httptest.NewRequest(http.MethodPost, "/api/agent/v1/heartbeat", strings.NewReader(`{"ts":1782990000,"status":"online"}`))
-	request.Header.Set("X-Node-ID", "hytron")
+	request.Header.Set("X-Node-ID", "example-node-a")
 	request.Header.Set("Authorization", "Bearer super-secret-token")
 	request.Header.Set("Content-Type", "application/json")
 
@@ -161,7 +161,7 @@ func TestAgentInternalErrorsEmitStructuredSafeLog(t *testing.T) {
 		t.Fatalf("status = %d, want 500; body=%s", recorder.Code, recorder.Body.String())
 	}
 	logText := logs.String()
-	for _, want := range []string{"agent_api_error", "endpoint=heartbeat", "node_id=hytron", "stage=authorize", "error=redacted"} {
+	for _, want := range []string{"agent_api_error", "endpoint=heartbeat", "node_id=example-node-a", "stage=authorize", "error=redacted"} {
 		if !strings.Contains(logText, want) {
 			t.Fatalf("log %q missing %q", logText, want)
 		}
@@ -211,7 +211,7 @@ func TestAgentProbeResultsAcceptsSamplesAndUpdatesPublicLatency(t *testing.T) {
 	}
 	defer store.Close()
 	ctx := context.Background()
-	if err := store.SeedPreviewData(ctx, PreviewSeedOptions{NodeID: "hytron", DisplayName: "Hytron", CountryCode: "HK", AgentToken: "test-agent-token"}); err != nil {
+	if err := store.SeedPreviewData(ctx, PreviewSeedOptions{NodeID: "example-node-a", DisplayName: "Example Node A", CountryCode: "HK", AgentToken: "test-agent-token"}); err != nil {
 		t.Fatalf("seed preview data: %v", err)
 	}
 
@@ -238,7 +238,7 @@ func TestAgentProbeResultsAcceptsSamplesAndUpdatesPublicLatency(t *testing.T) {
 	handler := NewHandler(HandlerOptions{Store: store})
 	recorder := httptest.NewRecorder()
 	request := httptest.NewRequest(http.MethodPost, "/api/agent/v1/probe-results", bytes.NewReader(payload))
-	request.Header.Set("X-Node-ID", "hytron")
+	request.Header.Set("X-Node-ID", "example-node-a")
 	request.Header.Set("Authorization", "Bearer test-agent-token")
 	request.Header.Set("Content-Type", "application/json")
 	handler.ServeHTTP(recorder, request)
@@ -257,7 +257,7 @@ func TestAgentProbeResultsAcceptsSamplesAndUpdatesPublicLatency(t *testing.T) {
 		t.Fatalf("accepted response = %+v, want ok=true accepted=1", accepted)
 	}
 
-	latency, err := store.NodeLatency(ctx, "hytron", latencyWindow{Name: "1h", Samples: 36, Step: 2 * time.Minute})
+	latency, err := store.NodeLatency(ctx, "example-node-a", latencyWindow{Name: "1h", Samples: 36, Step: 2 * time.Minute})
 	if err != nil {
 		t.Fatalf("node latency: %v", err)
 	}
@@ -284,7 +284,7 @@ func TestAgentProbeResultsRejectsStaleConfigVersionWithoutPartialWrite(t *testin
 	}
 	defer store.Close()
 	ctx := context.Background()
-	if err := store.SeedPreviewData(ctx, PreviewSeedOptions{NodeID: "hytron", DisplayName: "Hytron", CountryCode: "HK", AgentToken: "test-agent-token"}); err != nil {
+	if err := store.SeedPreviewData(ctx, PreviewSeedOptions{NodeID: "example-node-a", DisplayName: "Example Node A", CountryCode: "HK", AgentToken: "test-agent-token"}); err != nil {
 		t.Fatalf("seed preview data: %v", err)
 	}
 	version, err := store.ProbeConfigVersion(ctx)
@@ -296,7 +296,7 @@ func TestAgentProbeResultsRejectsStaleConfigVersionWithoutPartialWrite(t *testin
 		t.Helper()
 		recorder := httptest.NewRecorder()
 		request := httptest.NewRequest(http.MethodPost, "/api/agent/v1/probe-results", strings.NewReader(payload))
-		request.Header.Set("X-Node-ID", "hytron")
+		request.Header.Set("X-Node-ID", "example-node-a")
 		request.Header.Set("Authorization", "Bearer test-agent-token")
 		request.Header.Set("Content-Type", "application/json")
 		handler.ServeHTTP(recorder, request)
@@ -374,7 +374,7 @@ func TestAgentProbeResultsVersionZeroUsesCurrentConfigValidationAtomically(t *te
 	}
 	defer store.Close()
 	ctx := context.Background()
-	if err := store.SeedPreviewData(ctx, PreviewSeedOptions{NodeID: "hytron", DisplayName: "Hytron", CountryCode: "HK", AgentToken: "test-agent-token"}); err != nil {
+	if err := store.SeedPreviewData(ctx, PreviewSeedOptions{NodeID: "example-node-a", DisplayName: "Example Node A", CountryCode: "HK", AgentToken: "test-agent-token"}); err != nil {
 		t.Fatalf("seed preview data: %v", err)
 	}
 	count := 1
@@ -386,7 +386,7 @@ func TestAgentProbeResultsVersionZeroUsesCurrentConfigValidationAtomically(t *te
 		t.Helper()
 		recorder := httptest.NewRecorder()
 		request := httptest.NewRequest(http.MethodPost, "/api/agent/v1/probe-results", strings.NewReader(payload))
-		request.Header.Set("X-Node-ID", "hytron")
+		request.Header.Set("X-Node-ID", "example-node-a")
 		request.Header.Set("Authorization", "Bearer test-agent-token")
 		request.Header.Set("Content-Type", "application/json")
 		handler.ServeHTTP(recorder, request)
@@ -420,7 +420,7 @@ func TestAdminProbeTargetMutationsBumpProbeConfigVersionInStoreTransaction(t *te
 	}
 	defer store.Close()
 	ctx := context.Background()
-	if err := store.SeedPreviewData(ctx, PreviewSeedOptions{NodeID: "hytron", DisplayName: "Hytron", CountryCode: "HK", AgentToken: "test-agent-token"}); err != nil {
+	if err := store.SeedPreviewData(ctx, PreviewSeedOptions{NodeID: "example-node-a", DisplayName: "Example Node A", CountryCode: "HK", AgentToken: "test-agent-token"}); err != nil {
 		t.Fatalf("seed preview data: %v", err)
 	}
 	version, err := store.ProbeConfigVersion(ctx)
@@ -448,7 +448,7 @@ func TestAdminProbeTargetMutationsBumpProbeConfigVersionInStoreTransaction(t *te
 		Count:       1,
 		TimeoutMS:   minProbeTargetTimeoutMS,
 		IntervalSec: minProbeTargetIntervalSec,
-		Assignments: []AdminProbeTargetAssignmentUpdate{{NodeID: "hytron", Enabled: true}},
+		Assignments: []AdminProbeTargetAssignmentUpdate{{NodeID: "example-node-a", Enabled: true}},
 	}); err != nil {
 		t.Fatalf("create probe target: %v", err)
 	}
@@ -472,7 +472,7 @@ func TestAgentProbeResultsStoresLatencyWithoutProbeAlertNotification(t *testing.
 	defer store.Close()
 	enableTestNotificationCredentialEncryption(t, store)
 	ctx := context.Background()
-	if err := store.SeedPreviewData(ctx, PreviewSeedOptions{NodeID: "hytron", DisplayName: "Hytron", CountryCode: "HK", AgentToken: "test-agent-token"}); err != nil {
+	if err := store.SeedPreviewData(ctx, PreviewSeedOptions{NodeID: "example-node-a", DisplayName: "Example Node A", CountryCode: "HK", AgentToken: "test-agent-token"}); err != nil {
 		t.Fatalf("seed preview data: %v", err)
 	}
 
@@ -493,7 +493,7 @@ func TestAgentProbeResultsStoresLatencyWithoutProbeAlertNotification(t *testing.
 	payload := []byte(`{"rounds":[{"target_id":"google-dns","ts":` + strconv.FormatInt(now.Add(time.Second).Unix(), 10) + `,"type":"tcping","samples":[{"seq":1,"success":false,"error":"timeout"},{"seq":2,"success":false,"error":"timeout"}]}]}`)
 	recorder := httptest.NewRecorder()
 	request := httptest.NewRequest(http.MethodPost, "/api/agent/v1/probe-results", bytes.NewReader(payload))
-	request.Header.Set("X-Node-ID", "hytron")
+	request.Header.Set("X-Node-ID", "example-node-a")
 	request.Header.Set("Authorization", "Bearer test-agent-token")
 	request.Header.Set("Content-Type", "application/json")
 	handler.ServeHTTP(recorder, request)
@@ -502,7 +502,7 @@ func TestAgentProbeResultsStoresLatencyWithoutProbeAlertNotification(t *testing.
 	}
 
 	var status string
-	if err := store.db.QueryRowContext(ctx, `SELECT status FROM nodes WHERE id = 'hytron'`).Scan(&status); err != nil {
+	if err := store.db.QueryRowContext(ctx, `SELECT status FROM nodes WHERE id = 'example-node-a'`).Scan(&status); err != nil {
 		t.Fatalf("query node status: %v", err)
 	}
 	if status != "online" {
@@ -524,7 +524,7 @@ func TestAgentProbeResultsKeepsTimeoutLossWithoutLatency(t *testing.T) {
 	}
 	defer store.Close()
 	ctx := context.Background()
-	if err := store.SeedPreviewData(ctx, PreviewSeedOptions{NodeID: "hytron", DisplayName: "Hytron", CountryCode: "HK", AgentToken: "test-agent-token"}); err != nil {
+	if err := store.SeedPreviewData(ctx, PreviewSeedOptions{NodeID: "example-node-a", DisplayName: "Example Node A", CountryCode: "HK", AgentToken: "test-agent-token"}); err != nil {
 		t.Fatalf("seed preview data: %v", err)
 	}
 
@@ -535,7 +535,7 @@ func TestAgentProbeResultsKeepsTimeoutLossWithoutLatency(t *testing.T) {
 	payload := []byte(`{"rounds":[{"target_id":"google-dns","ts":` + strconv.FormatInt(now.Add(time.Second).Unix(), 10) + `,"type":"tcping","samples":[{"seq":1,"success":false,"latency_ms":2400,"error":"timeout"},{"seq":2,"success":false,"latency_ms":2600,"error":"timeout"}]}]}`)
 	recorder := httptest.NewRecorder()
 	request := httptest.NewRequest(http.MethodPost, "/api/agent/v1/probe-results", bytes.NewReader(payload))
-	request.Header.Set("X-Node-ID", "hytron")
+	request.Header.Set("X-Node-ID", "example-node-a")
 	request.Header.Set("Authorization", "Bearer test-agent-token")
 	request.Header.Set("Content-Type", "application/json")
 	handler.ServeHTTP(recorder, request)
@@ -546,7 +546,7 @@ func TestAgentProbeResultsKeepsTimeoutLossWithoutLatency(t *testing.T) {
 	var received int
 	var loss float64
 	var avg, median sql.NullFloat64
-	if err := store.db.QueryRowContext(ctx, `SELECT received, loss_percent, avg_ms, median_ms FROM probe_rounds WHERE node_id = 'hytron' AND target_id = 'google-dns' ORDER BY id DESC LIMIT 1`).Scan(&received, &loss, &avg, &median); err != nil {
+	if err := store.db.QueryRowContext(ctx, `SELECT received, loss_percent, avg_ms, median_ms FROM probe_rounds WHERE node_id = 'example-node-a' AND target_id = 'google-dns' ORDER BY id DESC LIMIT 1`).Scan(&received, &loss, &avg, &median); err != nil {
 		t.Fatalf("query probe round: %v", err)
 	}
 	if received != 0 || loss != 100 || avg.Valid || median.Valid {
@@ -561,7 +561,7 @@ func TestAgentProbeResultsCapsOverFiveSecondSamplesAndCountsTimeoutLoss(t *testi
 	}
 	defer store.Close()
 	ctx := context.Background()
-	if err := store.SeedPreviewData(ctx, PreviewSeedOptions{NodeID: "hytron", DisplayName: "Hytron", CountryCode: "HK", AgentToken: "test-agent-token"}); err != nil {
+	if err := store.SeedPreviewData(ctx, PreviewSeedOptions{NodeID: "example-node-a", DisplayName: "Example Node A", CountryCode: "HK", AgentToken: "test-agent-token"}); err != nil {
 		t.Fatalf("seed preview data: %v", err)
 	}
 
@@ -570,7 +570,7 @@ func TestAgentProbeResultsCapsOverFiveSecondSamplesAndCountsTimeoutLoss(t *testi
 	payload := []byte(`{"rounds":[{"target_id":"google-dns","ts":` + strconv.FormatInt(now.Unix(), 10) + `,"type":"tcping","samples":[{"seq":1,"success":true,"latency_ms":7600}]}]}`)
 	recorder := httptest.NewRecorder()
 	request := httptest.NewRequest(http.MethodPost, "/api/agent/v1/probe-results", bytes.NewReader(payload))
-	request.Header.Set("X-Node-ID", "hytron")
+	request.Header.Set("X-Node-ID", "example-node-a")
 	request.Header.Set("Authorization", "Bearer test-agent-token")
 	handler.ServeHTTP(recorder, request)
 	if recorder.Code != http.StatusAccepted {
@@ -604,7 +604,7 @@ func TestAgentProbeResultsSuccessfulHighLatencyDoesNotChangeStatus(t *testing.T)
 	}
 	defer store.Close()
 	ctx := context.Background()
-	if err := store.SeedPreviewData(ctx, PreviewSeedOptions{NodeID: "hytron", DisplayName: "Hytron", CountryCode: "HK", AgentToken: "test-agent-token"}); err != nil {
+	if err := store.SeedPreviewData(ctx, PreviewSeedOptions{NodeID: "example-node-a", DisplayName: "Example Node A", CountryCode: "HK", AgentToken: "test-agent-token"}); err != nil {
 		t.Fatalf("seed preview data: %v", err)
 	}
 
@@ -615,7 +615,7 @@ func TestAgentProbeResultsSuccessfulHighLatencyDoesNotChangeStatus(t *testing.T)
 	payload := []byte(`{"rounds":[{"target_id":"google-dns","ts":` + strconv.FormatInt(now.Add(time.Second).Unix(), 10) + `,"type":"tcping","samples":[{"seq":1,"success":true,"latency_ms":900},{"seq":2,"success":true,"latency_ms":950},{"seq":3,"success":true,"latency_ms":1000}]}]}`)
 	recorder := httptest.NewRecorder()
 	request := httptest.NewRequest(http.MethodPost, "/api/agent/v1/probe-results", bytes.NewReader(payload))
-	request.Header.Set("X-Node-ID", "hytron")
+	request.Header.Set("X-Node-ID", "example-node-a")
 	request.Header.Set("Authorization", "Bearer test-agent-token")
 	request.Header.Set("Content-Type", "application/json")
 	handler.ServeHTTP(recorder, request)
@@ -624,7 +624,7 @@ func TestAgentProbeResultsSuccessfulHighLatencyDoesNotChangeStatus(t *testing.T)
 	}
 
 	var status string
-	if err := store.db.QueryRowContext(ctx, `SELECT status FROM nodes WHERE id = 'hytron'`).Scan(&status); err != nil {
+	if err := store.db.QueryRowContext(ctx, `SELECT status FROM nodes WHERE id = 'example-node-a'`).Scan(&status); err != nil {
 		t.Fatalf("query node status: %v", err)
 	}
 	if status != "online" {
@@ -639,7 +639,7 @@ func TestAgentProbeResultsFailedSamplesDoNotWarn(t *testing.T) {
 	}
 	defer store.Close()
 	ctx := context.Background()
-	if err := store.SeedPreviewData(ctx, PreviewSeedOptions{NodeID: "hytron", DisplayName: "Hytron", CountryCode: "HK", AgentToken: "test-agent-token"}); err != nil {
+	if err := store.SeedPreviewData(ctx, PreviewSeedOptions{NodeID: "example-node-a", DisplayName: "Example Node A", CountryCode: "HK", AgentToken: "test-agent-token"}); err != nil {
 		t.Fatalf("seed preview data: %v", err)
 	}
 	handler := NewHandler(HandlerOptions{Store: store})
@@ -649,7 +649,7 @@ func TestAgentProbeResultsFailedSamplesDoNotWarn(t *testing.T) {
 	payload := []byte(`{"rounds":[{"target_id":"google-dns","ts":` + strconv.FormatInt(now.Add(time.Second).Unix(), 10) + `,"type":"tcping","samples":[{"seq":1,"success":false,"error":"timeout"},{"seq":2,"success":false,"error":"timeout"}]}]}`)
 	recorder := httptest.NewRecorder()
 	request := httptest.NewRequest(http.MethodPost, "/api/agent/v1/probe-results", bytes.NewReader(payload))
-	request.Header.Set("X-Node-ID", "hytron")
+	request.Header.Set("X-Node-ID", "example-node-a")
 	request.Header.Set("Authorization", "Bearer test-agent-token")
 	request.Header.Set("Content-Type", "application/json")
 	handler.ServeHTTP(recorder, request)
@@ -658,7 +658,7 @@ func TestAgentProbeResultsFailedSamplesDoNotWarn(t *testing.T) {
 	}
 
 	var status string
-	if err := store.db.QueryRowContext(ctx, `SELECT status FROM nodes WHERE id = 'hytron'`).Scan(&status); err != nil {
+	if err := store.db.QueryRowContext(ctx, `SELECT status FROM nodes WHERE id = 'example-node-a'`).Scan(&status); err != nil {
 		t.Fatalf("query node status: %v", err)
 	}
 	if status != "online" {
@@ -674,7 +674,7 @@ func TestAgentStateResourceRuleMarksWarningAndDispatchesProbeUnhealthy(t *testin
 	defer store.Close()
 	enableTestNotificationCredentialEncryption(t, store)
 	ctx := context.Background()
-	if err := store.SeedPreviewData(ctx, PreviewSeedOptions{NodeID: "hytron", DisplayName: "Hytron", CountryCode: "HK", AgentToken: "test-agent-token"}); err != nil {
+	if err := store.SeedPreviewData(ctx, PreviewSeedOptions{NodeID: "example-node-a", DisplayName: "Example Node A", CountryCode: "HK", AgentToken: "test-agent-token"}); err != nil {
 		t.Fatalf("seed preview data: %v", err)
 	}
 	telegram := newTelegramTestCapture(t)
@@ -709,7 +709,7 @@ func TestAgentStateResourceRuleMarksWarningAndDispatchesProbeUnhealthy(t *testin
 	}
 	recorder := httptest.NewRecorder()
 	request := httptest.NewRequest(http.MethodPost, "/api/agent/v1/state", bytes.NewReader(payload))
-	request.Header.Set("X-Node-ID", "hytron")
+	request.Header.Set("X-Node-ID", "example-node-a")
 	request.Header.Set("Authorization", "Bearer test-agent-token")
 	request.Header.Set("Content-Type", "application/json")
 	handler.ServeHTTP(recorder, request)
@@ -718,7 +718,7 @@ func TestAgentStateResourceRuleMarksWarningAndDispatchesProbeUnhealthy(t *testin
 	}
 
 	var status string
-	if err := store.db.QueryRowContext(ctx, `SELECT status FROM nodes WHERE id = 'hytron'`).Scan(&status); err != nil {
+	if err := store.db.QueryRowContext(ctx, `SELECT status FROM nodes WHERE id = 'example-node-a'`).Scan(&status); err != nil {
 		t.Fatalf("query node status: %v", err)
 	}
 	if status != "warning" {
@@ -741,18 +741,18 @@ func TestAgentHeartbeatDoesNotClearExistingProbeWarning(t *testing.T) {
 	}
 	defer store.Close()
 	ctx := context.Background()
-	if err := store.SeedPreviewData(ctx, PreviewSeedOptions{NodeID: "hytron", DisplayName: "Hytron", CountryCode: "HK", AgentToken: "test-agent-token"}); err != nil {
+	if err := store.SeedPreviewData(ctx, PreviewSeedOptions{NodeID: "example-node-a", DisplayName: "Example Node A", CountryCode: "HK", AgentToken: "test-agent-token"}); err != nil {
 		t.Fatalf("seed preview data: %v", err)
 	}
 	freshSeen := time.Now().UTC().Unix()
-	if _, err := store.db.ExecContext(ctx, `UPDATE nodes SET status = 'warning', last_seen_at = ? WHERE id = 'hytron'`, freshSeen); err != nil {
+	if _, err := store.db.ExecContext(ctx, `UPDATE nodes SET status = 'warning', last_seen_at = ? WHERE id = 'example-node-a'`, freshSeen); err != nil {
 		t.Fatalf("set warning status: %v", err)
 	}
 
 	postAgentHeartbeat(t, NewHandler(HandlerOptions{Store: store}), freshSeen+1, "online")
 
 	var status string
-	if err := store.db.QueryRowContext(ctx, `SELECT status FROM nodes WHERE id = 'hytron'`).Scan(&status); err != nil {
+	if err := store.db.QueryRowContext(ctx, `SELECT status FROM nodes WHERE id = 'example-node-a'`).Scan(&status); err != nil {
 		t.Fatalf("query node status: %v", err)
 	}
 	if status != "warning" {
@@ -767,18 +767,18 @@ func TestAgentProbeResultsDoNotClearResourceWarning(t *testing.T) {
 	}
 	defer store.Close()
 	ctx := context.Background()
-	if err := store.SeedPreviewData(ctx, PreviewSeedOptions{NodeID: "hytron", DisplayName: "Hytron", CountryCode: "HK", AgentToken: "test-agent-token"}); err != nil {
+	if err := store.SeedPreviewData(ctx, PreviewSeedOptions{NodeID: "example-node-a", DisplayName: "Example Node A", CountryCode: "HK", AgentToken: "test-agent-token"}); err != nil {
 		t.Fatalf("seed preview data: %v", err)
 	}
 	freshSeen := time.Now().UTC().Unix()
-	if _, err := store.db.ExecContext(ctx, `UPDATE nodes SET status = 'warning', last_seen_at = ? WHERE id = 'hytron'`, freshSeen); err != nil {
+	if _, err := store.db.ExecContext(ctx, `UPDATE nodes SET status = 'warning', last_seen_at = ? WHERE id = 'example-node-a'`, freshSeen); err != nil {
 		t.Fatalf("set warning status: %v", err)
 	}
 
 	payload := []byte(`{"rounds":[{"target_id":"google-dns","ts":` + strconv.FormatInt(freshSeen+1, 10) + `,"type":"tcping","samples":[{"seq":1,"success":true,"latency_ms":12.5},{"seq":2,"success":true,"latency_ms":13.5}]}]}`)
 	recorder := httptest.NewRecorder()
 	request := httptest.NewRequest(http.MethodPost, "/api/agent/v1/probe-results", bytes.NewReader(payload))
-	request.Header.Set("X-Node-ID", "hytron")
+	request.Header.Set("X-Node-ID", "example-node-a")
 	request.Header.Set("Authorization", "Bearer test-agent-token")
 	request.Header.Set("Content-Type", "application/json")
 	NewHandler(HandlerOptions{Store: store}).ServeHTTP(recorder, request)
@@ -787,7 +787,7 @@ func TestAgentProbeResultsDoNotClearResourceWarning(t *testing.T) {
 	}
 
 	var status string
-	if err := store.db.QueryRowContext(ctx, `SELECT status FROM nodes WHERE id = 'hytron'`).Scan(&status); err != nil {
+	if err := store.db.QueryRowContext(ctx, `SELECT status FROM nodes WHERE id = 'example-node-a'`).Scan(&status); err != nil {
 		t.Fatalf("query node status: %v", err)
 	}
 	if status != "warning" {
@@ -802,14 +802,14 @@ func TestAgentProbeResultsRejectsUnknownTarget(t *testing.T) {
 	}
 	defer store.Close()
 	ctx := context.Background()
-	if err := store.SeedPreviewData(ctx, PreviewSeedOptions{NodeID: "hytron", DisplayName: "Hytron", CountryCode: "HK", AgentToken: "test-agent-token"}); err != nil {
+	if err := store.SeedPreviewData(ctx, PreviewSeedOptions{NodeID: "example-node-a", DisplayName: "Example Node A", CountryCode: "HK", AgentToken: "test-agent-token"}); err != nil {
 		t.Fatalf("seed preview data: %v", err)
 	}
 
 	payload := []byte(`{"rounds":[{"target_id":"not-enabled","ts":1782990000,"type":"tcping","samples":[{"seq":1,"success":true,"latency_ms":1.2}]}]}`)
 	recorder := httptest.NewRecorder()
 	request := httptest.NewRequest(http.MethodPost, "/api/agent/v1/probe-results", bytes.NewReader(payload))
-	request.Header.Set("X-Node-ID", "hytron")
+	request.Header.Set("X-Node-ID", "example-node-a")
 	request.Header.Set("Authorization", "Bearer test-agent-token")
 	request.Header.Set("Content-Type", "application/json")
 	NewHandler(HandlerOptions{Store: store}).ServeHTTP(recorder, request)
@@ -833,7 +833,7 @@ func TestAgentProbeResultsDeduplicateExactRetriesButKeepDistinctRoundsInSameSeco
 	}
 	defer store.Close()
 	ctx := context.Background()
-	if err := store.SeedPreviewData(ctx, PreviewSeedOptions{NodeID: "hytron", DisplayName: "Hytron", CountryCode: "HK", AgentToken: "test-agent-token"}); err != nil {
+	if err := store.SeedPreviewData(ctx, PreviewSeedOptions{NodeID: "example-node-a", DisplayName: "Example Node A", CountryCode: "HK", AgentToken: "test-agent-token"}); err != nil {
 		t.Fatalf("seed preview data: %v", err)
 	}
 
@@ -843,7 +843,7 @@ func TestAgentProbeResultsDeduplicateExactRetriesButKeepDistinctRoundsInSameSeco
 		t.Helper()
 		recorder := httptest.NewRecorder()
 		request := httptest.NewRequest(http.MethodPost, "/api/agent/v1/probe-results", bytes.NewReader(payload))
-		request.Header.Set("X-Node-ID", "hytron")
+		request.Header.Set("X-Node-ID", "example-node-a")
 		request.Header.Set("Authorization", "Bearer test-agent-token")
 		request.Header.Set("Content-Type", "application/json")
 		NewHandler(HandlerOptions{Store: store}).ServeHTTP(recorder, request)
@@ -859,7 +859,7 @@ func TestAgentProbeResultsDeduplicateExactRetriesButKeepDistinctRoundsInSameSeco
 	conflictingPayload := []byte(`{"rounds":[{"round_id":"round-a","target_id":"google-dns","ts":` + strconv.FormatInt(time.Now().UTC().Add(time.Second).Unix(), 10) + `,"type":"tcping","samples":[{"seq":1,"success":true,"latency_ms":22.5}]}]}`)
 	conflictRecorder := httptest.NewRecorder()
 	conflictRequest := httptest.NewRequest(http.MethodPost, "/api/agent/v1/probe-results", bytes.NewReader(conflictingPayload))
-	conflictRequest.Header.Set("X-Node-ID", "hytron")
+	conflictRequest.Header.Set("X-Node-ID", "example-node-a")
 	conflictRequest.Header.Set("Authorization", "Bearer test-agent-token")
 	conflictRequest.Header.Set("Content-Type", "application/json")
 	NewHandler(HandlerOptions{Store: store}).ServeHTTP(conflictRecorder, conflictRequest)
@@ -884,7 +884,7 @@ func TestAgentProbeResultsRejectsTimestampSkewAndDuplicateSequence(t *testing.T)
 		t.Fatalf("open sqlite store: %v", err)
 	}
 	defer store.Close()
-	if err := store.SeedPreviewData(context.Background(), PreviewSeedOptions{NodeID: "hytron", DisplayName: "Hytron", CountryCode: "HK", AgentToken: "test-agent-token"}); err != nil {
+	if err := store.SeedPreviewData(context.Background(), PreviewSeedOptions{NodeID: "example-node-a", DisplayName: "Example Node A", CountryCode: "HK", AgentToken: "test-agent-token"}); err != nil {
 		t.Fatalf("seed preview data: %v", err)
 	}
 
@@ -900,7 +900,7 @@ func TestAgentProbeResultsRejectsTimestampSkewAndDuplicateSequence(t *testing.T)
 		t.Run(tc.name, func(t *testing.T) {
 			recorder := httptest.NewRecorder()
 			request := httptest.NewRequest(http.MethodPost, "/api/agent/v1/probe-results", strings.NewReader(tc.payload))
-			request.Header.Set("X-Node-ID", "hytron")
+			request.Header.Set("X-Node-ID", "example-node-a")
 			request.Header.Set("Authorization", "Bearer test-agent-token")
 			request.Header.Set("Content-Type", "application/json")
 			NewHandler(HandlerOptions{Store: store}).ServeHTTP(recorder, request)
@@ -925,7 +925,7 @@ func TestAgentProbeResultsRejectsProbeResourceLimitOverages(t *testing.T) {
 	}
 	defer store.Close()
 	ctx := context.Background()
-	if err := store.SeedPreviewData(ctx, PreviewSeedOptions{NodeID: "hytron", DisplayName: "Hytron", CountryCode: "HK", AgentToken: "test-agent-token"}); err != nil {
+	if err := store.SeedPreviewData(ctx, PreviewSeedOptions{NodeID: "example-node-a", DisplayName: "Example Node A", CountryCode: "HK", AgentToken: "test-agent-token"}); err != nil {
 		t.Fatalf("seed preview data: %v", err)
 	}
 	handler := NewHandler(HandlerOptions{Store: store})
@@ -933,7 +933,7 @@ func TestAgentProbeResultsRejectsProbeResourceLimitOverages(t *testing.T) {
 		t.Helper()
 		recorder := httptest.NewRecorder()
 		request := httptest.NewRequest(http.MethodPost, "/api/agent/v1/probe-results", strings.NewReader(payload))
-		request.Header.Set("X-Node-ID", "hytron")
+		request.Header.Set("X-Node-ID", "example-node-a")
 		request.Header.Set("Authorization", "Bearer test-agent-token")
 		request.Header.Set("Content-Type", "application/json")
 		handler.ServeHTTP(recorder, request)
@@ -982,7 +982,7 @@ func TestAgentHeartbeatUpdatesNodeStatusAndLastSeen(t *testing.T) {
 	}
 	defer store.Close()
 	ctx := context.Background()
-	if err := store.SeedPreviewData(ctx, PreviewSeedOptions{NodeID: "hytron", DisplayName: "Hytron", CountryCode: "HK", AgentToken: "test-agent-token"}); err != nil {
+	if err := store.SeedPreviewData(ctx, PreviewSeedOptions{NodeID: "example-node-a", DisplayName: "Example Node A", CountryCode: "HK", AgentToken: "test-agent-token"}); err != nil {
 		t.Fatalf("seed preview data: %v", err)
 	}
 
@@ -991,7 +991,7 @@ func TestAgentHeartbeatUpdatesNodeStatusAndLastSeen(t *testing.T) {
 	payload := []byte(`{"ts":` + strconv.FormatInt(ts, 10) + `,"status":"online","agent_version":"agent-test"}`)
 	recorder := httptest.NewRecorder()
 	request := httptest.NewRequest(http.MethodPost, "/api/agent/v1/heartbeat", bytes.NewReader(payload))
-	request.Header.Set("X-Node-ID", "hytron")
+	request.Header.Set("X-Node-ID", "example-node-a")
 	request.Header.Set("Authorization", "Bearer test-agent-token")
 	request.Header.Set("Content-Type", "application/json")
 	NewHandler(HandlerOptions{Store: store}).ServeHTTP(recorder, request)
@@ -1004,7 +1004,7 @@ func TestAgentHeartbeatUpdatesNodeStatusAndLastSeen(t *testing.T) {
 	if err := store.db.QueryRowContext(ctx, `
 		SELECT n.status, n.last_seen_at, h.agent_version
 		FROM nodes n LEFT JOIN host_info h ON h.node_id = n.id
-		WHERE n.id = 'hytron'
+		WHERE n.id = 'example-node-a'
 	`).Scan(&status, &lastSeen, &agentVersion); err != nil {
 		t.Fatalf("query heartbeat state: %v", err)
 	}
@@ -1021,15 +1021,15 @@ func TestAgentHeartbeatRejectsTimestampSkewWithoutPoisoningLastSeen(t *testing.T
 	}
 	defer store.Close()
 	ctx := context.Background()
-	if err := store.SeedPreviewData(ctx, PreviewSeedOptions{NodeID: "hytron", DisplayName: "Hytron", CountryCode: "HK", AgentToken: "test-agent-token"}); err != nil {
+	if err := store.SeedPreviewData(ctx, PreviewSeedOptions{NodeID: "example-node-a", DisplayName: "Example Node A", CountryCode: "HK", AgentToken: "test-agent-token"}); err != nil {
 		t.Fatalf("seed preview data: %v", err)
 	}
 	baseline := time.Now().UTC().Add(-time.Minute).Unix()
-	if _, err := store.db.ExecContext(ctx, `UPDATE nodes SET last_seen_at = ? WHERE id = 'hytron'`, baseline); err != nil {
+	if _, err := store.db.ExecContext(ctx, `UPDATE nodes SET last_seen_at = ? WHERE id = 'example-node-a'`, baseline); err != nil {
 		t.Fatalf("set baseline last_seen_at: %v", err)
 	}
 	var original int64
-	if err := store.db.QueryRowContext(ctx, `SELECT last_seen_at FROM nodes WHERE id = 'hytron'`).Scan(&original); err != nil {
+	if err := store.db.QueryRowContext(ctx, `SELECT last_seen_at FROM nodes WHERE id = 'example-node-a'`).Scan(&original); err != nil {
 		t.Fatalf("query original last_seen_at: %v", err)
 	}
 	handler := NewHandler(HandlerOptions{Store: store})
@@ -1041,7 +1041,7 @@ func TestAgentHeartbeatRejectsTimestampSkewWithoutPoisoningLastSeen(t *testing.T
 			payload := []byte(`{"ts":` + strconv.FormatInt(ts, 10) + `,"status":"online"}`)
 			recorder := httptest.NewRecorder()
 			request := httptest.NewRequest(http.MethodPost, "/api/agent/v1/heartbeat", bytes.NewReader(payload))
-			request.Header.Set("X-Node-ID", "hytron")
+			request.Header.Set("X-Node-ID", "example-node-a")
 			request.Header.Set("Authorization", "Bearer test-agent-token")
 			request.Header.Set("Content-Type", "application/json")
 			handler.ServeHTTP(recorder, request)
@@ -1049,7 +1049,7 @@ func TestAgentHeartbeatRejectsTimestampSkewWithoutPoisoningLastSeen(t *testing.T
 				t.Fatalf("status = %d, want 400; body=%s", recorder.Code, recorder.Body.String())
 			}
 			var got int64
-			if err := store.db.QueryRowContext(ctx, `SELECT last_seen_at FROM nodes WHERE id = 'hytron'`).Scan(&got); err != nil {
+			if err := store.db.QueryRowContext(ctx, `SELECT last_seen_at FROM nodes WHERE id = 'example-node-a'`).Scan(&got); err != nil {
 				t.Fatalf("query last_seen_at: %v", err)
 			}
 			if got != original {
@@ -1067,7 +1067,7 @@ func TestAgentHeartbeatOfflineStatusIsFreshLivenessNotOfflineTransition(t *testi
 	defer store.Close()
 	enableTestNotificationCredentialEncryption(t, store)
 	ctx := context.Background()
-	if err := store.SeedPreviewData(ctx, PreviewSeedOptions{NodeID: "hytron", DisplayName: "Hytron", CountryCode: "HK", AgentToken: "test-agent-token"}); err != nil {
+	if err := store.SeedPreviewData(ctx, PreviewSeedOptions{NodeID: "example-node-a", DisplayName: "Example Node A", CountryCode: "HK", AgentToken: "test-agent-token"}); err != nil {
 		t.Fatalf("seed preview data: %v", err)
 	}
 	telegram := newTelegramTestCapture(t)
@@ -1087,7 +1087,7 @@ func TestAgentHeartbeatOfflineStatusIsFreshLivenessNotOfflineTransition(t *testi
 
 	handler := NewHandler(telegram.handlerOptions(store))
 	now := time.Now().UTC().Truncate(time.Second)
-	if _, err := store.db.ExecContext(ctx, `UPDATE nodes SET status = 'online', last_seen_at = ? WHERE id = 'hytron'`, now.Unix()); err != nil {
+	if _, err := store.db.ExecContext(ctx, `UPDATE nodes SET status = 'online', last_seen_at = ? WHERE id = 'example-node-a'`, now.Unix()); err != nil {
 		t.Fatalf("set fresh heartbeat: %v", err)
 	}
 	postAgentHeartbeat(t, handler, now.Unix(), "offline")
@@ -1100,7 +1100,7 @@ func TestAgentHeartbeatOfflineStatusIsFreshLivenessNotOfflineTransition(t *testi
 		t.Fatalf("telegram calls paths=%+v forms=%+v, want no offline notification from a received heartbeat", paths, forms)
 	}
 	var status string
-	if err := store.db.QueryRowContext(ctx, `SELECT status FROM nodes WHERE id = 'hytron'`).Scan(&status); err != nil {
+	if err := store.db.QueryRowContext(ctx, `SELECT status FROM nodes WHERE id = 'example-node-a'`).Scan(&status); err != nil {
 		t.Fatalf("query node status: %v", err)
 	}
 	if status != "online" {
@@ -1116,7 +1116,7 @@ func TestAgentHeartbeatOfflineStatusDoesNotDrainTelegramChannel(t *testing.T) {
 	defer store.Close()
 	enableTestNotificationCredentialEncryption(t, store)
 	ctx := context.Background()
-	if err := store.SeedPreviewData(ctx, PreviewSeedOptions{NodeID: "hytron", DisplayName: "Hytron", CountryCode: "HK", AgentToken: "test-agent-token"}); err != nil {
+	if err := store.SeedPreviewData(ctx, PreviewSeedOptions{NodeID: "example-node-a", DisplayName: "Example Node A", CountryCode: "HK", AgentToken: "test-agent-token"}); err != nil {
 		t.Fatalf("seed preview data: %v", err)
 	}
 
@@ -1157,7 +1157,7 @@ func TestAgentHeartbeatOfflineStatusDoesNotDrainTelegramChannel(t *testing.T) {
 	handler := NewHandler(HandlerOptions{Store: store, TelegramAPIBaseURL: telegramAPI.URL})
 	defer cleanupTestHandler(t, handler)
 	now := time.Now().UTC().Truncate(time.Second)
-	if _, err := store.db.ExecContext(ctx, `UPDATE nodes SET status = 'online', last_seen_at = ? WHERE id = 'hytron'`, now.Unix()); err != nil {
+	if _, err := store.db.ExecContext(ctx, `UPDATE nodes SET status = 'online', last_seen_at = ? WHERE id = 'example-node-a'`, now.Unix()); err != nil {
 		t.Fatalf("set fresh heartbeat: %v", err)
 	}
 	postAgentHeartbeat(t, handler, now.Unix(), "offline")
@@ -1188,7 +1188,7 @@ func TestStaleOfflineNotificationDeliveryDoesNotBlockScanner(t *testing.T) {
 	defer store.Close()
 	enableTestNotificationCredentialEncryption(t, store)
 	ctx := context.Background()
-	if err := store.SeedPreviewData(ctx, PreviewSeedOptions{NodeID: "hytron", DisplayName: "Hytron", CountryCode: "HK", AgentToken: "test-agent-token"}); err != nil {
+	if err := store.SeedPreviewData(ctx, PreviewSeedOptions{NodeID: "example-node-a", DisplayName: "Example Node A", CountryCode: "HK", AgentToken: "test-agent-token"}); err != nil {
 		t.Fatalf("seed preview data: %v", err)
 	}
 
@@ -1210,7 +1210,7 @@ func TestStaleOfflineNotificationDeliveryDoesNotBlockScanner(t *testing.T) {
 
 	started := time.Now()
 	staleSeen := time.Now().UTC().Add(-nodeHeartbeatOfflineAfter - time.Second)
-	if _, err := store.db.ExecContext(ctx, `UPDATE nodes SET status = 'online', last_seen_at = ? WHERE id = 'hytron'`, staleSeen.Unix()); err != nil {
+	if _, err := store.db.ExecContext(ctx, `UPDATE nodes SET status = 'online', last_seen_at = ? WHERE id = 'example-node-a'`, staleSeen.Unix()); err != nil {
 		t.Fatalf("set stale heartbeat: %v", err)
 	}
 	httpHandler := NewHandler(HandlerOptions{Store: store, NotificationClient: slowTelegram.Client(), TelegramAPIBaseURL: slowTelegram.URL})
@@ -1237,11 +1237,11 @@ func TestStaleAgentOfflineCheckDispatchesWhenPublicStatusExpires(t *testing.T) {
 	defer store.Close()
 	enableTestNotificationCredentialEncryption(t, store)
 	ctx := context.Background()
-	if err := store.SeedPreviewData(ctx, PreviewSeedOptions{NodeID: "hytron", DisplayName: "Hytron", CountryCode: "HK", AgentToken: "test-agent-token"}); err != nil {
+	if err := store.SeedPreviewData(ctx, PreviewSeedOptions{NodeID: "example-node-a", DisplayName: "Example Node A", CountryCode: "HK", AgentToken: "test-agent-token"}); err != nil {
 		t.Fatalf("seed preview data: %v", err)
 	}
 	staleSeen := time.Now().UTC().Add(-nodeHeartbeatOfflineAfter - time.Second).Unix()
-	if _, err := store.db.ExecContext(ctx, `UPDATE nodes SET status = 'online', last_seen_at = ? WHERE id = 'hytron'`, staleSeen); err != nil {
+	if _, err := store.db.ExecContext(ctx, `UPDATE nodes SET status = 'online', last_seen_at = ? WHERE id = 'example-node-a'`, staleSeen); err != nil {
 		t.Fatalf("set stale heartbeat: %v", err)
 	}
 	enabled := true
@@ -1264,14 +1264,14 @@ func TestStaleAgentOfflineCheckDispatchesWhenPublicStatusExpires(t *testing.T) {
 		t.Fatalf("telegram calls paths=%+v forms=%+v, want stale offline notification", paths, forms)
 	}
 	var status string
-	if err := store.db.QueryRowContext(ctx, `SELECT status FROM nodes WHERE id = 'hytron'`).Scan(&status); err != nil {
+	if err := store.db.QueryRowContext(ctx, `SELECT status FROM nodes WHERE id = 'example-node-a'`).Scan(&status); err != nil {
 		t.Fatalf("query node status: %v", err)
 	}
 	if status != "offline" {
 		t.Fatalf("stored status = %q, want stale check to persist offline", status)
 	}
 	var storedLastSeen int64
-	if err := store.db.QueryRowContext(ctx, `SELECT last_seen_at FROM nodes WHERE id = 'hytron'`).Scan(&storedLastSeen); err != nil {
+	if err := store.db.QueryRowContext(ctx, `SELECT last_seen_at FROM nodes WHERE id = 'example-node-a'`).Scan(&storedLastSeen); err != nil {
 		t.Fatalf("query node last_seen_at: %v", err)
 	}
 	if storedLastSeen != staleSeen {
@@ -1286,25 +1286,25 @@ func TestStaleAgentOfflineCheckSkipsFreshHeartbeatRace(t *testing.T) {
 	}
 	defer store.Close()
 	ctx := context.Background()
-	if err := store.SeedPreviewData(ctx, PreviewSeedOptions{NodeID: "hytron", DisplayName: "Hytron", CountryCode: "HK", AgentToken: "test-agent-token"}); err != nil {
+	if err := store.SeedPreviewData(ctx, PreviewSeedOptions{NodeID: "example-node-a", DisplayName: "Example Node A", CountryCode: "HK", AgentToken: "test-agent-token"}); err != nil {
 		t.Fatalf("seed preview data: %v", err)
 	}
 	staleSeen := time.Now().UTC().Add(-nodeHeartbeatOfflineAfter - time.Second).Unix()
-	if _, err := store.db.ExecContext(ctx, `UPDATE nodes SET status = 'online', last_seen_at = ? WHERE id = 'hytron'`, staleSeen); err != nil {
+	if _, err := store.db.ExecContext(ctx, `UPDATE nodes SET status = 'online', last_seen_at = ? WHERE id = 'example-node-a'`, staleSeen); err != nil {
 		t.Fatalf("set stale heartbeat: %v", err)
 	}
 	nodeIDs, err := store.StaleAgentOfflineNodeIDs(ctx, time.Now().UTC())
 	if err != nil {
 		t.Fatalf("stale node ids: %v", err)
 	}
-	if len(nodeIDs) != 1 || nodeIDs[0] != "hytron" {
-		t.Fatalf("stale node ids = %+v, want hytron", nodeIDs)
+	if len(nodeIDs) != 1 || nodeIDs[0] != "example-node-a" {
+		t.Fatalf("stale node ids = %+v, want example-node-a", nodeIDs)
 	}
 	freshSeen := time.Now().UTC().Unix()
-	if _, err := store.db.ExecContext(ctx, `UPDATE nodes SET status = 'online', last_seen_at = ? WHERE id = 'hytron'`, freshSeen); err != nil {
+	if _, err := store.db.ExecContext(ctx, `UPDATE nodes SET status = 'online', last_seen_at = ? WHERE id = 'example-node-a'`, freshSeen); err != nil {
 		t.Fatalf("set fresh heartbeat: %v", err)
 	}
-	transition, ok, err := store.RecordStaleAgentOfflineTransition(ctx, "hytron", time.Now().UTC())
+	transition, ok, err := store.RecordStaleAgentOfflineTransition(ctx, "example-node-a", time.Now().UTC())
 	if err != nil {
 		t.Fatalf("record stale offline transition: %v", err)
 	}
@@ -1312,7 +1312,7 @@ func TestStaleAgentOfflineCheckSkipsFreshHeartbeatRace(t *testing.T) {
 		t.Fatalf("transition = %+v ok=%v, want skipped stale update after fresh heartbeat", transition, ok)
 	}
 	var status string
-	if err := store.db.QueryRowContext(ctx, `SELECT status FROM nodes WHERE id = 'hytron'`).Scan(&status); err != nil {
+	if err := store.db.QueryRowContext(ctx, `SELECT status FROM nodes WHERE id = 'example-node-a'`).Scan(&status); err != nil {
 		t.Fatalf("query node status: %v", err)
 	}
 	if status != "online" {
@@ -1328,11 +1328,11 @@ func TestAgentHeartbeatDoesNotDispatchRecoveryAfterStaleHeartbeatOffline(t *test
 	defer store.Close()
 	enableTestNotificationCredentialEncryption(t, store)
 	ctx := context.Background()
-	if err := store.SeedPreviewData(ctx, PreviewSeedOptions{NodeID: "hytron", DisplayName: "Hytron", CountryCode: "HK", AgentToken: "test-agent-token"}); err != nil {
+	if err := store.SeedPreviewData(ctx, PreviewSeedOptions{NodeID: "example-node-a", DisplayName: "Example Node A", CountryCode: "HK", AgentToken: "test-agent-token"}); err != nil {
 		t.Fatalf("seed preview data: %v", err)
 	}
 	staleSeen := time.Now().UTC().Add(-nodeHeartbeatOfflineAfter - time.Minute).Unix()
-	if _, err := store.db.ExecContext(ctx, `UPDATE nodes SET status = 'online', last_seen_at = ? WHERE id = 'hytron'`, staleSeen); err != nil {
+	if _, err := store.db.ExecContext(ctx, `UPDATE nodes SET status = 'online', last_seen_at = ? WHERE id = 'example-node-a'`, staleSeen); err != nil {
 		t.Fatalf("set stale heartbeat: %v", err)
 	}
 
@@ -1363,11 +1363,11 @@ func TestAgentStateDispatchesRecoveryAfterPersistedOffline(t *testing.T) {
 	defer store.Close()
 	enableTestNotificationCredentialEncryption(t, store)
 	ctx := context.Background()
-	if err := store.SeedPreviewData(ctx, PreviewSeedOptions{NodeID: "hytron", DisplayName: "Hytron", CountryCode: "HK", AgentToken: "test-agent-token"}); err != nil {
+	if err := store.SeedPreviewData(ctx, PreviewSeedOptions{NodeID: "example-node-a", DisplayName: "Example Node A", CountryCode: "HK", AgentToken: "test-agent-token"}); err != nil {
 		t.Fatalf("seed preview data: %v", err)
 	}
 	staleSeen := time.Now().UTC().Add(-nodeHeartbeatOfflineAfter - time.Second).Unix()
-	if _, err := store.db.ExecContext(ctx, `UPDATE nodes SET status = 'online', last_seen_at = ? WHERE id = 'hytron'`, staleSeen); err != nil {
+	if _, err := store.db.ExecContext(ctx, `UPDATE nodes SET status = 'online', last_seen_at = ? WHERE id = 'example-node-a'`, staleSeen); err != nil {
 		t.Fatalf("set stale heartbeat: %v", err)
 	}
 	enabled := true
@@ -1380,7 +1380,7 @@ func TestAgentStateDispatchesRecoveryAfterPersistedOffline(t *testing.T) {
 
 	telegram := newTelegramTestCapture(t)
 	h := &handler{store: store, notificationSender: newHTTPNotificationSender(telegram.server.Client(), telegram.server.URL), liveHub: newLiveUpdateHub(), presence: newAgentPresenceManager()}
-	if transition, ok, err := store.RecordStaleAgentOfflineTransition(ctx, "hytron", time.Now().UTC()); err != nil {
+	if transition, ok, err := store.RecordStaleAgentOfflineTransition(ctx, "example-node-a", time.Now().UTC()); err != nil {
 		t.Fatalf("record stale offline transition: %v", err)
 	} else if !ok {
 		t.Fatalf("stale offline transition skipped, want persisted offline")
@@ -1412,15 +1412,15 @@ func TestAgentHeartbeatTransitionTreatsReceivedHeartbeatAsFreshLiveness(t *testi
 	}
 	defer store.Close()
 	ctx := context.Background()
-	if err := store.SeedPreviewData(ctx, PreviewSeedOptions{NodeID: "hytron", DisplayName: "Hytron", CountryCode: "HK", AgentToken: "test-agent-token"}); err != nil {
+	if err := store.SeedPreviewData(ctx, PreviewSeedOptions{NodeID: "example-node-a", DisplayName: "Example Node A", CountryCode: "HK", AgentToken: "test-agent-token"}); err != nil {
 		t.Fatalf("seed preview data: %v", err)
 	}
 	staleSeen := time.Now().UTC().Add(-nodeHeartbeatOfflineAfter - time.Minute).Unix()
-	if _, err := store.db.ExecContext(ctx, `UPDATE nodes SET status = 'online', last_seen_at = ? WHERE id = 'hytron'`, staleSeen); err != nil {
+	if _, err := store.db.ExecContext(ctx, `UPDATE nodes SET status = 'online', last_seen_at = ? WHERE id = 'example-node-a'`, staleSeen); err != nil {
 		t.Fatalf("set stale heartbeat: %v", err)
 	}
 
-	transition, err := store.RecordAgentHeartbeatTransition(ctx, "hytron", time.Unix(staleSeen+1, 0).UTC(), "online", "agent-test")
+	transition, err := store.RecordAgentHeartbeatTransition(ctx, "example-node-a", time.Unix(staleSeen+1, 0).UTC(), "online", "agent-test")
 	if err != nil {
 		t.Fatalf("record heartbeat transition: %v", err)
 	}
@@ -1440,15 +1440,15 @@ func TestAgentHeartbeatTransitionTreatsExplicitOfflineAsOnlineLiveness(t *testin
 	}
 	defer store.Close()
 	ctx := context.Background()
-	if err := store.SeedPreviewData(ctx, PreviewSeedOptions{NodeID: "hytron", DisplayName: "Hytron", CountryCode: "HK", AgentToken: "test-agent-token"}); err != nil {
+	if err := store.SeedPreviewData(ctx, PreviewSeedOptions{NodeID: "example-node-a", DisplayName: "Example Node A", CountryCode: "HK", AgentToken: "test-agent-token"}); err != nil {
 		t.Fatalf("seed preview data: %v", err)
 	}
 	now := time.Now().UTC()
-	if _, err := store.db.ExecContext(ctx, `UPDATE nodes SET status = 'online', last_seen_at = ? WHERE id = 'hytron'`, now.Unix()); err != nil {
+	if _, err := store.db.ExecContext(ctx, `UPDATE nodes SET status = 'online', last_seen_at = ? WHERE id = 'example-node-a'`, now.Unix()); err != nil {
 		t.Fatalf("set fresh heartbeat: %v", err)
 	}
 
-	transition, err := store.RecordAgentHeartbeatTransition(ctx, "hytron", now, "offline", "agent-test")
+	transition, err := store.RecordAgentHeartbeatTransition(ctx, "example-node-a", now, "offline", "agent-test")
 	if err != nil {
 		t.Fatalf("record heartbeat transition: %v", err)
 	}
@@ -1469,7 +1469,7 @@ func TestAgentHeartbeatOfflineCompatibilityDoesNotRejectHeartbeat(t *testing.T) 
 	defer store.Close()
 	enableTestNotificationCredentialEncryption(t, store)
 	ctx := context.Background()
-	if err := store.SeedPreviewData(ctx, PreviewSeedOptions{NodeID: "hytron", DisplayName: "Hytron", CountryCode: "HK", AgentToken: "test-agent-token"}); err != nil {
+	if err := store.SeedPreviewData(ctx, PreviewSeedOptions{NodeID: "example-node-a", DisplayName: "Example Node A", CountryCode: "HK", AgentToken: "test-agent-token"}); err != nil {
 		t.Fatalf("seed preview data: %v", err)
 	}
 
@@ -1491,7 +1491,7 @@ func TestAgentHeartbeatOfflineCompatibilityDoesNotRejectHeartbeat(t *testing.T) 
 	}
 
 	now := time.Now().UTC().Truncate(time.Second)
-	if _, err := store.db.ExecContext(ctx, `UPDATE nodes SET status = 'online', last_seen_at = ? WHERE id = 'hytron'`, now.Unix()); err != nil {
+	if _, err := store.db.ExecContext(ctx, `UPDATE nodes SET status = 'online', last_seen_at = ? WHERE id = 'example-node-a'`, now.Unix()); err != nil {
 		t.Fatalf("set fresh heartbeat: %v", err)
 	}
 	httpHandler := NewHandler(HandlerOptions{Store: store, TelegramAPIBaseURL: closedURL})
@@ -1501,7 +1501,7 @@ func TestAgentHeartbeatOfflineCompatibilityDoesNotRejectHeartbeat(t *testing.T) 
 		t.Fatalf("heartbeat status = %d, want 202 for legacy offline status; body=%s", recorder.Code, recorder.Body.String())
 	}
 	var status string
-	if err := store.db.QueryRowContext(ctx, `SELECT status FROM nodes WHERE id = 'hytron'`).Scan(&status); err != nil {
+	if err := store.db.QueryRowContext(ctx, `SELECT status FROM nodes WHERE id = 'example-node-a'`).Scan(&status); err != nil {
 		t.Fatalf("query node status: %v", err)
 	}
 	if status != "online" {
@@ -1516,7 +1516,7 @@ func TestAgentStateIdempotencyAndRateLimit(t *testing.T) {
 	}
 	defer store.Close()
 	ctx := context.Background()
-	if err := store.SeedPreviewData(ctx, PreviewSeedOptions{NodeID: "hytron", DisplayName: "Hytron", CountryCode: "HK", AgentToken: "test-agent-token"}); err != nil {
+	if err := store.SeedPreviewData(ctx, PreviewSeedOptions{NodeID: "example-node-a", DisplayName: "Example Node A", CountryCode: "HK", AgentToken: "test-agent-token"}); err != nil {
 		t.Fatalf("seed preview data: %v", err)
 	}
 	handler := NewHandler(HandlerOptions{Store: store})
@@ -1529,7 +1529,7 @@ func TestAgentStateIdempotencyAndRateLimit(t *testing.T) {
 		}
 		recorder := httptest.NewRecorder()
 		request := httptest.NewRequest(http.MethodPost, "/api/agent/v1/state", bytes.NewReader(payload))
-		request.Header.Set("X-Node-ID", "hytron")
+		request.Header.Set("X-Node-ID", "example-node-a")
 		request.Header.Set("Authorization", "Bearer test-agent-token")
 		request.Header.Set("Content-Type", "application/json")
 		handler.ServeHTTP(recorder, request)
@@ -1598,14 +1598,14 @@ func TestRenewalNotificationScannerDispatchesDueNotificationOncePerDay(t *testin
 	defer store.Close()
 	enableTestNotificationCredentialEncryption(t, store)
 	ctx := context.Background()
-	if err := store.SeedPreviewData(ctx, PreviewSeedOptions{NodeID: "hytron", DisplayName: "Hytron", CountryCode: "HK", AgentToken: "test-agent-token"}); err != nil {
+	if err := store.SeedPreviewData(ctx, PreviewSeedOptions{NodeID: "example-node-a", DisplayName: "Example Node A", CountryCode: "HK", AgentToken: "test-agent-token"}); err != nil {
 		t.Fatalf("seed preview data: %v", err)
 	}
 	// Anchor at the current UTC day's start so the "same day" assertion below
 	// cannot cross a calendar boundary and the outbox due time is never future.
 	now := dateOnlyUTC(time.Now().UTC())
 	expiryDate := now.Add(3 * 24 * time.Hour).Format("2006-01-02")
-	if _, err := store.UpdateAdminNode(ctx, "hytron", AdminNodeUpdateRequest{ExpiryDate: &expiryDate}); err != nil {
+	if _, err := store.UpdateAdminNode(ctx, "example-node-a", AdminNodeUpdateRequest{ExpiryDate: &expiryDate}); err != nil {
 		t.Fatalf("set expiry date: %v", err)
 	}
 	enabled := true
@@ -1672,7 +1672,7 @@ func TestRenewalNotificationScannerDispatchesRecurringBillingCycle(t *testing.T)
 	defer store.Close()
 	enableTestNotificationCredentialEncryption(t, store)
 	ctx := context.Background()
-	if err := store.SeedPreviewData(ctx, PreviewSeedOptions{NodeID: "hytron", DisplayName: "Sharon", CountryCode: "HK", AgentToken: "test-agent-token"}); err != nil {
+	if err := store.SeedPreviewData(ctx, PreviewSeedOptions{NodeID: "example-node-a", DisplayName: "Example Harbor", CountryCode: "HK", AgentToken: "test-agent-token"}); err != nil {
 		t.Fatalf("seed preview data: %v", err)
 	}
 
@@ -1680,7 +1680,7 @@ func TestRenewalNotificationScannerDispatchesRecurringBillingCycle(t *testing.T)
 	cycleDueDate := dateOnlyUTC(now).AddDate(0, 0, 1)
 	finalExpiryDate := addMonthsClampedUTC(cycleDueDate, 1).Format("2006-01-02")
 	billingCycle := "月"
-	if _, err := store.UpdateAdminNode(ctx, "hytron", AdminNodeUpdateRequest{ExpiryDate: &finalExpiryDate, BillingCycle: &billingCycle}); err != nil {
+	if _, err := store.UpdateAdminNode(ctx, "example-node-a", AdminNodeUpdateRequest{ExpiryDate: &finalExpiryDate, BillingCycle: &billingCycle}); err != nil {
 		t.Fatalf("set recurring expiry date: %v", err)
 	}
 	enabled := true
@@ -1731,7 +1731,7 @@ func TestAgentHeartbeatHostAndStateDoNotDispatchRenewalDueNotification(t *testin
 			name: "host",
 			path: "/api/agent/v1/host",
 			body: func(time.Time) map[string]any {
-				return map[string]any{"hostname": "hytron", "os_name": "Linux", "arch": "amd64", "cpu_cores": 2, "memory_total_bytes": 1024, "disk_total_bytes": 2048}
+				return map[string]any{"hostname": "example-node-a", "os_name": "Linux", "arch": "amd64", "cpu_cores": 2, "memory_total_bytes": 1024, "disk_total_bytes": 2048}
 			},
 		},
 		{
@@ -1751,11 +1751,11 @@ func TestAgentHeartbeatHostAndStateDoNotDispatchRenewalDueNotification(t *testin
 			defer store.Close()
 			enableTestNotificationCredentialEncryption(t, store)
 			ctx := context.Background()
-			if err := store.SeedPreviewData(ctx, PreviewSeedOptions{NodeID: "hytron", DisplayName: "Hytron", CountryCode: "HK", AgentToken: "test-agent-token"}); err != nil {
+			if err := store.SeedPreviewData(ctx, PreviewSeedOptions{NodeID: "example-node-a", DisplayName: "Example Node A", CountryCode: "HK", AgentToken: "test-agent-token"}); err != nil {
 				t.Fatalf("seed preview data: %v", err)
 			}
 			expiryDate := time.Now().UTC().Add(3 * 24 * time.Hour).Format("2006-01-02")
-			if _, err := store.UpdateAdminNode(ctx, "hytron", AdminNodeUpdateRequest{ExpiryDate: &expiryDate}); err != nil {
+			if _, err := store.UpdateAdminNode(ctx, "example-node-a", AdminNodeUpdateRequest{ExpiryDate: &expiryDate}); err != nil {
 				t.Fatalf("set expiry date: %v", err)
 			}
 			enabled := true
@@ -1774,7 +1774,7 @@ func TestAgentHeartbeatHostAndStateDoNotDispatchRenewalDueNotification(t *testin
 			}
 			recorder := httptest.NewRecorder()
 			request := httptest.NewRequest(http.MethodPost, tc.path, bytes.NewReader(payload))
-			request.Header.Set("X-Node-ID", "hytron")
+			request.Header.Set("X-Node-ID", "example-node-a")
 			request.Header.Set("Authorization", "Bearer test-agent-token")
 			request.Header.Set("Content-Type", "application/json")
 			NewHandler(telegram.handlerOptions(store)).ServeHTTP(recorder, request)
@@ -1797,11 +1797,11 @@ func TestRenewalNotificationScheduledScannerRunsIndependently(t *testing.T) {
 	defer store.Close()
 	enableTestNotificationCredentialEncryption(t, store)
 	ctx := context.Background()
-	if err := store.SeedPreviewData(ctx, PreviewSeedOptions{NodeID: "hytron", DisplayName: "Hytron", CountryCode: "HK", AgentToken: "test-agent-token"}); err != nil {
+	if err := store.SeedPreviewData(ctx, PreviewSeedOptions{NodeID: "example-node-a", DisplayName: "Example Node A", CountryCode: "HK", AgentToken: "test-agent-token"}); err != nil {
 		t.Fatalf("seed preview data: %v", err)
 	}
 	expiryDate := time.Now().UTC().Add(3 * 24 * time.Hour).Format("2006-01-02")
-	if _, err := store.UpdateAdminNode(ctx, "hytron", AdminNodeUpdateRequest{ExpiryDate: &expiryDate}); err != nil {
+	if _, err := store.UpdateAdminNode(ctx, "example-node-a", AdminNodeUpdateRequest{ExpiryDate: &expiryDate}); err != nil {
 		t.Fatalf("set expiry date: %v", err)
 	}
 	enabled := true
@@ -1831,12 +1831,12 @@ func TestQueueDueRenewalNotificationsDeduplicatesConcurrentScans(t *testing.T) {
 	defer store.Close()
 	enableTestNotificationCredentialEncryption(t, store)
 	ctx := context.Background()
-	if err := store.SeedPreviewData(ctx, PreviewSeedOptions{NodeID: "hytron", DisplayName: "Hytron", CountryCode: "HK", AgentToken: "test-agent-token"}); err != nil {
+	if err := store.SeedPreviewData(ctx, PreviewSeedOptions{NodeID: "example-node-a", DisplayName: "Example Node A", CountryCode: "HK", AgentToken: "test-agent-token"}); err != nil {
 		t.Fatalf("seed preview data: %v", err)
 	}
 	now := time.Now().UTC().Truncate(time.Second)
 	expiryDate := now.Add(3 * 24 * time.Hour).Format("2006-01-02")
-	if _, err := store.UpdateAdminNode(ctx, "hytron", AdminNodeUpdateRequest{ExpiryDate: &expiryDate}); err != nil {
+	if _, err := store.UpdateAdminNode(ctx, "example-node-a", AdminNodeUpdateRequest{ExpiryDate: &expiryDate}); err != nil {
 		t.Fatalf("set expiry date: %v", err)
 	}
 	enabled := true
@@ -1903,12 +1903,12 @@ func TestQueueDueRenewalNotificationsSkipsPermanentNode(t *testing.T) {
 	defer store.Close()
 	enableTestNotificationCredentialEncryption(t, store)
 	ctx := context.Background()
-	if err := store.SeedPreviewData(ctx, PreviewSeedOptions{NodeID: "hytron", DisplayName: "Hytron", CountryCode: "HK", AgentToken: "test-agent-token"}); err != nil {
+	if err := store.SeedPreviewData(ctx, PreviewSeedOptions{NodeID: "example-node-a", DisplayName: "Example Node A", CountryCode: "HK", AgentToken: "test-agent-token"}); err != nil {
 		t.Fatalf("seed preview data: %v", err)
 	}
 	expiryDate := time.Now().UTC().Add(24 * time.Hour).Format("2006-01-02")
 	permanent := true
-	if _, err := store.UpdateAdminNode(ctx, "hytron", AdminNodeUpdateRequest{ExpiryDate: &expiryDate, ExpiryPermanent: &permanent}); err != nil {
+	if _, err := store.UpdateAdminNode(ctx, "example-node-a", AdminNodeUpdateRequest{ExpiryDate: &expiryDate, ExpiryPermanent: &permanent}); err != nil {
 		t.Fatalf("set permanent expiry: %v", err)
 	}
 	enabled := true
@@ -1937,7 +1937,7 @@ func postAgentHeartbeat(t *testing.T, handler http.Handler, ts int64, status str
 	payload := []byte(`{"ts":` + strconv.FormatInt(ts, 10) + `,"status":"` + status + `","agent_version":"agent-test"}`)
 	recorder := httptest.NewRecorder()
 	request := httptest.NewRequest(http.MethodPost, "/api/agent/v1/heartbeat", bytes.NewReader(payload))
-	request.Header.Set("X-Node-ID", "hytron")
+	request.Header.Set("X-Node-ID", "example-node-a")
 	request.Header.Set("Authorization", "Bearer test-agent-token")
 	request.Header.Set("Content-Type", "application/json")
 	handler.ServeHTTP(recorder, request)
@@ -1981,7 +1981,7 @@ func postAgentState(t *testing.T, handle func(http.ResponseWriter, *http.Request
 	}
 	recorder := httptest.NewRecorder()
 	request := httptest.NewRequest(http.MethodPost, "/api/agent/v1/state", bytes.NewReader(payload))
-	request.Header.Set("X-Node-ID", "hytron")
+	request.Header.Set("X-Node-ID", "example-node-a")
 	request.Header.Set("Authorization", "Bearer test-agent-token")
 	request.Header.Set("Content-Type", "application/json")
 	handle(recorder, request)
@@ -2072,12 +2072,12 @@ func TestAgentHostUpsertUpdatesPublicSummaryTotals(t *testing.T) {
 	}
 	defer store.Close()
 	ctx := context.Background()
-	if err := store.SeedPreviewData(ctx, PreviewSeedOptions{NodeID: "hytron", DisplayName: "Hytron", CountryCode: "HK", AgentToken: "test-agent-token"}); err != nil {
+	if err := store.SeedPreviewData(ctx, PreviewSeedOptions{NodeID: "example-node-a", DisplayName: "Example Node A", CountryCode: "HK", AgentToken: "test-agent-token"}); err != nil {
 		t.Fatalf("seed preview data: %v", err)
 	}
 
 	body := map[string]any{
-		"hostname":           "hytron-real",
+		"hostname":           "example-node-a-real",
 		"os_name":            "debian",
 		"os_version":         "13",
 		"kernel":             "6.12.0",
@@ -2096,7 +2096,7 @@ func TestAgentHostUpsertUpdatesPublicSummaryTotals(t *testing.T) {
 	}
 	recorder := httptest.NewRecorder()
 	request := httptest.NewRequest(http.MethodPost, "/api/agent/v1/host", bytes.NewReader(payload))
-	request.Header.Set("X-Node-ID", "hytron")
+	request.Header.Set("X-Node-ID", "example-node-a")
 	request.Header.Set("Authorization", "Bearer test-agent-token")
 	request.Header.Set("Content-Type", "application/json")
 	NewHandler(HandlerOptions{Store: store}).ServeHTTP(recorder, request)
@@ -2124,12 +2124,12 @@ func TestAgentHostUpsertAutoFillsPublicNetworkIdentity(t *testing.T) {
 	}
 	defer store.Close()
 	ctx := context.Background()
-	if err := store.SeedPreviewData(ctx, PreviewSeedOptions{NodeID: "hytron", DisplayName: "Hytron", CountryCode: "HK", AgentToken: "test-agent-token"}); err != nil {
+	if err := store.SeedPreviewData(ctx, PreviewSeedOptions{NodeID: "example-node-a", DisplayName: "Example Node A", CountryCode: "HK", AgentToken: "test-agent-token"}); err != nil {
 		t.Fatalf("seed preview data: %v", err)
 	}
 
 	body := map[string]any{
-		"hostname":           "hytron-real",
+		"hostname":           "example-node-a-real",
 		"os_name":            "debian",
 		"os_version":         "13",
 		"kernel":             "6.12.0",
@@ -2151,7 +2151,7 @@ func TestAgentHostUpsertAutoFillsPublicNetworkIdentity(t *testing.T) {
 	}
 	recorder := httptest.NewRecorder()
 	request := httptest.NewRequest(http.MethodPost, "/api/agent/v1/host", bytes.NewReader(payload))
-	request.Header.Set("X-Node-ID", "hytron")
+	request.Header.Set("X-Node-ID", "example-node-a")
 	request.Header.Set("Authorization", "Bearer test-agent-token")
 	request.Header.Set("Content-Type", "application/json")
 	NewHandler(HandlerOptions{Store: store}).ServeHTTP(recorder, request)
@@ -2178,17 +2178,17 @@ func TestAgentHostUpsertKeepsNetworkIdentityWhenDiscoveryOmitted(t *testing.T) {
 	}
 	defer store.Close()
 	ctx := context.Background()
-	if err := store.SeedPreviewData(ctx, PreviewSeedOptions{NodeID: "hytron", DisplayName: "Hytron", CountryCode: "HK", AgentToken: "test-agent-token"}); err != nil {
+	if err := store.SeedPreviewData(ctx, PreviewSeedOptions{NodeID: "example-node-a", DisplayName: "Example Node A", CountryCode: "HK", AgentToken: "test-agent-token"}); err != nil {
 		t.Fatalf("seed preview data: %v", err)
 	}
-	if _, err := store.db.ExecContext(ctx, `UPDATE nodes SET public_ipv4 = '198.51.100.8', public_ipv6 = '2001:db8::8', country_code = 'JP' WHERE id = 'hytron'`); err != nil {
+	if _, err := store.db.ExecContext(ctx, `UPDATE nodes SET public_ipv4 = '198.51.100.8', public_ipv6 = '2001:db8::8', country_code = 'JP' WHERE id = 'example-node-a'`); err != nil {
 		t.Fatalf("seed network identity: %v", err)
 	}
 
-	body := []byte(`{"hostname":"hytron-real","os_name":"debian","os_version":"13","kernel":"6.12.0","arch":"x86_64","virtualization":"kvm","cpu_model":"AMD EPYC","cpu_cores":4,"memory_total_bytes":8589934592,"disk_total_bytes":171798691840,"boot_time":1782980000,"agent_version":"agent-test"}`)
+	body := []byte(`{"hostname":"example-node-a-real","os_name":"debian","os_version":"13","kernel":"6.12.0","arch":"x86_64","virtualization":"kvm","cpu_model":"AMD EPYC","cpu_cores":4,"memory_total_bytes":8589934592,"disk_total_bytes":171798691840,"boot_time":1782980000,"agent_version":"agent-test"}`)
 	recorder := httptest.NewRecorder()
 	request := httptest.NewRequest(http.MethodPost, "/api/agent/v1/host", bytes.NewReader(body))
-	request.Header.Set("X-Node-ID", "hytron")
+	request.Header.Set("X-Node-ID", "example-node-a")
 	request.Header.Set("Authorization", "Bearer test-agent-token")
 	request.Header.Set("Content-Type", "application/json")
 	NewHandler(HandlerOptions{Store: store}).ServeHTTP(recorder, request)
@@ -2212,7 +2212,7 @@ func TestAgentStateSamplesDrivePublicSummaryAndMonthlyTrafficDeltas(t *testing.T
 	}
 	defer store.Close()
 	ctx := context.Background()
-	if err := store.SeedPreviewData(ctx, PreviewSeedOptions{NodeID: "hytron", DisplayName: "Hytron", CountryCode: "HK", AgentToken: "test-agent-token"}); err != nil {
+	if err := store.SeedPreviewData(ctx, PreviewSeedOptions{NodeID: "example-node-a", DisplayName: "Example Node A", CountryCode: "HK", AgentToken: "test-agent-token"}); err != nil {
 		t.Fatalf("seed preview data: %v", err)
 	}
 
@@ -2245,7 +2245,7 @@ func TestAgentStateSamplesDrivePublicSummaryAndMonthlyTrafficDeltas(t *testing.T
 		}
 		recorder := httptest.NewRecorder()
 		request := httptest.NewRequest(http.MethodPost, "/api/agent/v1/state", bytes.NewReader(payload))
-		request.Header.Set("X-Node-ID", "hytron")
+		request.Header.Set("X-Node-ID", "example-node-a")
 		request.Header.Set("Authorization", "Bearer test-agent-token")
 		request.Header.Set("Content-Type", "application/json")
 		NewHandler(HandlerOptions{Store: store}).ServeHTTP(recorder, request)
@@ -2272,7 +2272,7 @@ func TestAgentStateSamplesDrivePublicSummaryAndMonthlyTrafficDeltas(t *testing.T
 	if node.MonthlyBillableBytes == nil || *node.MonthlyBillableBytes != 1_000_000 {
 		t.Fatalf("monthly billable = %v, want second sample delta in+out = 1000000", node.MonthlyBillableBytes)
 	}
-	state, err := store.NodeState(ctx, "hytron", latencyWindow{Name: "1h", Samples: 36, Step: 2 * time.Minute})
+	state, err := store.NodeState(ctx, "example-node-a", latencyWindow{Name: "1h", Samples: 36, Step: 2 * time.Minute})
 	if err != nil {
 		t.Fatalf("node state: %v", err)
 	}
@@ -2305,7 +2305,7 @@ func TestLifetimeTrafficContinuesAcrossNetworkCounterReset(t *testing.T) {
 	}
 	defer store.Close()
 	ctx := context.Background()
-	if err := store.SeedPreviewData(ctx, PreviewSeedOptions{NodeID: "hytron", DisplayName: "Hytron", CountryCode: "HK", AgentToken: "test-agent-token"}); err != nil {
+	if err := store.SeedPreviewData(ctx, PreviewSeedOptions{NodeID: "example-node-a", DisplayName: "Example Node A", CountryCode: "HK", AgentToken: "test-agent-token"}); err != nil {
 		t.Fatalf("seed preview data: %v", err)
 	}
 
@@ -2325,7 +2325,7 @@ func TestLifetimeTrafficContinuesAcrossNetworkCounterReset(t *testing.T) {
 		state.TS = now.Add(offset).Unix()
 		state.NetInTotalBytes = inTotal
 		state.NetOutTotalBytes = outTotal
-		if err := store.InsertAgentState(ctx, "hytron", state); err != nil {
+		if err := store.InsertAgentState(ctx, "example-node-a", state); err != nil {
 			t.Fatalf("insert state at %s: %v", offset, err)
 		}
 	}
@@ -2354,7 +2354,7 @@ func TestLifetimeTrafficContinuesAcrossNetworkCounterReset(t *testing.T) {
 	}
 	var monthlyIn, monthlyOut int64
 	if err := store.db.QueryRowContext(ctx, `
-		SELECT in_bytes, out_bytes FROM traffic_monthly WHERE node_id = 'hytron'
+		SELECT in_bytes, out_bytes FROM traffic_monthly WHERE node_id = 'example-node-a'
 	`).Scan(&monthlyIn, &monthlyOut); err != nil {
 		t.Fatalf("query monthly traffic: %v", err)
 	}
@@ -2370,7 +2370,7 @@ func TestLifetimeTrafficIgnoresEqualTimestampAndInvalidCounters(t *testing.T) {
 	}
 	defer store.Close()
 	ctx := context.Background()
-	if err := store.SeedPreviewData(ctx, PreviewSeedOptions{NodeID: "hytron", DisplayName: "Hytron", CountryCode: "HK", AgentToken: "test-agent-token"}); err != nil {
+	if err := store.SeedPreviewData(ctx, PreviewSeedOptions{NodeID: "example-node-a", DisplayName: "Example Node A", CountryCode: "HK", AgentToken: "test-agent-token"}); err != nil {
 		t.Fatalf("seed preview data: %v", err)
 	}
 
@@ -2393,7 +2393,7 @@ func TestLifetimeTrafficIgnoresEqualTimestampAndInvalidCounters(t *testing.T) {
 			NetTotalsValid:   totalsValid,
 			UptimeSeconds:    1,
 		}
-		if err := store.InsertAgentState(ctx, "hytron", state); err != nil {
+		if err := store.InsertAgentState(ctx, "example-node-a", state); err != nil {
 			t.Fatalf("insert state at %d: %v", ts, err)
 		}
 	}
@@ -2406,7 +2406,7 @@ func TestLifetimeTrafficIgnoresEqualTimestampAndInvalidCounters(t *testing.T) {
 	var lifetimeIn, lifetimeOut, previousIn, previousOut, lastSampleTS int64
 	if err := store.db.QueryRowContext(ctx, `
 		SELECT in_bytes, out_bytes, last_in_total_bytes, last_out_total_bytes, last_sample_ts
-		FROM traffic_lifetime WHERE node_id = 'hytron'
+		FROM traffic_lifetime WHERE node_id = 'example-node-a'
 	`).Scan(&lifetimeIn, &lifetimeOut, &previousIn, &previousOut, &lastSampleTS); err != nil {
 		t.Fatalf("query lifetime traffic: %v", err)
 	}
@@ -2432,7 +2432,7 @@ func TestLifetimeTrafficBackfillStartsFromLatestRawCounters(t *testing.T) {
 	}
 	defer store.Close()
 	ctx := context.Background()
-	if err := store.SeedPreviewData(ctx, PreviewSeedOptions{NodeID: "hytron", DisplayName: "Hytron", CountryCode: "HK", AgentToken: "test-agent-token"}); err != nil {
+	if err := store.SeedPreviewData(ctx, PreviewSeedOptions{NodeID: "example-node-a", DisplayName: "Example Node A", CountryCode: "HK", AgentToken: "test-agent-token"}); err != nil {
 		t.Fatalf("seed preview data: %v", err)
 	}
 
@@ -2451,12 +2451,12 @@ func TestLifetimeTrafficBackfillStartsFromLatestRawCounters(t *testing.T) {
 			NetOutSpeedBps:   1,
 			UptimeSeconds:    1,
 		}
-		if err := store.InsertAgentState(ctx, "hytron", state); err != nil {
+		if err := store.InsertAgentState(ctx, "example-node-a", state); err != nil {
 			t.Fatalf("insert historical state %d: %v", index, err)
 		}
 	}
 	invalid := false
-	if err := store.InsertAgentState(ctx, "hytron", AgentStateRequest{
+	if err := store.InsertAgentState(ctx, "example-node-a", AgentStateRequest{
 		TS:               now.Add(4 * time.Second).Unix(),
 		CPUPercent:       1,
 		MemoryUsedBytes:  1,
@@ -2499,7 +2499,7 @@ func TestSummaryLeavesLifetimeTrafficUnknownBeforeFirstValidSample(t *testing.T)
 	}
 	defer store.Close()
 	ctx := context.Background()
-	if err := store.SeedPreviewData(ctx, PreviewSeedOptions{NodeID: "hytron", DisplayName: "Hytron", CountryCode: "HK", AgentToken: "test-agent-token"}); err != nil {
+	if err := store.SeedPreviewData(ctx, PreviewSeedOptions{NodeID: "example-node-a", DisplayName: "Example Node A", CountryCode: "HK", AgentToken: "test-agent-token"}); err != nil {
 		t.Fatalf("seed preview data: %v", err)
 	}
 
@@ -2522,7 +2522,7 @@ func TestConcurrentDuplicateStateDoesNotDoubleCountLifetimeTraffic(t *testing.T)
 	}
 	defer store.Close()
 	ctx := context.Background()
-	if err := store.SeedPreviewData(ctx, PreviewSeedOptions{NodeID: "hytron", DisplayName: "Hytron", CountryCode: "HK", AgentToken: "test-agent-token"}); err != nil {
+	if err := store.SeedPreviewData(ctx, PreviewSeedOptions{NodeID: "example-node-a", DisplayName: "Example Node A", CountryCode: "HK", AgentToken: "test-agent-token"}); err != nil {
 		t.Fatalf("seed preview data: %v", err)
 	}
 
@@ -2540,7 +2540,7 @@ func TestConcurrentDuplicateStateDoesNotDoubleCountLifetimeTraffic(t *testing.T)
 		NetOutSpeedBps:   1,
 		UptimeSeconds:    1,
 	}
-	if err := store.InsertAgentState(ctx, "hytron", state); err != nil {
+	if err := store.InsertAgentState(ctx, "example-node-a", state); err != nil {
 		t.Fatalf("insert baseline state: %v", err)
 	}
 	state.TS = now.Add(time.Minute).Unix()
@@ -2555,7 +2555,7 @@ func TestConcurrentDuplicateStateDoesNotDoubleCountLifetimeTraffic(t *testing.T)
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			errs <- store.InsertAgentState(ctx, "hytron", state)
+			errs <- store.InsertAgentState(ctx, "example-node-a", state)
 		}()
 	}
 	wg.Wait()
@@ -2568,7 +2568,7 @@ func TestConcurrentDuplicateStateDoesNotDoubleCountLifetimeTraffic(t *testing.T)
 
 	var lifetimeIn, lifetimeOut int64
 	if err := store.db.QueryRowContext(ctx, `
-		SELECT in_bytes, out_bytes FROM traffic_lifetime WHERE node_id = 'hytron'
+		SELECT in_bytes, out_bytes FROM traffic_lifetime WHERE node_id = 'example-node-a'
 	`).Scan(&lifetimeIn, &lifetimeOut); err != nil {
 		t.Fatalf("query lifetime traffic: %v", err)
 	}
@@ -2577,7 +2577,7 @@ func TestConcurrentDuplicateStateDoesNotDoubleCountLifetimeTraffic(t *testing.T)
 	}
 	var count int
 	if err := store.db.QueryRowContext(ctx, `
-		SELECT COUNT(*) FROM state_samples WHERE node_id = 'hytron' AND sample_id = 'same-lifetime-sample'
+		SELECT COUNT(*) FROM state_samples WHERE node_id = 'example-node-a' AND sample_id = 'same-lifetime-sample'
 	`).Scan(&count); err != nil {
 		t.Fatalf("count duplicate samples: %v", err)
 	}
@@ -2593,7 +2593,7 @@ func TestLifetimeTrafficSaturatesBeforeSQLiteIntegerOverflow(t *testing.T) {
 	}
 	defer store.Close()
 	ctx := context.Background()
-	if err := store.SeedPreviewData(ctx, PreviewSeedOptions{NodeID: "hytron", DisplayName: "Hytron", CountryCode: "HK", AgentToken: "test-agent-token"}); err != nil {
+	if err := store.SeedPreviewData(ctx, PreviewSeedOptions{NodeID: "example-node-a", DisplayName: "Example Node A", CountryCode: "HK", AgentToken: "test-agent-token"}); err != nil {
 		t.Fatalf("seed preview data: %v", err)
 	}
 
@@ -2617,7 +2617,7 @@ func TestLifetimeTrafficSaturatesBeforeSQLiteIntegerOverflow(t *testing.T) {
 			NetOutSpeedBps:   1,
 			UptimeSeconds:    1,
 		}
-		if err := store.InsertAgentState(ctx, "hytron", state); err != nil {
+		if err := store.InsertAgentState(ctx, "example-node-a", state); err != nil {
 			t.Fatalf("insert state %d: %v", index, err)
 		}
 	}
@@ -2626,7 +2626,7 @@ func TestLifetimeTrafficSaturatesBeforeSQLiteIntegerOverflow(t *testing.T) {
 	var inType, outType string
 	if err := store.db.QueryRowContext(ctx, `
 		SELECT in_bytes, out_bytes, typeof(in_bytes), typeof(out_bytes)
-		FROM traffic_lifetime WHERE node_id = 'hytron'
+		FROM traffic_lifetime WHERE node_id = 'example-node-a'
 	`).Scan(&inBytes, &outBytes, &inType, &outType); err != nil {
 		t.Fatalf("query lifetime traffic: %v", err)
 	}
@@ -2645,7 +2645,7 @@ func TestAgentStateRejectsLargeClockSkewAndIgnoresOutOfOrderTrafficBaseline(t *t
 	}
 	defer store.Close()
 	ctx := context.Background()
-	if err := store.SeedPreviewData(ctx, PreviewSeedOptions{NodeID: "hytron", DisplayName: "Hytron", CountryCode: "HK", AgentToken: "test-agent-token"}); err != nil {
+	if err := store.SeedPreviewData(ctx, PreviewSeedOptions{NodeID: "example-node-a", DisplayName: "Example Node A", CountryCode: "HK", AgentToken: "test-agent-token"}); err != nil {
 		t.Fatalf("seed preview data: %v", err)
 	}
 
@@ -2670,7 +2670,7 @@ func TestAgentStateRejectsLargeClockSkewAndIgnoresOutOfOrderTrafficBaseline(t *t
 		}
 		recorder := httptest.NewRecorder()
 		request := httptest.NewRequest(http.MethodPost, "/api/agent/v1/state", bytes.NewReader(payload))
-		request.Header.Set("X-Node-ID", "hytron")
+		request.Header.Set("X-Node-ID", "example-node-a")
 		request.Header.Set("Authorization", "Bearer test-agent-token")
 		request.Header.Set("Content-Type", "application/json")
 		NewHandler(HandlerOptions{Store: store}).ServeHTTP(recorder, request)
@@ -2687,14 +2687,14 @@ func TestAgentStateRejectsLargeClockSkewAndIgnoresOutOfOrderTrafficBaseline(t *t
 	postState(now.Add(101*time.Second).Unix(), 2_100, 2_100, http.StatusAccepted)
 
 	var billable int64
-	if err := store.db.QueryRowContext(ctx, `SELECT billable_bytes FROM traffic_monthly WHERE node_id = 'hytron'`).Scan(&billable); err != nil {
+	if err := store.db.QueryRowContext(ctx, `SELECT billable_bytes FROM traffic_monthly WHERE node_id = 'example-node-a'`).Scan(&billable); err != nil {
 		t.Fatalf("query monthly billable: %v", err)
 	}
 	if billable != 2200 {
 		t.Fatalf("billable bytes = %d, want 2200 with out-of-order sample ignored as baseline", billable)
 	}
 	var lifetimeIn, lifetimeOut int64
-	if err := store.db.QueryRowContext(ctx, `SELECT in_bytes, out_bytes FROM traffic_lifetime WHERE node_id = 'hytron'`).Scan(&lifetimeIn, &lifetimeOut); err != nil {
+	if err := store.db.QueryRowContext(ctx, `SELECT in_bytes, out_bytes FROM traffic_lifetime WHERE node_id = 'example-node-a'`).Scan(&lifetimeIn, &lifetimeOut); err != nil {
 		t.Fatalf("query lifetime traffic: %v", err)
 	}
 	if lifetimeIn != 2_100 || lifetimeOut != 2_100 {
@@ -2709,12 +2709,12 @@ func TestTrafficLastSampleMigrationBackfillsLatestStateTimestamp(t *testing.T) {
 	}
 	defer store.Close()
 	ctx := context.Background()
-	if err := store.SeedPreviewData(ctx, PreviewSeedOptions{NodeID: "hytron", DisplayName: "Hytron", CountryCode: "HK", AgentToken: "test-agent-token"}); err != nil {
+	if err := store.SeedPreviewData(ctx, PreviewSeedOptions{NodeID: "example-node-a", DisplayName: "Example Node A", CountryCode: "HK", AgentToken: "test-agent-token"}); err != nil {
 		t.Fatalf("seed preview data: %v", err)
 	}
 	now := time.Now().UTC().Truncate(time.Second)
 	for _, ts := range []int64{now.Add(-time.Minute).Unix(), now.Unix()} {
-		if _, err := store.db.ExecContext(ctx, `INSERT INTO state_samples (node_id, ts, cpu_percent) VALUES ('hytron', ?, 10)`, ts); err != nil {
+		if _, err := store.db.ExecContext(ctx, `INSERT INTO state_samples (node_id, ts, cpu_percent) VALUES ('example-node-a', ?, 10)`, ts); err != nil {
 			t.Fatalf("insert historical state sample: %v", err)
 		}
 	}
@@ -2723,7 +2723,7 @@ func TestTrafficLastSampleMigrationBackfillsLatestStateTimestamp(t *testing.T) {
 		INSERT INTO traffic_monthly (
 			node_id, month, in_bytes, out_bytes, billable_bytes,
 			last_in_total_bytes, last_out_total_bytes, last_sample_ts, updated_at
-		) VALUES ('hytron', ?, 250, 250, 500, 1000, 1000, NULL, ?)
+		) VALUES ('example-node-a', ?, 250, 250, 500, 1000, 1000, NULL, ?)
 	`, month, now.Add(-2*time.Minute).Unix()); err != nil {
 		t.Fatalf("insert legacy traffic baseline: %v", err)
 	}
@@ -2731,7 +2731,7 @@ func TestTrafficLastSampleMigrationBackfillsLatestStateTimestamp(t *testing.T) {
 		t.Fatalf("rerun schema migration: %v", err)
 	}
 	var lastSampleTS int64
-	if err := store.db.QueryRowContext(ctx, `SELECT last_sample_ts FROM traffic_monthly WHERE node_id = 'hytron' AND month = ?`, month).Scan(&lastSampleTS); err != nil {
+	if err := store.db.QueryRowContext(ctx, `SELECT last_sample_ts FROM traffic_monthly WHERE node_id = 'example-node-a' AND month = ?`, month).Scan(&lastSampleTS); err != nil {
 		t.Fatalf("read migrated last sample timestamp: %v", err)
 	}
 	if lastSampleTS != now.Unix() {
@@ -2750,17 +2750,17 @@ func TestTrafficLastSampleMigrationBackfillsLatestStateTimestamp(t *testing.T) {
 		UptimeSeconds:    1,
 	}
 	baseState.TS = now.Add(-30 * time.Second).Unix()
-	if err := store.InsertAgentState(ctx, "hytron", baseState); err != nil {
+	if err := store.InsertAgentState(ctx, "example-node-a", baseState); err != nil {
 		t.Fatalf("insert delayed state: %v", err)
 	}
 	baseState.TS = now.Add(time.Second).Unix()
 	baseState.NetInTotalBytes = 1100
 	baseState.NetOutTotalBytes = 1100
-	if err := store.InsertAgentState(ctx, "hytron", baseState); err != nil {
+	if err := store.InsertAgentState(ctx, "example-node-a", baseState); err != nil {
 		t.Fatalf("insert current state: %v", err)
 	}
 	var billable int64
-	if err := store.db.QueryRowContext(ctx, `SELECT billable_bytes FROM traffic_monthly WHERE node_id = 'hytron' AND month = ?`, month).Scan(&billable); err != nil {
+	if err := store.db.QueryRowContext(ctx, `SELECT billable_bytes FROM traffic_monthly WHERE node_id = 'example-node-a' AND month = ?`, month).Scan(&billable); err != nil {
 		t.Fatalf("read billable traffic: %v", err)
 	}
 	if billable != 700 {
@@ -2804,7 +2804,7 @@ func TestAgentStateRejectsNegativeUDPConnectionCount(t *testing.T) {
 	}
 	defer store.Close()
 	ctx := context.Background()
-	if err := store.SeedPreviewData(ctx, PreviewSeedOptions{NodeID: "hytron", DisplayName: "Hytron", AgentToken: "test-agent-token"}); err != nil {
+	if err := store.SeedPreviewData(ctx, PreviewSeedOptions{NodeID: "example-node-a", DisplayName: "Example Node A", AgentToken: "test-agent-token"}); err != nil {
 		t.Fatalf("seed preview data: %v", err)
 	}
 	body := map[string]any{
@@ -2828,7 +2828,7 @@ func TestAgentStateRejectsNegativeUDPConnectionCount(t *testing.T) {
 	}
 	recorder := httptest.NewRecorder()
 	request := httptest.NewRequest(http.MethodPost, "/api/agent/v1/state", bytes.NewReader(payload))
-	request.Header.Set("X-Node-ID", "hytron")
+	request.Header.Set("X-Node-ID", "example-node-a")
 	request.Header.Set("Authorization", "Bearer test-agent-token")
 	request.Header.Set("Content-Type", "application/json")
 	NewHandler(HandlerOptions{Store: store}).ServeHTTP(recorder, request)
@@ -2851,7 +2851,7 @@ func TestAgentStateLegacyPayloadKeepsExtraMetricsNull(t *testing.T) {
 	}
 	defer store.Close()
 	ctx := context.Background()
-	if err := store.SeedPreviewData(ctx, PreviewSeedOptions{NodeID: "hytron", DisplayName: "Hytron", CountryCode: "HK", AgentToken: "test-agent-token"}); err != nil {
+	if err := store.SeedPreviewData(ctx, PreviewSeedOptions{NodeID: "example-node-a", DisplayName: "Example Node A", CountryCode: "HK", AgentToken: "test-agent-token"}); err != nil {
 		t.Fatalf("seed preview data: %v", err)
 	}
 
@@ -2874,7 +2874,7 @@ func TestAgentStateLegacyPayloadKeepsExtraMetricsNull(t *testing.T) {
 	}
 	recorder := httptest.NewRecorder()
 	request := httptest.NewRequest(http.MethodPost, "/api/agent/v1/state", bytes.NewReader(payload))
-	request.Header.Set("X-Node-ID", "hytron")
+	request.Header.Set("X-Node-ID", "example-node-a")
 	request.Header.Set("Authorization", "Bearer test-agent-token")
 	request.Header.Set("Content-Type", "application/json")
 	NewHandler(HandlerOptions{Store: store}).ServeHTTP(recorder, request)
@@ -2882,7 +2882,7 @@ func TestAgentStateLegacyPayloadKeepsExtraMetricsNull(t *testing.T) {
 		t.Fatalf("status = %d, want 202 for legacy state payload; body=%s", recorder.Code, recorder.Body.String())
 	}
 
-	state, err := store.NodeState(ctx, "hytron", latencyWindow{Name: "1h", Samples: 36, Step: 2 * time.Minute})
+	state, err := store.NodeState(ctx, "example-node-a", latencyWindow{Name: "1h", Samples: 36, Step: 2 * time.Minute})
 	if err != nil {
 		t.Fatalf("node state: %v", err)
 	}

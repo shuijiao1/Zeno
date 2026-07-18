@@ -93,16 +93,16 @@ func mockNode(id, name, osName, countryCode string, cores float64, expiry string
 func mockNodes() []Node {
 	return []Node{
 		mockNode("mechrevo", "Mechrevo", "windows", "HK", 16, "永 久", 19.73, gb(23.29), 58.73, tb(1.37), 30.62, kb(104.32), tb(10), kb(27.22), kb(967.98), nil, nil),
-		mockNode("sharon", "Sharon", "debian", "HK", 2, "余 7 天", 6.72, gb(1.89), 28.08, gb(29.36), 5.92, gb(212.90), gb(512), kb(7.00), kb(10.75), ptr(55.9), ptr(0.18)),
-		mockNode("alibaba", "Alibaba", "debian", "HK", 2, "余 1755 天", 5.04, mb(431.25), 47.63, gb(4.84), 34.00, gb(2.75), gb(200), kb(4.63), kb(7.98), ptr(35.1), ptr(0)),
-		mockNode("hytron", "Hytron", "debian", "HK", 2, "永 久", 61.43, gb(3.83), 68.52, gb(97.87), 18.21, mb(1.50), tb(10), kb(419.02), kb(20.00), ptr(34.6), ptr(0.40)),
-		mockNode("datawave-hk", "DataWave HK", "debian", "HK", 1, "余 30 天", 3.02, mb(464.69), 44.13, gb(9.74), 15.31, kb(19.80), gb(1000), kb(3.87), kb(4.01), ptr(31.6), ptr(0)),
-		mockNode("zouter", "Zouter", "debian", "JP", 1, "余 15 天", 7.88, mb(967.94), 42.87, gb(19.52), 8.03, kb(14.18), tb(2), kb(4.50), kb(8.41), ptr(108), ptr(1.22)),
-		mockNode("datawave-jp", "DataWave JP", "debian", "JP", 1, "余 30 天", 0.49, mb(464.69), 49.53, gb(9.74), 16.12, kb(4.92), gb(1000), kb(0.40), kb(11.96), ptr(86.1), ptr(0.66)),
-		mockNode("datawave-tw", "DataWave TW", "debian", "CN", 1, "余 30 天", 6.97, mb(464.69), 45.27, gb(9.74), 16.07, kb(4.48), gb(1000), kb(1.13), kb(2.11), ptr(62.7), ptr(0.16)),
-		mockNode("hostdzire", "HostDZire", "debian", "US", 4, "余 1017 天", 50.31, gb(5.79), 76.18, gb(97.87), 53.88, gb(28.34), tb(25), kb(281.90), kb(512.42), ptr(172), ptr(0.04)),
-		mockNode("bage", "BAGE", "debian", "US", 1, "余 91 天", 4.85, mb(967.94), 39.16, gb(19.52), 5.31, kb(68.65), tb(4), kb(22.88), kb(25.78), ptr(202), ptr(1.48)),
-		mockNode("hostishere", "Hostishere", "debian", "DE", 1, "余 331 天", 1.38, gb(1.84), 23.82, gb(19.52), 7.52, kb(2.63), tb(1), kb(1.31), kb(1.69), ptr(156), ptr(0.09)),
+		mockNode("example-harbor", "Example Harbor", "debian", "HK", 2, "余 7 天", 6.72, gb(1.89), 28.08, gb(29.36), 5.92, gb(212.90), gb(512), kb(7.00), kb(10.75), ptr(55.9), ptr(0.18)),
+		mockNode("example-transit", "Example Transit", "debian", "HK", 2, "余 1755 天", 5.04, mb(431.25), 47.63, gb(4.84), 34.00, gb(2.75), gb(200), kb(4.63), kb(7.98), ptr(35.1), ptr(0)),
+		mockNode("example-node-a", "Example Node A", "debian", "HK", 2, "永 久", 61.43, gb(3.83), 68.52, gb(97.87), 18.21, mb(1.50), tb(10), kb(419.02), kb(20.00), ptr(34.6), ptr(0.40)),
+		mockNode("example-edge-hk", "Example Edge HK", "debian", "HK", 1, "余 30 天", 3.02, mb(464.69), 44.13, gb(9.74), 15.31, kb(19.80), gb(1000), kb(3.87), kb(4.01), ptr(31.6), ptr(0)),
+		mockNode("example-relay", "Example Relay", "debian", "JP", 1, "余 15 天", 7.88, mb(967.94), 42.87, gb(19.52), 8.03, kb(14.18), tb(2), kb(4.50), kb(8.41), ptr(108), ptr(1.22)),
+		mockNode("example-edge-jp", "Example Edge JP", "debian", "JP", 1, "余 30 天", 0.49, mb(464.69), 49.53, gb(9.74), 16.12, kb(4.92), gb(1000), kb(0.40), kb(11.96), ptr(86.1), ptr(0.66)),
+		mockNode("example-edge-tw", "Example Edge TW", "debian", "CN", 1, "余 30 天", 6.97, mb(464.69), 45.27, gb(9.74), 16.07, kb(4.48), gb(1000), kb(1.13), kb(2.11), ptr(62.7), ptr(0.16)),
+		mockNode("example-compute", "Example Compute", "debian", "US", 4, "余 1017 天", 50.31, gb(5.79), 76.18, gb(97.87), 53.88, gb(28.34), tb(25), kb(281.90), kb(512.42), ptr(172), ptr(0.04)),
+		mockNode("example-node-b", "Example Node B", "debian", "US", 1, "余 91 天", 4.85, mb(967.94), 39.16, gb(19.52), 5.31, kb(68.65), tb(4), kb(22.88), kb(25.78), ptr(202), ptr(1.48)),
+		mockNode("example-host", "Example Host", "debian", "DE", 1, "余 331 天", 1.38, gb(1.84), 23.82, gb(19.52), 7.52, kb(2.63), tb(1), kb(1.31), kb(1.69), ptr(156), ptr(0.09)),
 	}
 }
 
@@ -191,9 +191,9 @@ func mockLatencyPoints(nodeID string, rangeNames ...string) []LatencyPoint {
 		{id: "akari-tw", name: "Akari TW", baseMS: 14.4, jitterMS: 1.4, loss: 0},
 		{id: "akari-jp", name: "Akari JP", baseMS: 50.3, jitterMS: 4.1, loss: 1.02},
 		{id: "akari-hk", name: "Akari HK", baseMS: 1.7, jitterMS: 0.5, loss: 1.22},
-		{id: "hytron", name: "Hytron", baseMS: 1.8, jitterMS: 0.5, loss: 1.29},
-		{id: "hostdzire", name: "HostDZire", baseMS: 152.2, jitterMS: 8.4, loss: 0.19},
-		{id: "bage", name: "BAGE", baseMS: 144.8, jitterMS: 7.5, loss: 0.16},
+		{id: "example-node-a", name: "Example Node A", baseMS: 1.8, jitterMS: 0.5, loss: 1.29},
+		{id: "example-compute", name: "Example Compute", baseMS: 152.2, jitterMS: 8.4, loss: 0.19},
+		{id: "example-node-b", name: "Example Node B", baseMS: 144.8, jitterMS: 7.5, loss: 0.16},
 	}
 
 	points := make([]LatencyPoint, 0, window.Samples*len(targets))

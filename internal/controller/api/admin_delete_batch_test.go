@@ -22,7 +22,7 @@ func TestAdminNodeDeleteReturnsImmediatelyHidesAndRejectsNewReports(t *testing.T
 	store.stopAdminDeletionWorker()
 
 	ctx := context.Background()
-	if err := store.SeedPreviewData(ctx, PreviewSeedOptions{NodeID: "hytron", DisplayName: "Hytron", CountryCode: "HK", AgentToken: "test-agent-token"}); err != nil {
+	if err := store.SeedPreviewData(ctx, PreviewSeedOptions{NodeID: "example-node-a", DisplayName: "Example Node A", CountryCode: "HK", AgentToken: "test-agent-token"}); err != nil {
 		t.Fatalf("seed preview data: %v", err)
 	}
 	if _, err := store.CreateAdminNode(ctx, AdminNodeCreateRequest{ID: "large-node", DisplayName: "Large node", CountryCode: "US"}); err != nil {
@@ -35,7 +35,7 @@ func TestAdminNodeDeleteReturnsImmediatelyHidesAndRejectsNewReports(t *testing.T
 		t.Fatalf("Agent authorization before delete = %v, err=%v; want true", authorized, err)
 	}
 	rowCount := adminDeleteBatchSize*2 + 37
-	seedAdminDeleteHistory(t, store, "large-node", "hytron-local", rowCount, 2)
+	seedAdminDeleteHistory(t, store, "large-node", "example-node-a-local", rowCount, 2)
 
 	handler := NewHandler(HandlerOptions{Store: store, AdminTokenHash: HashAdminToken("admin-pass")})
 	recorder := httptest.NewRecorder()
@@ -92,39 +92,39 @@ func TestAdminProbeTargetDeleteImmediatelyHidesAndRejectsNewRounds(t *testing.T)
 	store.stopAdminDeletionWorker()
 
 	ctx := context.Background()
-	if err := store.SeedPreviewData(ctx, PreviewSeedOptions{NodeID: "hytron", DisplayName: "Hytron", CountryCode: "HK", AgentToken: "test-agent-token"}); err != nil {
+	if err := store.SeedPreviewData(ctx, PreviewSeedOptions{NodeID: "example-node-a", DisplayName: "Example Node A", CountryCode: "HK", AgentToken: "test-agent-token"}); err != nil {
 		t.Fatalf("seed preview data: %v", err)
 	}
 	rowCount := adminDeleteBatchSize*2 + 19
-	seedAdminDeleteHistory(t, store, "hytron", "hytron-local", rowCount, 2)
+	seedAdminDeleteHistory(t, store, "example-node-a", "example-node-a-local", rowCount, 2)
 
-	if err := store.DeleteAdminProbeTarget(ctx, "hytron-local"); err != nil {
+	if err := store.DeleteAdminProbeTarget(ctx, "example-node-a-local"); err != nil {
 		t.Fatalf("delete target: %v", err)
 	}
-	assertAdminDeleteCount(t, store, `SELECT COUNT(*) FROM probe_targets WHERE id = 'hytron-local'`, 1)
-	assertAdminDeleteCount(t, store, `SELECT COUNT(*) FROM probe_rounds WHERE target_id = 'hytron-local'`, rowCount)
-	assertAdminProbeTargetAbsent(t, store, "hytron-local")
-	if targets, err := store.EnabledProbeTargets(ctx, "hytron"); err != nil {
+	assertAdminDeleteCount(t, store, `SELECT COUNT(*) FROM probe_targets WHERE id = 'example-node-a-local'`, 1)
+	assertAdminDeleteCount(t, store, `SELECT COUNT(*) FROM probe_rounds WHERE target_id = 'example-node-a-local'`, rowCount)
+	assertAdminProbeTargetAbsent(t, store, "example-node-a-local")
+	if targets, err := store.EnabledProbeTargets(ctx, "example-node-a"); err != nil {
 		t.Fatalf("enabled targets after tombstone: %v", err)
 	} else {
 		for _, target := range targets {
-			if target.ID == "hytron-local" {
+			if target.ID == "example-node-a-local" {
 				t.Fatalf("tombstoned target remains in Agent config: %+v", target)
 			}
 		}
 	}
 	latency := 1.0
-	err = store.InsertProbeRound(ctx, "hytron", ProbeTarget{ID: "hytron-local", Name: "deleted", Type: "tcping", Address: "127.0.0.1", Port: intPtrValue(80), Count: 1, TimeoutMS: 1000, IntervalSec: 30}, time.Now(), []probe.Sample{{Seq: 1, Success: true, LatencyMS: &latency}})
+	err = store.InsertProbeRound(ctx, "example-node-a", ProbeTarget{ID: "example-node-a-local", Name: "deleted", Type: "tcping", Address: "127.0.0.1", Port: intPtrValue(80), Count: 1, TimeoutMS: 1000, IntervalSec: 30}, time.Now(), []probe.Sample{{Seq: 1, Success: true, LatencyMS: &latency}})
 	if !errors.Is(err, errInvalidAgentProbeResults) {
 		t.Fatalf("new round for tombstoned target error = %v, want invalid probe results", err)
 	}
 
 	store.startAdminDeletionWorker()
-	waitForAdminDeletionCompleted(t, store, "probe_target", "hytron-local", 10*time.Second)
+	waitForAdminDeletionCompleted(t, store, "probe_target", "example-node-a-local", 10*time.Second)
 	for _, query := range []string{
-		`SELECT COUNT(*) FROM probe_targets WHERE id = 'hytron-local'`,
-		`SELECT COUNT(*) FROM node_probe_targets WHERE target_id = 'hytron-local'`,
-		`SELECT COUNT(*) FROM probe_rounds WHERE target_id = 'hytron-local'`,
+		`SELECT COUNT(*) FROM probe_targets WHERE id = 'example-node-a-local'`,
+		`SELECT COUNT(*) FROM node_probe_targets WHERE target_id = 'example-node-a-local'`,
+		`SELECT COUNT(*) FROM probe_rounds WHERE target_id = 'example-node-a-local'`,
 	} {
 		assertAdminDeleteCount(t, store, query, 0)
 	}
@@ -139,18 +139,18 @@ func TestAdminDeletionWorkerResumesRunningTargetJobAfterRestart(t *testing.T) {
 	}
 	store.stopAdminDeletionWorker()
 	ctx := context.Background()
-	if err := store.SeedPreviewData(ctx, PreviewSeedOptions{NodeID: "hytron", DisplayName: "Hytron", CountryCode: "HK", AgentToken: "test-agent-token"}); err != nil {
+	if err := store.SeedPreviewData(ctx, PreviewSeedOptions{NodeID: "example-node-a", DisplayName: "Example Node A", CountryCode: "HK", AgentToken: "test-agent-token"}); err != nil {
 		t.Fatalf("seed preview data: %v", err)
 	}
-	seedAdminDeleteHistory(t, store, "hytron", "hytron-local", adminDeleteBatchSize+31, 2)
-	if err := store.DeleteAdminProbeTarget(ctx, "hytron-local"); err != nil {
+	seedAdminDeleteHistory(t, store, "example-node-a", "example-node-a-local", adminDeleteBatchSize+31, 2)
+	if err := store.DeleteAdminProbeTarget(ctx, "example-node-a-local"); err != nil {
 		t.Fatalf("enqueue target deletion: %v", err)
 	}
 	processed, err := store.processNextAdminDeletionBatch(ctx)
 	if err != nil || !processed {
 		t.Fatalf("process first batch = %v, err=%v", processed, err)
 	}
-	assertAdminDeleteCount(t, store, `SELECT COUNT(*) FROM admin_deletion_jobs WHERE entity_kind = 'probe_target' AND entity_id = 'hytron-local' AND state = 'running'`, 1)
+	assertAdminDeleteCount(t, store, `SELECT COUNT(*) FROM admin_deletion_jobs WHERE entity_kind = 'probe_target' AND entity_id = 'example-node-a-local' AND state = 'running'`, 1)
 	if err := store.Close(); err != nil {
 		t.Fatalf("close first store: %v", err)
 	}
@@ -160,9 +160,9 @@ func TestAdminDeletionWorkerResumesRunningTargetJobAfterRestart(t *testing.T) {
 		t.Fatalf("reopen sqlite store: %v", err)
 	}
 	defer reopened.Close()
-	waitForAdminDeletionCompleted(t, reopened, "probe_target", "hytron-local", 10*time.Second)
-	assertAdminDeleteCount(t, reopened, `SELECT COUNT(*) FROM probe_targets WHERE id = 'hytron-local'`, 0)
-	assertAdminDeleteCount(t, reopened, `SELECT COUNT(*) FROM probe_rounds WHERE target_id = 'hytron-local'`, 0)
+	waitForAdminDeletionCompleted(t, reopened, "probe_target", "example-node-a-local", 10*time.Second)
+	assertAdminDeleteCount(t, reopened, `SELECT COUNT(*) FROM probe_targets WHERE id = 'example-node-a-local'`, 0)
+	assertAdminDeleteCount(t, reopened, `SELECT COUNT(*) FROM probe_rounds WHERE target_id = 'example-node-a-local'`, 0)
 	assertSQLiteForeignKeysClean(t, reopened)
 }
 

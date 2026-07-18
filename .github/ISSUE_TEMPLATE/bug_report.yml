@@ -1,5 +1,5 @@
 name: Bug report
-about: Report a reproducible Zeno Controller or UI bug
+description: Report a reproducible Zeno Controller or UI bug
 title: "[Bug] "
 labels: [bug]
 body:
@@ -14,14 +14,14 @@ body:
     id: controller-version
     attributes:
       label: Controller version
-      placeholder: latest or image digest
+      placeholder: vX.Y.Z or sha256:image-digest
     validations:
       required: true
   - type: input
     id: agent-version
     attributes:
       label: Agent version
-      placeholder: latest / not related
+      placeholder: vX.Y.Z / not related
   - type: dropdown
     id: deploy
     attributes:
@@ -59,7 +59,7 @@ body:
     id: logs
     attributes:
       label: 日志 / Logs
-      description: 请隐藏 token、密码、Bot Token、域名敏感路径等。
+      description: 请仅粘贴必要时间窗，并隐藏 token、完整安装命令、Authorization header、密码、Bot Token、数据库内容与敏感域名。
       render: shell
       placeholder: |
         docker compose logs --tail=200 zeno
@@ -70,6 +70,8 @@ body:
       label: Checklist
       options:
         - label: 我已隐藏 token、密码、Telegram Bot Token 等敏感信息。
+          required: true
+        - label: 这不是尚未修复的安全漏洞；安全漏洞会通过 Private Vulnerability Reporting 私密提交。
           required: true
         - label: 我已确认不是浏览器缓存或旧镜像导致的问题。
           required: false

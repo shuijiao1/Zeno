@@ -23,7 +23,7 @@ func TestAuditProbeErrorPayloadIsBounded(t *testing.T) {
 	}
 	defer store.Close()
 	ctx := context.Background()
-	if err := store.SeedPreviewData(ctx, PreviewSeedOptions{NodeID: "hytron", DisplayName: "Hytron", AgentToken: "token"}); err != nil {
+	if err := store.SeedPreviewData(ctx, PreviewSeedOptions{NodeID: "example-node-a", DisplayName: "Example Node A", AgentToken: "token"}); err != nil {
 		t.Fatal(err)
 	}
 	body := map[string]any{"rounds": []map[string]any{{
@@ -36,7 +36,7 @@ func TestAuditProbeErrorPayloadIsBounded(t *testing.T) {
 	}
 	recorder := httptest.NewRecorder()
 	request := httptest.NewRequest(http.MethodPost, "/api/agent/v1/probe-results", bytes.NewReader(payload))
-	request.Header.Set("X-Node-ID", "hytron")
+	request.Header.Set("X-Node-ID", "example-node-a")
 	request.Header.Set("Authorization", "Bearer token")
 	NewHandler(HandlerOptions{Store: store}).ServeHTTP(recorder, request)
 	if recorder.Code != http.StatusBadRequest {
@@ -61,11 +61,11 @@ func TestProbeStoreDefensivelyBoundsErrorAndPreservesUTF8(t *testing.T) {
 	}
 	defer store.Close()
 	ctx := context.Background()
-	if err := store.SeedPreviewData(ctx, PreviewSeedOptions{NodeID: "hytron", DisplayName: "Hytron", AgentToken: "token"}); err != nil {
+	if err := store.SeedPreviewData(ctx, PreviewSeedOptions{NodeID: "example-node-a", DisplayName: "Example Node A", AgentToken: "token"}); err != nil {
 		t.Fatal(err)
 	}
 	errorText := strings.Repeat("界", 400)
-	if err := store.InsertProbeRound(ctx, "hytron", ProbeTarget{ID: "google-dns", Type: "tcping", Count: 1}, time.Now().UTC(), []probe.Sample{{Seq: 1, Error: errorText}}); err != nil {
+	if err := store.InsertProbeRound(ctx, "example-node-a", ProbeTarget{ID: "google-dns", Type: "tcping", Count: 1}, time.Now().UTC(), []probe.Sample{{Seq: 1, Error: errorText}}); err != nil {
 		t.Fatalf("insert direct probe round: %v", err)
 	}
 	var roundError, sampleError string
@@ -111,7 +111,7 @@ func TestAuditMonthlyTrafficArithmeticStaysNonNegativeInteger(t *testing.T) {
 	}
 	defer store.Close()
 	ctx := context.Background()
-	if err := store.SeedPreviewData(ctx, PreviewSeedOptions{NodeID: "hytron", DisplayName: "Hytron", AgentToken: "token"}); err != nil {
+	if err := store.SeedPreviewData(ctx, PreviewSeedOptions{NodeID: "example-node-a", DisplayName: "Example Node A", AgentToken: "token"}); err != nil {
 		t.Fatal(err)
 	}
 	now := time.Now().UTC().Truncate(time.Second)
@@ -120,13 +120,13 @@ func TestAuditMonthlyTrafficArithmeticStaysNonNegativeInteger(t *testing.T) {
 	for i, total := range totals {
 		state.TS = now.Add(time.Duration(i) * time.Second).Unix()
 		state.NetInTotalBytes, state.NetOutTotalBytes = total, total
-		if err := store.InsertAgentState(ctx, "hytron", state); err != nil {
+		if err := store.InsertAgentState(ctx, "example-node-a", state); err != nil {
 			t.Fatalf("insert %d: %v", i, err)
 		}
 	}
 	var inType, outType, billableType string
 	var inNonNegative, outNonNegative, billableNonNegative int
-	if err := store.db.QueryRowContext(ctx, `SELECT typeof(in_bytes), typeof(out_bytes), typeof(billable_bytes), in_bytes >= 0, out_bytes >= 0, billable_bytes >= 0 FROM traffic_monthly WHERE node_id = ?`, "hytron").Scan(&inType, &outType, &billableType, &inNonNegative, &outNonNegative, &billableNonNegative); err != nil {
+	if err := store.db.QueryRowContext(ctx, `SELECT typeof(in_bytes), typeof(out_bytes), typeof(billable_bytes), in_bytes >= 0, out_bytes >= 0, billable_bytes >= 0 FROM traffic_monthly WHERE node_id = ?`, "example-node-a").Scan(&inType, &outType, &billableType, &inNonNegative, &outNonNegative, &billableNonNegative); err != nil {
 		t.Fatal(err)
 	}
 	if inType != "integer" || outType != "integer" || billableType != "integer" || inNonNegative != 1 || outNonNegative != 1 || billableNonNegative != 1 {

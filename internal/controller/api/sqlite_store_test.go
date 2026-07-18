@@ -19,6 +19,29 @@ import (
 
 func testF64(v float64) *float64 { return &v }
 
+func TestEmptyPublicSummaryUsesJSONArrays(t *testing.T) {
+	store, err := OpenSQLiteStore(filepath.Join(t.TempDir(), "zeno.db"))
+	if err != nil {
+		t.Fatalf("open empty sqlite store: %v", err)
+	}
+	defer store.Close()
+
+	summary, err := store.Summary(context.Background())
+	if err != nil {
+		t.Fatalf("read empty summary: %v", err)
+	}
+	if summary.Nodes == nil || summary.Services == nil || summary.LatencyPoints == nil {
+		t.Fatalf("empty summary contains nil slices: %#v", summary)
+	}
+	payload, err := json.Marshal(summary)
+	if err != nil {
+		t.Fatalf("marshal empty summary: %v", err)
+	}
+	if got := string(payload); got != `{"nodes":[],"services":[],"latency_points":[]}` {
+		t.Fatalf("empty summary JSON = %s", got)
+	}
+}
+
 func TestOpenSQLiteStoreMigratesLegacyNotificationDeliveryLeaseColumnsBeforeIndex(t *testing.T) {
 	dbPath := filepath.Join(t.TempDir(), "zeno.db")
 	db, err := sql.Open("sqlite", dbPath)
@@ -169,13 +192,13 @@ func TestSQLiteBackedHandlerReturnsPersistedLatencyInsteadOfMock(t *testing.T) {
 	now := time.Now().UTC().Truncate(time.Second)
 	if _, err := store.db.ExecContext(ctx, `
 		INSERT INTO nodes (id, display_name, token_hash, status, country_code, created_at, updated_at, last_seen_at)
-		VALUES ('hytron', 'Hytron', 'hash-for-test', 'online', 'HK', ?, ?, ?);
+		VALUES ('example-node-a', 'Example Node A', 'hash-for-test', 'online', 'HK', ?, ?, ?);
 	`, now.Unix(), now.Unix(), now.Unix()); err != nil {
 		t.Fatalf("insert node: %v", err)
 	}
 	if _, err := store.db.ExecContext(ctx, `
 		INSERT INTO host_info (node_id, os_name, cpu_cores, memory_total_bytes, disk_total_bytes, updated_at)
-		VALUES ('hytron', 'debian', 2, 4096, 8192, ?);
+		VALUES ('example-node-a', 'debian', 2, 4096, 8192, ?);
 	`, now.Unix()); err != nil {
 		t.Fatalf("insert host info: %v", err)
 	}
@@ -187,20 +210,20 @@ func TestSQLiteBackedHandlerReturnsPersistedLatencyInsteadOfMock(t *testing.T) {
 	}
 	if _, err := store.db.ExecContext(ctx, `
 		INSERT INTO node_probe_targets (node_id, target_id, enabled)
-		VALUES ('hytron', 'google', 1);
+		VALUES ('example-node-a', 'google', 1);
 	`); err != nil {
 		t.Fatalf("insert node target: %v", err)
 	}
 	if _, err := store.db.ExecContext(ctx, `
 		INSERT INTO probe_rounds (node_id, target_id, ts, type, sent, received, loss_percent, min_ms, avg_ms, median_ms, max_ms, stddev_ms)
-		VALUES ('hytron', 'google', ?, 'ping', 3, 3, 0, 1.1, 1.3, 1.2, 1.6, 0.2);
+		VALUES ('example-node-a', 'google', ?, 'ping', 3, 3, 0, 1.1, 1.3, 1.2, 1.6, 0.2);
 	`, now.Unix()); err != nil {
 		t.Fatalf("insert round: %v", err)
 	}
 
 	handler := NewHandler(HandlerOptions{Store: store})
 	recorder := httptest.NewRecorder()
-	handler.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/api/public/v1/nodes/hytron/latency?range=1h", nil))
+	handler.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/api/public/v1/nodes/example-node-a/latency?range=1h", nil))
 
 	if recorder.Code != http.StatusOK {
 		t.Fatalf("status = %d, want %d; body=%s", recorder.Code, http.StatusOK, recorder.Body.String())
@@ -210,8 +233,8 @@ func TestSQLiteBackedHandlerReturnsPersistedLatencyInsteadOfMock(t *testing.T) {
 	if err := json.NewDecoder(recorder.Body).Decode(&response); err != nil {
 		t.Fatalf("decode response: %v", err)
 	}
-	if response.NodeID != "hytron" {
-		t.Fatalf("node_id = %q, want hytron", response.NodeID)
+	if response.NodeID != "example-node-a" {
+		t.Fatalf("node_id = %q, want example-node-a", response.NodeID)
 	}
 	if response.Range != "1h" {
 		t.Fatalf("range = %q, want 1h", response.Range)
@@ -244,10 +267,10 @@ func TestProbeRoundIdempotencyMigrationBackfillsLegacyRowsAndReplacesIndex(t *te
 		t.Fatalf("open sqlite store: %v", err)
 	}
 	ctx := context.Background()
-	if err := store.SeedPreviewData(ctx, PreviewSeedOptions{NodeID: "hytron", DisplayName: "Hytron", CountryCode: "HK", AgentToken: "token"}); err != nil {
+	if err := store.SeedPreviewData(ctx, PreviewSeedOptions{NodeID: "example-node-a", DisplayName: "Example Node A", CountryCode: "HK", AgentToken: "token"}); err != nil {
 		t.Fatalf("seed preview data: %v", err)
 	}
-	targets, err := store.EnabledProbeTargets(ctx, "hytron")
+	targets, err := store.EnabledProbeTargets(ctx, "example-node-a")
 	if err != nil || len(targets) == 0 {
 		t.Fatalf("list targets: targets=%d err=%v", len(targets), err)
 	}
@@ -323,7 +346,7 @@ func TestProbeRoundIdempotencyMigrationBackfillsLegacyRowsAndReplacesIndex(t *te
 	for index, legacyRound := range legacyRounds {
 		result, err := rawDB.ExecContext(ctx, `
 			INSERT INTO probe_rounds (node_id, target_id, ts, type, sent, received, loss_percent, min_ms, avg_ms, median_ms, max_ms, stddev_ms, error)
-			VALUES ('hytron', 'google-dns', ?, 'tcping', 1, 1, 0, ?, ?, ?, ?, 0, NULL)
+			VALUES ('example-node-a', 'google-dns', ?, 'tcping', 1, 1, 0, ?, ?, ?, ?, 0, NULL)
 		`, probeTS.Unix(), legacyRound.latency, legacyRound.latency, legacyRound.latency, legacyRound.latency)
 		if err != nil {
 			t.Fatalf("insert legacy round %d: %v", index+1, err)
@@ -398,7 +421,7 @@ func TestProbeRoundIdempotencyMigrationBackfillsLegacyRowsAndReplacesIndex(t *te
 		t.Fatalf("agent round index columns = %v", agentColumns)
 	}
 	samples := []probe.Sample{{Seq: 1, Success: true, LatencyMS: testF64(12.5)}}
-	if err := reopened.InsertProbeRound(ctx, "hytron", googleDNS, probeTS, samples); err != nil {
+	if err := reopened.InsertProbeRound(ctx, "example-node-a", googleDNS, probeTS, samples); err != nil {
 		t.Fatalf("retry migrated probe round: %v", err)
 	}
 	var rounds int
@@ -447,10 +470,10 @@ func TestLocalProbeInsertRetriesWholeTransactionAfterConcurrentWriter(t *testing
 	}
 	defer store.Close()
 	ctx := context.Background()
-	if err := store.SeedPreviewData(ctx, PreviewSeedOptions{NodeID: "hytron", DisplayName: "Hytron", CountryCode: "HK", AgentToken: "test-agent-token"}); err != nil {
+	if err := store.SeedPreviewData(ctx, PreviewSeedOptions{NodeID: "example-node-a", DisplayName: "Example Node A", CountryCode: "HK", AgentToken: "test-agent-token"}); err != nil {
 		t.Fatalf("seed preview data: %v", err)
 	}
-	targets, err := store.EnabledProbeTargets(ctx, "hytron")
+	targets, err := store.EnabledProbeTargets(ctx, "example-node-a")
 	if err != nil || len(targets) == 0 {
 		t.Fatalf("load target: targets=%d err=%v", len(targets), err)
 	}
@@ -459,12 +482,12 @@ func TestLocalProbeInsertRetriesWholeTransactionAfterConcurrentWriter(t *testing
 	if err != nil {
 		t.Fatalf("begin competing writer: %v", err)
 	}
-	if _, err := writer.ExecContext(ctx, `UPDATE nodes SET updated_at = updated_at WHERE id = 'hytron'`); err != nil {
+	if _, err := writer.ExecContext(ctx, `UPDATE nodes SET updated_at = updated_at WHERE id = 'example-node-a'`); err != nil {
 		t.Fatalf("hold competing write lock: %v", err)
 	}
 	done := make(chan error, 1)
 	go func() {
-		done <- store.InsertProbeRound(ctx, "hytron", targets[0], time.Now().UTC(), []probe.Sample{{Seq: 1, Success: true, LatencyMS: testF64(12)}})
+		done <- store.InsertProbeRound(ctx, "example-node-a", targets[0], time.Now().UTC(), []probe.Sample{{Seq: 1, Success: true, LatencyMS: testF64(12)}})
 	}()
 	select {
 	case err := <-done:
@@ -483,7 +506,7 @@ func TestLocalProbeInsertRetriesWholeTransactionAfterConcurrentWriter(t *testing
 		t.Fatal("local probe insert did not recover after competing writer released")
 	}
 	var count int
-	if err := store.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM probe_rounds WHERE node_id = 'hytron'`).Scan(&count); err != nil {
+	if err := store.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM probe_rounds WHERE node_id = 'example-node-a'`).Scan(&count); err != nil {
 		t.Fatalf("count local probe rounds: %v", err)
 	}
 	if count != 1 {
@@ -553,7 +576,7 @@ func TestSQLiteBackedLatencyUsesKulinMinuteGridAndAverageDelay(t *testing.T) {
 	now := time.Now().UTC().Truncate(time.Minute)
 	if _, err := store.db.ExecContext(ctx, `
 		INSERT INTO nodes (id, display_name, token_hash, status, country_code, created_at, updated_at, last_seen_at)
-		VALUES ('hytron', 'Hytron', 'hash-for-test', 'online', 'HK', ?, ?, ?);
+		VALUES ('example-node-a', 'Example Node A', 'hash-for-test', 'online', 'HK', ?, ?, ?);
 	`, now.Unix(), now.Unix(), now.Unix()); err != nil {
 		t.Fatalf("insert node: %v", err)
 	}
@@ -565,7 +588,7 @@ func TestSQLiteBackedLatencyUsesKulinMinuteGridAndAverageDelay(t *testing.T) {
 	}
 	if _, err := store.db.ExecContext(ctx, `
 		INSERT INTO node_probe_targets (node_id, target_id, enabled)
-		VALUES ('hytron', 'google', 1);
+		VALUES ('example-node-a', 'google', 1);
 	`); err != nil {
 		t.Fatalf("insert node target: %v", err)
 	}
@@ -580,13 +603,13 @@ func TestSQLiteBackedLatencyUsesKulinMinuteGridAndAverageDelay(t *testing.T) {
 	} {
 		if _, err := store.db.ExecContext(ctx, `
 			INSERT INTO probe_rounds (node_id, target_id, ts, type, sent, received, loss_percent, min_ms, avg_ms, median_ms, max_ms, stddev_ms)
-			VALUES ('hytron', 'google', ?, 'ping', 3, 3, ?, 1, ?, ?, 40, 0.2);
+			VALUES ('example-node-a', 'google', ?, 'ping', 3, 3, ?, 1, ?, ?, 40, 0.2);
 		`, now.Add(time.Duration(row.offsetSec)*time.Second).Unix(), row.loss, row.avg, row.median); err != nil {
 			t.Fatalf("insert round: %v", err)
 		}
 	}
 
-	response, err := store.NodeLatency(ctx, "hytron", latencyWindow{Name: "1d", Samples: 48, Step: 30 * time.Minute})
+	response, err := store.NodeLatency(ctx, "example-node-a", latencyWindow{Name: "1d", Samples: 48, Step: 30 * time.Minute})
 	if err != nil {
 		t.Fatalf("node latency: %v", err)
 	}
@@ -634,19 +657,19 @@ func TestSQLiteBackedSummaryUsesPersistedNodeAndLatestLatency(t *testing.T) {
 	now := time.Now().UTC().Truncate(time.Second)
 	if _, err := store.db.ExecContext(ctx, `
 		INSERT INTO nodes (id, display_name, token_hash, status, country_code, created_at, updated_at, last_seen_at)
-		VALUES ('hytron', 'Hytron', 'hash-for-test', 'online', 'HK', ?, ?, ?);
+		VALUES ('example-node-a', 'Example Node A', 'hash-for-test', 'online', 'HK', ?, ?, ?);
 	`, now.Unix(), now.Unix(), now.Unix()); err != nil {
 		t.Fatalf("insert node: %v", err)
 	}
 	if _, err := store.db.ExecContext(ctx, `
 		INSERT INTO host_info (node_id, os_name, arch, cpu_cores, memory_total_bytes, disk_total_bytes, updated_at)
-		VALUES ('hytron', 'debian', 'aarch64', 2, 4096, 8192, ?);
+		VALUES ('example-node-a', 'debian', 'aarch64', 2, 4096, 8192, ?);
 	`, now.Unix()); err != nil {
 		t.Fatalf("insert host info: %v", err)
 	}
 	if _, err := store.db.ExecContext(ctx, `
 		INSERT INTO state_samples (node_id, ts, cpu_percent, load1, load5, load15, memory_used_bytes, memory_total_bytes, disk_used_bytes, disk_total_bytes, net_in_total_bytes, net_out_total_bytes, net_in_speed_bps, net_out_speed_bps, uptime_seconds)
-		VALUES ('hytron', ?, 18.5, 0.42, 0.35, 0.28, 1024, 4096, 2048, 8192, 1000, 2000, 128, 256, 3660);
+		VALUES ('example-node-a', ?, 18.5, 0.42, 0.35, 0.28, 1024, 4096, 2048, 8192, 1000, 2000, 128, 256, 3660);
 	`, now.Unix()); err != nil {
 		t.Fatalf("insert state sample: %v", err)
 	}
@@ -658,14 +681,14 @@ func TestSQLiteBackedSummaryUsesPersistedNodeAndLatestLatency(t *testing.T) {
 	}
 	if _, err := store.db.ExecContext(ctx, `
 		INSERT INTO node_probe_targets (node_id, target_id, enabled)
-		VALUES ('hytron', 'google', 1);
+		VALUES ('example-node-a', 'google', 1);
 	`); err != nil {
 		t.Fatalf("insert node target: %v", err)
 	}
 	for offset, median := range []float64{9.9, 8.8} {
 		if _, err := store.db.ExecContext(ctx, `
 			INSERT INTO probe_rounds (node_id, target_id, ts, type, sent, received, loss_percent, min_ms, avg_ms, median_ms, max_ms, stddev_ms)
-			VALUES ('hytron', 'google', ?, 'ping', 3, 3, ?, 1.1, ?, ?, 9.9, 0.2);
+			VALUES ('example-node-a', 'google', ?, 'ping', 3, 3, ?, 1.1, ?, ?, 9.9, 0.2);
 		`, now.Add(time.Duration(offset-1)*time.Minute).Unix(), float64(offset), median, median); err != nil {
 			t.Fatalf("insert round: %v", err)
 		}
@@ -696,8 +719,8 @@ func TestSQLiteBackedSummaryUsesPersistedNodeAndLatestLatency(t *testing.T) {
 		t.Fatalf("nodes len = %d, want 1", len(summary.Nodes))
 	}
 	node := summary.Nodes[0]
-	if node.DisplayName != "Hytron" || node.OS != "debian" || node.CountryCode != "HK" {
-		t.Fatalf("node = %+v, want persisted Hytron card", node)
+	if node.DisplayName != "Example Node A" || node.OS != "debian" || node.CountryCode != "HK" {
+		t.Fatalf("node = %+v, want persisted Example Node A card", node)
 	}
 	if publicShape.Nodes[0].Arch != "aarch64" {
 		t.Fatalf("node arch = %q, want persisted host architecture", publicShape.Nodes[0].Arch)
@@ -729,7 +752,7 @@ func TestSQLiteBackedSummaryUsesPersistedNodeAndLatestLatency(t *testing.T) {
 	}
 	var servicePoint *ServiceLatencyPoint
 	for index := range serviceResponse.Points {
-		if serviceResponse.Points[index].NodeID == "hytron" && serviceResponse.Points[index].AvgMS != nil {
+		if serviceResponse.Points[index].NodeID == "example-node-a" && serviceResponse.Points[index].AvgMS != nil {
 			servicePoint = &serviceResponse.Points[index]
 			break
 		}
@@ -750,7 +773,7 @@ func TestSQLiteBackedSummaryUsesConfiguredHomeLatencyTarget(t *testing.T) {
 	now := time.Now().UTC().Truncate(time.Second)
 	if _, err := store.db.ExecContext(ctx, `
 		INSERT INTO nodes (id, display_name, token_hash, status, country_code, home_probe_target_id, created_at, updated_at, last_seen_at)
-		VALUES ('hytron', 'Hytron', 'hash-for-test', 'online', 'HK', 'cloudflare', ?, ?, ?);
+		VALUES ('example-node-a', 'Example Node A', 'hash-for-test', 'online', 'HK', 'cloudflare', ?, ?, ?);
 	`, now.Unix(), now.Unix(), now.Unix()); err != nil {
 		t.Fatalf("insert node: %v", err)
 	}
@@ -770,26 +793,26 @@ func TestSQLiteBackedSummaryUsesConfiguredHomeLatencyTarget(t *testing.T) {
 		}
 		if _, err := store.db.ExecContext(ctx, `
 			INSERT INTO node_probe_targets (node_id, target_id, enabled)
-			VALUES ('hytron', ?, 1);
+			VALUES ('example-node-a', ?, 1);
 		`, target.id); err != nil {
 			t.Fatalf("insert node target %s: %v", target.id, err)
 		}
 	}
 	if _, err := store.db.ExecContext(ctx, `
 		INSERT INTO probe_rounds (node_id, target_id, ts, type, sent, received, loss_percent, min_ms, avg_ms, median_ms, max_ms, stddev_ms)
-		VALUES ('hytron', 'cloudflare', ?, 'ping', 3, 3, 0, 1.0, 1.1, 1.2, 1.3, 0.1);
+		VALUES ('example-node-a', 'cloudflare', ?, 'ping', 3, 3, 0, 1.0, 1.1, 1.2, 1.3, 0.1);
 	`, now.Add(-time.Minute).Unix()); err != nil {
 		t.Fatalf("insert cloudflare round: %v", err)
 	}
 	if _, err := store.db.ExecContext(ctx, `
 		INSERT INTO probe_rounds (node_id, target_id, ts, type, sent, received, loss_percent, min_ms, avg_ms, median_ms, max_ms, stddev_ms)
-		VALUES ('hytron', 'cloudflare', ?, 'ping', 3, 2, 33.3333333333333, 1.4, 1.5, 1.6, 1.7, 0.1);
+		VALUES ('example-node-a', 'cloudflare', ?, 'ping', 3, 2, 33.3333333333333, 1.4, 1.5, 1.6, 1.7, 0.1);
 	`, now.Add(-2*time.Minute).Unix()); err != nil {
 		t.Fatalf("insert lossy cloudflare round: %v", err)
 	}
 	if _, err := store.db.ExecContext(ctx, `
 		INSERT INTO probe_rounds (node_id, target_id, ts, type, sent, received, loss_percent, min_ms, avg_ms, median_ms, max_ms, stddev_ms)
-		VALUES ('hytron', 'google', ?, 'ping', 3, 3, 0, 8.0, 8.5, 8.8, 9.0, 0.2);
+		VALUES ('example-node-a', 'google', ?, 'ping', 3, 3, 0, 8.0, 8.5, 8.8, 9.0, 0.2);
 	`, now.Unix()); err != nil {
 		t.Fatalf("insert google round: %v", err)
 	}
@@ -824,7 +847,7 @@ func TestSQLiteBackedSummaryUsesConfiguredHomeLatencyTarget(t *testing.T) {
 	var configured, lossOnly *LatencySummary
 	for _, node := range summary.Nodes {
 		switch node.ID {
-		case "hytron":
+		case "example-node-a":
 			configured = node.LatencySummary
 		case "loss-only":
 			lossOnly = node.LatencySummary
@@ -849,13 +872,13 @@ func TestSQLiteBackedHandlerReturnsPersistedStateHistory(t *testing.T) {
 	defer store.Close()
 
 	ctx := context.Background()
-	if err := store.SeedPreviewData(ctx, PreviewSeedOptions{NodeID: "hytron", DisplayName: "Hytron", CountryCode: "HK", AgentToken: "test-agent-token"}); err != nil {
+	if err := store.SeedPreviewData(ctx, PreviewSeedOptions{NodeID: "example-node-a", DisplayName: "Example Node A", CountryCode: "HK", AgentToken: "test-agent-token"}); err != nil {
 		t.Fatalf("seed preview data: %v", err)
 	}
 	now := time.Now().UTC().Truncate(time.Second)
 	bucket := time.Unix((now.Unix()/180)*180, 0).UTC()
 	for offset, cpu := range []float64{12.5, 18.75} {
-		if err := store.InsertAgentState(ctx, "hytron", AgentStateRequest{
+		if err := store.InsertAgentState(ctx, "example-node-a", AgentStateRequest{
 			TS:               bucket.Add(time.Duration(offset-1) * 3 * time.Minute).Unix(),
 			CPUPercent:       cpu,
 			MemoryUsedBytes:  int64(3+offset) * 1024,
@@ -873,7 +896,7 @@ func TestSQLiteBackedHandlerReturnsPersistedStateHistory(t *testing.T) {
 	}
 
 	recorder := httptest.NewRecorder()
-	NewHandler(HandlerOptions{Store: store}).ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/api/public/v1/nodes/hytron/state?range=1h", nil))
+	NewHandler(HandlerOptions{Store: store}).ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/api/public/v1/nodes/example-node-a/state?range=1h", nil))
 	if recorder.Code != http.StatusOK {
 		t.Fatalf("status = %d, want 200; body=%s", recorder.Code, recorder.Body.String())
 	}
@@ -886,8 +909,8 @@ func TestSQLiteBackedHandlerReturnsPersistedStateHistory(t *testing.T) {
 	if err := json.NewDecoder(recorder.Body).Decode(&response); err != nil {
 		t.Fatalf("decode state response: %v", err)
 	}
-	if response.NodeID != "hytron" || response.Range != "1h" {
-		t.Fatalf("state response identity = %q/%q, want hytron/1h", response.NodeID, response.Range)
+	if response.NodeID != "example-node-a" || response.Range != "1h" {
+		t.Fatalf("state response identity = %q/%q, want example-node-a/1h", response.NodeID, response.Range)
 	}
 	if len(response.Points) != 2 {
 		t.Fatalf("state points len = %d, want 2", len(response.Points))
@@ -910,7 +933,7 @@ func TestSQLiteBackedSummaryMarksStaleAgentOffline(t *testing.T) {
 	staleSeenAt := now.Add(-10 * time.Minute).Unix()
 	if _, err := store.db.ExecContext(ctx, `
 		INSERT INTO nodes (id, display_name, token_hash, status, country_code, created_at, updated_at, last_seen_at)
-		VALUES ('hytron', 'Hytron', 'hash-for-test', 'online', 'HK', ?, ?, ?);
+		VALUES ('example-node-a', 'Example Node A', 'hash-for-test', 'online', 'HK', ?, ?, ?);
 	`, now.Unix(), now.Unix(), staleSeenAt); err != nil {
 		t.Fatalf("insert stale node: %v", err)
 	}
@@ -942,7 +965,7 @@ func TestSQLiteBackedSummaryUsesOfflineNotificationDuration(t *testing.T) {
 	seen45 := now.Add(-45 * time.Second).Unix()
 	if _, err := store.db.ExecContext(ctx, `
 		INSERT INTO nodes (id, display_name, token_hash, status, country_code, created_at, updated_at, last_seen_at)
-		VALUES ('hytron', 'Hytron', 'hash-for-test', 'online', 'HK', ?, ?, ?);
+		VALUES ('example-node-a', 'Example Node A', 'hash-for-test', 'online', 'HK', ?, ?, ?);
 	`, now.Unix(), now.Unix(), seen45); err != nil {
 		t.Fatalf("insert node: %v", err)
 	}
@@ -954,7 +977,7 @@ func TestSQLiteBackedSummaryUsesOfflineNotificationDuration(t *testing.T) {
 		t.Fatalf("summary nodes = %+v, want node online before configured 60s offline duration", summary.Nodes)
 	}
 	seen65 := now.Add(-65 * time.Second).Unix()
-	if _, err := store.db.ExecContext(ctx, `UPDATE nodes SET last_seen_at = ? WHERE id = 'hytron'`, seen65); err != nil {
+	if _, err := store.db.ExecContext(ctx, `UPDATE nodes SET last_seen_at = ? WHERE id = 'example-node-a'`, seen65); err != nil {
 		t.Fatalf("age node heartbeat: %v", err)
 	}
 	summary, err = store.Summary(ctx)
@@ -974,7 +997,7 @@ func TestSeedPreviewDataDoesNotFakeAgentOnlineStatus(t *testing.T) {
 	defer store.Close()
 
 	ctx := context.Background()
-	if err := store.SeedPreviewData(ctx, PreviewSeedOptions{NodeID: "hytron", DisplayName: "Hytron", CountryCode: "HK"}); err != nil {
+	if err := store.SeedPreviewData(ctx, PreviewSeedOptions{NodeID: "example-node-a", DisplayName: "Example Node A", CountryCode: "HK"}); err != nil {
 		t.Fatalf("seed preview data: %v", err)
 	}
 	summary, err := store.Summary(ctx)
@@ -988,10 +1011,10 @@ func TestSeedPreviewDataDoesNotFakeAgentOnlineStatus(t *testing.T) {
 		t.Fatalf("seed-only node status = %q, want no_data until an agent reports", summary.Nodes[0].Status)
 	}
 
-	if err := store.RecordAgentHeartbeat(ctx, "hytron", time.Now().UTC(), "online", "test-agent"); err != nil {
+	if err := store.RecordAgentHeartbeat(ctx, "example-node-a", time.Now().UTC(), "online", "test-agent"); err != nil {
 		t.Fatalf("record heartbeat: %v", err)
 	}
-	if err := store.SeedPreviewData(ctx, PreviewSeedOptions{NodeID: "hytron", DisplayName: "Hytron", CountryCode: "HK"}); err != nil {
+	if err := store.SeedPreviewData(ctx, PreviewSeedOptions{NodeID: "example-node-a", DisplayName: "Example Node A", CountryCode: "HK"}); err != nil {
 		t.Fatalf("seed preview data after heartbeat: %v", err)
 	}
 	summary, err = store.Summary(ctx)
@@ -1003,7 +1026,7 @@ func TestSeedPreviewDataDoesNotFakeAgentOnlineStatus(t *testing.T) {
 	}
 }
 
-func TestSeedPreviewDataIsIdempotentAndWiresHytronTargets(t *testing.T) {
+func TestSeedPreviewDataIsIdempotentAndWiresExampleNodeATargets(t *testing.T) {
 	store, err := OpenSQLiteStore(filepath.Join(t.TempDir(), "zeno.db"))
 	if err != nil {
 		t.Fatalf("open sqlite store: %v", err)
@@ -1012,7 +1035,7 @@ func TestSeedPreviewDataIsIdempotentAndWiresHytronTargets(t *testing.T) {
 
 	ctx := context.Background()
 	for i := 0; i < 2; i++ {
-		if err := store.SeedPreviewData(ctx, PreviewSeedOptions{NodeID: "hytron", DisplayName: "Hytron", CountryCode: "HK"}); err != nil {
+		if err := store.SeedPreviewData(ctx, PreviewSeedOptions{NodeID: "example-node-a", DisplayName: "Example Node A", CountryCode: "HK"}); err != nil {
 			t.Fatalf("seed preview data run %d: %v", i+1, err)
 		}
 	}
@@ -1022,18 +1045,18 @@ func TestSeedPreviewDataIsIdempotentAndWiresHytronTargets(t *testing.T) {
 		t.Fatalf("summary: %v", err)
 	}
 	if len(summary.Nodes) != 1 {
-		t.Fatalf("nodes len = %d, want 1 seeded hytron node", len(summary.Nodes))
+		t.Fatalf("nodes len = %d, want 1 seeded example-node-a node", len(summary.Nodes))
 	}
-	if summary.Nodes[0].ID != "hytron" || summary.Nodes[0].DisplayName != "Hytron" || summary.Nodes[0].CountryCode != "HK" {
-		t.Fatalf("seeded node = %+v, want hytron/HK", summary.Nodes[0])
+	if summary.Nodes[0].ID != "example-node-a" || summary.Nodes[0].DisplayName != "Example Node A" || summary.Nodes[0].CountryCode != "HK" {
+		t.Fatalf("seeded node = %+v, want example-node-a/HK", summary.Nodes[0])
 	}
 
-	targets, err := store.EnabledProbeTargets(ctx, "hytron")
+	targets, err := store.EnabledProbeTargets(ctx, "example-node-a")
 	if err != nil {
 		t.Fatalf("enabled probe targets: %v", err)
 	}
-	if len(targets) < 10 {
-		t.Fatalf("targets len = %d, want a useful preview target set", len(targets))
+	if len(targets) != len(DefaultPreviewProbeTargets()) || len(targets) < 3 {
+		t.Fatalf("targets len = %d, want complete safe preview target set", len(targets))
 	}
 	seen := map[string]bool{}
 	for _, target := range targets {
@@ -1051,7 +1074,7 @@ func TestSeedPreviewDataIsIdempotentAndWiresHytronTargets(t *testing.T) {
 			t.Fatalf("target %s has invalid probe settings: %+v", target.ID, target)
 		}
 	}
-	for _, id := range []string{"hytron-local", "google-dns", "telegram-dc5", "sharon", "hostdzire", "bage"} {
+	for _, id := range []string{"example-node-a-local", "google-dns", "cloudflare-dns", "telegram-dc5", "example-edge-a", "example-edge-b", "example-edge-c"} {
 		if !seen[id] {
 			t.Fatalf("missing seeded preview target %q; seen=%v", id, seen)
 		}
@@ -1065,7 +1088,7 @@ func TestEnabledProbeTargetsBoundsLegacyUnsafeConfigForDownlinkAndCollector(t *t
 	}
 	defer store.Close()
 	ctx := context.Background()
-	if err := store.SeedPreviewData(ctx, PreviewSeedOptions{NodeID: "hytron", DisplayName: "Hytron", CountryCode: "HK"}); err != nil {
+	if err := store.SeedPreviewData(ctx, PreviewSeedOptions{NodeID: "example-node-a", DisplayName: "Example Node A", CountryCode: "HK"}); err != nil {
 		t.Fatalf("seed preview data: %v", err)
 	}
 	now := time.Now().UTC().Unix()
@@ -1075,7 +1098,7 @@ func TestEnabledProbeTargetsBoundsLegacyUnsafeConfigForDownlinkAndCollector(t *t
 	`, now, now); err != nil {
 		t.Fatalf("insert unsafe legacy target: %v", err)
 	}
-	if _, err := store.db.ExecContext(ctx, `INSERT INTO node_probe_targets (node_id, target_id, enabled) VALUES ('hytron', 'unsafe-legacy', 1)`); err != nil {
+	if _, err := store.db.ExecContext(ctx, `INSERT INTO node_probe_targets (node_id, target_id, enabled) VALUES ('example-node-a', 'unsafe-legacy', 1)`); err != nil {
 		t.Fatalf("assign unsafe legacy target: %v", err)
 	}
 	for index := 0; index < 40; index++ {
@@ -1086,12 +1109,12 @@ func TestEnabledProbeTargetsBoundsLegacyUnsafeConfigForDownlinkAndCollector(t *t
 		`, targetID, targetID, 100+index, now, now); err != nil {
 			t.Fatalf("insert bulk legacy target %d: %v", index, err)
 		}
-		if _, err := store.db.ExecContext(ctx, `INSERT INTO node_probe_targets (node_id, target_id, enabled) VALUES ('hytron', ?, 1)`, targetID); err != nil {
+		if _, err := store.db.ExecContext(ctx, `INSERT INTO node_probe_targets (node_id, target_id, enabled) VALUES ('example-node-a', ?, 1)`, targetID); err != nil {
 			t.Fatalf("assign bulk legacy target %d: %v", index, err)
 		}
 	}
 
-	targets, err := store.EnabledProbeTargets(ctx, "hytron")
+	targets, err := store.EnabledProbeTargets(ctx, "example-node-a")
 	if err != nil {
 		t.Fatalf("enabled probe targets: %v", err)
 	}
@@ -1121,7 +1144,7 @@ func TestEnabledProbeTargetsBoundsLegacyUnsafeConfigForDownlinkAndCollector(t *t
 
 	collectedTargets := map[string]ProbeTarget{}
 	collector := NewLocalProbeCollector(store, LocalProbeCollectorOptions{
-		NodeID: "hytron",
+		NodeID: "example-node-a",
 		Now:    func() time.Time { return time.Now().UTC().Truncate(time.Second) },
 		ProbeRunner: func(ctx context.Context, target ProbeTarget) ([]probe.Sample, error) {
 			collectedTargets[target.ID] = target
@@ -1147,12 +1170,12 @@ func TestLocalProbeCollectorCollectOnceWritesRealRoundShape(t *testing.T) {
 	defer store.Close()
 
 	ctx := context.Background()
-	if err := store.SeedPreviewData(ctx, PreviewSeedOptions{NodeID: "hytron", DisplayName: "Hytron", CountryCode: "HK"}); err != nil {
+	if err := store.SeedPreviewData(ctx, PreviewSeedOptions{NodeID: "example-node-a", DisplayName: "Example Node A", CountryCode: "HK"}); err != nil {
 		t.Fatalf("seed preview data: %v", err)
 	}
 	now := time.Now().UTC().Truncate(time.Second)
 	collector := NewLocalProbeCollector(store, LocalProbeCollectorOptions{
-		NodeID: "hytron",
+		NodeID: "example-node-a",
 		Now: func() time.Time {
 			return now
 		},
@@ -1168,11 +1191,11 @@ func TestLocalProbeCollectorCollectOnceWritesRealRoundShape(t *testing.T) {
 		t.Fatalf("collect once: %v", err)
 	}
 
-	targets, err := store.EnabledProbeTargets(ctx, "hytron")
+	targets, err := store.EnabledProbeTargets(ctx, "example-node-a")
 	if err != nil {
 		t.Fatalf("enabled targets: %v", err)
 	}
-	latency, err := store.NodeLatency(ctx, "hytron", latencyWindow{Name: "1h", Samples: 36, Step: 2 * time.Minute})
+	latency, err := store.NodeLatency(ctx, "example-node-a", latencyWindow{Name: "1h", Samples: 36, Step: 2 * time.Minute})
 	if err != nil {
 		t.Fatalf("node latency: %v", err)
 	}

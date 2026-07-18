@@ -21,7 +21,7 @@ func TestAdminNodesRequiresAdminToken(t *testing.T) {
 		t.Fatalf("open sqlite store: %v", err)
 	}
 	defer store.Close()
-	if err := store.SeedPreviewData(context.Background(), PreviewSeedOptions{NodeID: "hytron", DisplayName: "Hytron", CountryCode: "HK", AgentToken: "test-agent-token"}); err != nil {
+	if err := store.SeedPreviewData(context.Background(), PreviewSeedOptions{NodeID: "example-node-a", DisplayName: "Example Node A", CountryCode: "HK", AgentToken: "test-agent-token"}); err != nil {
 		t.Fatalf("seed preview data: %v", err)
 	}
 
@@ -73,7 +73,7 @@ func TestAdminLoginCreatesSessionAndPasswordUpdateInvalidatesOldPassword(t *test
 		t.Fatalf("open sqlite store: %v", err)
 	}
 	defer store.Close()
-	if err := store.SeedPreviewData(context.Background(), PreviewSeedOptions{NodeID: "hytron", DisplayName: "Hytron", CountryCode: "HK", AgentToken: "test-agent-token"}); err != nil {
+	if err := store.SeedPreviewData(context.Background(), PreviewSeedOptions{NodeID: "example-node-a", DisplayName: "Example Node A", CountryCode: "HK", AgentToken: "test-agent-token"}); err != nil {
 		t.Fatalf("seed preview data: %v", err)
 	}
 	publicURL := "https://zeno.example.com"
@@ -193,7 +193,7 @@ func TestAdminSessionExpiresAfterOneDay(t *testing.T) {
 		t.Fatalf("open sqlite store: %v", err)
 	}
 	defer store.Close()
-	if err := store.SeedPreviewData(context.Background(), PreviewSeedOptions{NodeID: "hytron", DisplayName: "Hytron", CountryCode: "HK", AgentToken: "test-agent-token"}); err != nil {
+	if err := store.SeedPreviewData(context.Background(), PreviewSeedOptions{NodeID: "example-node-a", DisplayName: "Example Node A", CountryCode: "HK", AgentToken: "test-agent-token"}); err != nil {
 		t.Fatalf("seed preview data: %v", err)
 	}
 	handler := NewHandler(HandlerOptions{Store: store, AdminTokenHash: HashAdminToken("admin-pass")})
@@ -241,10 +241,10 @@ func TestAdminNodesListsEnabledAndDisabledNodesWithoutTokenHashes(t *testing.T) 
 	}
 	defer store.Close()
 	ctx := context.Background()
-	if err := store.SeedPreviewData(ctx, PreviewSeedOptions{NodeID: "hytron", DisplayName: "Hytron", CountryCode: "HK", AgentToken: "test-agent-token"}); err != nil {
+	if err := store.SeedPreviewData(ctx, PreviewSeedOptions{NodeID: "example-node-a", DisplayName: "Example Node A", CountryCode: "HK", AgentToken: "test-agent-token"}); err != nil {
 		t.Fatalf("seed preview data: %v", err)
 	}
-	if err := store.RecordAgentHeartbeat(ctx, "hytron", time.Now().UTC().Truncate(time.Second), "online", "agent-test"); err != nil {
+	if err := store.RecordAgentHeartbeat(ctx, "example-node-a", time.Now().UTC().Truncate(time.Second), "online", "agent-test"); err != nil {
 		t.Fatalf("record heartbeat: %v", err)
 	}
 	now := time.Now().UTC().Unix()
@@ -288,8 +288,8 @@ func TestAdminNodesListsEnabledAndDisabledNodesWithoutTokenHashes(t *testing.T) 
 	if response.Nodes[0].ID != "disabled-node" || !response.Nodes[0].Disabled {
 		t.Fatalf("first admin node = %+v, want disabled-node visible with disabled=true", response.Nodes[0])
 	}
-	if response.Nodes[1].ID != "hytron" || response.Nodes[1].DisplayName != "Hytron" || response.Nodes[1].Status != "online" || response.Nodes[1].CountryCode != "HK" || response.Nodes[1].LastSeenAt == nil || response.Nodes[1].AgentVersion != "agent-test" {
-		t.Fatalf("hytron admin node = %+v, want persisted management fields", response.Nodes[1])
+	if response.Nodes[1].ID != "example-node-a" || response.Nodes[1].DisplayName != "Example Node A" || response.Nodes[1].Status != "online" || response.Nodes[1].CountryCode != "HK" || response.Nodes[1].LastSeenAt == nil || response.Nodes[1].AgentVersion != "agent-test" {
+		t.Fatalf("example-node-a admin node = %+v, want persisted management fields", response.Nodes[1])
 	}
 }
 
@@ -300,13 +300,13 @@ func TestAdminNodePatchUpdatesEditableFieldsAndReturnsSafeDTO(t *testing.T) {
 	}
 	defer store.Close()
 	ctx := context.Background()
-	if err := store.SeedPreviewData(ctx, PreviewSeedOptions{NodeID: "hytron", DisplayName: "Hytron", CountryCode: "US", AgentToken: "test-agent-token"}); err != nil {
+	if err := store.SeedPreviewData(ctx, PreviewSeedOptions{NodeID: "example-node-a", DisplayName: "Example Node A", CountryCode: "US", AgentToken: "test-agent-token"}); err != nil {
 		t.Fatalf("seed preview data: %v", err)
 	}
 
 	recorder := httptest.NewRecorder()
-	request := httptest.NewRequest(http.MethodPatch, "/api/admin/v1/nodes/hytron", bytes.NewBufferString(`{
-		"display_name": "  Hytron Edited  ",
+	request := httptest.NewRequest(http.MethodPatch, "/api/admin/v1/nodes/example-node-a", bytes.NewBufferString(`{
+		"display_name": "  Example Node A Edited  ",
 		"country_code": " hk ",
 		"region": "  Hong Kong  ",
 		"billing_mode": "max",
@@ -340,7 +340,7 @@ func TestAdminNodePatchUpdatesEditableFieldsAndReturnsSafeDTO(t *testing.T) {
 	if err := json.NewDecoder(bytes.NewBufferString(raw)).Decode(&response); err != nil {
 		t.Fatalf("decode updated admin node: %v", err)
 	}
-	if response.Node.ID != "hytron" || response.Node.DisplayName != "Hytron Edited" || response.Node.Status != "disabled" || response.Node.CountryCode != "HK" || response.Node.Region != "Hong Kong" || !response.Node.Disabled || response.Node.BillingMode != "max" || response.Node.MonthlyResetDay != 15 || response.Node.MonthlyQuotaBytes != 123456789 {
+	if response.Node.ID != "example-node-a" || response.Node.DisplayName != "Example Node A Edited" || response.Node.Status != "disabled" || response.Node.CountryCode != "HK" || response.Node.Region != "Hong Kong" || !response.Node.Disabled || response.Node.BillingMode != "max" || response.Node.MonthlyResetDay != 15 || response.Node.MonthlyQuotaBytes != 123456789 {
 		t.Fatalf("updated admin node = %+v, want trimmed editable fields and disabled status", response.Node)
 	}
 
@@ -360,12 +360,12 @@ func TestAdminNodePatchReplacesProbeAssignmentsInOneRequest(t *testing.T) {
 	}
 	defer store.Close()
 	ctx := context.Background()
-	if err := store.SeedPreviewData(ctx, PreviewSeedOptions{NodeID: "hytron", DisplayName: "Hytron", CountryCode: "HK", AgentToken: "test-agent-token"}); err != nil {
+	if err := store.SeedPreviewData(ctx, PreviewSeedOptions{NodeID: "example-node-a", DisplayName: "Example Node A", CountryCode: "HK", AgentToken: "test-agent-token"}); err != nil {
 		t.Fatalf("seed preview data: %v", err)
 	}
 	if _, err := store.CreateAdminProbeTarget(ctx, AdminProbeTargetCreateRequest{
 		ID: "batch-target-a", Name: "Batch A", Type: "ping", Address: "1.1.1.1", Count: 3, TimeoutMS: 1000, IntervalSec: 30,
-		Assignments: []AdminProbeTargetAssignmentUpdate{{NodeID: "hytron", Enabled: true}},
+		Assignments: []AdminProbeTargetAssignmentUpdate{{NodeID: "example-node-a", Enabled: true}},
 	}); err != nil {
 		t.Fatalf("create assigned target: %v", err)
 	}
@@ -376,8 +376,8 @@ func TestAdminNodePatchReplacesProbeAssignmentsInOneRequest(t *testing.T) {
 	}
 
 	recorder := httptest.NewRecorder()
-	request := httptest.NewRequest(http.MethodPatch, "/api/admin/v1/nodes/hytron", bytes.NewBufferString(`{
-		"display_name":"Hytron Fast",
+	request := httptest.NewRequest(http.MethodPatch, "/api/admin/v1/nodes/example-node-a", bytes.NewBufferString(`{
+		"display_name":"Example Node A Fast",
 		"home_probe_target_id":"batch-target-b",
 		"probe_target_ids":["batch-target-b"]
 	}`))
@@ -387,7 +387,7 @@ func TestAdminNodePatchReplacesProbeAssignmentsInOneRequest(t *testing.T) {
 		t.Fatalf("status = %d, want 200; body=%s", recorder.Code, recorder.Body.String())
 	}
 
-	targets, err := store.EnabledProbeTargets(ctx, "hytron")
+	targets, err := store.EnabledProbeTargets(ctx, "example-node-a")
 	if err != nil {
 		t.Fatalf("enabled targets: %v", err)
 	}
@@ -398,7 +398,7 @@ func TestAdminNodePatchReplacesProbeAssignmentsInOneRequest(t *testing.T) {
 	if err != nil {
 		t.Fatalf("admin nodes: %v", err)
 	}
-	if len(nodes) != 1 || nodes[0].DisplayName != "Hytron Fast" || nodes[0].HomeProbeTargetID != "batch-target-b" {
+	if len(nodes) != 1 || nodes[0].DisplayName != "Example Node A Fast" || nodes[0].HomeProbeTargetID != "batch-target-b" {
 		t.Fatalf("updated node = %+v, want node fields and home target committed together", nodes)
 	}
 }
@@ -410,7 +410,7 @@ func TestAdminNodePatchRejectsHomeTargetOutsideBatchSelection(t *testing.T) {
 	}
 	defer store.Close()
 	ctx := context.Background()
-	if err := store.SeedPreviewData(ctx, PreviewSeedOptions{NodeID: "hytron", DisplayName: "Hytron", CountryCode: "HK", AgentToken: "test-agent-token"}); err != nil {
+	if err := store.SeedPreviewData(ctx, PreviewSeedOptions{NodeID: "example-node-a", DisplayName: "Example Node A", CountryCode: "HK", AgentToken: "test-agent-token"}); err != nil {
 		t.Fatalf("seed preview data: %v", err)
 	}
 	for _, target := range []AdminProbeTargetCreateRequest{
@@ -423,7 +423,7 @@ func TestAdminNodePatchRejectsHomeTargetOutsideBatchSelection(t *testing.T) {
 	}
 
 	recorder := httptest.NewRecorder()
-	request := httptest.NewRequest(http.MethodPatch, "/api/admin/v1/nodes/hytron", bytes.NewBufferString(`{
+	request := httptest.NewRequest(http.MethodPatch, "/api/admin/v1/nodes/example-node-a", bytes.NewBufferString(`{
 		"display_name":"Must Not Persist",
 		"home_probe_target_id":"batch-target-a",
 		"probe_target_ids":["batch-target-b"]
@@ -437,7 +437,7 @@ func TestAdminNodePatchRejectsHomeTargetOutsideBatchSelection(t *testing.T) {
 	if err != nil {
 		t.Fatalf("admin nodes: %v", err)
 	}
-	if len(nodes) != 1 || nodes[0].DisplayName != "Hytron" || nodes[0].HomeProbeTargetID != "" {
+	if len(nodes) != 1 || nodes[0].DisplayName != "Example Node A" || nodes[0].HomeProbeTargetID != "" {
 		t.Fatalf("invalid batch partially persisted node = %+v", nodes)
 	}
 }
@@ -449,7 +449,7 @@ func TestAdminNodeBillingIPAndDisplayOrderFieldsFlowThroughAdminAndPublicSummary
 	}
 	defer store.Close()
 	ctx := context.Background()
-	if err := store.SeedPreviewData(ctx, PreviewSeedOptions{NodeID: "hytron", DisplayName: "Hytron", CountryCode: "HK", AgentToken: "test-agent-token"}); err != nil {
+	if err := store.SeedPreviewData(ctx, PreviewSeedOptions{NodeID: "example-node-a", DisplayName: "Example Node A", CountryCode: "HK", AgentToken: "test-agent-token"}); err != nil {
 		t.Fatalf("seed preview data: %v", err)
 	}
 	handler := NewHandler(HandlerOptions{Store: store, AdminTokenHash: HashAdminToken("admin-pass")})
@@ -474,7 +474,7 @@ func TestAdminNodeBillingIPAndDisplayOrderFieldsFlowThroughAdminAndPublicSummary
 	}
 
 	patchRecorder := httptest.NewRecorder()
-	patchRequest := httptest.NewRequest(http.MethodPatch, "/api/admin/v1/nodes/hytron", bytes.NewBufferString(`{
+	patchRequest := httptest.NewRequest(http.MethodPatch, "/api/admin/v1/nodes/example-node-a", bytes.NewBufferString(`{
 		"expiry_date": "2026-08-01",
 		"billing_cycle": "月付",
 		"billing_mode": "max",
@@ -519,8 +519,8 @@ func TestAdminNodeBillingIPAndDisplayOrderFieldsFlowThroughAdminAndPublicSummary
 	if len(response.Nodes) != 2 {
 		t.Fatalf("nodes len = %d, want 2", len(response.Nodes))
 	}
-	if response.Nodes[0].ID != "hytron" || response.Nodes[0].DisplayOrder != 10 || response.Nodes[0].ExpiryDate != "2026-08-01" || response.Nodes[0].BillingCycle != "月付" || response.Nodes[0].BillingMode != "max" || response.Nodes[0].ResetDay != 15 || response.Nodes[0].PublicIPv4 != "198.51.100.8" || response.Nodes[0].PublicIPv6 != "2001:db8::8" {
-		t.Fatalf("hytron metadata = %+v, want edited billing/IP/order fields", response.Nodes[0])
+	if response.Nodes[0].ID != "example-node-a" || response.Nodes[0].DisplayOrder != 10 || response.Nodes[0].ExpiryDate != "2026-08-01" || response.Nodes[0].BillingCycle != "月付" || response.Nodes[0].BillingMode != "max" || response.Nodes[0].ResetDay != 15 || response.Nodes[0].PublicIPv4 != "198.51.100.8" || response.Nodes[0].PublicIPv6 != "2001:db8::8" {
+		t.Fatalf("example-node-a metadata = %+v, want edited billing/IP/order fields", response.Nodes[0])
 	}
 	if response.Nodes[1].ID != "backup" || response.Nodes[1].DisplayOrder != 30 || response.Nodes[1].BillingMode != "in" || response.Nodes[1].ResetDay != 10 {
 		t.Fatalf("second node = %+v, want display-order sorted backup", response.Nodes[1])
@@ -530,13 +530,13 @@ func TestAdminNodeBillingIPAndDisplayOrderFieldsFlowThroughAdminAndPublicSummary
 	if err != nil {
 		t.Fatalf("summary: %v", err)
 	}
-	if len(summary.Nodes) != 2 || summary.Nodes[0].ID != "hytron" || summary.Nodes[1].ID != "backup" {
+	if len(summary.Nodes) != 2 || summary.Nodes[0].ID != "example-node-a" || summary.Nodes[1].ID != "backup" {
 		t.Fatalf("summary nodes order = %+v, want display_order order", summary.Nodes)
 	}
-	expectedHytronExpiry := expiryLabelValue(sql.NullString{String: "2026-08-01", Valid: true}, sql.NullString{String: "月付", Valid: true}, false, time.Now())
+	expectedExampleNodeAExpiry := expiryLabelValue(sql.NullString{String: "2026-08-01", Valid: true}, sql.NullString{String: "月付", Valid: true}, false, time.Now())
 	expectedBackupExpiry := expiryLabelValue(sql.NullString{String: "2026-12-31", Valid: true}, sql.NullString{String: "年付", Valid: true}, false, time.Now())
-	if summary.Nodes[0].ExpiryLabel != expectedHytronExpiry || summary.Nodes[1].ExpiryLabel != expectedBackupExpiry {
-		t.Fatalf("summary expiry labels = %q/%q, want %q/%q", summary.Nodes[0].ExpiryLabel, summary.Nodes[1].ExpiryLabel, expectedHytronExpiry, expectedBackupExpiry)
+	if summary.Nodes[0].ExpiryLabel != expectedExampleNodeAExpiry || summary.Nodes[1].ExpiryLabel != expectedBackupExpiry {
+		t.Fatalf("summary expiry labels = %q/%q, want %q/%q", summary.Nodes[0].ExpiryLabel, summary.Nodes[1].ExpiryLabel, expectedExampleNodeAExpiry, expectedBackupExpiry)
 	}
 	expectedPeriod := billingPeriodFor(time.Now(), 15)
 	if summary.Nodes[0].BillingMode != "max" || summary.Nodes[0].MonthlyResetDay != 15 || summary.Nodes[0].MonthlyPeriodStart != expectedPeriod.StartDate || summary.Nodes[0].MonthlyPeriodEnd != expectedPeriod.EndDate {
@@ -550,7 +550,7 @@ func TestAdminNodePatchRefreshesCachedPublicSummaryImmediately(t *testing.T) {
 		t.Fatalf("open sqlite store: %v", err)
 	}
 	defer store.Close()
-	if err := store.SeedPreviewData(context.Background(), PreviewSeedOptions{NodeID: "hytron", DisplayName: "Hytron", CountryCode: "HK", AgentToken: "test-agent-token"}); err != nil {
+	if err := store.SeedPreviewData(context.Background(), PreviewSeedOptions{NodeID: "example-node-a", DisplayName: "Example Node A", CountryCode: "HK", AgentToken: "test-agent-token"}); err != nil {
 		t.Fatalf("seed preview data: %v", err)
 	}
 	handler := NewHandler(HandlerOptions{Store: store, AdminTokenHash: HashAdminToken("admin-pass")})
@@ -562,7 +562,7 @@ func TestAdminNodePatchRefreshesCachedPublicSummaryImmediately(t *testing.T) {
 	}
 
 	patchRecorder := httptest.NewRecorder()
-	patchRequest := httptest.NewRequest(http.MethodPatch, "/api/admin/v1/nodes/hytron", strings.NewReader(`{"expiry_date":"2026-09-09","monthly_quota_bytes":987654321}`))
+	patchRequest := httptest.NewRequest(http.MethodPatch, "/api/admin/v1/nodes/example-node-a", strings.NewReader(`{"expiry_date":"2026-09-09","monthly_quota_bytes":987654321}`))
 	patchRequest.Header.Set("X-Admin-Token", "admin-pass")
 	handler.ServeHTTP(patchRecorder, patchRequest)
 	if patchRecorder.Code != http.StatusOK {
@@ -596,7 +596,7 @@ func TestAdminNodePatchRejectsUnauthorizedUnknownAndInvalidRequests(t *testing.T
 	}
 	defer store.Close()
 	ctx := context.Background()
-	if err := store.SeedPreviewData(ctx, PreviewSeedOptions{NodeID: "hytron", DisplayName: "Hytron", CountryCode: "HK", AgentToken: "test-agent-token"}); err != nil {
+	if err := store.SeedPreviewData(ctx, PreviewSeedOptions{NodeID: "example-node-a", DisplayName: "Example Node A", CountryCode: "HK", AgentToken: "test-agent-token"}); err != nil {
 		t.Fatalf("seed preview data: %v", err)
 	}
 	handler := NewHandler(HandlerOptions{Store: store, AdminTokenHash: HashAdminToken("admin-pass")})
@@ -608,13 +608,13 @@ func TestAdminNodePatchRejectsUnauthorizedUnknownAndInvalidRequests(t *testing.T
 		adminToken string
 		wantStatus int
 	}{
-		{name: "missing token", nodeID: "hytron", body: `{"display_name":"Changed"}`, wantStatus: http.StatusUnauthorized},
+		{name: "missing token", nodeID: "example-node-a", body: `{"display_name":"Changed"}`, wantStatus: http.StatusUnauthorized},
 		{name: "unknown node", nodeID: "missing", body: `{"display_name":"Changed"}`, adminToken: "admin-pass", wantStatus: http.StatusNotFound},
-		{name: "blank display name", nodeID: "hytron", body: `{"display_name":"   "}`, adminToken: "admin-pass", wantStatus: http.StatusBadRequest},
-		{name: "negative monthly quota", nodeID: "hytron", body: `{"monthly_quota_bytes":-1}`, adminToken: "admin-pass", wantStatus: http.StatusBadRequest},
-		{name: "invalid billing mode", nodeID: "hytron", body: `{"billing_mode":"95th"}`, adminToken: "admin-pass", wantStatus: http.StatusBadRequest},
-		{name: "zero monthly reset day", nodeID: "hytron", body: `{"monthly_reset_day":0}`, adminToken: "admin-pass", wantStatus: http.StatusBadRequest},
-		{name: "invalid monthly reset day", nodeID: "hytron", body: `{"monthly_reset_day":32}`, adminToken: "admin-pass", wantStatus: http.StatusBadRequest},
+		{name: "blank display name", nodeID: "example-node-a", body: `{"display_name":"   "}`, adminToken: "admin-pass", wantStatus: http.StatusBadRequest},
+		{name: "negative monthly quota", nodeID: "example-node-a", body: `{"monthly_quota_bytes":-1}`, adminToken: "admin-pass", wantStatus: http.StatusBadRequest},
+		{name: "invalid billing mode", nodeID: "example-node-a", body: `{"billing_mode":"95th"}`, adminToken: "admin-pass", wantStatus: http.StatusBadRequest},
+		{name: "zero monthly reset day", nodeID: "example-node-a", body: `{"monthly_reset_day":0}`, adminToken: "admin-pass", wantStatus: http.StatusBadRequest},
+		{name: "invalid monthly reset day", nodeID: "example-node-a", body: `{"monthly_reset_day":32}`, adminToken: "admin-pass", wantStatus: http.StatusBadRequest},
 	}
 
 	for _, tc := range cases {
@@ -642,7 +642,7 @@ func TestAdminNodeDeleteRemovesNodeAndDependentData(t *testing.T) {
 	}
 	defer store.Close()
 	ctx := context.Background()
-	if err := store.SeedPreviewData(ctx, PreviewSeedOptions{NodeID: "hytron", DisplayName: "Hytron", CountryCode: "HK", AgentToken: "test-agent-token"}); err != nil {
+	if err := store.SeedPreviewData(ctx, PreviewSeedOptions{NodeID: "example-node-a", DisplayName: "Example Node A", CountryCode: "HK", AgentToken: "test-agent-token"}); err != nil {
 		t.Fatalf("seed preview data: %v", err)
 	}
 	if _, err := store.CreateAdminNode(ctx, AdminNodeCreateRequest{ID: "backup", DisplayName: "Backup", CountryCode: "US"}); err != nil {
@@ -675,7 +675,7 @@ func TestAdminNodeDeleteRemovesNodeAndDependentData(t *testing.T) {
 	}
 	roundResult, err := store.db.ExecContext(ctx, `
 		INSERT INTO probe_rounds (node_id, target_id, ts, type, sent, received, loss_percent)
-		VALUES ('backup', 'hytron-local', ?, 'tcping', 1, 1, 0)
+		VALUES ('backup', 'example-node-a-local', ?, 'tcping', 1, 1, 0)
 	`, now)
 	if err != nil {
 		t.Fatalf("seed backup probe round: %v", err)
@@ -766,7 +766,7 @@ func TestAdminNodeCreateAddsEditableNodeWithoutReturningSecrets(t *testing.T) {
 	}
 	defer store.Close()
 	ctx := context.Background()
-	if err := store.SeedPreviewData(ctx, PreviewSeedOptions{NodeID: "hytron", DisplayName: "Hytron", CountryCode: "HK", AgentToken: "test-agent-token"}); err != nil {
+	if err := store.SeedPreviewData(ctx, PreviewSeedOptions{NodeID: "example-node-a", DisplayName: "Example Node A", CountryCode: "HK", AgentToken: "test-agent-token"}); err != nil {
 		t.Fatalf("seed preview data: %v", err)
 	}
 
@@ -826,7 +826,7 @@ func TestAdminNodeInstallCommandIssuesOneTimeEnrollmentWithoutRotatingActiveAgen
 	}
 	defer store.Close()
 	ctx := context.Background()
-	if err := store.SeedPreviewData(ctx, PreviewSeedOptions{NodeID: "hytron", DisplayName: "Hytron", CountryCode: "HK", AgentToken: "old-agent-token"}); err != nil {
+	if err := store.SeedPreviewData(ctx, PreviewSeedOptions{NodeID: "example-node-a", DisplayName: "Example Node A", CountryCode: "HK", AgentToken: "old-agent-token"}); err != nil {
 		t.Fatalf("seed preview data: %v", err)
 	}
 	publicURL := "https://probe.example.com"
@@ -835,7 +835,7 @@ func TestAdminNodeInstallCommandIssuesOneTimeEnrollmentWithoutRotatingActiveAgen
 	}
 
 	recorder := httptest.NewRecorder()
-	request := httptest.NewRequest(http.MethodPost, "/api/admin/v1/nodes/hytron/install-command", nil)
+	request := httptest.NewRequest(http.MethodPost, "/api/admin/v1/nodes/example-node-a/install-command", nil)
 	request.Host = "probe.example.com"
 	request.Header.Set("X-Forwarded-Proto", "https")
 	request.Header.Set("X-Admin-Token", "admin-pass")
@@ -854,10 +854,10 @@ func TestAdminNodeInstallCommandIssuesOneTimeEnrollmentWithoutRotatingActiveAgen
 	if err := json.NewDecoder(bytes.NewBufferString(recorder.Body.String())).Decode(&response); err != nil {
 		t.Fatalf("decode install command: %v", err)
 	}
-	if response.NodeID != "hytron" {
-		t.Fatalf("node_id = %q, want hytron", response.NodeID)
+	if response.NodeID != "example-node-a" {
+		t.Fatalf("node_id = %q, want example-node-a", response.NodeID)
 	}
-	if !strings.Contains(response.Command, "https://zeno.shuijiao.de/agent/install.sh") || !strings.Contains(response.Command, "bash -o pipefail") || !strings.Contains(response.Command, "ZENO_CONTROLLER_URL='https://probe.example.com'") || !strings.Contains(response.Command, "ZENO_NODE_ID='hytron'") || !strings.Contains(response.Command, "ZENO_AGENT_VERSION='testsha'") {
+	if !strings.Contains(response.Command, "https://zeno.shuijiao.de/agent/install.sh") || !strings.Contains(response.Command, "bash -o pipefail") || !strings.Contains(response.Command, "ZENO_CONTROLLER_URL='https://probe.example.com'") || !strings.Contains(response.Command, "ZENO_NODE_ID='example-node-a'") || !strings.Contains(response.Command, "ZENO_AGENT_VERSION='testsha'") {
 		t.Fatalf("install command missing proxied installer, pipefail, controller URL, node id, or version: %s", response.Command)
 	}
 	if !strings.Contains(response.Commands["macos"], "https://zeno.shuijiao.de/agent/install.sh") || !strings.Contains(response.Commands["windows"], "https://zeno.shuijiao.de/agent/install.ps1") || !strings.Contains(response.Commands["windows"], "$env:ZENO_AGENT_VERSION='testsha'") {
@@ -873,11 +873,11 @@ func TestAdminNodeInstallCommandIssuesOneTimeEnrollmentWithoutRotatingActiveAgen
 	if credential == "old-agent-token" || credential == "" {
 		t.Fatalf("install command leaked or omitted enrollment credential: %q", credential)
 	}
-	allowed, err := store.AuthorizeAgent(ctx, "hytron", "old-agent-token")
+	allowed, err := store.AuthorizeAgent(ctx, "example-node-a", "old-agent-token")
 	if err != nil || !allowed {
 		t.Fatalf("existing runtime credential must remain active while enrollment is pending: allowed=%v err=%v", allowed, err)
 	}
-	allowed, err = store.AuthorizeAgent(ctx, "hytron", credential)
+	allowed, err = store.AuthorizeAgent(ctx, "example-node-a", credential)
 	if err != nil {
 		t.Fatalf("authorize enrollment credential as runtime: %v", err)
 	}
@@ -886,7 +886,7 @@ func TestAdminNodeInstallCommandIssuesOneTimeEnrollmentWithoutRotatingActiveAgen
 	}
 
 	secondRecorder := httptest.NewRecorder()
-	secondRequest := httptest.NewRequest(http.MethodPost, "/api/admin/v1/nodes/hytron/install-command", nil)
+	secondRequest := httptest.NewRequest(http.MethodPost, "/api/admin/v1/nodes/example-node-a/install-command", nil)
 	secondRequest.Host = "probe.example.com"
 	secondRequest.Header.Set("X-Forwarded-Proto", "https")
 	secondRequest.Header.Set("X-Admin-Token", "admin-pass")
@@ -904,17 +904,17 @@ func TestAdminNodeInstallCommandIssuesOneTimeEnrollmentWithoutRotatingActiveAgen
 	if secondCredential == credential || secondCredential == "" {
 		t.Fatalf("second command must supersede the first enrollment: first=%q second=%q", credential, secondCredential)
 	}
-	if err := store.RedeemAgentEnrollment(ctx, "hytron", credential, strings.Repeat("a", 64)); !errors.Is(err, errAgentEnrollmentUnavailable) {
+	if err := store.RedeemAgentEnrollment(ctx, "example-node-a", credential, strings.Repeat("a", 64)); !errors.Is(err, errAgentEnrollmentUnavailable) {
 		t.Fatalf("superseded enrollment redemption error = %v, want unavailable", err)
 	}
 	newRuntimeToken := strings.Repeat("b", 64)
-	if err := store.RedeemAgentEnrollment(ctx, "hytron", secondCredential, newRuntimeToken); err != nil {
+	if err := store.RedeemAgentEnrollment(ctx, "example-node-a", secondCredential, newRuntimeToken); err != nil {
 		t.Fatalf("redeem current enrollment: %v", err)
 	}
-	if allowed, err := store.AuthorizeAgent(ctx, "hytron", newRuntimeToken); err != nil || !allowed {
+	if allowed, err := store.AuthorizeAgent(ctx, "example-node-a", newRuntimeToken); err != nil || !allowed {
 		t.Fatalf("pending runtime credential should activate: allowed=%v err=%v", allowed, err)
 	}
-	if allowed, err := store.AuthorizeAgent(ctx, "hytron", "old-agent-token"); err != nil || allowed {
+	if allowed, err := store.AuthorizeAgent(ctx, "example-node-a", "old-agent-token"); err != nil || allowed {
 		t.Fatalf("old runtime credential should retire after activation: allowed=%v err=%v", allowed, err)
 	}
 }
@@ -925,12 +925,12 @@ func TestAdminNodeInstallCommandRejectsUnconfiguredRemoteHost(t *testing.T) {
 		t.Fatalf("open sqlite store: %v", err)
 	}
 	defer store.Close()
-	if err := store.SeedPreviewData(context.Background(), PreviewSeedOptions{NodeID: "hytron", DisplayName: "Hytron", AgentToken: "old-agent-token"}); err != nil {
+	if err := store.SeedPreviewData(context.Background(), PreviewSeedOptions{NodeID: "example-node-a", DisplayName: "Example Node A", AgentToken: "old-agent-token"}); err != nil {
 		t.Fatalf("seed preview data: %v", err)
 	}
 
 	recorder := httptest.NewRecorder()
-	request := httptest.NewRequest(http.MethodPost, "/api/admin/v1/nodes/hytron/install-command", nil)
+	request := httptest.NewRequest(http.MethodPost, "/api/admin/v1/nodes/example-node-a/install-command", nil)
 	request.Host = "attacker.example"
 	request.Header.Set("X-Forwarded-Proto", "https")
 	request.Header.Set("X-Admin-Token", "admin-pass")
@@ -951,7 +951,7 @@ func TestAdminNodeInstallCommandPrefersConfiguredAgentControllerURL(t *testing.T
 	}
 	defer store.Close()
 	ctx := context.Background()
-	if err := store.SeedPreviewData(ctx, PreviewSeedOptions{NodeID: "hytron", DisplayName: "Hytron", CountryCode: "HK", AgentToken: "old-agent-token"}); err != nil {
+	if err := store.SeedPreviewData(ctx, PreviewSeedOptions{NodeID: "example-node-a", DisplayName: "Example Node A", CountryCode: "HK", AgentToken: "old-agent-token"}); err != nil {
 		t.Fatalf("seed preview data: %v", err)
 	}
 	publicURL := "https://zeno.example.com"
@@ -960,7 +960,7 @@ func TestAdminNodeInstallCommandPrefersConfiguredAgentControllerURL(t *testing.T
 	}
 
 	recorder := httptest.NewRecorder()
-	request := httptest.NewRequest(http.MethodPost, "/api/admin/v1/nodes/hytron/install-command", nil)
+	request := httptest.NewRequest(http.MethodPost, "/api/admin/v1/nodes/example-node-a/install-command", nil)
 	request.Host = "admin.localhost:18980"
 	request.Header.Set("X-Forwarded-Proto", "http")
 	request.Header.Set("X-Admin-Token", "admin-pass")
@@ -993,12 +993,12 @@ func TestAdminNodeInstallCommandFallsBackToDirectIPAddressAndPort(t *testing.T) 
 		t.Fatalf("open sqlite store: %v", err)
 	}
 	defer store.Close()
-	if err := store.SeedPreviewData(context.Background(), PreviewSeedOptions{NodeID: "hytron", DisplayName: "Hytron", AgentToken: "old-agent-token"}); err != nil {
+	if err := store.SeedPreviewData(context.Background(), PreviewSeedOptions{NodeID: "example-node-a", DisplayName: "Example Node A", AgentToken: "old-agent-token"}); err != nil {
 		t.Fatalf("seed preview data: %v", err)
 	}
 
 	recorder := httptest.NewRecorder()
-	request := httptest.NewRequest(http.MethodPost, "/api/admin/v1/nodes/hytron/install-command", nil)
+	request := httptest.NewRequest(http.MethodPost, "/api/admin/v1/nodes/example-node-a/install-command", nil)
 	request.Host = "203.0.113.10:18980"
 	request.Header.Set("X-Forwarded-Proto", "http")
 	request.Header.Set("X-Admin-Token", "admin-pass")
@@ -1021,12 +1021,12 @@ func TestAdminNodeInstallCommandUsesAuthenticatedBrowserOriginWhenSettingIsEmpty
 		t.Fatalf("open sqlite store: %v", err)
 	}
 	defer store.Close()
-	if err := store.SeedPreviewData(context.Background(), PreviewSeedOptions{NodeID: "hytron", DisplayName: "Hytron", AgentToken: "old-agent-token"}); err != nil {
+	if err := store.SeedPreviewData(context.Background(), PreviewSeedOptions{NodeID: "example-node-a", DisplayName: "Example Node A", AgentToken: "old-agent-token"}); err != nil {
 		t.Fatalf("seed preview data: %v", err)
 	}
 
 	recorder := httptest.NewRecorder()
-	request := httptest.NewRequest(http.MethodPost, "/api/admin/v1/nodes/hytron/install-command", bytes.NewBufferString(`{"controller_url":"https://zeno.example.com"}`))
+	request := httptest.NewRequest(http.MethodPost, "/api/admin/v1/nodes/example-node-a/install-command", bytes.NewBufferString(`{"controller_url":"https://zeno.example.com"}`))
 	request.Host = "attacker.example"
 	request.Header.Set("Content-Type", "application/json")
 	request.Header.Set("X-Admin-Token", "admin-pass")
@@ -1064,7 +1064,7 @@ func TestAdminNodeInstallCommandRequiresAdminTokenAndKnownNode(t *testing.T) {
 		t.Fatalf("open sqlite store: %v", err)
 	}
 	defer store.Close()
-	if err := store.SeedPreviewData(context.Background(), PreviewSeedOptions{NodeID: "hytron", DisplayName: "Hytron", CountryCode: "HK", AgentToken: "test-agent-token"}); err != nil {
+	if err := store.SeedPreviewData(context.Background(), PreviewSeedOptions{NodeID: "example-node-a", DisplayName: "Example Node A", CountryCode: "HK", AgentToken: "test-agent-token"}); err != nil {
 		t.Fatalf("seed preview data: %v", err)
 	}
 	handler := NewHandler(HandlerOptions{Store: store, AdminTokenHash: HashAdminToken("admin-pass")})
@@ -1075,7 +1075,7 @@ func TestAdminNodeInstallCommandRequiresAdminTokenAndKnownNode(t *testing.T) {
 		adminToken string
 		wantStatus int
 	}{
-		{name: "missing admin token", nodeID: "hytron", wantStatus: http.StatusUnauthorized},
+		{name: "missing admin token", nodeID: "example-node-a", wantStatus: http.StatusUnauthorized},
 		{name: "unknown node", nodeID: "missing", adminToken: "admin-pass", wantStatus: http.StatusNotFound},
 	}
 	for _, tc := range cases {
@@ -1100,7 +1100,7 @@ func TestAdminProbeTargetsListsTargetsAndAssignmentsWithoutSecrets(t *testing.T)
 	}
 	defer store.Close()
 	ctx := context.Background()
-	if err := store.SeedPreviewData(ctx, PreviewSeedOptions{NodeID: "hytron", DisplayName: "Hytron", CountryCode: "HK", AgentToken: "agent-super-secret"}); err != nil {
+	if err := store.SeedPreviewData(ctx, PreviewSeedOptions{NodeID: "example-node-a", DisplayName: "Example Node A", CountryCode: "HK", AgentToken: "agent-super-secret"}); err != nil {
 		t.Fatalf("seed preview data: %v", err)
 	}
 	if _, err := store.db.ExecContext(ctx, `UPDATE probe_targets SET enabled = 0 WHERE id = 'google-dns'`); err != nil {
@@ -1182,12 +1182,12 @@ func TestAdminProbeTargetsListsTargetsAndAssignmentsWithoutSecrets(t *testing.T)
 			} `json:"assignments"`
 		}{}
 	}
-	hytron := findTarget("hytron-local")
-	if hytron.ID == "" || hytron.Name != "Hytron" || hytron.Type != "tcping" || hytron.Address != "127.0.0.1" || hytron.Port == nil || *hytron.Port != 18980 || hytron.Count != 3 || hytron.TimeoutMS != 1000 || hytron.IntervalSec != 30 || !hytron.Enabled {
-		t.Fatalf("hytron target = %+v, want full target config", hytron)
+	exampleNodeA := findTarget("example-node-a-local")
+	if exampleNodeA.ID == "" || exampleNodeA.Name != "Example Node A" || exampleNodeA.Type != "tcping" || exampleNodeA.Address != "192.0.2.1" || exampleNodeA.Port == nil || *exampleNodeA.Port != 443 || exampleNodeA.Count != 3 || exampleNodeA.TimeoutMS != 1000 || exampleNodeA.IntervalSec != 30 || !exampleNodeA.Enabled {
+		t.Fatalf("example-node-a target = %+v, want full target config", exampleNodeA)
 	}
-	if len(hytron.Assignments) != 1 || hytron.Assignments[0].NodeID != "hytron" || hytron.Assignments[0].NodeDisplayName != "Hytron" || !hytron.Assignments[0].Enabled {
-		t.Fatalf("hytron assignments = %+v, want enabled hytron assignment", hytron.Assignments)
+	if len(exampleNodeA.Assignments) != 1 || exampleNodeA.Assignments[0].NodeID != "example-node-a" || exampleNodeA.Assignments[0].NodeDisplayName != "Example Node A" || !exampleNodeA.Assignments[0].Enabled {
+		t.Fatalf("example-node-a assignments = %+v, want enabled example-node-a assignment", exampleNodeA.Assignments)
 	}
 	if google := findTarget("google-dns"); google.ID == "" || google.Enabled {
 		t.Fatalf("google-dns target = %+v, want disabled target still visible in admin inventory", google)
@@ -1201,7 +1201,7 @@ func TestAdminProbeTargetsReturnsEmptyAssignmentArrayForUnassignedTargets(t *tes
 	}
 	defer store.Close()
 	ctx := context.Background()
-	if err := store.SeedPreviewData(ctx, PreviewSeedOptions{NodeID: "hytron", DisplayName: "Hytron", CountryCode: "HK", AgentToken: "agent-super-secret"}); err != nil {
+	if err := store.SeedPreviewData(ctx, PreviewSeedOptions{NodeID: "example-node-a", DisplayName: "Example Node A", CountryCode: "HK", AgentToken: "agent-super-secret"}); err != nil {
 		t.Fatalf("seed preview data: %v", err)
 	}
 	if _, err := store.db.ExecContext(ctx, `DELETE FROM node_probe_targets WHERE target_id = 'google-dns'`); err != nil {
@@ -1243,7 +1243,7 @@ func TestAdminProbeTargetCreateDefaultsToNoAssignedServersWithoutSecrets(t *test
 	}
 	defer store.Close()
 	ctx := context.Background()
-	if err := store.SeedPreviewData(ctx, PreviewSeedOptions{NodeID: "hytron", DisplayName: "Hytron", CountryCode: "HK", AgentToken: "agent-super-secret"}); err != nil {
+	if err := store.SeedPreviewData(ctx, PreviewSeedOptions{NodeID: "example-node-a", DisplayName: "Example Node A", CountryCode: "HK", AgentToken: "agent-super-secret"}); err != nil {
 		t.Fatalf("seed preview data: %v", err)
 	}
 
@@ -1294,13 +1294,13 @@ func TestAdminProbeTargetCreateDefaultsToNoAssignedServersWithoutSecrets(t *test
 	if len(response.Target.Assignments) != 0 {
 		t.Fatalf("created target assignments = %+v, want no server enabled by default", response.Target.Assignments)
 	}
-	targets, err := store.EnabledProbeTargets(ctx, "hytron")
+	targets, err := store.EnabledProbeTargets(ctx, "example-node-a")
 	if err != nil {
 		t.Fatalf("enabled probe targets: %v", err)
 	}
 	for _, target := range targets {
 		if target.ID == response.Target.ID {
-			t.Fatalf("created target %q unexpectedly assigned to hytron enabled target set", response.Target.ID)
+			t.Fatalf("created target %q unexpectedly assigned to example-node-a enabled target set", response.Target.ID)
 		}
 	}
 }
@@ -1312,7 +1312,7 @@ func TestAdminProbeTargetCreateAcceptsExplicitServerAssignments(t *testing.T) {
 	}
 	defer store.Close()
 	ctx := context.Background()
-	if err := store.SeedPreviewData(ctx, PreviewSeedOptions{NodeID: "hytron", DisplayName: "Hytron", CountryCode: "HK", AgentToken: "agent-super-secret"}); err != nil {
+	if err := store.SeedPreviewData(ctx, PreviewSeedOptions{NodeID: "example-node-a", DisplayName: "Example Node A", CountryCode: "HK", AgentToken: "agent-super-secret"}); err != nil {
 		t.Fatalf("seed preview data: %v", err)
 	}
 
@@ -1324,7 +1324,7 @@ func TestAdminProbeTargetCreateAcceptsExplicitServerAssignments(t *testing.T) {
 		"count": 2,
 		"timeout_ms": 1500,
 		"interval_sec": 30,
-		"assignments": [{"node_id":"hytron","enabled":true}]
+		"assignments": [{"node_id":"example-node-a","enabled":true}]
 	}`))
 	request.Header.Set("X-Admin-Token", "admin-pass")
 	NewHandler(HandlerOptions{Store: store, AdminTokenHash: HashAdminToken("admin-pass")}).ServeHTTP(recorder, request)
@@ -1344,10 +1344,10 @@ func TestAdminProbeTargetCreateAcceptsExplicitServerAssignments(t *testing.T) {
 	if err := json.NewDecoder(bytes.NewBufferString(recorder.Body.String())).Decode(&response); err != nil {
 		t.Fatalf("decode created target: %v", err)
 	}
-	if len(response.Target.Assignments) != 1 || response.Target.Assignments[0].NodeID != "hytron" || !response.Target.Assignments[0].Enabled {
-		t.Fatalf("created assignments = %+v, want explicit hytron enabled", response.Target.Assignments)
+	if len(response.Target.Assignments) != 1 || response.Target.Assignments[0].NodeID != "example-node-a" || !response.Target.Assignments[0].Enabled {
+		t.Fatalf("created assignments = %+v, want explicit example-node-a enabled", response.Target.Assignments)
 	}
-	targets, err := store.EnabledProbeTargets(ctx, "hytron")
+	targets, err := store.EnabledProbeTargets(ctx, "example-node-a")
 	if err != nil {
 		t.Fatalf("enabled probe targets: %v", err)
 	}
@@ -1358,7 +1358,7 @@ func TestAdminProbeTargetCreateAcceptsExplicitServerAssignments(t *testing.T) {
 		}
 	}
 	if !found {
-		t.Fatalf("created target %q not assigned to hytron enabled target set", response.Target.ID)
+		t.Fatalf("created target %q not assigned to example-node-a enabled target set", response.Target.ID)
 	}
 }
 
@@ -1369,7 +1369,7 @@ func TestAdminProbeTargetCreateAcceptsPingWithoutPort(t *testing.T) {
 	}
 	defer store.Close()
 	ctx := context.Background()
-	if err := store.SeedPreviewData(ctx, PreviewSeedOptions{NodeID: "hytron", DisplayName: "Hytron", CountryCode: "HK", AgentToken: "agent-super-secret"}); err != nil {
+	if err := store.SeedPreviewData(ctx, PreviewSeedOptions{NodeID: "example-node-a", DisplayName: "Example Node A", CountryCode: "HK", AgentToken: "agent-super-secret"}); err != nil {
 		t.Fatalf("seed preview data: %v", err)
 	}
 
@@ -1415,7 +1415,7 @@ func TestAdminProbeTargetCreateAcceptsPingWithoutPort(t *testing.T) {
 	if len(response.Target.Assignments) != 0 {
 		t.Fatalf("created ping assignments = %+v, want no server enabled by default", response.Target.Assignments)
 	}
-	targets, err := store.EnabledProbeTargets(ctx, "hytron")
+	targets, err := store.EnabledProbeTargets(ctx, "example-node-a")
 	if err != nil {
 		t.Fatalf("enabled probe targets: %v", err)
 	}
@@ -1429,7 +1429,7 @@ func TestAdminProbeTargetCreateAcceptsPingWithoutPort(t *testing.T) {
 		}
 	}
 	if found {
-		t.Fatalf("created ping target %q unexpectedly assigned to hytron enabled target set", response.Target.ID)
+		t.Fatalf("created ping target %q unexpectedly assigned to example-node-a enabled target set", response.Target.ID)
 	}
 }
 
@@ -1440,7 +1440,7 @@ func TestAdminProbeTargetCreateAcceptsHTTPGETWithoutPort(t *testing.T) {
 	}
 	defer store.Close()
 	ctx := context.Background()
-	if err := store.SeedPreviewData(ctx, PreviewSeedOptions{NodeID: "hytron", DisplayName: "Hytron", CountryCode: "HK", AgentToken: "agent-super-secret"}); err != nil {
+	if err := store.SeedPreviewData(ctx, PreviewSeedOptions{NodeID: "example-node-a", DisplayName: "Example Node A", CountryCode: "HK", AgentToken: "agent-super-secret"}); err != nil {
 		t.Fatalf("seed preview data: %v", err)
 	}
 
@@ -1486,7 +1486,7 @@ func TestAdminProbeTargetCreateAcceptsHTTPGETWithoutPort(t *testing.T) {
 	if len(response.Target.Assignments) != 0 {
 		t.Fatalf("created http_get assignments = %+v, want no server enabled by default", response.Target.Assignments)
 	}
-	targets, err := store.EnabledProbeTargets(ctx, "hytron")
+	targets, err := store.EnabledProbeTargets(ctx, "example-node-a")
 	if err != nil {
 		t.Fatalf("enabled probe targets: %v", err)
 	}
@@ -1500,7 +1500,7 @@ func TestAdminProbeTargetCreateAcceptsHTTPGETWithoutPort(t *testing.T) {
 		}
 	}
 	if found {
-		t.Fatalf("created http_get target %q unexpectedly assigned to hytron enabled target set", response.Target.ID)
+		t.Fatalf("created http_get target %q unexpectedly assigned to example-node-a enabled target set", response.Target.ID)
 	}
 }
 
@@ -1511,12 +1511,12 @@ func TestAdminProbeTargetPatchCanSwitchToPingAndClearPort(t *testing.T) {
 	}
 	defer store.Close()
 	ctx := context.Background()
-	if err := store.SeedPreviewData(ctx, PreviewSeedOptions{NodeID: "hytron", DisplayName: "Hytron", CountryCode: "HK", AgentToken: "agent-super-secret"}); err != nil {
+	if err := store.SeedPreviewData(ctx, PreviewSeedOptions{NodeID: "example-node-a", DisplayName: "Example Node A", CountryCode: "HK", AgentToken: "agent-super-secret"}); err != nil {
 		t.Fatalf("seed preview data: %v", err)
 	}
 
 	recorder := httptest.NewRecorder()
-	request := httptest.NewRequest(http.MethodPatch, "/api/admin/v1/probe-targets/hytron-local", bytes.NewBufferString(`{
+	request := httptest.NewRequest(http.MethodPatch, "/api/admin/v1/probe-targets/example-node-a-local", bytes.NewBufferString(`{
 		"type": "icmp",
 		"address": "  1.1.1.1  "
 	}`))
@@ -1538,15 +1538,15 @@ func TestAdminProbeTargetPatchCanSwitchToPingAndClearPort(t *testing.T) {
 	if err := json.NewDecoder(bytes.NewBufferString(recorder.Body.String())).Decode(&response); err != nil {
 		t.Fatalf("decode updated ping target: %v", err)
 	}
-	if response.Target.ID != "hytron-local" || response.Target.Type != "ping" || response.Target.Address != "1.1.1.1" || response.Target.Port != nil {
+	if response.Target.ID != "example-node-a-local" || response.Target.Type != "ping" || response.Target.Address != "1.1.1.1" || response.Target.Port != nil {
 		t.Fatalf("updated target = %+v, want ping target with cleared port", response.Target)
 	}
-	targets, err := store.EnabledProbeTargets(ctx, "hytron")
+	targets, err := store.EnabledProbeTargets(ctx, "example-node-a")
 	if err != nil {
 		t.Fatalf("enabled probe targets: %v", err)
 	}
 	for _, target := range targets {
-		if target.ID == "hytron-local" && (target.Type != "ping" || target.Port != nil) {
+		if target.ID == "example-node-a-local" && (target.Type != "ping" || target.Port != nil) {
 			t.Fatalf("agent target = %+v, want ping target without port", target)
 		}
 	}
@@ -1559,12 +1559,12 @@ func TestAdminProbeTargetPatchCanSwitchToHTTPGETAndClearPort(t *testing.T) {
 	}
 	defer store.Close()
 	ctx := context.Background()
-	if err := store.SeedPreviewData(ctx, PreviewSeedOptions{NodeID: "hytron", DisplayName: "Hytron", CountryCode: "HK", AgentToken: "agent-super-secret"}); err != nil {
+	if err := store.SeedPreviewData(ctx, PreviewSeedOptions{NodeID: "example-node-a", DisplayName: "Example Node A", CountryCode: "HK", AgentToken: "agent-super-secret"}); err != nil {
 		t.Fatalf("seed preview data: %v", err)
 	}
 
 	recorder := httptest.NewRecorder()
-	request := httptest.NewRequest(http.MethodPatch, "/api/admin/v1/probe-targets/hytron-local", bytes.NewBufferString(`{
+	request := httptest.NewRequest(http.MethodPatch, "/api/admin/v1/probe-targets/example-node-a-local", bytes.NewBufferString(`{
 		"type": "http_get",
 		"address": "  https://example.com/health  "
 	}`))
@@ -1586,15 +1586,15 @@ func TestAdminProbeTargetPatchCanSwitchToHTTPGETAndClearPort(t *testing.T) {
 	if err := json.NewDecoder(bytes.NewBufferString(recorder.Body.String())).Decode(&response); err != nil {
 		t.Fatalf("decode updated http_get target: %v", err)
 	}
-	if response.Target.ID != "hytron-local" || response.Target.Type != "http_get" || response.Target.Address != "https://example.com/health" || response.Target.Port != nil {
+	if response.Target.ID != "example-node-a-local" || response.Target.Type != "http_get" || response.Target.Address != "https://example.com/health" || response.Target.Port != nil {
 		t.Fatalf("updated target = %+v, want http_get target with cleared port", response.Target)
 	}
-	targets, err := store.EnabledProbeTargets(ctx, "hytron")
+	targets, err := store.EnabledProbeTargets(ctx, "example-node-a")
 	if err != nil {
 		t.Fatalf("enabled probe targets: %v", err)
 	}
 	for _, target := range targets {
-		if target.ID == "hytron-local" && (target.Type != "http_get" || target.Port != nil) {
+		if target.ID == "example-node-a-local" && (target.Type != "http_get" || target.Port != nil) {
 			t.Fatalf("agent target = %+v, want http_get target without port", target)
 		}
 	}
@@ -1606,12 +1606,12 @@ func TestAdminProbeTargetPatchRejectsHTTPGETWithoutFullURL(t *testing.T) {
 		t.Fatalf("open sqlite store: %v", err)
 	}
 	defer store.Close()
-	if err := store.SeedPreviewData(context.Background(), PreviewSeedOptions{NodeID: "hytron", DisplayName: "Hytron", CountryCode: "HK", AgentToken: "agent-super-secret"}); err != nil {
+	if err := store.SeedPreviewData(context.Background(), PreviewSeedOptions{NodeID: "example-node-a", DisplayName: "Example Node A", CountryCode: "HK", AgentToken: "agent-super-secret"}); err != nil {
 		t.Fatalf("seed preview data: %v", err)
 	}
 
 	recorder := httptest.NewRecorder()
-	request := httptest.NewRequest(http.MethodPatch, "/api/admin/v1/probe-targets/hytron-local", bytes.NewBufferString(`{
+	request := httptest.NewRequest(http.MethodPatch, "/api/admin/v1/probe-targets/example-node-a-local", bytes.NewBufferString(`{
 		"type": "http_get"
 	}`))
 	request.Header.Set("X-Admin-Token", "admin-pass")
@@ -1629,12 +1629,12 @@ func TestAdminProbeTargetPatchUpdatesEditableFieldsAndAffectsAgentTargets(t *tes
 	}
 	defer store.Close()
 	ctx := context.Background()
-	if err := store.SeedPreviewData(ctx, PreviewSeedOptions{NodeID: "hytron", DisplayName: "Hytron", CountryCode: "HK", AgentToken: "agent-super-secret"}); err != nil {
+	if err := store.SeedPreviewData(ctx, PreviewSeedOptions{NodeID: "example-node-a", DisplayName: "Example Node A", CountryCode: "HK", AgentToken: "agent-super-secret"}); err != nil {
 		t.Fatalf("seed preview data: %v", err)
 	}
 
 	recorder := httptest.NewRecorder()
-	request := httptest.NewRequest(http.MethodPatch, "/api/admin/v1/probe-targets/hytron-local", bytes.NewBufferString(`{
+	request := httptest.NewRequest(http.MethodPatch, "/api/admin/v1/probe-targets/example-node-a-local", bytes.NewBufferString(`{
 		"name": "  Local Controller  ",
 		"address": "  127.0.0.1  ",
 		"port": 18981,
@@ -1669,15 +1669,15 @@ func TestAdminProbeTargetPatchUpdatesEditableFieldsAndAffectsAgentTargets(t *tes
 	if err := json.NewDecoder(bytes.NewBufferString(raw)).Decode(&response); err != nil {
 		t.Fatalf("decode updated target: %v", err)
 	}
-	if response.Target.ID != "hytron-local" || response.Target.Name != "Local Controller" || response.Target.Address != "127.0.0.1" || response.Target.Port != 18981 || response.Target.Count != 4 || response.Target.TimeoutMS != 900 || response.Target.IntervalSec != 30 || response.Target.Enabled {
+	if response.Target.ID != "example-node-a-local" || response.Target.Name != "Local Controller" || response.Target.Address != "127.0.0.1" || response.Target.Port != 18981 || response.Target.Count != 4 || response.Target.TimeoutMS != 900 || response.Target.IntervalSec != 30 || response.Target.Enabled {
 		t.Fatalf("updated target = %+v, want edited disabled target", response.Target)
 	}
-	targets, err := store.EnabledProbeTargets(ctx, "hytron")
+	targets, err := store.EnabledProbeTargets(ctx, "example-node-a")
 	if err != nil {
 		t.Fatalf("enabled probe targets: %v", err)
 	}
 	for _, target := range targets {
-		if target.ID == "hytron-local" {
+		if target.ID == "example-node-a-local" {
 			t.Fatalf("disabled target should be removed from agent target set, got %+v", target)
 		}
 	}
@@ -1690,7 +1690,7 @@ func TestAdminProbeTargetPatchUpdatesNodeAssignments(t *testing.T) {
 	}
 	defer store.Close()
 	ctx := context.Background()
-	if err := store.SeedPreviewData(ctx, PreviewSeedOptions{NodeID: "hytron", DisplayName: "Hytron", CountryCode: "HK", AgentToken: "agent-super-secret"}); err != nil {
+	if err := store.SeedPreviewData(ctx, PreviewSeedOptions{NodeID: "example-node-a", DisplayName: "Example Node A", CountryCode: "HK", AgentToken: "agent-super-secret"}); err != nil {
 		t.Fatalf("seed preview data: %v", err)
 	}
 	if _, err := store.CreateAdminNode(ctx, AdminNodeCreateRequest{ID: "backup", DisplayName: "Backup", CountryCode: "US"}); err != nil {
@@ -1698,9 +1698,9 @@ func TestAdminProbeTargetPatchUpdatesNodeAssignments(t *testing.T) {
 	}
 
 	recorder := httptest.NewRecorder()
-	request := httptest.NewRequest(http.MethodPatch, "/api/admin/v1/probe-targets/hytron-local", bytes.NewBufferString(`{
+	request := httptest.NewRequest(http.MethodPatch, "/api/admin/v1/probe-targets/example-node-a-local", bytes.NewBufferString(`{
 		"assignments": [
-			{"node_id": "hytron", "enabled": false},
+			{"node_id": "example-node-a", "enabled": false},
 			{"node_id": "backup", "enabled": true}
 		]
 	}`))
@@ -1727,24 +1727,24 @@ func TestAdminProbeTargetPatchUpdatesNodeAssignments(t *testing.T) {
 	if err := json.NewDecoder(bytes.NewBufferString(raw)).Decode(&response); err != nil {
 		t.Fatalf("decode updated target assignments: %v", err)
 	}
-	if response.Target.ID != "hytron-local" {
-		t.Fatalf("target id = %q, want hytron-local", response.Target.ID)
+	if response.Target.ID != "example-node-a-local" {
+		t.Fatalf("target id = %q, want example-node-a-local", response.Target.ID)
 	}
 	assignmentEnabled := map[string]bool{}
 	for _, assignment := range response.Target.Assignments {
 		assignmentEnabled[assignment.NodeID] = assignment.Enabled
 	}
-	if assignmentEnabled["hytron"] || !assignmentEnabled["backup"] {
-		t.Fatalf("assignments = %+v, want hytron disabled and backup enabled", response.Target.Assignments)
+	if assignmentEnabled["example-node-a"] || !assignmentEnabled["backup"] {
+		t.Fatalf("assignments = %+v, want example-node-a disabled and backup enabled", response.Target.Assignments)
 	}
 
-	hytronTargets, err := store.EnabledProbeTargets(ctx, "hytron")
+	exampleNodeATargets, err := store.EnabledProbeTargets(ctx, "example-node-a")
 	if err != nil {
-		t.Fatalf("hytron enabled probe targets: %v", err)
+		t.Fatalf("example-node-a enabled probe targets: %v", err)
 	}
-	for _, target := range hytronTargets {
-		if target.ID == "hytron-local" {
-			t.Fatalf("hytron-local should be removed from hytron agent targets after assignment disable")
+	for _, target := range exampleNodeATargets {
+		if target.ID == "example-node-a-local" {
+			t.Fatalf("example-node-a-local should be removed from example-node-a agent targets after assignment disable")
 		}
 	}
 	backupTargets, err := store.EnabledProbeTargets(ctx, "backup")
@@ -1753,12 +1753,12 @@ func TestAdminProbeTargetPatchUpdatesNodeAssignments(t *testing.T) {
 	}
 	backupHasTarget := false
 	for _, target := range backupTargets {
-		if target.ID == "hytron-local" {
+		if target.ID == "example-node-a-local" {
 			backupHasTarget = true
 		}
 	}
 	if !backupHasTarget {
-		t.Fatalf("hytron-local should remain enabled for backup agent targets")
+		t.Fatalf("example-node-a-local should remain enabled for backup agent targets")
 	}
 }
 
@@ -1769,12 +1769,12 @@ func TestAdminProbeTargetDisplayOrderControlsInventoryAndAgentOrder(t *testing.T
 	}
 	defer store.Close()
 	ctx := context.Background()
-	if err := store.SeedPreviewData(ctx, PreviewSeedOptions{NodeID: "hytron", DisplayName: "Hytron", CountryCode: "HK", AgentToken: "agent-super-secret"}); err != nil {
+	if err := store.SeedPreviewData(ctx, PreviewSeedOptions{NodeID: "example-node-a", DisplayName: "Example Node A", CountryCode: "HK", AgentToken: "agent-super-secret"}); err != nil {
 		t.Fatalf("seed preview data: %v", err)
 	}
 
 	handler := NewHandler(HandlerOptions{Store: store, AdminTokenHash: HashAdminToken("admin-pass")})
-	for targetID, order := range map[string]int{"google-dns": 5, "hytron-local": 250} {
+	for targetID, order := range map[string]int{"google-dns": 5, "example-node-a-local": 250} {
 		recorder := httptest.NewRecorder()
 		request := httptest.NewRequest(http.MethodPatch, "/api/admin/v1/probe-targets/"+targetID, bytes.NewBufferString(fmt.Sprintf(`{"display_order": %d}`, order)))
 		request.Header.Set("X-Admin-Token", "admin-pass")
@@ -1805,7 +1805,7 @@ func TestAdminProbeTargetDisplayOrderControlsInventoryAndAgentOrder(t *testing.T
 		t.Fatalf("first admin target = %+v, want google-dns display_order 5", listResponse.Targets)
 	}
 
-	agentTargets, err := store.EnabledProbeTargets(ctx, "hytron")
+	agentTargets, err := store.EnabledProbeTargets(ctx, "example-node-a")
 	if err != nil {
 		t.Fatalf("enabled probe targets: %v", err)
 	}
@@ -1821,21 +1821,21 @@ func TestAdminProbeTargetDeleteRemovesTargetAndAssignments(t *testing.T) {
 	}
 	defer store.Close()
 	ctx := context.Background()
-	if err := store.SeedPreviewData(ctx, PreviewSeedOptions{NodeID: "hytron", DisplayName: "Hytron", CountryCode: "HK", AgentToken: "agent-super-secret"}); err != nil {
+	if err := store.SeedPreviewData(ctx, PreviewSeedOptions{NodeID: "example-node-a", DisplayName: "Example Node A", CountryCode: "HK", AgentToken: "agent-super-secret"}); err != nil {
 		t.Fatalf("seed preview data: %v", err)
 	}
 	if _, err := store.CreateAdminNode(ctx, AdminNodeCreateRequest{ID: "backup", DisplayName: "Backup", CountryCode: "US"}); err != nil {
 		t.Fatalf("create backup node: %v", err)
 	}
-	if _, err := store.UpdateAdminProbeTarget(ctx, "hytron-local", AdminProbeTargetUpdateRequest{Assignments: []AdminProbeTargetAssignmentUpdate{
-		{NodeID: "hytron", Enabled: true},
+	if _, err := store.UpdateAdminProbeTarget(ctx, "example-node-a-local", AdminProbeTargetUpdateRequest{Assignments: []AdminProbeTargetAssignmentUpdate{
+		{NodeID: "example-node-a", Enabled: true},
 		{NodeID: "backup", Enabled: true},
 	}}); err != nil {
 		t.Fatalf("seed assignments: %v", err)
 	}
 	roundResult, err := store.db.ExecContext(ctx, `
 		INSERT INTO probe_rounds (node_id, target_id, ts, type, sent, received, loss_percent)
-		VALUES ('hytron', 'hytron-local', ?, 'tcping', 1, 1, 0)
+		VALUES ('example-node-a', 'example-node-a-local', ?, 'tcping', 1, 1, 0)
 	`, time.Now().UTC().Unix())
 	if err != nil {
 		t.Fatalf("seed probe round: %v", err)
@@ -1852,7 +1852,7 @@ func TestAdminProbeTargetDeleteRemovesTargetAndAssignments(t *testing.T) {
 	}
 
 	recorder := httptest.NewRecorder()
-	request := httptest.NewRequest(http.MethodDelete, "/api/admin/v1/probe-targets/hytron-local", nil)
+	request := httptest.NewRequest(http.MethodDelete, "/api/admin/v1/probe-targets/example-node-a-local", nil)
 	request.Header.Set("X-Admin-Token", "admin-pass")
 	NewHandler(HandlerOptions{Store: store, AdminTokenHash: HashAdminToken("admin-pass")}).ServeHTTP(recorder, request)
 
@@ -1867,24 +1867,24 @@ func TestAdminProbeTargetDeleteRemovesTargetAndAssignments(t *testing.T) {
 		t.Fatalf("admin targets after delete: %v", err)
 	}
 	for _, target := range targets {
-		if target.ID == "hytron-local" {
+		if target.ID == "example-node-a-local" {
 			t.Fatalf("deleted target still visible in admin inventory: %+v", target)
 		}
 	}
-	for _, nodeID := range []string{"hytron", "backup"} {
+	for _, nodeID := range []string{"example-node-a", "backup"} {
 		enabledTargets, err := store.EnabledProbeTargets(ctx, nodeID)
 		if err != nil {
 			t.Fatalf("enabled targets for %s after delete: %v", nodeID, err)
 		}
 		for _, target := range enabledTargets {
-			if target.ID == "hytron-local" {
+			if target.ID == "example-node-a-local" {
 				t.Fatalf("deleted target still assigned to %s agent targets", nodeID)
 			}
 		}
 	}
-	waitForAdminDeletionCompleted(t, store, "probe_target", "hytron-local", 10*time.Second)
+	waitForAdminDeletionCompleted(t, store, "probe_target", "example-node-a-local", 10*time.Second)
 	var remainingRounds, remainingSamples int
-	if err := store.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM probe_rounds WHERE target_id = 'hytron-local'`).Scan(&remainingRounds); err != nil {
+	if err := store.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM probe_rounds WHERE target_id = 'example-node-a-local'`).Scan(&remainingRounds); err != nil {
 		t.Fatalf("count remaining probe rounds: %v", err)
 	}
 	if err := store.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM probe_samples WHERE round_id = ?`, roundID).Scan(&remainingSamples); err != nil {
@@ -1901,7 +1901,7 @@ func TestAdminProbeTargetWritesRejectUnauthorizedUnknownAndInvalidRequests(t *te
 		t.Fatalf("open sqlite store: %v", err)
 	}
 	defer store.Close()
-	if err := store.SeedPreviewData(context.Background(), PreviewSeedOptions{NodeID: "hytron", DisplayName: "Hytron", CountryCode: "HK", AgentToken: "test-agent-token"}); err != nil {
+	if err := store.SeedPreviewData(context.Background(), PreviewSeedOptions{NodeID: "example-node-a", DisplayName: "Example Node A", CountryCode: "HK", AgentToken: "test-agent-token"}); err != nil {
 		t.Fatalf("seed preview data: %v", err)
 	}
 	handler := NewHandler(HandlerOptions{Store: store, AdminTokenHash: HashAdminToken("admin-pass")})
@@ -1922,10 +1922,10 @@ func TestAdminProbeTargetWritesRejectUnauthorizedUnknownAndInvalidRequests(t *te
 		{name: "create timeout below resource floor", method: http.MethodPost, path: "/api/admin/v1/probe-targets", body: `{"name":"A","type":"tcping","address":"example.com","port":443,"count":3,"timeout_ms":50,"interval_sec":30}`, adminToken: "admin-pass", wantStatus: http.StatusBadRequest},
 		{name: "create exceeds single round budget", method: http.MethodPost, path: "/api/admin/v1/probe-targets", body: `{"name":"A","type":"tcping","address":"example.com","port":443,"count":32,"timeout_ms":5000,"interval_sec":60}`, adminToken: "admin-pass", wantStatus: http.StatusBadRequest},
 		{name: "patch unknown target", method: http.MethodPatch, path: "/api/admin/v1/probe-targets/missing", body: `{"name":"Changed"}`, adminToken: "admin-pass", wantStatus: http.StatusNotFound},
-		{name: "patch negative count", method: http.MethodPatch, path: "/api/admin/v1/probe-targets/hytron-local", body: `{"count":0}`, adminToken: "admin-pass", wantStatus: http.StatusBadRequest},
-		{name: "patch interval too small for final budget", method: http.MethodPatch, path: "/api/admin/v1/probe-targets/hytron-local", body: `{"count":32}`, adminToken: "admin-pass", wantStatus: http.StatusBadRequest},
-		{name: "patch unknown assignment node", method: http.MethodPatch, path: "/api/admin/v1/probe-targets/hytron-local", body: `{"assignments":[{"node_id":"missing","enabled":false}]}`, adminToken: "admin-pass", wantStatus: http.StatusBadRequest},
-		{name: "delete missing token", method: http.MethodDelete, path: "/api/admin/v1/probe-targets/hytron-local", adminToken: "", wantStatus: http.StatusUnauthorized},
+		{name: "patch negative count", method: http.MethodPatch, path: "/api/admin/v1/probe-targets/example-node-a-local", body: `{"count":0}`, adminToken: "admin-pass", wantStatus: http.StatusBadRequest},
+		{name: "patch interval too small for final budget", method: http.MethodPatch, path: "/api/admin/v1/probe-targets/example-node-a-local", body: `{"count":32}`, adminToken: "admin-pass", wantStatus: http.StatusBadRequest},
+		{name: "patch unknown assignment node", method: http.MethodPatch, path: "/api/admin/v1/probe-targets/example-node-a-local", body: `{"assignments":[{"node_id":"missing","enabled":false}]}`, adminToken: "admin-pass", wantStatus: http.StatusBadRequest},
+		{name: "delete missing token", method: http.MethodDelete, path: "/api/admin/v1/probe-targets/example-node-a-local", adminToken: "", wantStatus: http.StatusUnauthorized},
 		{name: "delete unknown target", method: http.MethodDelete, path: "/api/admin/v1/probe-targets/missing", adminToken: "admin-pass", wantStatus: http.StatusNotFound},
 	}
 
@@ -1954,10 +1954,10 @@ func TestAdminProbeTargetAssignmentRejectsNodeTargetCountOverflow(t *testing.T) 
 	}
 	defer store.Close()
 	ctx := context.Background()
-	if err := store.SeedPreviewData(ctx, PreviewSeedOptions{NodeID: "hytron", DisplayName: "Hytron", CountryCode: "HK", AgentToken: "test-agent-token"}); err != nil {
+	if err := store.SeedPreviewData(ctx, PreviewSeedOptions{NodeID: "example-node-a", DisplayName: "Example Node A", CountryCode: "HK", AgentToken: "test-agent-token"}); err != nil {
 		t.Fatalf("seed preview data: %v", err)
 	}
-	existingTargets, err := store.EnabledProbeTargets(ctx, "hytron")
+	existingTargets, err := store.EnabledProbeTargets(ctx, "example-node-a")
 	if err != nil {
 		t.Fatalf("enabled probe targets before fill: %v", err)
 	}
@@ -1974,13 +1974,13 @@ func TestAdminProbeTargetAssignmentRejectsNodeTargetCountOverflow(t *testing.T) 
 			Count:       1,
 			TimeoutMS:   minProbeTargetTimeoutMS,
 			IntervalSec: minProbeTargetIntervalSec,
-			Assignments: []AdminProbeTargetAssignmentUpdate{{NodeID: "hytron", Enabled: true}},
+			Assignments: []AdminProbeTargetAssignmentUpdate{{NodeID: "example-node-a", Enabled: true}},
 		})
 		if err != nil {
 			t.Fatalf("create filler target %d: %v", index, err)
 		}
 	}
-	filledTargets, err := store.EnabledProbeTargets(ctx, "hytron")
+	filledTargets, err := store.EnabledProbeTargets(ctx, "example-node-a")
 	if err != nil {
 		t.Fatalf("enabled probe targets after fill: %v", err)
 	}
@@ -1995,7 +1995,7 @@ func TestAdminProbeTargetAssignmentRejectsNodeTargetCountOverflow(t *testing.T) 
 		Count:       1,
 		TimeoutMS:   minProbeTargetTimeoutMS,
 		IntervalSec: minProbeTargetIntervalSec,
-		Assignments: []AdminProbeTargetAssignmentUpdate{{NodeID: "hytron", Enabled: true}},
+		Assignments: []AdminProbeTargetAssignmentUpdate{{NodeID: "example-node-a", Enabled: true}},
 	})
 	if err != errInvalidAdminTargetWrite {
 		t.Fatalf("overflow create error=%v, want errInvalidAdminTargetWrite", err)
@@ -2009,7 +2009,7 @@ func TestAdminProbeTargetAssignmentRejectsNodeRoundBudgetOverflow(t *testing.T) 
 	}
 	defer store.Close()
 	ctx := context.Background()
-	if err := store.SeedPreviewData(ctx, PreviewSeedOptions{NodeID: "hytron", DisplayName: "Hytron", CountryCode: "HK", AgentToken: "test-agent-token"}); err != nil {
+	if err := store.SeedPreviewData(ctx, PreviewSeedOptions{NodeID: "example-node-a", DisplayName: "Example Node A", CountryCode: "HK", AgentToken: "test-agent-token"}); err != nil {
 		t.Fatalf("seed preview data: %v", err)
 	}
 	heavyCreate := func(name, address string) error {
@@ -2021,7 +2021,7 @@ func TestAdminProbeTargetAssignmentRejectsNodeRoundBudgetOverflow(t *testing.T) 
 			Count:       12,
 			TimeoutMS:   maxProbeTargetTimeoutMS,
 			IntervalSec: 60,
-			Assignments: []AdminProbeTargetAssignmentUpdate{{NodeID: "hytron", Enabled: true}},
+			Assignments: []AdminProbeTargetAssignmentUpdate{{NodeID: "example-node-a", Enabled: true}},
 		})
 		return err
 	}
@@ -2039,7 +2039,7 @@ func TestAdminProbeTargetsRequiresAdminToken(t *testing.T) {
 		t.Fatalf("open sqlite store: %v", err)
 	}
 	defer store.Close()
-	if err := store.SeedPreviewData(context.Background(), PreviewSeedOptions{NodeID: "hytron", DisplayName: "Hytron", CountryCode: "HK", AgentToken: "test-agent-token"}); err != nil {
+	if err := store.SeedPreviewData(context.Background(), PreviewSeedOptions{NodeID: "example-node-a", DisplayName: "Example Node A", CountryCode: "HK", AgentToken: "test-agent-token"}); err != nil {
 		t.Fatalf("seed preview data: %v", err)
 	}
 

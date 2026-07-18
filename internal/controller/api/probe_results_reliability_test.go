@@ -61,7 +61,7 @@ func openProbeReliabilityStore(t *testing.T) *SQLiteStore {
 	}
 	t.Cleanup(func() { _ = store.Close() })
 	if err := store.SeedPreviewData(context.Background(), PreviewSeedOptions{
-		NodeID: "hytron", DisplayName: "Hytron", CountryCode: "HK", AgentToken: "test-agent-token",
+		NodeID: "example-node-a", DisplayName: "Example Node A", CountryCode: "HK", AgentToken: "test-agent-token",
 	}); err != nil {
 		t.Fatalf("seed preview data: %v", err)
 	}
@@ -71,7 +71,7 @@ func openProbeReliabilityStore(t *testing.T) *SQLiteStore {
 func postProbeReliabilityRequest(t *testing.T, handler http.Handler, ctx context.Context, payload string) *httptest.ResponseRecorder {
 	t.Helper()
 	request := httptest.NewRequest(http.MethodPost, "/api/agent/v1/probe-results", strings.NewReader(payload)).WithContext(ctx)
-	request.Header.Set("X-Node-ID", "hytron")
+	request.Header.Set("X-Node-ID", "example-node-a")
 	request.Header.Set("Authorization", "Bearer test-agent-token")
 	request.Header.Set("Content-Type", "application/json")
 	recorder := httptest.NewRecorder()
@@ -113,7 +113,7 @@ func TestAgentProbeResultsCommitThenLostResponseRetriesIdempotently(t *testing.T
 	}
 
 	var rounds, samples int
-	if err := store.db.QueryRow(`SELECT COUNT(*) FROM probe_rounds WHERE node_id = 'hytron' AND agent_round_id = 'lost-response-round'`).Scan(&rounds); err != nil {
+	if err := store.db.QueryRow(`SELECT COUNT(*) FROM probe_rounds WHERE node_id = 'example-node-a' AND agent_round_id = 'lost-response-round'`).Scan(&rounds); err != nil {
 		t.Fatalf("count rounds: %v", err)
 	}
 	if err := store.db.QueryRow(`SELECT COUNT(*) FROM probe_samples ps JOIN probe_rounds pr ON pr.id = ps.round_id WHERE pr.agent_round_id = 'lost-response-round'`).Scan(&samples); err != nil {
@@ -185,7 +185,7 @@ func TestAgentProbeResultsReplayPrecedesMutableConfigAndBatchRemainsAtomic(t *te
 func TestAgentProbeResultsOldCommittedRoundBypassesTimestampAdmission(t *testing.T) {
 	store := openProbeReliabilityStore(t)
 	ctx := context.Background()
-	targets, err := store.EnabledProbeTargets(ctx, "hytron")
+	targets, err := store.EnabledProbeTargets(ctx, "example-node-a")
 	if err != nil {
 		t.Fatalf("load targets: %v", err)
 	}
@@ -209,7 +209,7 @@ func TestAgentProbeResultsOldCommittedRoundBypassesTimestampAdmission(t *testing
 	if err != nil {
 		t.Fatalf("begin historical fixture: %v", err)
 	}
-	if err := insertProbeRoundTx(ctx, tx, "hytron", round); err != nil {
+	if err := insertProbeRoundTx(ctx, tx, "example-node-a", round); err != nil {
 		_ = tx.Rollback()
 		t.Fatalf("insert historical fixture: %v", err)
 	}
@@ -312,7 +312,7 @@ func TestAgentProbeRoundConflictRetainsPreStorageLatencyPayload(t *testing.T) {
 func TestAgentProbeResultsReadsLegacySampleHashButChecksStoredMetadata(t *testing.T) {
 	store := openProbeReliabilityStore(t)
 	ctx := context.Background()
-	targets, err := store.EnabledProbeTargets(ctx, "hytron")
+	targets, err := store.EnabledProbeTargets(ctx, "example-node-a")
 	if err != nil {
 		t.Fatalf("load targets: %v", err)
 	}
@@ -335,7 +335,7 @@ func TestAgentProbeResultsReadsLegacySampleHashButChecksStoredMetadata(t *testin
 	if err != nil {
 		t.Fatalf("begin legacy fixture: %v", err)
 	}
-	if err := insertProbeRoundTx(ctx, tx, "hytron", round); err != nil {
+	if err := insertProbeRoundTx(ctx, tx, "example-node-a", round); err != nil {
 		_ = tx.Rollback()
 		t.Fatalf("insert legacy fixture: %v", err)
 	}
@@ -366,7 +366,7 @@ func TestAgentProbeResultsFaultStatusesAreControllableOnlyInHTTPTest(t *testing.
 	t.Run("429", func(t *testing.T) {
 		h := NewHandler(HandlerOptions{Store: store, DisableNotifications: true}).(*handler)
 		h.agentQuotas.mu.Lock()
-		quota := h.agentQuotas.nodeLocked("hytron", time.Now())
+		quota := h.agentQuotas.nodeLocked("example-node-a", time.Now())
 		quota.buckets[agentQuotaProbeResults] = &agentTokenBucket{tokens: 0, updatedAt: time.Now()}
 		h.agentQuotas.mu.Unlock()
 		response := postProbeReliabilityRequest(t, h, context.Background(), payload)
@@ -424,7 +424,7 @@ func TestAgentProbeResultsFaultStatusesAreControllableOnlyInHTTPTest(t *testing.
 
 func TestAgentProbeResultsConcurrentExactWritesAreSingleRound(t *testing.T) {
 	store := openProbeReliabilityStore(t)
-	targets, err := store.EnabledProbeTargets(context.Background(), "hytron")
+	targets, err := store.EnabledProbeTargets(context.Background(), "example-node-a")
 	if err != nil {
 		t.Fatalf("load targets: %v", err)
 	}
@@ -446,7 +446,7 @@ func TestAgentProbeResultsConcurrentExactWritesAreSingleRound(t *testing.T) {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			_, err := store.InsertAgentProbeResults(context.Background(), "hytron", 0, []preparedAgentProbeRound{round})
+			_, err := store.InsertAgentProbeResults(context.Background(), "example-node-a", 0, []preparedAgentProbeRound{round})
 			errs <- err
 		}()
 	}
@@ -473,13 +473,13 @@ func TestAgentProbeRoundLookupAndMaximumBatchAtScale(t *testing.T) {
 		WITH RECURSIVE scale(n) AS (SELECT 1 UNION ALL SELECT n + 1 FROM scale WHERE n < 100000)
 		INSERT INTO probe_rounds
 			(node_id, target_id, ts, type, idempotency_key, agent_round_id, payload_hash, sent, received, loss_percent)
-		SELECT 'hytron', 'google-dns', ?, 'tcping', 'agent:scale-' || n, 'scale-' || n, 'v2:scale-' || n, 1, 1, 0
+		SELECT 'example-node-a', 'google-dns', ?, 'tcping', 'agent:scale-' || n, 'scale-' || n, 'v2:scale-' || n, 1, 1, 0
 		FROM scale
 	`, now-1); err != nil {
 		t.Fatalf("seed scale rounds: %v", err)
 	}
 
-	rows, err := store.db.QueryContext(ctx, `EXPLAIN QUERY PLAN SELECT agent_round_id, target_id, ts, type, payload_hash FROM probe_rounds WHERE node_id = ? AND agent_round_id IN (?, ?) AND agent_round_id IS NOT NULL AND agent_round_id <> ''`, "hytron", "scale-1", "scale-100000")
+	rows, err := store.db.QueryContext(ctx, `EXPLAIN QUERY PLAN SELECT agent_round_id, target_id, ts, type, payload_hash FROM probe_rounds WHERE node_id = ? AND agent_round_id IN (?, ?) AND agent_round_id IS NOT NULL AND agent_round_id <> ''`, "example-node-a", "scale-1", "scale-100000")
 	if err != nil {
 		t.Fatalf("explain round lookup: %v", err)
 	}
@@ -501,7 +501,7 @@ func TestAgentProbeRoundLookupAndMaximumBatchAtScale(t *testing.T) {
 	if err != nil {
 		t.Fatalf("begin target fixture tx: %v", err)
 	}
-	if _, err := tx.ExecContext(ctx, `UPDATE node_probe_targets SET enabled = 0 WHERE node_id = 'hytron'`); err != nil {
+	if _, err := tx.ExecContext(ctx, `UPDATE node_probe_targets SET enabled = 0 WHERE node_id = 'example-node-a'`); err != nil {
 		_ = tx.Rollback()
 		t.Fatalf("disable preview target assignments: %v", err)
 	}
@@ -511,7 +511,7 @@ func TestAgentProbeRoundLookupAndMaximumBatchAtScale(t *testing.T) {
 			_ = tx.Rollback()
 			t.Fatalf("insert scale target: %v", err)
 		}
-		if _, err := tx.ExecContext(ctx, `INSERT INTO node_probe_targets (node_id, target_id, enabled) VALUES ('hytron', ?, 1)`, id); err != nil {
+		if _, err := tx.ExecContext(ctx, `INSERT INTO node_probe_targets (node_id, target_id, enabled) VALUES ('example-node-a', ?, 1)`, id); err != nil {
 			_ = tx.Rollback()
 			t.Fatalf("assign scale target: %v", err)
 		}
@@ -528,7 +528,7 @@ func TestAgentProbeRoundLookupAndMaximumBatchAtScale(t *testing.T) {
 			agentRoundID: fmt.Sprintf("scale-batch-%02d", i), samples: []probe.Sample{{Seq: 1, Success: true, LatencyMS: &latency}},
 		})
 	}
-	result, err := store.InsertAgentProbeResults(ctx, "hytron", 0, batch)
+	result, err := store.InsertAgentProbeResults(ctx, "example-node-a", 0, batch)
 	if err != nil {
 		t.Fatalf("insert maximum batch over production-scale history: %v", err)
 	}

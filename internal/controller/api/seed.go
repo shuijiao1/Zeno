@@ -28,11 +28,11 @@ type ProbeTarget struct {
 func (s *SQLiteStore) SeedPreviewData(ctx context.Context, options PreviewSeedOptions) error {
 	nodeID := options.NodeID
 	if nodeID == "" {
-		nodeID = "hytron"
+		nodeID = "example-node-a"
 	}
 	displayName := options.DisplayName
 	if displayName == "" {
-		displayName = "Hytron"
+		displayName = "Example Node A"
 	}
 	countryCode := options.CountryCode
 	if countryCode == "" {
@@ -68,7 +68,7 @@ func (s *SQLiteStore) SeedPreviewData(ctx context.Context, options PreviewSeedOp
 
 	if _, err := tx.ExecContext(ctx, `
 		INSERT INTO host_info (node_id, hostname, os_name, os_version, kernel, arch, virtualization, cpu_model, cpu_cores, memory_total_bytes, disk_total_bytes, agent_version, updated_at)
-		VALUES (?, 'hytron', 'debian', '13', '', 'x86_64', 'kvm', '', 2, ?, ?, 'controller-local-preview', ?)
+		VALUES (?, 'example-node-a', 'debian', '13', '', 'x86_64', 'kvm', '', 2, ?, ?, 'controller-local-preview', ?)
 		ON CONFLICT(node_id) DO UPDATE SET
 			hostname = excluded.hostname,
 			os_name = excluded.os_name,
@@ -126,19 +126,15 @@ func (s *SQLiteStore) SeedPreviewData(ctx context.Context, options PreviewSeedOp
 
 func DefaultPreviewProbeTargets() []ProbeTarget {
 	return []ProbeTarget{
-		previewTarget("hytron-local", "Hytron", "127.0.0.1", 18980),
-		previewTarget("sharon", "Sharon", "157.254.53.89", 53580),
-		previewTarget("alibaba", "Alibaba", "47.83.203.128", 53580),
-		previewTarget("datawave-hk", "DataWave HK", "103.97.175.136", 53580),
-		previewTarget("datawave-jp", "DataWave JP", "82.108.198.81", 53580),
-		previewTarget("zouter", "Zouter", "14.137.230.209", 53580),
-		previewTarget("datawave-tw", "DataWave TW", "78.105.182.19", 53580),
-		previewTarget("hostdzire", "HostDZire", "23.80.89.188", 53580),
-		previewTarget("hostishere", "Hostishere", "92.119.167.19", 53580),
-		previewTarget("bage", "BAGE", "167.253.97.158", 53580),
-		previewTarget("google-dns", "Google DNS", "8.8.8.8", 53),
-		previewTarget("cloudflare-dns", "Cloudflare DNS", "1.1.1.1", 53),
-		previewTarget("telegram-dc5", "Telegram DC5", "91.108.56.130", 443),
+		// RFC 5737 documentation addresses are deliberately non-routable. Preview
+		// data must never publish or probe a maintainer's real infrastructure.
+		previewTarget("example-node-a-local", "Example Node A", "192.0.2.1", 443),
+		previewTarget("google-dns", "Example DNS A", "192.0.2.53", 53),
+		previewTarget("cloudflare-dns", "Example DNS B", "198.51.100.53", 53),
+		previewTarget("telegram-dc5", "Example HTTPS", "203.0.113.44", 443),
+		previewTarget("example-edge-a", "Example Edge A", "192.0.2.10", 443),
+		previewTarget("example-edge-b", "Example Edge B", "198.51.100.20", 443),
+		previewTarget("example-edge-c", "Example Edge C", "203.0.113.30", 443),
 	}
 }
 

@@ -18,7 +18,7 @@ func TestOpenSQLiteStoreAllowsWALReadsWhileWriterTransactionIsOpen(t *testing.T)
 	defer store.Close()
 
 	ctx := context.Background()
-	if err := store.SeedPreviewData(ctx, PreviewSeedOptions{NodeID: "hytron", DisplayName: "Hytron", AgentToken: "token"}); err != nil {
+	if err := store.SeedPreviewData(ctx, PreviewSeedOptions{NodeID: "example-node-a", DisplayName: "Example Node A", AgentToken: "token"}); err != nil {
 		t.Fatalf("seed preview data: %v", err)
 	}
 	if got := store.db.Stats().MaxOpenConnections; got < 2 {
@@ -36,7 +36,7 @@ func TestOpenSQLiteStoreAllowsWALReadsWhileWriterTransactionIsOpen(t *testing.T)
 
 	readCtx, cancel := context.WithTimeout(ctx, 500*time.Millisecond)
 	defer cancel()
-	if _, err := store.NodeLatency(readCtx, "hytron", latencyWindow{Name: "1h", Samples: 20, Step: 3 * time.Minute}); err != nil {
+	if _, err := store.NodeLatency(readCtx, "example-node-a", latencyWindow{Name: "1h", Samples: 20, Step: 3 * time.Minute}); err != nil {
 		t.Fatalf("history read blocked behind writer transaction: %v", err)
 	}
 
@@ -68,7 +68,7 @@ func TestRecordAgentHeartbeatRetriesAfterSQLiteBusyTimeout(t *testing.T) {
 	store.db.SetMaxIdleConns(2)
 
 	ctx := context.Background()
-	if err := store.SeedPreviewData(ctx, PreviewSeedOptions{NodeID: "hytron", DisplayName: "Hytron", AgentToken: "token"}); err != nil {
+	if err := store.SeedPreviewData(ctx, PreviewSeedOptions{NodeID: "example-node-a", DisplayName: "Example Node A", AgentToken: "token"}); err != nil {
 		t.Fatalf("seed preview data: %v", err)
 	}
 
@@ -101,7 +101,7 @@ func TestRecordAgentHeartbeatRetriesAfterSQLiteBusyTimeout(t *testing.T) {
 		blockingConn.Close()
 		t.Fatalf("begin blocking transaction: %v", err)
 	}
-	if _, err := blockingTx.ExecContext(ctx, `UPDATE nodes SET updated_at = updated_at WHERE id = 'hytron'`); err != nil {
+	if _, err := blockingTx.ExecContext(ctx, `UPDATE nodes SET updated_at = updated_at WHERE id = 'example-node-a'`); err != nil {
 		_ = blockingTx.Rollback()
 		blockingConn.Close()
 		t.Fatalf("reserve blocking writer: %v", err)
@@ -128,7 +128,7 @@ func TestRecordAgentHeartbeatRetriesAfterSQLiteBusyTimeout(t *testing.T) {
 
 	result := make(chan error, 1)
 	go func() {
-		_, err := store.RecordAgentHeartbeatTransition(ctx, "hytron", time.Now().UTC(), "online", "agent-test")
+		_, err := store.RecordAgentHeartbeatTransition(ctx, "example-node-a", time.Now().UTC(), "online", "agent-test")
 		result <- err
 	}()
 
@@ -163,7 +163,7 @@ func TestAgentHighFrequencyWritersSerializeAndRetrySQLiteBusy(t *testing.T) {
 	setSQLiteBusyTimeoutForPool(t, store, pooledConnections, 50)
 
 	ctx := context.Background()
-	if err := store.SeedPreviewData(ctx, PreviewSeedOptions{NodeID: "hytron", DisplayName: "Hytron", AgentToken: "token"}); err != nil {
+	if err := store.SeedPreviewData(ctx, PreviewSeedOptions{NodeID: "example-node-a", DisplayName: "Example Node A", AgentToken: "token"}); err != nil {
 		t.Fatalf("seed preview data: %v", err)
 	}
 	probeConfigVersion, err := store.ProbeConfigVersion(ctx)
@@ -180,7 +180,7 @@ func TestAgentHighFrequencyWritersSerializeAndRetrySQLiteBusy(t *testing.T) {
 		blockingConn.Close()
 		t.Fatalf("begin blocking transaction: %v", err)
 	}
-	if _, err := blockingTx.ExecContext(ctx, `UPDATE nodes SET updated_at = updated_at WHERE id = 'hytron'`); err != nil {
+	if _, err := blockingTx.ExecContext(ctx, `UPDATE nodes SET updated_at = updated_at WHERE id = 'example-node-a'`); err != nil {
 		_ = blockingTx.Rollback()
 		blockingConn.Close()
 		t.Fatalf("reserve blocking writer: %v", err)
@@ -211,41 +211,41 @@ func TestAgentHighFrequencyWritersSerializeAndRetrySQLiteBusy(t *testing.T) {
 		run  func(context.Context) error
 	}{
 		{name: "heartbeat-online", run: func(ctx context.Context) error {
-			_, err := store.RecordAgentHeartbeatTransition(ctx, "hytron", time.Unix(baseTS+1, 0).UTC(), "online", "agent-test")
+			_, err := store.RecordAgentHeartbeatTransition(ctx, "example-node-a", time.Unix(baseTS+1, 0).UTC(), "online", "agent-test")
 			return err
 		}},
 		{name: "heartbeat-warning", run: func(ctx context.Context) error {
-			_, err := store.RecordAgentHeartbeatTransition(ctx, "hytron", time.Unix(baseTS+2, 0).UTC(), "warning", "agent-test")
+			_, err := store.RecordAgentHeartbeatTransition(ctx, "example-node-a", time.Unix(baseTS+2, 0).UTC(), "warning", "agent-test")
 			return err
 		}},
 		{name: "host", run: func(ctx context.Context) error {
-			return store.UpsertAgentHost(ctx, "hytron", AgentHostRequest{Hostname: "hytron", OSName: "Linux", Arch: "amd64", AgentVersion: "agent-test", CPUCores: 2, MemoryTotalBytes: 1024, DiskTotalBytes: 4096})
+			return store.UpsertAgentHost(ctx, "example-node-a", AgentHostRequest{Hostname: "example-node-a", OSName: "Linux", Arch: "amd64", AgentVersion: "agent-test", CPUCores: 2, MemoryTotalBytes: 1024, DiskTotalBytes: 4096})
 		}},
 		{name: "state-report", run: func(ctx context.Context) error {
-			_, _, err := store.RecordAgentStateReport(ctx, "hytron", sqliteConcurrencyAgentState(baseTS+3, "busy-state-report"))
+			_, _, err := store.RecordAgentStateReport(ctx, "example-node-a", sqliteConcurrencyAgentState(baseTS+3, "busy-state-report"))
 			return err
 		}},
 		{name: "state-insert", run: func(ctx context.Context) error {
-			return store.InsertAgentState(ctx, "hytron", sqliteConcurrencyAgentState(baseTS+4, "busy-state-insert"))
+			return store.InsertAgentState(ctx, "example-node-a", sqliteConcurrencyAgentState(baseTS+4, "busy-state-insert"))
 		}},
 		{name: "state-alert", run: func(ctx context.Context) error {
-			_, err := store.RecordAgentStateAlertRuleTransition(ctx, "hytron", time.Unix(baseTS+5, 0).UTC(), sqliteConcurrencyAgentState(baseTS+5, "busy-state-alert"))
+			_, err := store.RecordAgentStateAlertRuleTransition(ctx, "example-node-a", time.Unix(baseTS+5, 0).UTC(), sqliteConcurrencyAgentState(baseTS+5, "busy-state-alert"))
 			return err
 		}},
 		{name: "presence-online", run: func(ctx context.Context) error {
-			_, err := store.RecordAgentPresenceOnlineTransition(ctx, "hytron", time.Unix(baseTS+6, 0).UTC())
+			_, err := store.RecordAgentPresenceOnlineTransition(ctx, "example-node-a", time.Unix(baseTS+6, 0).UTC())
 			return err
 		}},
 		{name: "presence-offline", run: func(ctx context.Context) error {
-			_, err := store.RecordAgentPresenceOfflineTransition(ctx, "hytron", time.Unix(baseTS+7, 0).UTC())
+			_, err := store.RecordAgentPresenceOfflineTransition(ctx, "example-node-a", time.Unix(baseTS+7, 0).UTC())
 			return err
 		}},
 		{name: "stale-offline", run: func(ctx context.Context) error {
-			_, _, err := store.RecordStaleAgentOfflineTransition(ctx, "hytron", time.Unix(baseTS+7200, 0).UTC())
+			_, _, err := store.RecordStaleAgentOfflineTransition(ctx, "example-node-a", time.Unix(baseTS+7200, 0).UTC())
 			return err
 		}},
 		{name: "presence-config-applied", run: func(ctx context.Context) error {
-			return store.RecordProbeConfigApplied(ctx, "hytron", probeConfigVersion, time.Unix(baseTS+8, 0).UTC())
+			return store.RecordProbeConfigApplied(ctx, "example-node-a", probeConfigVersion, time.Unix(baseTS+8, 0).UTC())
 		}},
 	}
 
@@ -294,7 +294,7 @@ func TestAgentHighFrequencyWritersSerializeAndRetrySQLiteBusy(t *testing.T) {
 	}
 
 	var samples int
-	if err := store.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM state_samples WHERE node_id = 'hytron'`).Scan(&samples); err != nil {
+	if err := store.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM state_samples WHERE node_id = 'example-node-a'`).Scan(&samples); err != nil {
 		t.Fatalf("count state samples: %v", err)
 	}
 	if samples == 0 {

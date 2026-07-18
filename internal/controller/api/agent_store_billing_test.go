@@ -132,44 +132,44 @@ func TestBillingTrafficEpochRebasesOnModeAndResetDayChange(t *testing.T) {
 	}
 	defer store.Close()
 	ctx := context.Background()
-	if err := store.SeedPreviewData(ctx, PreviewSeedOptions{NodeID: "hytron", DisplayName: "Hytron", CountryCode: "HK", AgentToken: "token"}); err != nil {
+	if err := store.SeedPreviewData(ctx, PreviewSeedOptions{NodeID: "example-node-a", DisplayName: "Example Node A", CountryCode: "HK", AgentToken: "token"}); err != nil {
 		t.Fatalf("seed preview data: %v", err)
 	}
 
 	now := time.Now().UTC().Truncate(time.Second)
 	state := AgentStateRequest{TS: now.Unix(), CPUPercent: 1, MemoryUsedBytes: 1, MemoryTotalBytes: 2, DiskUsedBytes: 1, DiskTotalBytes: 2, NetInSpeedBps: 1, NetOutSpeedBps: 1, UptimeSeconds: 1}
 	state.NetInTotalBytes, state.NetOutTotalBytes = 100, 50
-	if err := store.InsertAgentState(ctx, "hytron", state); err != nil {
+	if err := store.InsertAgentState(ctx, "example-node-a", state); err != nil {
 		t.Fatalf("insert baseline state: %v", err)
 	}
 	state.TS = now.Add(time.Second).Unix()
 	state.NetInTotalBytes, state.NetOutTotalBytes = 200, 100
-	if err := store.InsertAgentState(ctx, "hytron", state); err != nil {
+	if err := store.InsertAgentState(ctx, "example-node-a", state); err != nil {
 		t.Fatalf("insert epoch 0 delta: %v", err)
 	}
 
 	modeOut := "out"
-	if _, err := store.UpdateAdminNode(ctx, "hytron", AdminNodeUpdateRequest{BillingMode: &modeOut}); err != nil {
+	if _, err := store.UpdateAdminNode(ctx, "example-node-a", AdminNodeUpdateRequest{BillingMode: &modeOut}); err != nil {
 		t.Fatalf("update billing mode: %v", err)
 	}
 	state.TS = now.Add(2 * time.Second).Unix()
 	state.NetInTotalBytes, state.NetOutTotalBytes = 500, 400
-	if err := store.InsertAgentState(ctx, "hytron", state); err != nil {
+	if err := store.InsertAgentState(ctx, "example-node-a", state); err != nil {
 		t.Fatalf("insert epoch 1 baseline: %v", err)
 	}
 	state.TS = now.Add(3 * time.Second).Unix()
 	state.NetInTotalBytes, state.NetOutTotalBytes = 800, 900
-	if err := store.InsertAgentState(ctx, "hytron", state); err != nil {
+	if err := store.InsertAgentState(ctx, "example-node-a", state); err != nil {
 		t.Fatalf("insert epoch 1 delta: %v", err)
 	}
 
 	resetDay := 15
-	if _, err := store.UpdateAdminNode(ctx, "hytron", AdminNodeUpdateRequest{MonthlyResetDay: &resetDay}); err != nil {
+	if _, err := store.UpdateAdminNode(ctx, "example-node-a", AdminNodeUpdateRequest{MonthlyResetDay: &resetDay}); err != nil {
 		t.Fatalf("update monthly reset day: %v", err)
 	}
 	state.TS = now.Add(4 * time.Second).Unix()
 	state.NetInTotalBytes, state.NetOutTotalBytes = 1000, 1200
-	if err := store.InsertAgentState(ctx, "hytron", state); err != nil {
+	if err := store.InsertAgentState(ctx, "example-node-a", state); err != nil {
 		t.Fatalf("insert epoch 2 baseline: %v", err)
 	}
 
@@ -178,7 +178,7 @@ func TestBillingTrafficEpochRebasesOnModeAndResetDayChange(t *testing.T) {
 	rows, err := store.db.QueryContext(ctx, `
 		SELECT billing_epoch, billing_mode, billable_bytes
 		FROM traffic_monthly
-		WHERE node_id = 'hytron'
+		WHERE node_id = 'example-node-a'
 		ORDER BY billing_epoch
 	`)
 	if err != nil {
@@ -207,7 +207,7 @@ func TestBillingTrafficEpochRebasesOnModeAndResetDayChange(t *testing.T) {
 	}
 
 	var currentEpoch int64
-	if err := store.db.QueryRowContext(ctx, `SELECT billing_traffic_epoch FROM nodes WHERE id = 'hytron'`).Scan(&currentEpoch); err != nil {
+	if err := store.db.QueryRowContext(ctx, `SELECT billing_traffic_epoch FROM nodes WHERE id = 'example-node-a'`).Scan(&currentEpoch); err != nil {
 		t.Fatalf("read current epoch: %v", err)
 	}
 	if currentEpoch != 2 {
@@ -229,7 +229,7 @@ func TestInvalidNetworkCounterSamplesNeverAdvanceOrCreateBillingBaseline(t *test
 	}
 	defer store.Close()
 	ctx := context.Background()
-	if err := store.SeedPreviewData(ctx, PreviewSeedOptions{NodeID: "hytron", DisplayName: "Hytron", AgentToken: "token"}); err != nil {
+	if err := store.SeedPreviewData(ctx, PreviewSeedOptions{NodeID: "example-node-a", DisplayName: "Example Node A", AgentToken: "token"}); err != nil {
 		t.Fatalf("seed node: %v", err)
 	}
 	now := time.Now().UTC().Truncate(time.Second)
@@ -241,11 +241,11 @@ func TestInvalidNetworkCounterSamplesNeverAdvanceOrCreateBillingBaseline(t *test
 		NetInTotalBytes: 900, NetOutTotalBytes: 800, NetTotalsValid: &invalid,
 		TCPConnectionCount: &tcpCount, UDPConnectionCount: &udpCount, ConnectionCountsValid: &invalid,
 	}
-	if err := store.InsertAgentState(ctx, "hytron", state); err != nil {
+	if err := store.InsertAgentState(ctx, "example-node-a", state); err != nil {
 		t.Fatalf("insert first invalid sample: %v", err)
 	}
 	var rows int
-	if err := store.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM traffic_monthly WHERE node_id = 'hytron'`).Scan(&rows); err != nil {
+	if err := store.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM traffic_monthly WHERE node_id = 'example-node-a'`).Scan(&rows); err != nil {
 		t.Fatalf("count traffic rows: %v", err)
 	}
 	if rows != 0 {
@@ -254,7 +254,7 @@ func TestInvalidNetworkCounterSamplesNeverAdvanceOrCreateBillingBaseline(t *test
 	var storedIn, storedOut, storedTCP, storedUDP sql.NullInt64
 	if err := store.db.QueryRowContext(ctx, `
 		SELECT net_in_total_bytes, net_out_total_bytes, tcp_connection_count, udp_connection_count
-		FROM state_samples WHERE node_id = 'hytron' AND ts = ?
+		FROM state_samples WHERE node_id = 'example-node-a' AND ts = ?
 	`, state.TS).Scan(&storedIn, &storedOut, &storedTCP, &storedUDP); err != nil {
 		t.Fatalf("read invalid state sample: %v", err)
 	}
@@ -266,26 +266,26 @@ func TestInvalidNetworkCounterSamplesNeverAdvanceOrCreateBillingBaseline(t *test
 	state.NetInTotalBytes, state.NetOutTotalBytes = 1000, 2000
 	state.NetTotalsValid = &valid
 	state.ConnectionCountsValid = &valid
-	if err := store.InsertAgentState(ctx, "hytron", state); err != nil {
+	if err := store.InsertAgentState(ctx, "example-node-a", state); err != nil {
 		t.Fatalf("insert valid baseline: %v", err)
 	}
 	state.TS = now.Add(2 * time.Second).Unix()
 	state.NetInTotalBytes, state.NetOutTotalBytes = 0, 0
 	state.NetTotalsValid = &invalid
-	if err := store.InsertAgentState(ctx, "hytron", state); err != nil {
+	if err := store.InsertAgentState(ctx, "example-node-a", state); err != nil {
 		t.Fatalf("insert transient failure: %v", err)
 	}
 	state.TS = now.Add(3 * time.Second).Unix()
 	state.NetInTotalBytes, state.NetOutTotalBytes = 1100, 2100
 	state.NetTotalsValid = &valid
-	if err := store.InsertAgentState(ctx, "hytron", state); err != nil {
+	if err := store.InsertAgentState(ctx, "example-node-a", state); err != nil {
 		t.Fatalf("insert recovered sample: %v", err)
 	}
 
 	var billable, lastIn, lastOut int64
 	if err := store.db.QueryRowContext(ctx, `
 		SELECT billable_bytes, last_in_total_bytes, last_out_total_bytes
-		FROM traffic_monthly WHERE node_id = 'hytron'
+		FROM traffic_monthly WHERE node_id = 'example-node-a'
 	`).Scan(&billable, &lastIn, &lastOut); err != nil {
 		t.Fatalf("read billing row: %v", err)
 	}
@@ -301,7 +301,7 @@ func TestLifetimeTrafficRebasesWhenCounterSourceChanges(t *testing.T) {
 	}
 	defer store.Close()
 	ctx := context.Background()
-	if err := store.SeedPreviewData(ctx, PreviewSeedOptions{NodeID: "hytron", DisplayName: "Hytron", AgentToken: "token"}); err != nil {
+	if err := store.SeedPreviewData(ctx, PreviewSeedOptions{NodeID: "example-node-a", DisplayName: "Example Node A", AgentToken: "token"}); err != nil {
 		t.Fatalf("seed node: %v", err)
 	}
 	now := time.Now().UTC().Truncate(time.Second)
@@ -316,20 +316,20 @@ func TestLifetimeTrafficRebasesWhenCounterSourceChanges(t *testing.T) {
 		if index >= 2 {
 			state.NetCounterSource = "source-b"
 		}
-		if err := store.InsertAgentState(ctx, "hytron", state); err != nil {
+		if err := store.InsertAgentState(ctx, "example-node-a", state); err != nil {
 			t.Fatalf("insert state %d: %v", index, err)
 		}
 	}
 	var lifetimeIn, lifetimeOut int64
 	var source string
-	if err := store.db.QueryRowContext(ctx, `SELECT in_bytes, out_bytes, counter_source FROM traffic_lifetime WHERE node_id = 'hytron'`).Scan(&lifetimeIn, &lifetimeOut, &source); err != nil {
+	if err := store.db.QueryRowContext(ctx, `SELECT in_bytes, out_bytes, counter_source FROM traffic_lifetime WHERE node_id = 'example-node-a'`).Scan(&lifetimeIn, &lifetimeOut, &source); err != nil {
 		t.Fatalf("read lifetime row: %v", err)
 	}
 	if lifetimeIn != 160 || lifetimeOut != 180 || source != "source-b" {
 		t.Fatalf("lifetime after source rebase = %d/%d source=%q, want 160/180 source-b", lifetimeIn, lifetimeOut, source)
 	}
 	var monthlyIn, monthlyOut, billable int64
-	if err := store.db.QueryRowContext(ctx, `SELECT in_bytes, out_bytes, billable_bytes FROM traffic_monthly WHERE node_id = 'hytron'`).Scan(&monthlyIn, &monthlyOut, &billable); err != nil {
+	if err := store.db.QueryRowContext(ctx, `SELECT in_bytes, out_bytes, billable_bytes FROM traffic_monthly WHERE node_id = 'example-node-a'`).Scan(&monthlyIn, &monthlyOut, &billable); err != nil {
 		t.Fatalf("read monthly row: %v", err)
 	}
 	if monthlyIn != 60 || monthlyOut != 80 || billable != 140 {
@@ -344,7 +344,7 @@ func TestTrafficPreservesKnownCounterSourceAcrossLegacyEmptySample(t *testing.T)
 	}
 	defer store.Close()
 	ctx := context.Background()
-	if err := store.SeedPreviewData(ctx, PreviewSeedOptions{NodeID: "hytron", DisplayName: "Hytron", AgentToken: "token"}); err != nil {
+	if err := store.SeedPreviewData(ctx, PreviewSeedOptions{NodeID: "example-node-a", DisplayName: "Example Node A", AgentToken: "token"}); err != nil {
 		t.Fatalf("seed node: %v", err)
 	}
 	now := time.Now().UTC().Truncate(time.Second)
@@ -360,16 +360,16 @@ func TestTrafficPreservesKnownCounterSourceAcrossLegacyEmptySample(t *testing.T)
 		state.TS = now.Add(time.Duration(index) * time.Second).Unix()
 		state.NetInTotalBytes, state.NetOutTotalBytes = sample.total, sample.total
 		state.NetCounterSource = sample.source
-		if err := store.InsertAgentState(ctx, "hytron", state); err != nil {
+		if err := store.InsertAgentState(ctx, "example-node-a", state); err != nil {
 			t.Fatalf("insert state %d: %v", index, err)
 		}
 	}
 	var lifetimeIn, lifetimeOut, monthlyIn, monthlyOut, billable int64
 	var lifetimeSource, monthlySource string
-	if err := store.db.QueryRowContext(ctx, `SELECT in_bytes, out_bytes, counter_source FROM traffic_lifetime WHERE node_id = 'hytron'`).Scan(&lifetimeIn, &lifetimeOut, &lifetimeSource); err != nil {
+	if err := store.db.QueryRowContext(ctx, `SELECT in_bytes, out_bytes, counter_source FROM traffic_lifetime WHERE node_id = 'example-node-a'`).Scan(&lifetimeIn, &lifetimeOut, &lifetimeSource); err != nil {
 		t.Fatalf("read lifetime: %v", err)
 	}
-	if err := store.db.QueryRowContext(ctx, `SELECT in_bytes, out_bytes, billable_bytes, counter_source FROM traffic_monthly WHERE node_id = 'hytron'`).Scan(&monthlyIn, &monthlyOut, &billable, &monthlySource); err != nil {
+	if err := store.db.QueryRowContext(ctx, `SELECT in_bytes, out_bytes, billable_bytes, counter_source FROM traffic_monthly WHERE node_id = 'example-node-a'`).Scan(&monthlyIn, &monthlyOut, &billable, &monthlySource); err != nil {
 		t.Fatalf("read monthly: %v", err)
 	}
 	if lifetimeIn != 200 || lifetimeOut != 200 || monthlyIn != 100 || monthlyOut != 100 || billable != 200 {
@@ -387,14 +387,14 @@ func TestTrafficAggregateMigrationSaturatesCorruptRealAndNegativeValues(t *testi
 		t.Fatalf("open sqlite store: %v", err)
 	}
 	ctx := context.Background()
-	if err := store.SeedPreviewData(ctx, PreviewSeedOptions{NodeID: "hytron", DisplayName: "Hytron", AgentToken: "token"}); err != nil {
+	if err := store.SeedPreviewData(ctx, PreviewSeedOptions{NodeID: "example-node-a", DisplayName: "Example Node A", AgentToken: "token"}); err != nil {
 		t.Fatalf("seed node: %v", err)
 	}
 	now := time.Now().UTC().Unix()
 	if _, err := store.db.ExecContext(ctx, `
-		INSERT INTO traffic_lifetime (node_id, in_bytes, out_bytes, updated_at) VALUES ('hytron', 0, 0, ?);
+		INSERT INTO traffic_lifetime (node_id, in_bytes, out_bytes, updated_at) VALUES ('example-node-a', 0, 0, ?);
 		INSERT INTO traffic_monthly (node_id, month, billing_epoch, reset_day, billing_mode, in_bytes, out_bytes, billable_bytes, updated_at)
-		VALUES ('hytron', '2026-07', 0, 1, 'both', 0, 0, 0, ?)
+		VALUES ('example-node-a', '2026-07', 0, 1, 'both', 0, 0, 0, ?)
 	`, now, now); err != nil {
 		t.Fatalf("seed traffic rows: %v", err)
 	}
@@ -414,10 +414,10 @@ func TestTrafficAggregateMigrationSaturatesCorruptRealAndNegativeValues(t *testi
 	defer store.Close()
 	var lifetimeIn, lifetimeOut, monthlyIn, monthlyOut, billable int64
 	var lifetimeInType, lifetimeOutType, monthlyInType, monthlyOutType, billableType string
-	if err := store.db.QueryRow(`SELECT in_bytes, out_bytes, typeof(in_bytes), typeof(out_bytes) FROM traffic_lifetime WHERE node_id='hytron'`).Scan(&lifetimeIn, &lifetimeOut, &lifetimeInType, &lifetimeOutType); err != nil {
+	if err := store.db.QueryRow(`SELECT in_bytes, out_bytes, typeof(in_bytes), typeof(out_bytes) FROM traffic_lifetime WHERE node_id='example-node-a'`).Scan(&lifetimeIn, &lifetimeOut, &lifetimeInType, &lifetimeOutType); err != nil {
 		t.Fatalf("read lifetime: %v", err)
 	}
-	if err := store.db.QueryRow(`SELECT in_bytes, out_bytes, billable_bytes, typeof(in_bytes), typeof(out_bytes), typeof(billable_bytes) FROM traffic_monthly WHERE node_id='hytron'`).Scan(&monthlyIn, &monthlyOut, &billable, &monthlyInType, &monthlyOutType, &billableType); err != nil {
+	if err := store.db.QueryRow(`SELECT in_bytes, out_bytes, billable_bytes, typeof(in_bytes), typeof(out_bytes), typeof(billable_bytes) FROM traffic_monthly WHERE node_id='example-node-a'`).Scan(&monthlyIn, &monthlyOut, &billable, &monthlyInType, &monthlyOutType, &billableType); err != nil {
 		t.Fatalf("read monthly: %v", err)
 	}
 	if lifetimeIn != math.MaxInt64 || lifetimeOut != math.MaxInt64 || monthlyIn != math.MaxInt64 || monthlyOut != math.MaxInt64 || billable != math.MaxInt64 {
@@ -460,10 +460,10 @@ func TestTrafficMonthlyEpochMigrationPreservesLegacyRows(t *testing.T) {
 	`); err != nil {
 		t.Fatalf("create legacy schema: %v", err)
 	}
-	if _, err := db.Exec(`INSERT INTO nodes (id, display_name, token_hash, status, country_code, created_at, updated_at) VALUES ('hytron', 'Hytron', 'hash', 'online', 'HK', ?, ?)`, now, now); err != nil {
+	if _, err := db.Exec(`INSERT INTO nodes (id, display_name, token_hash, status, country_code, created_at, updated_at) VALUES ('example-node-a', 'Example Node A', 'hash', 'online', 'HK', ?, ?)`, now, now); err != nil {
 		t.Fatalf("insert legacy node: %v", err)
 	}
-	if _, err := db.Exec(`INSERT INTO traffic_monthly (node_id, month, in_bytes, out_bytes, billable_bytes, last_in_total_bytes, last_out_total_bytes, updated_at) VALUES ('hytron', '2026-06', 10, 20, 30, 100, 200, ?)`, now); err != nil {
+	if _, err := db.Exec(`INSERT INTO traffic_monthly (node_id, month, in_bytes, out_bytes, billable_bytes, last_in_total_bytes, last_out_total_bytes, updated_at) VALUES ('example-node-a', '2026-06', 10, 20, 30, 100, 200, ?)`, now); err != nil {
 		t.Fatalf("insert legacy traffic: %v", err)
 	}
 	if err := db.Close(); err != nil {
@@ -488,7 +488,7 @@ func TestTrafficMonthlyEpochMigrationPreservesLegacyRows(t *testing.T) {
 	if err := store.db.QueryRowContext(ctx, `
 		SELECT billing_epoch, reset_day, billing_mode, in_bytes, out_bytes, billable_bytes
 		FROM traffic_monthly
-		WHERE node_id = 'hytron' AND month = '2026-06'
+		WHERE node_id = 'example-node-a' AND month = '2026-06'
 	`).Scan(&epoch, &resetDay, &mode, &inBytes, &outBytes, &billable); err != nil {
 		t.Fatalf("read migrated legacy row: %v", err)
 	}

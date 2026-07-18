@@ -613,6 +613,8 @@ class InstallSafetyTest(unittest.TestCase):
         self.assertIn('ZENO_NOTIFICATION_CREDENTIAL_KEYRING_FILE: /run/secrets/zeno_notification_credential_keyring.json', compose)
         self.assertIn('ZENO_NOTIFICATION_AUTHORITY_KEYRING_FILE: /run/secrets/zeno_notification_authority_keyring.json', script)
         self.assertIn('ZENO_NOTIFICATION_CREDENTIAL_KEYRING_FILE: /run/secrets/zeno_notification_credential_keyring.json', script)
+        self.assertIn('ZENO_NOTIFICATIONS_DISABLED=${NOTIFICATIONS_DISABLED}', script)
+        self.assertIn('validate_bool "$NOTIFICATIONS_DISABLED" ZENO_NOTIFICATIONS_DISABLED', script)
         self.assertIn('ensure_single_keyring_file', script)
         self.assertNotIn('ZENO_NOTIFICATION_CREDENTIAL_KEY=', compose)
         self.assertNotIn('ZENO_NOTIFICATION_CREDENTIAL_KEY=', script)
@@ -632,7 +634,9 @@ class InstallSafetyTest(unittest.TestCase):
         self.assertIn('gh_sha="762569efe785082b7d1feb06995efece1a9cecce16da8503ac6fdbcbea04085b"', script)
         self.assertIn('^v?[0-9]+\\.[0-9]+\\.[0-9]+', script)
         self.assertIn('TARGET_VERSION_LABEL="${version_label#v}"', script)
-        self.assertIn('改用 GitHub attestation API 验证', script)
+        self.assertIn('https://ghcr.io/token?scope=repository%3Ashuijiao1%2Fzeno%3Apull', script)
+        self.assertIn('GH_TOKEN="$verifier_token" "$verifier" attestation verify', script)
+        self.assertIn('--bundle-from-oci', script)
         self.assertNotIn('|| true', script)
 
     def test_release_workflow_publishes_github_signed_image_attestation(self):
