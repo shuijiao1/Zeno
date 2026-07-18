@@ -28,7 +28,7 @@ BACKUP_KEEP_COUNT="${ZENO_BACKUP_KEEP_COUNT:-5}"
 FAILED_STATE_KEEP_COUNT="${ZENO_FAILED_STATE_KEEP_COUNT:-3}"
 BUILD_KEEP_COUNT="${ZENO_BUILD_KEEP_COUNT:-3}"
 MIN_FREE_BYTES="${ZENO_MIN_FREE_BYTES:-67108864}"
-DB_CHECK_TIMEOUT_SECONDS="${ZENO_DB_CHECK_TIMEOUT_SECONDS:-300}"
+DB_CHECK_TIMEOUT="${ZENO_DB_CHECK_TIMEOUT:-}"
 VERIFY_ATTESTATION="${ZENO_VERIFY_ATTESTATION:-true}"
 NOTIFICATIONS_DISABLED="${ZENO_NOTIFICATIONS_DISABLED:-}"
 TRUSTED_PROXIES="${ZENO_TRUSTED_PROXIES:-}"
@@ -150,6 +150,24 @@ validate_bool() {
   esac
 }
 
+validate_db_check_timeout() {
+  local value="$1"
+  local amount unit maximum
+  if ! [[ "$value" =~ ^([1-9][0-9]{0,4})(s|m|h)$ ]]; then
+    fail "ZENO_DB_CHECK_TIMEOUT 必须是大于 0 的时长，格式为整数加 s、m 或 h"
+  fi
+  amount="${BASH_REMATCH[1]}"
+  unit="${BASH_REMATCH[2]}"
+  case "$unit" in
+    s) maximum=86400 ;;
+    m) maximum=1440 ;;
+    h) maximum=24 ;;
+  esac
+  if [ "$amount" -gt "$maximum" ]; then
+    fail "ZENO_DB_CHECK_TIMEOUT 不能超过 24h"
+  fi
+}
+
 validate_image_reference() {
   local image="$1"
   local image_name="${image##*/}"
@@ -191,6 +209,9 @@ load_existing_env_defaults() {
   if [ -z "$CONTAINER_IP" ] && value=$(read_env_value ZENO_CONTAINER_IP); then
     CONTAINER_IP="$value"
   fi
+  if [ -z "$DB_CHECK_TIMEOUT" ] && value=$(read_env_value ZENO_DB_CHECK_TIMEOUT); then
+    DB_CHECK_TIMEOUT="$value"
+  fi
 
   IMAGE="${IMAGE:-$DEFAULT_IMAGE}"
   HOST_PORT="${HOST_PORT:-18980}"
@@ -201,12 +222,13 @@ load_existing_env_defaults() {
   CONTAINER_IP="${CONTAINER_IP:-172.30.250.2}"
   TRUSTED_PROXIES="${TRUSTED_PROXIES:-${DOCKER_GATEWAY}/32}"
   NOTIFICATIONS_DISABLED="${NOTIFICATIONS_DISABLED:-false}"
+  DB_CHECK_TIMEOUT="${DB_CHECK_TIMEOUT:-10m}"
   validate_image_reference "$IMAGE"
   validate_positive_int "$BACKUP_KEEP_COUNT" ZENO_BACKUP_KEEP_COUNT
   validate_positive_int "$FAILED_STATE_KEEP_COUNT" ZENO_FAILED_STATE_KEEP_COUNT
   validate_positive_int "$BUILD_KEEP_COUNT" ZENO_BUILD_KEEP_COUNT
   validate_non_negative_int "$MIN_FREE_BYTES" ZENO_MIN_FREE_BYTES
-  validate_positive_int "$DB_CHECK_TIMEOUT_SECONDS" ZENO_DB_CHECK_TIMEOUT_SECONDS
+  validate_db_check_timeout "$DB_CHECK_TIMEOUT"
   validate_bool "$VERIFY_ATTESTATION" ZENO_VERIFY_ATTESTATION
   validate_bool "$NOTIFICATIONS_DISABLED" ZENO_NOTIFICATIONS_DISABLED
 }
@@ -700,10 +722,10 @@ sqlite_quick_check_dir() {
   local secrets_dir="$2"
   [ -e "$data_dir/zeno.db" ] || return 0
   reject_symlink "$data_dir/zeno.db" "SQLite 数据库" || return 1
-  timeout --foreground "${DB_CHECK_TIMEOUT_SECONDS}s" docker run --rm \
+  timeout --foreground "$DB_CHECK_TIMEOUT" docker run --rm \
     -v "$data_dir:/data" \
     -v "$secrets_dir:/run/secrets:ro" \
-    "$IMAGE" -db /data/zeno.db -check-db >/dev/null
+    "$IMAGE" -db /data/zeno.db -check-db -check-db-timeout "$DB_CHECK_TIMEOUT" >/dev/null
 }
 
 sqlite_quick_check_scratch_copy() {
@@ -950,6 +972,7 @@ ZENO_TRUSTED_PROXIES=${TRUSTED_PROXIES}
 ZENO_DOCKER_SUBNET=${DOCKER_SUBNET}
 ZENO_DOCKER_GATEWAY=${DOCKER_GATEWAY}
 ZENO_CONTAINER_IP=${CONTAINER_IP}
+ZENO_DB_CHECK_TIMEOUT=${DB_CHECK_TIMEOUT}
 EOF_ENV
   chmod 600 "$dir/.env"
 }

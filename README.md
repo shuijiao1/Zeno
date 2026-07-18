@@ -72,8 +72,11 @@ http://127.0.0.1:18980
 ZENO_INSTALL_DIR=/opt/zeno \
 ZENO_HOST_PORT=18980 \
 ZENO_IMAGE=ghcr.io/shuijiao1/zeno:vX.Y.Z \
+ZENO_DB_CHECK_TIMEOUT=10m \
 bash <(curl -fsSL https://zeno.shuijiao.de)
 ```
+
+`ZENO_DB_CHECK_TIMEOUT` 控制升级时 SQLite `quick_check` 的最长时间，默认为 `10m`，支持 `s`、`m`、`h` 且上限为 `24h`。大型数据库检查可能需要数分钟；安装器会持久化该值并在检查失败或超时时继续执行自动回滚。
 
 ### Caddy 示例
 

@@ -31,10 +31,13 @@ sudo env \
   ZENO_INSTALL_DIR=/opt/zeno \
   ZENO_HOST_PORT=18980 \
   ZENO_IMAGE=ghcr.io/shuijiao1/zeno:vX.Y.Z \
+  ZENO_DB_CHECK_TIMEOUT=10m \
   bash -o pipefail -c 'curl -fsSL https://zeno.shuijiao.de | bash'
 ```
 
 重复运行同一安装器会执行镜像 provenance 校验、停服前预检、一致性离线备份、SQLite `quick_check`、原子配置替换、readiness 检查和失败自动恢复。升级与恢复细节见 [`UPGRADE.md`](UPGRADE.md)。
+
+数据库检查使用独立的 `ZENO_DB_CHECK_TIMEOUT`，默认 `10m`，支持整数 `s`、`m`、`h` 且最大 `24h`。大型数据库可能需要数分钟；安装器会持久化该值。超时或检查失败会自动回滚，不影响 Controller 的普通运行时超时设置。
 
 ## 2. 配置 HTTPS 入口
 

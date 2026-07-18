@@ -72,8 +72,11 @@ Optional environment variables:
 ZENO_INSTALL_DIR=/opt/zeno \
 ZENO_HOST_PORT=18980 \
 ZENO_IMAGE=ghcr.io/shuijiao1/zeno:vX.Y.Z \
+ZENO_DB_CHECK_TIMEOUT=10m \
 bash <(curl -fsSL https://zeno.shuijiao.de)
 ```
+
+`ZENO_DB_CHECK_TIMEOUT` limits the upgrade-time SQLite `quick_check`. It defaults to `10m`, accepts `s`, `m`, or `h`, and is capped at `24h`. Large databases can take several minutes to check; the installer persists this value and still rolls back automatically if the check fails or times out.
 
 ### Caddy example
 

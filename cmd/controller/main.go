@@ -136,13 +136,31 @@ func buildController(config handlerConfig) (*controllerRuntime, error) {
 	return &controllerRuntime{Handler: handler, Store: store, Cleanup: cleanup}, nil
 }
 
-func checkSQLiteDatabase(dbPath string) error {
+const (
+	defaultDBCheckTimeout = 10 * time.Minute
+	maximumDBCheckTimeout = 24 * time.Hour
+)
+
+func validateDBCheckTimeout(timeout time.Duration) error {
+	if timeout <= 0 {
+		return fmt.Errorf("database check timeout must be greater than zero")
+	}
+	if timeout > maximumDBCheckTimeout {
+		return fmt.Errorf("database check timeout must not exceed %s", maximumDBCheckTimeout)
+	}
+	return nil
+}
+
+func checkSQLiteDatabase(parent context.Context, dbPath string, timeout time.Duration) error {
+	if err := validateDBCheckTimeout(timeout); err != nil {
+		return err
+	}
 	store, err := api.OpenSQLiteStore(dbPath)
 	if err != nil {
 		return err
 	}
 	defer store.Close()
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	ctx, cancel := context.WithTimeout(parent, timeout)
 	defer cancel()
 	return store.QuickCheck(ctx)
 }
@@ -485,6 +503,7 @@ func main() {
 	notificationCredentialKeyringFile := flag.String("notification-credential-keyring-file", "", "JSON file containing active and previous notification credential encryption keys")
 	probeInterval := flag.Duration("probe-interval", time.Minute, "controller-local probe collection interval")
 	checkDB := flag.Bool("check-db", false, "run SQLite schema setup and PRAGMA quick_check, then exit")
+	checkDBTimeout := flag.Duration("check-db-timeout", defaultDBCheckTimeout, "maximum duration for -check-db (must be greater than zero and no more than 24h)")
 	resetAdminPasswordFile := flag.String("reset-admin-password-file", "", "offline recovery: reset admin account using password from file, then exit")
 	flag.Parse()
 
@@ -492,7 +511,7 @@ func main() {
 		if *dbPath == "" {
 			log.Fatal("-check-db requires -db")
 		}
-		if err := checkSQLiteDatabase(*dbPath); err != nil {
+		if err := checkSQLiteDatabase(context.Background(), *dbPath, *checkDBTimeout); err != nil {
 			log.Fatal(err)
 		}
 		return
