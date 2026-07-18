@@ -4,7 +4,7 @@
 # upgrades. The GitHub Docker workflow emits provenance and SBOM attestations for
 # every published image.
 
-FROM --platform=$BUILDPLATFORM node:24.16.0-bookworm-slim@sha256:2c87ef9bd3c6a3bd4b472b4bec2ce9d16354b0c574f736c476489d09f560a203 AS web-builder
+FROM --platform=$BUILDPLATFORM node:26.5.0-bookworm-slim@sha256:2d49d876e96237d76de412761cf05dbfe5aee325cc4406a4d41d5824c5bb8beb AS web-builder
 WORKDIR /src/web
 COPY web/package*.json ./
 RUN npm ci
