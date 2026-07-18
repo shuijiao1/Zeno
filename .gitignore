@@ -5,6 +5,30 @@ web/.vite/
 web/tsconfig.tsbuildinfo
 build/
 
+# Local runtime state and credentials (keep explicit examples trackable)
+.env
+.env.*
+!.env.example
+!**/.env.example
+data/
+secrets/
+*.db
+*.db-wal
+*.db-shm
+*.sqlite
+*.sqlite3
+*.sqlite-wal
+*.sqlite-shm
+*.pem
+*.key
+*.p12
+*.pfx
+id_rsa
+id_ed25519
+*.credentials
+*.token
+.test-credentials/
+
 # Logs
 *.log
 

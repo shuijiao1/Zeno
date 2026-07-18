@@ -42,7 +42,7 @@ func TestBuildHandlerEnablesAdminAPIWithAdminToken(t *testing.T) {
 	runtime, err := buildController(handlerConfig{
 		DBPath:      filepath.Join(t.TempDir(), "zeno.db"),
 		SeedPreview: true,
-		NodeID:      "hytron",
+		NodeID:      "example-node-a",
 		AgentToken:  "agent-token",
 		AdminToken:  "admin-pass",
 	})

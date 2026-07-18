@@ -65,3 +65,17 @@ find secrets -type f -exec chmod 640 {} +
 Controller 升级通常不要求同步升级 Agent。只有 Release notes 明确说明 Agent 协议或功能要求时，才重新运行后台生成的 Zeno-Agent 安装命令。
 
 Agent 安装器和多平台 release 来自独立 Zeno-Agent 仓库；公开安装命令通常不需要设置 `ZENO_AGENT_VERSION`。
+
+## 5. 安装器版本与校验边界
+
+默认 `https://zeno.shuijiao.de` 是发布方维护的便利入口；镜像版本可以固定，但该 URL 当前没有由仓库独立控制的 `/vX.Y.Z` 安装器路由。仓库 tag 的 raw URL 可作为审计/下载来源，例如：
+
+```text
+https://raw.githubusercontent.com/shuijiao1/Zeno/vX.Y.Z/install.sh
+```
+
+tag URL 的稳定性依赖已发布 tag 不被移动；HTTPS 只保护传输，仓库当前也没有为 `install.sh` 单独发布签名。因此 raw URL **不是默认一键命令**。在高保证环境中，先从 tag 下载到本地、人工审查并按独立可信渠道记录的 SHA-256 校验后再以 root 执行。要提供第一方、版本化且签名/摘要可验证的短 URL，仍需发布入口（Cloudflare Worker）增加不可变版本路由和校验元数据；这不能只靠本仓库文档完成。
+
+## English summary
+
+Use the installer for upgrades; it creates a stopped, complete backup, checks SQLite, pins the previous image ID, waits for readiness, and restores the complete snapshot on failure. Upgrade and rollback to an immutable `vX.Y.Z` or digest—not `latest`—and restore `.env`, Compose, `data/`, and `secrets/` from the same backup. Raw GitHub tag URLs are useful for audit/download but are not the default one-liner and do not provide a separate installer signature. A first-party immutable versioned short URL remains blocked on the Cloudflare Worker publishing layer.

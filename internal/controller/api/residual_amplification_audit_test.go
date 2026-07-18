@@ -20,7 +20,7 @@ func TestResidualProbeErrorBatchAmplificationIsRejected(t *testing.T) {
 	}
 	defer store.Close()
 	ctx := context.Background()
-	if err := store.SeedPreviewData(ctx, PreviewSeedOptions{NodeID: "hytron", DisplayName: "Hytron", AgentToken: "token"}); err != nil {
+	if err := store.SeedPreviewData(ctx, PreviewSeedOptions{NodeID: "example-node-a", DisplayName: "Example Node A", AgentToken: "token"}); err != nil {
 		t.Fatal(err)
 	}
 	samples := make([]map[string]any, 9)
@@ -34,7 +34,7 @@ func TestResidualProbeErrorBatchAmplificationIsRejected(t *testing.T) {
 	}
 	recorder := httptest.NewRecorder()
 	request := httptest.NewRequest(http.MethodPost, "/api/agent/v1/probe-results", bytes.NewReader(payload))
-	request.Header.Set("X-Node-ID", "hytron")
+	request.Header.Set("X-Node-ID", "example-node-a")
 	request.Header.Set("Authorization", "Bearer token")
 	NewHandler(HandlerOptions{Store: store}).ServeHTTP(recorder, request)
 	if recorder.Code != http.StatusBadRequest {
@@ -59,7 +59,7 @@ func TestProbeBatchRejectsDuplicateTargetEvenWithShortErrors(t *testing.T) {
 	}
 	defer store.Close()
 	ctx := context.Background()
-	if err := store.SeedPreviewData(ctx, PreviewSeedOptions{NodeID: "hytron", DisplayName: "Hytron", AgentToken: "token"}); err != nil {
+	if err := store.SeedPreviewData(ctx, PreviewSeedOptions{NodeID: "example-node-a", DisplayName: "Example Node A", AgentToken: "token"}); err != nil {
 		t.Fatal(err)
 	}
 	rounds := make([]map[string]any, 2)
@@ -76,7 +76,7 @@ func TestProbeBatchRejectsDuplicateTargetEvenWithShortErrors(t *testing.T) {
 	}
 	recorder := httptest.NewRecorder()
 	request := httptest.NewRequest(http.MethodPost, "/api/agent/v1/probe-results", bytes.NewReader(payload))
-	request.Header.Set("X-Node-ID", "hytron")
+	request.Header.Set("X-Node-ID", "example-node-a")
 	request.Header.Set("Authorization", "Bearer token")
 	NewHandler(HandlerOptions{Store: store}).ServeHTTP(recorder, request)
 	if recorder.Code != http.StatusBadRequest {

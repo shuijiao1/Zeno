@@ -235,7 +235,7 @@ function coreTypeLabel(virtualization?: string): { singular: string; plural: str
   const virtualMarkers = [
     'virtual', 'kvm', 'qemu', 'standard pc', 'i440fx', 'piix', 'vmware', 'xen', 'hyper-v', 'bochs',
     'parallels', 'bhyve', 'openvz', 'lxc', 'docker', 'container', 'cloud', 'ec2', 'compute engine',
-    'digitalocean', 'vultr', 'linode', 'alibaba', 'tencent', 'huawei', 'azure', 'google', 'amazon',
+    'digitalocean', 'vultr', 'linode', 'example-transit', 'tencent', 'huawei', 'azure', 'google', 'amazon',
   ]
   if (virtualMarkers.some((marker) => value.includes(marker))) {
     return { singular: 'Virtual Core', plural: 'Virtual Cores' }

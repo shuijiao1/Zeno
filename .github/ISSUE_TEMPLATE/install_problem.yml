@@ -1,5 +1,5 @@
 name: Installation problem
-about: Get help with Controller or Agent installation
+description: Get help with Controller or Agent installation
 title: "[Install] "
 labels: [installation]
 body:
@@ -18,7 +18,7 @@ body:
     id: version
     attributes:
       label: Version
-      placeholder: latest / image digest / release tag
+      placeholder: vX.Y.Z / sha256:image-digest / release tag
     validations:
       required: true
   - type: input
@@ -32,7 +32,7 @@ body:
     id: command
     attributes:
       label: 安装命令 / Install command
-      description: 请先删除 token、密码、真实域名等敏感信息。
+      description: 不要粘贴原始命令；先删除 enrollment/runtime token、密码、Authorization header、真实域名和其他敏感信息。
       render: shell
   - type: textarea
     id: output

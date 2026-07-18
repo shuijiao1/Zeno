@@ -7,8 +7,8 @@ describe('normalizeSummary', () => {
     const summary = normalizeSummary({
       nodes: [
         {
-          id: 'hytron',
-          display_name: 'Hytron',
+          id: 'example-node-a',
+          display_name: 'Example Node A',
           status: 'online',
           os: 'debian',
           os_version: '13',
@@ -70,7 +70,7 @@ describe('normalizeSummary', () => {
       ],
     })
 
-    expect(summary.nodes[0].displayName).toBe('Hytron')
+    expect(summary.nodes[0].displayName).toBe('Example Node A')
     expect(summary.nodes[0].arch).toBe('aarch64')
     expect(summary.nodes[0].countryCode).toBe('HK')
     expect(summary.nodes[0].cpuCores).toBe(2)
@@ -148,13 +148,13 @@ describe('subscribeSummary', () => {
     expect(new URL(instances[0].url).pathname).toBe('/api/public/v1/summary/ws')
     expect(new URL(instances[0].url).protocol).toBe('ws:')
     instances[0].emitSummary({
-      nodes: [{ id: 'hytron', display_name: 'Hytron', status: 'online', os: 'debian', country_code: 'HK', cpu_percent: 1, memory_used_bytes: 2, memory_total_bytes: 4, disk_used_bytes: 8, disk_total_bytes: 16, net_in_speed_bps: 32, net_out_speed_bps: 64, net_in_total_bytes: 128, net_out_total_bytes: 256, monthly_billable_bytes: 384, monthly_quota_bytes: 512 }],
+      nodes: [{ id: 'example-node-a', display_name: 'Example Node A', status: 'online', os: 'debian', country_code: 'HK', cpu_percent: 1, memory_used_bytes: 2, memory_total_bytes: 4, disk_used_bytes: 8, disk_total_bytes: 16, net_in_speed_bps: 32, net_out_speed_bps: 64, net_in_total_bytes: 128, net_out_total_bytes: 256, monthly_billable_bytes: 384, monthly_quota_bytes: 512 }],
       services: [],
       latency_points: [],
     })
 
     expect(onSummary).toHaveBeenCalledWith(expect.objectContaining({
-      nodes: [expect.objectContaining({ id: 'hytron', displayName: 'Hytron', netOutSpeedBps: 64 })],
+      nodes: [expect.objectContaining({ id: 'example-node-a', displayName: 'Example Node A', netOutSpeedBps: 64 })],
     }))
     unsubscribe?.()
     expect(instances[0].close).toHaveBeenCalled()
@@ -254,23 +254,23 @@ describe('detail websocket subscriptions', () => {
     const onNodeLatency = vi.fn()
     const onNodeState = vi.fn()
     const onServiceLatency = vi.fn()
-    const stopNodeLatency = subscribeNodeLatency('hytron', '1d', onNodeLatency)
-    const stopNodeState = subscribeNodeState('hytron', '1h', onNodeState)
+    const stopNodeLatency = subscribeNodeLatency('example-node-a', '1d', onNodeLatency)
+    const stopNodeState = subscribeNodeState('example-node-a', '1h', onNodeState)
     const stopServiceLatency = subscribeServiceLatency('google', '7d', onServiceLatency)
 
-    expect(new URL(instances[0].url).pathname).toBe('/api/public/v1/nodes/hytron/latency/ws')
+    expect(new URL(instances[0].url).pathname).toBe('/api/public/v1/nodes/example-node-a/latency/ws')
     expect(new URL(instances[0].url).searchParams.get('range')).toBe('1d')
-    expect(new URL(instances[1].url).pathname).toBe('/api/public/v1/nodes/hytron/state/ws')
+    expect(new URL(instances[1].url).pathname).toBe('/api/public/v1/nodes/example-node-a/state/ws')
     expect(new URL(instances[1].url).searchParams.get('range')).toBe('1h')
     expect(new URL(instances[2].url).pathname).toBe('/api/public/v1/services/google/latency/ws')
     expect(new URL(instances[2].url).searchParams.get('range')).toBe('7d')
 
-    instances[0].emit({ node_id: 'hytron', range: '1d', points: [{ ts: '2026-07-05T07:00:00Z', target_id: 'google', target_name: 'Google', median_ms: 1.2, loss_percent: 0 }] })
-    instances[1].emit({ node_id: 'hytron', range: '1h', points: [{ ts: '2026-07-05T07:00:00Z', cpu_percent: 12, load1: 0.1, load5: 0.2, load15: 0.3, memory_used_bytes: 100, memory_total_bytes: 200, swap_used_bytes: 0, swap_total_bytes: 0, disk_used_bytes: 300, disk_total_bytes: 400, net_in_total_bytes: 500, net_out_total_bytes: 600, net_in_speed_bps: 700, net_out_speed_bps: 800, process_count: 90, tcp_connection_count: 10, udp_connection_count: 5, uptime_seconds: 60 }] })
-    instances[2].emit({ target: { id: 'google', name: 'Google', type: 'http_get', assigned_node_count: 1, reporting_node_count: 1, median_ms: 1.2, loss_percent: 0, updated_at: '2026-07-05T07:00:00Z' }, range: '7d', points: [{ ts: '2026-07-05T07:00:00Z', node_id: 'hytron', node_name: 'Hytron', median_ms: 1.3, loss_percent: 0 }] })
+    instances[0].emit({ node_id: 'example-node-a', range: '1d', points: [{ ts: '2026-07-05T07:00:00Z', target_id: 'google', target_name: 'Google', median_ms: 1.2, loss_percent: 0 }] })
+    instances[1].emit({ node_id: 'example-node-a', range: '1h', points: [{ ts: '2026-07-05T07:00:00Z', cpu_percent: 12, load1: 0.1, load5: 0.2, load15: 0.3, memory_used_bytes: 100, memory_total_bytes: 200, swap_used_bytes: 0, swap_total_bytes: 0, disk_used_bytes: 300, disk_total_bytes: 400, net_in_total_bytes: 500, net_out_total_bytes: 600, net_in_speed_bps: 700, net_out_speed_bps: 800, process_count: 90, tcp_connection_count: 10, udp_connection_count: 5, uptime_seconds: 60 }] })
+    instances[2].emit({ target: { id: 'google', name: 'Google', type: 'http_get', assigned_node_count: 1, reporting_node_count: 1, median_ms: 1.2, loss_percent: 0, updated_at: '2026-07-05T07:00:00Z' }, range: '7d', points: [{ ts: '2026-07-05T07:00:00Z', node_id: 'example-node-a', node_name: 'Example Node A', median_ms: 1.3, loss_percent: 0 }] })
 
-    expect(onNodeLatency).toHaveBeenCalledWith(expect.objectContaining({ nodeId: 'hytron', range: '1d' }))
-    expect(onNodeState).toHaveBeenCalledWith(expect.objectContaining({ nodeId: 'hytron', range: '1h', points: [expect.objectContaining({ netOutSpeedBps: 800 })] }))
+    expect(onNodeLatency).toHaveBeenCalledWith(expect.objectContaining({ nodeId: 'example-node-a', range: '1d' }))
+    expect(onNodeState).toHaveBeenCalledWith(expect.objectContaining({ nodeId: 'example-node-a', range: '1h', points: [expect.objectContaining({ netOutSpeedBps: 800 })] }))
     expect(onServiceLatency).toHaveBeenCalledWith(expect.objectContaining({ target: expect.objectContaining({ id: 'google' }), range: '7d' }))
 
     stopNodeLatency?.()
@@ -286,14 +286,14 @@ describe('normalizeServiceLatency', () => {
       target: { id: 'google', name: 'Google', type: 'http_get', assigned_node_count: 10, reporting_node_count: 9, median_ms: 1.2, loss_percent: 0, updated_at: '2026-07-02T12:00:00Z' },
       range: '1d',
       points: [
-        { ts: '2026-07-02T12:00:00Z', node_id: 'hytron', node_name: 'Hytron', median_ms: 1.4, loss_percent: 0 },
+        { ts: '2026-07-02T12:00:00Z', node_id: 'example-node-a', node_name: 'Example Node A', median_ms: 1.4, loss_percent: 0 },
       ],
     })
 
     expect(data.target.id).toBe('google')
     expect(data.target.assignedNodeCount).toBe(10)
-    expect(data.points[0].targetId).toBe('hytron')
-    expect(data.points[0].targetName).toBe('Hytron')
+    expect(data.points[0].targetId).toBe('example-node-a')
+    expect(data.points[0].targetName).toBe('Example Node A')
   })
 
   it('expands compact Kulin-style node series into chart-compatible points', () => {
@@ -302,8 +302,8 @@ describe('normalizeServiceLatency', () => {
       range: '1d',
       series: [
         {
-          node_id: 'hytron',
-          node_name: 'Hytron',
+          node_id: 'example-node-a',
+          node_name: 'Example Node A',
           created_at: [Date.parse('2026-07-02T12:00:00Z')],
           median_ms: [1.3],
           avg_ms: [1.5],
@@ -313,7 +313,7 @@ describe('normalizeServiceLatency', () => {
     })
 
     expect(data.points).toEqual([
-      expect.objectContaining({ ts: '2026-07-02T12:00:00.000Z', targetId: 'hytron', targetName: 'Hytron', medianMs: 1.3, avgMs: 1.5, lossPercent: 0 }),
+      expect.objectContaining({ ts: '2026-07-02T12:00:00.000Z', targetId: 'example-node-a', targetName: 'Example Node A', medianMs: 1.3, avgMs: 1.5, lossPercent: 0 }),
     ])
   })
 
@@ -324,8 +324,8 @@ describe('normalizeServiceLatency', () => {
       created_at: [Date.parse('2026-07-02T12:00:00Z'), Date.parse('2026-07-02T12:01:00Z')],
       series: [
         {
-          node_id: 'hytron',
-          node_name: 'Hytron',
+          node_id: 'example-node-a',
+          node_name: 'Example Node A',
           avg_ms: [1.5, 2.5],
           loss_percent: [0, 1],
         },
@@ -333,8 +333,8 @@ describe('normalizeServiceLatency', () => {
     })
 
     expect(data.points).toEqual([
-      expect.objectContaining({ ts: '2026-07-02T12:00:00.000Z', targetId: 'hytron', targetName: 'Hytron', avgMs: 1.5, lossPercent: 0 }),
-      expect.objectContaining({ ts: '2026-07-02T12:01:00.000Z', targetId: 'hytron', targetName: 'Hytron', avgMs: 2.5, lossPercent: 1 }),
+      expect.objectContaining({ ts: '2026-07-02T12:00:00.000Z', targetId: 'example-node-a', targetName: 'Example Node A', avgMs: 1.5, lossPercent: 0 }),
+      expect.objectContaining({ ts: '2026-07-02T12:01:00.000Z', targetId: 'example-node-a', targetName: 'Example Node A', avgMs: 2.5, lossPercent: 1 }),
     ])
   })
 })
@@ -368,7 +368,7 @@ describe('fetchServiceLatency', () => {
 describe('normalizeNodeLatency', () => {
   it('keeps node id, range, and loss-only null latency points', () => {
     const data = normalizeNodeLatency({
-      node_id: 'hytron',
+      node_id: 'example-node-a',
       range: '1h',
       points: [
         { ts: '2026-07-02T12:00:00Z', target_id: 'telegram-dc1', target_name: 'Telegram DC1', median_ms: null, loss_percent: 100 },
@@ -376,7 +376,7 @@ describe('normalizeNodeLatency', () => {
       ],
     })
 
-    expect(data.nodeId).toBe('hytron')
+    expect(data.nodeId).toBe('example-node-a')
     expect(data.range).toBe('1h')
     expect(data.points[0].targetName).toBe('Telegram DC1')
     expect(data.points[0].medianMs).toBeNull()
@@ -385,7 +385,7 @@ describe('normalizeNodeLatency', () => {
 
   it('expands compact Kulin-style target series into chart points', () => {
     const data = normalizeNodeLatency({
-      node_id: 'hytron',
+      node_id: 'example-node-a',
       range: '1d',
       series: [
         {
@@ -407,7 +407,7 @@ describe('normalizeNodeLatency', () => {
 
   it('expands node latency series with shared timestamps', () => {
     const data = normalizeNodeLatency({
-      node_id: 'hytron',
+      node_id: 'example-node-a',
       range: '1h',
       created_at: [Date.parse('2026-07-02T12:00:00Z')],
       series: [
@@ -436,7 +436,7 @@ describe('normalizeNodeLatency', () => {
 describe('normalizeNodeState', () => {
   it('maps persisted agent state history into frontend camelCase points', () => {
     const data = normalizeNodeState({
-      node_id: 'hytron',
+      node_id: 'example-node-a',
       range: '1h',
       points: [
         {
@@ -463,7 +463,7 @@ describe('normalizeNodeState', () => {
       ],
     })
 
-    expect(data.nodeId).toBe('hytron')
+    expect(data.nodeId).toBe('example-node-a')
     expect(data.range).toBe('1h')
     expect(data.points[0].cpuPercent).toBe(18.75)
     expect(data.points[0].load1).toBe(0.42)
@@ -481,7 +481,7 @@ describe('normalizeNodeState', () => {
 
   it('normalizes old state payloads without extra metrics to nulls', () => {
     const data = normalizeNodeState({
-      node_id: 'hytron',
+      node_id: 'example-node-a',
       range: '1h',
       points: [
         {
@@ -509,7 +509,7 @@ describe('normalizeNodeState', () => {
 
   it('expands compact state series payloads', () => {
     const data = normalizeNodeState({
-      node_id: 'hytron',
+      node_id: 'example-node-a',
       range: '1d',
       created_at: [Date.parse('2026-07-02T12:00:00Z'), Date.parse('2026-07-02T12:00:30Z')],
       series: {
@@ -538,8 +538,8 @@ describe('normalizeAdminNodes', () => {
     const data = normalizeAdminNodes({
       nodes: [
         {
-          id: 'hytron',
-          display_name: 'Hytron',
+          id: 'example-node-a',
+          display_name: 'Example Node A',
           status: 'online',
           country_code: 'HK',
           region: 'Hong Kong',
@@ -555,7 +555,7 @@ describe('normalizeAdminNodes', () => {
           last_seen_at: '2026-07-03T00:00:00Z',
           created_at: '2026-07-02T00:00:00Z',
           updated_at: '2026-07-03T00:00:00Z',
-          hostname: 'hytron-real',
+          hostname: 'example-node-a-real',
           os_name: 'debian',
           os_version: '13',
           kernel: '6.12.0',
@@ -571,8 +571,8 @@ describe('normalizeAdminNodes', () => {
       ],
     })
 
-    expect(data.nodes[0].id).toBe('hytron')
-    expect(data.nodes[0].displayName).toBe('Hytron')
+    expect(data.nodes[0].id).toBe('example-node-a')
+    expect(data.nodes[0].displayName).toBe('Example Node A')
     expect(data.nodes[0].disabled).toBe(false)
     expect(data.nodes[0].agentVersion).toBe('d206817')
     expect(data.nodes[0].expiryDate).toBe('2026-08-01')
@@ -596,8 +596,8 @@ describe('normalizeAdminProbeTargets', () => {
     const data = normalizeAdminProbeTargets({
       targets: [
         {
-          id: 'hytron-local',
-          name: 'Hytron',
+          id: 'example-node-a-local',
+          name: 'Example Node A',
           type: 'tcping',
           address: '127.0.0.1',
           port: 18980,
@@ -607,17 +607,17 @@ describe('normalizeAdminProbeTargets', () => {
           display_order: 20,
           enabled: true,
           assignments: [
-            { node_id: 'hytron', node_display_name: 'Hytron', enabled: true },
+            { node_id: 'example-node-a', node_display_name: 'Example Node A', enabled: true },
           ],
         },
       ],
     })
 
-    expect(data.targets[0].id).toBe('hytron-local')
+    expect(data.targets[0].id).toBe('example-node-a-local')
     expect(data.targets[0].timeoutMs).toBe(1200)
     expect(data.targets[0].intervalSec).toBe(60)
     expect(data.targets[0].displayOrder).toBe(20)
-    expect(data.targets[0].assignments[0].nodeDisplayName).toBe('Hytron')
+    expect(data.targets[0].assignments[0].nodeDisplayName).toBe('Example Node A')
   })
 
   it('normalizes HTTP GET targets without a port', () => {
@@ -1019,8 +1019,8 @@ describe('updateAdminNode', () => {
   it('patches editable node fields with the admin token in X-Admin-Token only', async () => {
     const fetchMock = vi.fn(async () => new Response(JSON.stringify({
       node: {
-        id: 'hytron',
-        display_name: 'Hytron Edited',
+        id: 'example-node-a',
+        display_name: 'Example Node A Edited',
         status: 'disabled',
         country_code: 'HK',
         region: 'Hong Kong',
@@ -1040,8 +1040,8 @@ describe('updateAdminNode', () => {
     }), { status: 200, headers: { 'Content-Type': 'application/json' } }))
     globalThis.fetch = fetchMock as unknown as typeof fetch
 
-    const node = await updateAdminNode('admin-pass', 'hytron', {
-      displayName: 'Hytron Edited',
+    const node = await updateAdminNode('admin-pass', 'example-node-a', {
+      displayName: 'Example Node A Edited',
       countryCode: 'HK',
       region: 'Hong Kong',
       homeProbeTargetId: 'cloudflare',
@@ -1057,7 +1057,7 @@ describe('updateAdminNode', () => {
       probeTargetIds: ['cloudflare', 'google'],
     })
 
-    expect(node.displayName).toBe('Hytron Edited')
+    expect(node.displayName).toBe('Example Node A Edited')
     expect(node.disabled).toBe(true)
     expect(node.monthlyQuotaBytes).toBe(123456789)
     expect(node.homeProbeTargetId).toBe('cloudflare')
@@ -1068,7 +1068,7 @@ describe('updateAdminNode', () => {
     expect(node.displayOrder).toBe(10)
     expect(node.publicIPv4).toBe('198.51.100.8')
     expect(node.publicIPv6).toBe('2001:db8::8')
-    expect(fetchMock).toHaveBeenCalledWith('/api/admin/v1/nodes/hytron', {
+    expect(fetchMock).toHaveBeenCalledWith('/api/admin/v1/nodes/example-node-a', {
       method: 'PATCH',
       headers: {
         Accept: 'application/json',
@@ -1076,7 +1076,7 @@ describe('updateAdminNode', () => {
         'X-Admin-Token': 'admin-pass',
       },
       body: JSON.stringify({
-        display_name: 'Hytron Edited',
+        display_name: 'Example Node A Edited',
         country_code: 'HK',
         region: 'Hong Kong',
         home_probe_target_id: 'cloudflare',
@@ -1107,9 +1107,9 @@ describe('deleteAdminNode', () => {
     const fetchMock = vi.fn(async () => new Response(null, { status: 204 }))
     globalThis.fetch = fetchMock as unknown as typeof fetch
 
-    await deleteAdminNode('admin-pass', 'hytron')
+    await deleteAdminNode('admin-pass', 'example-node-a')
 
-    expect(fetchMock).toHaveBeenCalledWith('/api/admin/v1/nodes/hytron', {
+    expect(fetchMock).toHaveBeenCalledWith('/api/admin/v1/nodes/example-node-a', {
       method: 'DELETE',
       headers: {
         Accept: 'application/json',
@@ -1213,7 +1213,7 @@ describe('createAdminProbeTarget', () => {
         interval_sec: 90,
         display_order: 20,
         enabled: true,
-        assignments: [{ node_id: 'hytron', node_display_name: 'Hytron', enabled: true }],
+        assignments: [{ node_id: 'example-node-a', node_display_name: 'Example Node A', enabled: true }],
       },
     }), { status: 201, headers: { 'Content-Type': 'application/json' } }))
     globalThis.fetch = fetchMock as unknown as typeof fetch
@@ -1230,7 +1230,7 @@ describe('createAdminProbeTarget', () => {
     })
 
     expect(target.id).toBe('example-https-a1b2c3d4')
-    expect(target.assignments[0].nodeId).toBe('hytron')
+    expect(target.assignments[0].nodeId).toBe('example-node-a')
     expect(fetchMock).toHaveBeenCalledWith('/api/admin/v1/probe-targets', {
       method: 'POST',
       headers: {
@@ -1314,7 +1314,7 @@ describe('updateAdminProbeTarget', () => {
   it('patches editable probe target fields with the admin token in X-Admin-Token only', async () => {
     const fetchMock = vi.fn(async () => new Response(JSON.stringify({
       target: {
-        id: 'hytron-local',
+        id: 'example-node-a-local',
         name: 'Local Controller',
         type: 'tcping',
         address: '127.0.0.1',
@@ -1324,12 +1324,12 @@ describe('updateAdminProbeTarget', () => {
         interval_sec: 30,
         display_order: 40,
         enabled: false,
-        assignments: [{ node_id: 'hytron', node_display_name: 'Hytron', enabled: true }],
+        assignments: [{ node_id: 'example-node-a', node_display_name: 'Example Node A', enabled: true }],
       },
     }), { status: 200, headers: { 'Content-Type': 'application/json' } }))
     globalThis.fetch = fetchMock as unknown as typeof fetch
 
-    const target = await updateAdminProbeTarget('admin-pass', 'hytron-local', {
+    const target = await updateAdminProbeTarget('admin-pass', 'example-node-a-local', {
       name: 'Local Controller',
       address: '127.0.0.1',
       port: 18981,
@@ -1339,14 +1339,14 @@ describe('updateAdminProbeTarget', () => {
       displayOrder: 40,
       enabled: false,
       assignments: [
-        { nodeId: 'hytron', enabled: false },
+        { nodeId: 'example-node-a', enabled: false },
         { nodeId: 'backup', enabled: true },
       ],
     })
 
     expect(target.name).toBe('Local Controller')
     expect(target.enabled).toBe(false)
-    expect(fetchMock).toHaveBeenCalledWith('/api/admin/v1/probe-targets/hytron-local', {
+    expect(fetchMock).toHaveBeenCalledWith('/api/admin/v1/probe-targets/example-node-a-local', {
       method: 'PATCH',
       headers: {
         Accept: 'application/json',
@@ -1363,7 +1363,7 @@ describe('updateAdminProbeTarget', () => {
         display_order: 40,
         enabled: false,
         assignments: [
-          { node_id: 'hytron', enabled: false },
+          { node_id: 'example-node-a', enabled: false },
           { node_id: 'backup', enabled: true },
         ],
       }),
@@ -1373,7 +1373,7 @@ describe('updateAdminProbeTarget', () => {
   it('patches HTTP GET probe targets with a null port to clear TCP state', async () => {
     const fetchMock = vi.fn(async () => new Response(JSON.stringify({
       target: {
-        id: 'hytron-local',
+        id: 'example-node-a-local',
         name: 'Zeno Health HTTP',
         type: 'http_get',
         address: 'https://example.com/health',
@@ -1383,12 +1383,12 @@ describe('updateAdminProbeTarget', () => {
         interval_sec: 60,
         display_order: 50,
         enabled: true,
-        assignments: [{ node_id: 'hytron', node_display_name: 'Hytron', enabled: true }],
+        assignments: [{ node_id: 'example-node-a', node_display_name: 'Example Node A', enabled: true }],
       },
     }), { status: 200, headers: { 'Content-Type': 'application/json' } }))
     globalThis.fetch = fetchMock as unknown as typeof fetch
 
-    const target = await updateAdminProbeTarget('admin-pass', 'hytron-local', {
+    const target = await updateAdminProbeTarget('admin-pass', 'example-node-a-local', {
       name: 'Zeno Health HTTP',
       type: 'http_get',
       address: 'https://example.com/health',
@@ -1402,7 +1402,7 @@ describe('updateAdminProbeTarget', () => {
 
     expect(target.type).toBe('http_get')
     expect(target.port).toBeNull()
-    expect(fetchMock).toHaveBeenCalledWith('/api/admin/v1/probe-targets/hytron-local', {
+    expect(fetchMock).toHaveBeenCalledWith('/api/admin/v1/probe-targets/example-node-a-local', {
       method: 'PATCH',
       headers: {
         Accept: 'application/json',
@@ -1436,9 +1436,9 @@ describe('deleteAdminProbeTarget', () => {
     const fetchMock = vi.fn(async () => new Response(null, { status: 204 }))
     globalThis.fetch = fetchMock as unknown as typeof fetch
 
-    await deleteAdminProbeTarget('admin-pass', 'hytron-local')
+    await deleteAdminProbeTarget('admin-pass', 'example-node-a-local')
 
-    expect(fetchMock).toHaveBeenCalledWith('/api/admin/v1/probe-targets/hytron-local', {
+    expect(fetchMock).toHaveBeenCalledWith('/api/admin/v1/probe-targets/example-node-a-local', {
       method: 'DELETE',
       headers: {
         Accept: 'application/json',
@@ -1472,7 +1472,7 @@ describe('admin alert rules', () => {
           notification_event_type: 'probe_unhealthy',
           notification_label: '异常',
           description: '',
-          scope_node_ids: ['hytron'],
+          scope_node_ids: ['example-node-a'],
           created_at: '2026-07-03T00:00:00Z',
           updated_at: '2026-07-03T00:00:00Z',
         },
@@ -1482,7 +1482,7 @@ describe('admin alert rules', () => {
     expect(normalized.rules[0].thresholdUnit).toBe('%')
     expect(normalized.rules[0].durationSec).toBe(300)
     expect(normalized.rules[0].notificationLabel).toBe('异常')
-    expect(normalized.rules[0].scopeNodeIds).toEqual(['hytron'])
+    expect(normalized.rules[0].scopeNodeIds).toEqual(['example-node-a'])
 
     const fetchMock = vi.fn(async () => new Response(JSON.stringify(apiPayload), { status: 200, headers: { 'Content-Type': 'application/json' } }))
     globalThis.fetch = fetchMock as unknown as typeof fetch
@@ -1512,19 +1512,19 @@ describe('admin alert rules', () => {
         notification_event_type: 'probe_unhealthy',
         notification_label: '异常',
         description: '',
-        scope_node_ids: ['hytron', 'backup'],
+        scope_node_ids: ['example-node-a', 'backup'],
         created_at: '2026-07-03T00:00:00Z',
         updated_at: '2026-07-03T00:10:00Z',
       },
     }), { status: 200, headers: { 'Content-Type': 'application/json' } }))
     globalThis.fetch = fetchMock as unknown as typeof fetch
 
-    const rule = await updateAdminAlertRule('admin-pass', 'cpu_high', { enabled: false, threshold: 95.5, durationSec: 600, scopeNodeIds: ['hytron', 'backup'] })
+    const rule = await updateAdminAlertRule('admin-pass', 'cpu_high', { enabled: false, threshold: 95.5, durationSec: 600, scopeNodeIds: ['example-node-a', 'backup'] })
 
     expect(rule.enabled).toBe(false)
     expect(rule.threshold).toBe(95.5)
     expect(rule.durationSec).toBe(600)
-    expect(rule.scopeNodeIds).toEqual(['hytron', 'backup'])
+    expect(rule.scopeNodeIds).toEqual(['example-node-a', 'backup'])
     expect(fetchMock).toHaveBeenCalledWith('/api/admin/v1/alert-rules/cpu_high', {
       method: 'PATCH',
       headers: {
@@ -1532,7 +1532,7 @@ describe('admin alert rules', () => {
         'Content-Type': 'application/json',
         'X-Admin-Token': 'admin-pass',
       },
-      body: JSON.stringify({ enabled: false, threshold: 95.5, duration_sec: 600, scope_node_ids: ['hytron', 'backup'] }),
+      body: JSON.stringify({ enabled: false, threshold: 95.5, duration_sec: 600, scope_node_ids: ['example-node-a', 'backup'] }),
     })
     const calls = fetchMock.mock.calls as unknown as Array<[RequestInfo | URL, RequestInit?]>
     expect(String(calls[0]?.[0])).not.toContain('admin-pass')
@@ -1711,23 +1711,23 @@ describe('requestAdminNodeInstallCommand', () => {
 
   it('requests an install command from the node edit context without putting the admin token in the URL', async () => {
     const fetchMock = vi.fn(async () => new Response(JSON.stringify({
-      node_id: 'hytron',
-      command: "ZENO_INSTALL_URL='https://zeno.shuijiao.de/agent/install.sh' ZENO_CONTROLLER_URL='https://probe.example.com' ZENO_NODE_ID='hytron' bash -o pipefail -c 'curl -fsSL \"$ZENO_INSTALL_URL\" | sudo env ZENO_CONTROLLER_URL=\"$ZENO_CONTROLLER_URL\" ZENO_NODE_ID=\"$ZENO_NODE_ID\" bash'",
+      node_id: 'example-node-a',
+      command: "ZENO_INSTALL_URL='https://zeno.shuijiao.de/agent/install.sh' ZENO_CONTROLLER_URL='https://probe.example.com' ZENO_NODE_ID='example-node-a' bash -o pipefail -c 'curl -fsSL \"$ZENO_INSTALL_URL\" | sudo env ZENO_CONTROLLER_URL=\"$ZENO_CONTROLLER_URL\" ZENO_NODE_ID=\"$ZENO_NODE_ID\" bash'",
       commands: {
-        linux: "ZENO_INSTALL_URL='https://zeno.shuijiao.de/agent/install.sh' ZENO_CONTROLLER_URL='https://probe.example.com' ZENO_NODE_ID='hytron' bash -o pipefail -c 'curl -fsSL \"$ZENO_INSTALL_URL\" | sudo env ZENO_CONTROLLER_URL=\"$ZENO_CONTROLLER_URL\" ZENO_NODE_ID=\"$ZENO_NODE_ID\" bash'",
-        macos: "ZENO_INSTALL_URL='https://zeno.shuijiao.de/agent/install.sh' ZENO_CONTROLLER_URL='https://probe.example.com' ZENO_NODE_ID='hytron' bash -o pipefail -c 'curl -fsSL \"$ZENO_INSTALL_URL\" | sudo env ZENO_CONTROLLER_URL=\"$ZENO_CONTROLLER_URL\" ZENO_NODE_ID=\"$ZENO_NODE_ID\" bash'",
+        linux: "ZENO_INSTALL_URL='https://zeno.shuijiao.de/agent/install.sh' ZENO_CONTROLLER_URL='https://probe.example.com' ZENO_NODE_ID='example-node-a' bash -o pipefail -c 'curl -fsSL \"$ZENO_INSTALL_URL\" | sudo env ZENO_CONTROLLER_URL=\"$ZENO_CONTROLLER_URL\" ZENO_NODE_ID=\"$ZENO_NODE_ID\" bash'",
+        macos: "ZENO_INSTALL_URL='https://zeno.shuijiao.de/agent/install.sh' ZENO_CONTROLLER_URL='https://probe.example.com' ZENO_NODE_ID='example-node-a' bash -o pipefail -c 'curl -fsSL \"$ZENO_INSTALL_URL\" | sudo env ZENO_CONTROLLER_URL=\"$ZENO_CONTROLLER_URL\" ZENO_NODE_ID=\"$ZENO_NODE_ID\" bash'",
         windows: "powershell -NoProfile -ExecutionPolicy Bypass -Command \"$env:ZENO_CONTROLLER_URL='https://probe.example.com'; irm 'https://zeno.shuijiao.de/agent/install.ps1' | iex\"",
       },
     }), { status: 200, headers: { 'Content-Type': 'application/json' } }))
     globalThis.fetch = fetchMock as unknown as typeof fetch
 
-    const result = await requestAdminNodeInstallCommand('admin-pass', 'hytron', 'https://probe.example.com')
+    const result = await requestAdminNodeInstallCommand('admin-pass', 'example-node-a', 'https://probe.example.com')
 
-    expect(result.nodeId).toBe('hytron')
+    expect(result.nodeId).toBe('example-node-a')
     expect(result.command).toContain('zeno.shuijiao.de/agent/install.sh')
     expect(result.command).toContain('bash -o pipefail')
     expect(result.commands.windows).toContain('zeno.shuijiao.de/agent/install.ps1')
-    expect(fetchMock).toHaveBeenCalledWith('/api/admin/v1/nodes/hytron/install-command', {
+    expect(fetchMock).toHaveBeenCalledWith('/api/admin/v1/nodes/example-node-a/install-command', {
       method: 'POST',
       headers: {
         Accept: 'application/json',

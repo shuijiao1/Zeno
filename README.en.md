@@ -7,7 +7,7 @@
 
 **Zeno is a lightweight, self-hosted server monitoring dashboard.**
 
-It has two parts: a Controller for the web UI, APIs, SQLite storage and notifications, and an Agent that runs on each server to report host metrics, traffic and probe results. Zeno is designed for a clean personal server status page that is easy to deploy and operate.
+It has two parts: a Controller for the web UI, APIs, SQLite storage and notifications, and an Agent that runs on each server to report host metrics, traffic and probe results. Zeno is software you download and run on your own server; there is no hosted SaaS, vendor cloud account, or managed monitoring service.
 
 [简体中文](README.md) · [English](README.en.md)
 
@@ -38,11 +38,13 @@ Zeno focuses on lightweight monitoring. It is not a remote-control platform:
 
 ## Install Controller
 
-Prepare a server with Docker and Docker Compose v2, then run:
+Prepare a Linux server (`amd64`, `arm64`, or `arm/v6`) with Docker Engine and Docker Compose v2, then run:
 
 ```bash
 bash <(curl -fsSL https://zeno.shuijiao.de)
 ```
+
+The quick installer uses the publisher's currently recommended stable image and is convenient for a first install. For reproducible operations, pin upgrades to `vX.Y.Z` or a digest. The installer requires root (run as root or through `sudo`). The current validation baseline is Docker Engine 24+, Compose 2.20+, 1 vCPU, 512 MiB free memory, and 1 GiB free disk.
 
 Default layout:
 
@@ -62,12 +64,14 @@ http://127.0.0.1:18980
 
 > Do not expose `18980` directly. Put it behind Caddy, Nginx or another HTTPS reverse proxy.
 
+Complete account setup immediately after the first Admin visit, and configure a valid HTTPS hostname before enrolling remote Agents. The reverse proxy must support WebSocket upgrades. If it is not on the same host/loopback, add only its actual source address to `ZENO_TRUSTED_PROXIES`.
+
 Optional environment variables:
 
 ```bash
 ZENO_INSTALL_DIR=/opt/zeno \
 ZENO_HOST_PORT=18980 \
-ZENO_IMAGE=ghcr.io/shuijiao1/zeno:latest \
+ZENO_IMAGE=ghcr.io/shuijiao1/zeno:vX.Y.Z \
 bash <(curl -fsSL https://zeno.shuijiao.de)
 ```
 
@@ -87,17 +91,21 @@ The Agent is maintained in a separate repository: [`shuijiao1/Zeno-Agent`](https
 
 Recommended flow: create a server in the Zeno admin dashboard, choose Linux / macOS / Windows, and run the generated install command on the target server. The command downloads the matching Agent release; Linux installs `zeno-agent.service`, macOS installs a LaunchDaemon, and Windows installs the `zeno-agent` service.
 
-Manual example:
+Manual example (generate the one-time enrollment token for this node in Admin and use it within 10 minutes):
 
 ```bash
 ZENO_CONTROLLER_URL=https://zeno.example.com \
 ZENO_NODE_ID=<node-id> \
-ZENO_AGENT_TOKEN=<agent-token> \
+ZENO_ENROLLMENT_TOKEN=<one-time-enrollment-token> \
 ZENO_INSTALL_URL=https://zeno.shuijiao.de/agent/install.sh \
-bash -o pipefail -c 'curl -fsSL "$ZENO_INSTALL_URL" | sudo env ZENO_CONTROLLER_URL="$ZENO_CONTROLLER_URL" ZENO_NODE_ID="$ZENO_NODE_ID" ZENO_AGENT_TOKEN="$ZENO_AGENT_TOKEN" bash'
+bash -o pipefail -c 'curl -fsSL "$ZENO_INSTALL_URL" | sudo env ZENO_CONTROLLER_URL="$ZENO_CONTROLLER_URL" ZENO_NODE_ID="$ZENO_NODE_ID" ZENO_ENROLLMENT_TOKEN="$ZENO_ENROLLMENT_TOKEN" bash'
 ```
 
+Generating another command immediately revokes the previous unused enrollment for that node. It does not interrupt the currently installed Agent's runtime token; the runtime token changes only after the newly enrolled Agent first authenticates successfully.
+
 Run the Windows command from an elevated PowerShell window. The macOS command requires sudo privileges.
+
+Official Agent targets are Linux systemd (`amd64` / `arm64` / `armv6` / `armv7`), macOS (Intel / Apple Silicon), and Windows (`amd64` / `arm64`). Controller and Agent are versioned independently; see [`docs/COMPATIBILITY.md`](docs/COMPATIBILITY.md) for verified combinations, minimum versions, and deprecation policy.
 
 The Agent only reports metrics and probe results. It does not modify the Controller or expose a remote command channel.
 
@@ -110,7 +118,7 @@ See [`docs/UPGRADE.md`](docs/UPGRADE.md) for upgrade and rollback notes.
 Run the safety installer again with an explicit version. It verifies provenance, creates an offline backup, checks SQLite, and automatically restores a failed upgrade:
 
 ```bash
-sudo env ZENO_IMAGE=ghcr.io/shuijiao1/zeno:latest \
+sudo env ZENO_IMAGE=ghcr.io/shuijiao1/zeno:vX.Y.Z \
   bash -o pipefail -c 'curl -fsSL https://zeno.shuijiao.de | bash'
 ```
 
@@ -119,6 +127,19 @@ Health check:
 ```bash
 curl -fsS http://127.0.0.1:18980/ready
 ```
+
+Confirm the automatic backup directory before upgrading and keep an off-host copy. The installer attempts to restore the previous image and complete backup after a failed start. A manual rollback must not change only the image while ignoring the database schema and `secrets/`.
+
+---
+
+## Operations and troubleshooting
+
+- Self-hosting, HTTPS/reverse proxy, and first login: [`docs/SELF_HOSTING.md`](docs/SELF_HOSTING.md)
+- Upgrades, automatic backups, failed-upgrade recovery, and rollback: [`docs/UPGRADE.md`](docs/UPGRADE.md)
+- Controller ↔ Agent support matrix: [`docs/COMPATIBILITY.md`](docs/COMPATIBILITY.md)
+- Public exposure, credentials, notification keyrings, and private vulnerability reporting: [`docs/SECURITY.md`](docs/SECURITY.md)
+
+Start with `curl -fsS http://127.0.0.1:18980/ready`, `docker compose ps`, Controller container logs, and the Agent service status on the target host. Redact Issue reports: never paste tokens, complete install commands, Authorization headers, databases, or notification credentials.
 
 ---
 

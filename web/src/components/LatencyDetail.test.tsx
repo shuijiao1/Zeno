@@ -4,8 +4,8 @@ import type { HomeCardNode, LatencyPoint, StatePoint } from '../types'
 import { LatencyDetail } from './LatencyDetail'
 
 const node = {
-  id: 'hytron',
-  displayName: 'Hytron',
+  id: 'example-node-a',
+  displayName: 'Example Node A',
   status: 'online',
   os: 'debian',
   arch: 'aarch64',
@@ -78,7 +78,7 @@ describe('LatencyDetail', () => {
     expect(html).toContain('detail-hero')
     expect(html).toContain('detail-status-pill')
     expect(html).toContain('detail-fact-strip')
-    expect(html).toContain('Hytron')
+    expect(html).toContain('Example Node A')
     expect(html).toContain('AMD EPYC 7B13')
     expect(html).toContain('2 Virtual Cores')
     expect(html).not.toContain('2 Cores')
@@ -106,7 +106,7 @@ describe('LatencyDetail', () => {
     expect(html).toContain('系统资源历史')
     expect(html).not.toContain('实时 · 1 个状态采样')
     expect(html).not.toContain('个状态采样')
-    expect(html).not.toContain('Hytron 网络延迟')
+    expect(html).not.toContain('Example Node A 网络延迟')
     expect(html).not.toContain('1 天 · 0 个监控服务')
     expect(html).toContain('monitor services')
     expect(html).not.toContain('latency-target-toolbar')

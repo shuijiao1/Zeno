@@ -113,7 +113,7 @@ func buildController(config handlerConfig) (*controllerRuntime, error) {
 		options.NotificationDispatchInterval = 5 * time.Second
 		cleanupHandlers = append(cleanupHandlers, func(context.Context) error { return store.Close() })
 		if config.SeedPreview {
-			if err := store.SeedPreviewData(context.Background(), api.PreviewSeedOptions{NodeID: config.NodeID, DisplayName: "Hytron", CountryCode: "HK", AgentToken: config.AgentToken}); err != nil {
+			if err := store.SeedPreviewData(context.Background(), api.PreviewSeedOptions{NodeID: config.NodeID, DisplayName: "Example Node A", CountryCode: "HK", AgentToken: config.AgentToken}); err != nil {
 				_ = store.Close()
 				backgroundCancel()
 				return nil, err
@@ -470,9 +470,9 @@ func main() {
 	addr := flag.String("addr", "127.0.0.1:18980", "controller listen address")
 	webDir := flag.String("web-dir", "", "optional built web dashboard directory")
 	dbPath := flag.String("db", "", "optional SQLite database path for real controller data")
-	seedPreview := flag.Bool("seed-preview", false, "seed the Hytron preview node and TCP probe targets into SQLite; requires -db")
+	seedPreview := flag.Bool("seed-preview", false, "seed the Example Node A preview node and TCP probe targets into SQLite; requires -db")
 	collectLocal := flag.Bool("collect-local", false, "run a controller-local TCP probe collector for preview real latency data; requires -db")
-	nodeID := flag.String("node-id", "hytron", "node id for seeded preview data and controller-local collection")
+	nodeID := flag.String("node-id", "example-node-a", "node id for seeded preview data and controller-local collection")
 	agentToken := flag.String("agent-token", "", "agent API bearer token for seeded preview node; prefer -agent-token-file in deployments")
 	agentTokenFile := flag.String("agent-token-file", "", "file containing the agent API bearer token for seeded preview node")
 	adminToken := flag.String("admin-token", "", "admin API token; prefer -admin-token-file in deployments")
@@ -485,6 +485,7 @@ func main() {
 	notificationCredentialKeyringFile := flag.String("notification-credential-keyring-file", "", "JSON file containing active and previous notification credential encryption keys")
 	probeInterval := flag.Duration("probe-interval", time.Minute, "controller-local probe collection interval")
 	checkDB := flag.Bool("check-db", false, "run SQLite schema setup and PRAGMA quick_check, then exit")
+	resetAdminPasswordFile := flag.String("reset-admin-password-file", "", "offline recovery: reset admin account using password from file, then exit")
 	flag.Parse()
 
 	if *checkDB {
@@ -494,6 +495,25 @@ func main() {
 		if err := checkSQLiteDatabase(*dbPath); err != nil {
 			log.Fatal(err)
 		}
+		return
+	}
+	if strings.TrimSpace(*resetAdminPasswordFile) != "" {
+		if *dbPath == "" {
+			log.Fatal("-reset-admin-password-file requires -db")
+		}
+		password, err := readSecret("", *resetAdminPasswordFile)
+		if err != nil {
+			log.Fatal(err)
+		}
+		store, err := api.OpenSQLiteStore(*dbPath)
+		if err != nil {
+			log.Fatal(err)
+		}
+		defer store.Close()
+		if err := store.ResetAdminAccount(context.Background(), password); err != nil {
+			log.Fatal(err)
+		}
+		log.Print("admin account reset; all admin sessions revoked")
 		return
 	}
 

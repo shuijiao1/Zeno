@@ -19,7 +19,7 @@ func TestStatusTransitionsQueueOutboxInSameStoreTransaction(t *testing.T) {
 	defer store.Close()
 	enableTestNotificationCredentialEncryption(t, store)
 	ctx := context.Background()
-	if err := store.SeedPreviewData(ctx, PreviewSeedOptions{NodeID: "hytron", DisplayName: "Hytron", CountryCode: "HK", AgentToken: "test-agent-token"}); err != nil {
+	if err := store.SeedPreviewData(ctx, PreviewSeedOptions{NodeID: "example-node-a", DisplayName: "Example Node A", CountryCode: "HK", AgentToken: "test-agent-token"}); err != nil {
 		t.Fatalf("seed preview data: %v", err)
 	}
 	enabled := true
@@ -27,27 +27,27 @@ func TestStatusTransitionsQueueOutboxInSameStoreTransaction(t *testing.T) {
 		t.Fatalf("create notification channel: %v", err)
 	}
 	staleAt := time.Now().UTC().Add(-time.Minute)
-	if _, err := store.db.ExecContext(ctx, `UPDATE nodes SET status = 'online', last_seen_at = ? WHERE id = 'hytron'`, staleAt.Unix()); err != nil {
+	if _, err := store.db.ExecContext(ctx, `UPDATE nodes SET status = 'online', last_seen_at = ? WHERE id = 'example-node-a'`, staleAt.Unix()); err != nil {
 		t.Fatalf("make node stale: %v", err)
 	}
-	transition, changed, err := store.RecordStaleAgentOfflineTransition(ctx, "hytron", time.Now().UTC())
+	transition, changed, err := store.RecordStaleAgentOfflineTransition(ctx, "example-node-a", time.Now().UTC())
 	if err != nil || !changed || transition.Current.Status != "offline" {
 		t.Fatalf("record stale transition: changed=%v transition=%+v err=%v", changed, transition, err)
 	}
 	var offlineDeliveries int
-	if err := store.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM notification_deliveries WHERE node_id = 'hytron' AND previous_status = 'online' AND status = 'offline'`).Scan(&offlineDeliveries); err != nil {
+	if err := store.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM notification_deliveries WHERE node_id = 'example-node-a' AND previous_status = 'online' AND status = 'offline'`).Scan(&offlineDeliveries); err != nil {
 		t.Fatalf("count atomic offline delivery: %v", err)
 	}
 	if offlineDeliveries != 1 {
 		t.Fatalf("atomic offline deliveries=%d, want 1", offlineDeliveries)
 	}
 
-	recovery, err := store.RecordAgentHeartbeatTransition(ctx, "hytron", time.Now().UTC(), "online", "v-test")
+	recovery, err := store.RecordAgentHeartbeatTransition(ctx, "example-node-a", time.Now().UTC(), "online", "v-test")
 	if err != nil || recovery.Previous.Status != "offline" || recovery.Current.Status != "online" {
 		t.Fatalf("record heartbeat recovery: transition=%+v err=%v", recovery, err)
 	}
 	var recoveryDeliveries int
-	if err := store.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM notification_deliveries WHERE node_id = 'hytron' AND previous_status = 'offline' AND status = 'online'`).Scan(&recoveryDeliveries); err != nil {
+	if err := store.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM notification_deliveries WHERE node_id = 'example-node-a' AND previous_status = 'offline' AND status = 'online'`).Scan(&recoveryDeliveries); err != nil {
 		t.Fatalf("count atomic recovery delivery: %v", err)
 	}
 	if recoveryDeliveries != 1 {
@@ -63,14 +63,14 @@ func TestOutboxDrainDoesNotSynthesizeDeliveriesFromHistoricalMarks(t *testing.T)
 	defer store.Close()
 	enableTestNotificationCredentialEncryption(t, store)
 	ctx := context.Background()
-	if err := store.SeedPreviewData(ctx, PreviewSeedOptions{NodeID: "hytron", DisplayName: "Hytron", CountryCode: "HK", AgentToken: "test-agent-token"}); err != nil {
+	if err := store.SeedPreviewData(ctx, PreviewSeedOptions{NodeID: "example-node-a", DisplayName: "Example Node A", CountryCode: "HK", AgentToken: "test-agent-token"}); err != nil {
 		t.Fatalf("seed preview data: %v", err)
 	}
 	enabled := true
 	if _, err := store.CreateAdminNotificationChannel(ctx, AdminNotificationChannelCreateRequest{ID: "ops", Name: "Ops", Destination: "7579942307", Credential: "super-…oken", Enabled: &enabled}); err != nil {
 		t.Fatalf("create notification channel: %v", err)
 	}
-	if _, err := store.db.ExecContext(ctx, `INSERT INTO notification_event_marks (event_type, node_id, mark, created_at) VALUES ('node_offline', 'hytron', 'status-recovered:offline', ?)`, time.Now().Add(-24*time.Hour).Unix()); err != nil {
+	if _, err := store.db.ExecContext(ctx, `INSERT INTO notification_event_marks (event_type, node_id, mark, created_at) VALUES ('node_offline', 'example-node-a', 'status-recovered:offline', ?)`, time.Now().Add(-24*time.Hour).Unix()); err != nil {
 		t.Fatalf("insert historical mark: %v", err)
 	}
 	telegram := newTelegramTestCapture(t)
@@ -92,7 +92,7 @@ func TestOutboxDrainDoesNotSynthesizeDeliveriesFromHistoricalMarks(t *testing.T)
 }
 
 func TestNotificationDeliveryAckFailureKeepsPendingAndMaySendAgain(t *testing.T) {
-	store := &ackFailureOutboxStore{delivery: queuedNotificationDelivery{ID: 42, Event: notificationEvent{EventType: "node_offline", NodeID: "hytron", PreviousStatus: "online", Status: "offline"}, Channel: notificationDispatchChannel{ID: "ops", Type: "telegram", Destination: "chat", Credential: "credential"}}}
+	store := &ackFailureOutboxStore{delivery: queuedNotificationDelivery{ID: 42, Event: notificationEvent{EventType: "node_offline", NodeID: "example-node-a", PreviousStatus: "online", Status: "offline"}, Channel: notificationDispatchChannel{ID: "ops", Type: "telegram", Destination: "chat", Credential: "credential"}}}
 	sender := &countingNotificationSender{}
 	h := &handler{store: store, notificationSender: sender}
 
@@ -114,7 +114,7 @@ func TestNotificationOutboxClaimsLeaseAndRecoversExpiredLease(t *testing.T) {
 	defer store.Close()
 	enableTestNotificationCredentialEncryption(t, store)
 	ctx := context.Background()
-	if err := store.SeedPreviewData(ctx, PreviewSeedOptions{NodeID: "hytron", DisplayName: "Hytron", CountryCode: "HK", AgentToken: "test-agent-token"}); err != nil {
+	if err := store.SeedPreviewData(ctx, PreviewSeedOptions{NodeID: "example-node-a", DisplayName: "Example Node A", CountryCode: "HK", AgentToken: "test-agent-token"}); err != nil {
 		t.Fatalf("seed preview data: %v", err)
 	}
 	enabled := true
@@ -122,7 +122,7 @@ func TestNotificationOutboxClaimsLeaseAndRecoversExpiredLease(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create channel: %v", err)
 	}
-	event := notificationEvent{EventType: "node_offline", Label: "离线", NodeID: "hytron", NodeName: "Hytron", PreviousStatus: "online", Status: "offline"}
+	event := notificationEvent{EventType: "node_offline", Label: "离线", NodeID: "example-node-a", NodeName: "Example Node A", PreviousStatus: "online", Status: "offline"}
 	queued, err := store.QueueNotificationEvent(ctx, event, []notificationDispatchChannel{{ID: channel.ID, Name: channel.Name, Type: "telegram", Destination: channel.Destination, Credential: "credential"}})
 	if err != nil || !queued {
 		t.Fatalf("queue event queued=%v err=%v", queued, err)
@@ -159,7 +159,7 @@ func TestNotificationOutboxPausesDisabledChannelsAndResumesWithoutRetryBurn(t *t
 	defer store.Close()
 	enableTestNotificationCredentialEncryption(t, store)
 	ctx := context.Background()
-	if err := store.SeedPreviewData(ctx, PreviewSeedOptions{NodeID: "hytron", DisplayName: "Hytron", CountryCode: "HK", AgentToken: "test-agent-token"}); err != nil {
+	if err := store.SeedPreviewData(ctx, PreviewSeedOptions{NodeID: "example-node-a", DisplayName: "Example Node A", CountryCode: "HK", AgentToken: "test-agent-token"}); err != nil {
 		t.Fatalf("seed preview data: %v", err)
 	}
 	disabled := false
@@ -167,7 +167,7 @@ func TestNotificationOutboxPausesDisabledChannelsAndResumesWithoutRetryBurn(t *t
 	if err != nil {
 		t.Fatalf("create channel: %v", err)
 	}
-	if err := insertNotificationDeliveriesTxForTest(ctx, store, notificationEvent{EventType: "node_offline", Label: "离线", NodeID: "hytron", NodeName: "Hytron", PreviousStatus: "online", Status: "offline"}, notificationDispatchChannel{ID: channel.ID, Name: channel.Name, Type: "telegram", Destination: channel.Destination, Credential: "credential"}); err != nil {
+	if err := insertNotificationDeliveriesTxForTest(ctx, store, notificationEvent{EventType: "node_offline", Label: "离线", NodeID: "example-node-a", NodeName: "Example Node A", PreviousStatus: "online", Status: "offline"}, notificationDispatchChannel{ID: channel.ID, Name: channel.Name, Type: "telegram", Destination: channel.Destination, Credential: "credential"}); err != nil {
 		t.Fatalf("insert delivery: %v", err)
 	}
 	claimed, err := store.PendingNotificationDeliveries(ctx, time.Now().UTC(), 10)
@@ -206,7 +206,7 @@ func TestNotificationOutboxFailedDeliveryKeepsLowFrequencyAutomaticRetry(t *test
 	defer store.Close()
 	enableTestNotificationCredentialEncryption(t, store)
 	ctx := context.Background()
-	if err := store.SeedPreviewData(ctx, PreviewSeedOptions{NodeID: "hytron", DisplayName: "Hytron", CountryCode: "HK", AgentToken: "test-agent-token"}); err != nil {
+	if err := store.SeedPreviewData(ctx, PreviewSeedOptions{NodeID: "example-node-a", DisplayName: "Example Node A", CountryCode: "HK", AgentToken: "test-agent-token"}); err != nil {
 		t.Fatalf("seed preview data: %v", err)
 	}
 	enabled := true
@@ -214,7 +214,7 @@ func TestNotificationOutboxFailedDeliveryKeepsLowFrequencyAutomaticRetry(t *test
 	if err != nil {
 		t.Fatalf("create channel: %v", err)
 	}
-	if err := insertNotificationDeliveriesTxForTest(ctx, store, notificationEvent{EventType: "node_offline", Label: "离线", NodeID: "hytron", NodeName: "Hytron", PreviousStatus: "online", Status: "offline"}, notificationDispatchChannel{ID: channel.ID, Name: channel.Name, Type: "telegram", Destination: channel.Destination, Credential: "credential"}); err != nil {
+	if err := insertNotificationDeliveriesTxForTest(ctx, store, notificationEvent{EventType: "node_offline", Label: "离线", NodeID: "example-node-a", NodeName: "Example Node A", PreviousStatus: "online", Status: "offline"}, notificationDispatchChannel{ID: channel.ID, Name: channel.Name, Type: "telegram", Destination: channel.Destination, Credential: "credential"}); err != nil {
 		t.Fatalf("insert delivery: %v", err)
 	}
 	now := time.Now().UTC().Truncate(time.Second)
@@ -294,7 +294,7 @@ func TestNotificationOutboxWakeUsesSingleBoundedWorker(t *testing.T) {
 		go func() {
 			defer wg.Done()
 			<-start
-			h.dispatchNotificationEvent(store, notificationEvent{EventType: "node_offline", NodeID: "hytron", NodeName: "Hytron", PreviousStatus: "online", Status: "offline"})
+			h.dispatchNotificationEvent(store, notificationEvent{EventType: "node_offline", NodeID: "example-node-a", NodeName: "Example Node A", PreviousStatus: "online", Status: "offline"})
 		}()
 	}
 	close(start)
@@ -390,7 +390,7 @@ func (store *concurrentOutboxStore) EnabledNotificationChannelsForEvent(context.
 }
 
 func (store *concurrentOutboxStore) NotificationNode(context.Context, string) (notificationNodeSnapshot, error) {
-	return notificationNodeSnapshot{ID: "hytron", DisplayName: "Hytron", Status: "online"}, nil
+	return notificationNodeSnapshot{ID: "example-node-a", DisplayName: "Example Node A", Status: "online"}, nil
 }
 
 func (store *concurrentOutboxStore) QueueNotificationEvent(_ context.Context, event notificationEvent, channels []notificationDispatchChannel) (bool, error) {

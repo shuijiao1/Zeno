@@ -18,7 +18,7 @@ func TestTelemetryStoragePressureRejectsStateButKeepsHeartbeatRecoveryPath(t *te
 	}
 	defer store.Close()
 	if err := store.SeedPreviewData(context.Background(), PreviewSeedOptions{
-		NodeID: "hytron", DisplayName: "Hytron", AgentToken: "test-agent-token",
+		NodeID: "example-node-a", DisplayName: "Example Node A", AgentToken: "test-agent-token",
 	}); err != nil {
 		t.Fatalf("seed preview data: %v", err)
 	}
@@ -34,7 +34,7 @@ func TestTelemetryStoragePressureRejectsStateButKeepsHeartbeatRecoveryPath(t *te
 		recorder := httptest.NewRecorder()
 		request := httptest.NewRequest(http.MethodPost, path, bytes.NewBufferString(body))
 		request.Header.Set("Authorization", "Bearer test-agent-token")
-		request.Header.Set("X-Node-ID", "hytron")
+		request.Header.Set("X-Node-ID", "example-node-a")
 		request.Header.Set("Content-Type", "application/json")
 		handler.ServeHTTP(recorder, request)
 		return recorder

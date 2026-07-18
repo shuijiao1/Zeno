@@ -19,7 +19,7 @@ func TestAgentPresenceConfigAppliedAckIsValidatedAndRecorded(t *testing.T) {
 	}
 	defer store.Close()
 	ctx := context.Background()
-	if err := store.SeedPreviewData(ctx, PreviewSeedOptions{NodeID: "hytron", DisplayName: "Hytron", CountryCode: "HK", AgentToken: "test-agent-token"}); err != nil {
+	if err := store.SeedPreviewData(ctx, PreviewSeedOptions{NodeID: "example-node-a", DisplayName: "Example Node A", CountryCode: "HK", AgentToken: "test-agent-token"}); err != nil {
 		t.Fatalf("seed preview data: %v", err)
 	}
 	version, err := store.ProbeConfigVersion(ctx)
@@ -40,13 +40,13 @@ func TestAgentPresenceConfigAppliedAckIsValidatedAndRecorded(t *testing.T) {
 	waitUntil(t, time.Second, func() bool {
 		var appliedVersion int64
 		var appliedAt int64
-		if err := store.db.QueryRowContext(ctx, `SELECT probe_config_applied_version, COALESCE(probe_config_applied_at, 0) FROM nodes WHERE id = 'hytron'`).Scan(&appliedVersion, &appliedAt); err != nil {
+		if err := store.db.QueryRowContext(ctx, `SELECT probe_config_applied_version, COALESCE(probe_config_applied_at, 0) FROM nodes WHERE id = 'example-node-a'`).Scan(&appliedVersion, &appliedAt); err != nil {
 			return false
 		}
 		return appliedVersion == version && appliedAt > 0
 	})
 	var appliedVersion int64
-	if err := store.db.QueryRowContext(ctx, `SELECT probe_config_applied_version FROM nodes WHERE id = 'hytron'`).Scan(&appliedVersion); err != nil {
+	if err := store.db.QueryRowContext(ctx, `SELECT probe_config_applied_version FROM nodes WHERE id = 'example-node-a'`).Scan(&appliedVersion); err != nil {
 		t.Fatalf("query applied version: %v", err)
 	}
 	if appliedVersion != version {
@@ -57,7 +57,7 @@ func TestAgentPresenceConfigAppliedAckIsValidatedAndRecorded(t *testing.T) {
 		t.Fatalf("write invalid future ack: %v", err)
 	}
 	time.Sleep(50 * time.Millisecond)
-	if err := store.db.QueryRowContext(ctx, `SELECT probe_config_applied_version FROM nodes WHERE id = 'hytron'`).Scan(&appliedVersion); err != nil {
+	if err := store.db.QueryRowContext(ctx, `SELECT probe_config_applied_version FROM nodes WHERE id = 'example-node-a'`).Scan(&appliedVersion); err != nil {
 		t.Fatalf("query applied version after invalid ack: %v", err)
 	}
 	if appliedVersion != version {
@@ -69,7 +69,7 @@ func dialAgentPresenceWS(t *testing.T, serverURL string) *websocket.Conn {
 	t.Helper()
 	wsURL := "ws" + strings.TrimPrefix(serverURL, "http") + "/api/agent/v1/presence/ws"
 	header := http.Header{}
-	header.Set("X-Node-ID", "hytron")
+	header.Set("X-Node-ID", "example-node-a")
 	header.Set("Authorization", "Bearer test-agent-token")
 	conn, response, err := websocket.DefaultDialer.Dial(wsURL, header)
 	if err != nil {
@@ -92,7 +92,7 @@ func TestAgentPresenceOfflineDebounceMergesReconnectChurnAndCleansUp(t *testing.
 	// Repeated disconnect scheduling for one node replaces the old timer instead
 	// of accumulating one 30-second goroutine per disconnect.
 	for range 64 {
-		h.scheduleAgentPresenceOfflineCheckAfter(store, "hytron", time.Hour)
+		h.scheduleAgentPresenceOfflineCheckAfter(store, "example-node-a", time.Hour)
 		if got := h.presence.pendingOfflineCheckCount(); got != 1 {
 			t.Fatalf("pending checks for one node = %d, want 1", got)
 		}
@@ -100,7 +100,7 @@ func TestAgentPresenceOfflineDebounceMergesReconnectChurnAndCleansUp(t *testing.
 
 	// Reconnect cancellation happens while holding the same manager lock used to
 	// reserve a timer, so a schedule/connect race cannot leave an orphan check.
-	session := h.presence.connect("hytron")
+	session := h.presence.connect("example-node-a")
 	if got := h.presence.pendingOfflineCheckCount(); got != 0 {
 		t.Fatalf("pending checks after reconnect = %d, want 0", got)
 	}
@@ -108,8 +108,8 @@ func TestAgentPresenceOfflineDebounceMergesReconnectChurnAndCleansUp(t *testing.
 		t.Fatal("disconnect current presence session")
 	}
 	for range 32 {
-		h.scheduleAgentPresenceOfflineCheckAfter(store, "hytron", time.Hour)
-		session = h.presence.connect("hytron")
+		h.scheduleAgentPresenceOfflineCheckAfter(store, "example-node-a", time.Hour)
+		session = h.presence.connect("example-node-a")
 		if got := h.presence.pendingOfflineCheckCount(); got != 0 {
 			t.Fatalf("pending checks during reconnect churn = %d, want 0", got)
 		}

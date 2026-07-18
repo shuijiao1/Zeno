@@ -256,9 +256,9 @@ func TestScheduleDetailPublishCoalescesSameTopicWithTrailingRefresh(t *testing.T
 		}
 	}
 
-	h.scheduleDetailPublish("node-state:hytron", publish)
+	h.scheduleDetailPublish("node-state:example-node-a", publish)
 	<-started
-	h.scheduleDetailPublish("node-state:hytron", publish)
+	h.scheduleDetailPublish("node-state:example-node-a", publish)
 	close(release)
 	select {
 	case <-trailing:

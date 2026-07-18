@@ -134,6 +134,45 @@ func (s *SQLiteStore) AdminAccountConfigured(ctx context.Context) (bool, error) 
 	return count > 0, nil
 }
 
+// ResetAdminAccount is an offline recovery operation. Callers must stop the
+// Controller and protect the supplied password; it resets the username to
+// "admin" and revokes every active session in one transaction.
+func (s *SQLiteStore) ResetAdminAccount(ctx context.Context, password string) error {
+	password = strings.TrimSpace(password)
+	if length := len([]rune(password)); length < 8 || length > 128 {
+		return errInvalidAdminPasswordUpdate
+	}
+	passwordHash, err := hashAdminPassword(password)
+	if err != nil {
+		return err
+	}
+	now := time.Now().UTC().Unix()
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer rollbackUnlessCommitted(tx)
+	for key, value := range map[string]string{
+		settingKeyAdminUsername:     "admin",
+		settingKeyAdminPasswordHash: passwordHash,
+	} {
+		if _, err := tx.ExecContext(ctx, `
+			INSERT INTO settings (key, value, updated_at) VALUES (?, ?, ?)
+			ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at
+		`, key, value, now); err != nil {
+			return err
+		}
+	}
+	if _, err := tx.ExecContext(ctx, `DELETE FROM admin_sessions`); err != nil {
+		return err
+	}
+	if err := tx.Commit(); err != nil {
+		return err
+	}
+	tx = nil
+	return nil
+}
+
 func (s *SQLiteStore) UpdateAdminAccount(ctx context.Context, username, currentPassword, newPassword, fallbackHash string) (AdminSession, error) {
 	username = strings.TrimSpace(username)
 	currentPassword = strings.TrimSpace(currentPassword)

@@ -54,7 +54,7 @@ type LocalProbeCollector struct {
 func NewLocalProbeCollector(store *SQLiteStore, options LocalProbeCollectorOptions) *LocalProbeCollector {
 	nodeID := options.NodeID
 	if nodeID == "" {
-		nodeID = "hytron"
+		nodeID = "example-node-a"
 	}
 	now := options.Now
 	if now == nil {

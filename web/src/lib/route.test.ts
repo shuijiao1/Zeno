@@ -13,8 +13,8 @@ describe('parseDashboardRoute', () => {
   })
 
   it('extracts decoded node ids from Kulin-style server detail URLs', () => {
-    expect(parseDashboardRoute('/server/sharon')).toEqual({ kind: 'node', nodeId: 'sharon' })
-    expect(parseDashboardRoute('/server/DataWave%20HK')).toEqual({ kind: 'node', nodeId: 'DataWave HK' })
+    expect(parseDashboardRoute('/server/example-harbor')).toEqual({ kind: 'node', nodeId: 'example-harbor' })
+    expect(parseDashboardRoute('/server/Example%20Edge%20HK')).toEqual({ kind: 'node', nodeId: 'Example Edge HK' })
   })
 
   it('extracts decoded service target ids from service history URLs', () => {

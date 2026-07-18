@@ -30,6 +30,7 @@ BUILD_KEEP_COUNT="${ZENO_BUILD_KEEP_COUNT:-3}"
 MIN_FREE_BYTES="${ZENO_MIN_FREE_BYTES:-67108864}"
 DB_CHECK_TIMEOUT_SECONDS="${ZENO_DB_CHECK_TIMEOUT_SECONDS:-300}"
 VERIFY_ATTESTATION="${ZENO_VERIFY_ATTESTATION:-true}"
+NOTIFICATIONS_DISABLED="${ZENO_NOTIFICATIONS_DISABLED:-}"
 TRUSTED_PROXIES="${ZENO_TRUSTED_PROXIES:-}"
 DOCKER_SUBNET="${ZENO_DOCKER_SUBNET:-}"
 DOCKER_GATEWAY="${ZENO_DOCKER_GATEWAY:-}"
@@ -178,6 +179,9 @@ load_existing_env_defaults() {
   if [ -z "$TRUSTED_PROXIES" ] && value=$(read_env_value ZENO_TRUSTED_PROXIES); then
     TRUSTED_PROXIES="$value"
   fi
+  if [ -z "$NOTIFICATIONS_DISABLED" ] && value=$(read_env_value ZENO_NOTIFICATIONS_DISABLED); then
+    NOTIFICATIONS_DISABLED="$value"
+  fi
   if [ -z "$DOCKER_SUBNET" ] && value=$(read_env_value ZENO_DOCKER_SUBNET); then
     DOCKER_SUBNET="$value"
   fi
@@ -196,6 +200,7 @@ load_existing_env_defaults() {
   DOCKER_GATEWAY="${DOCKER_GATEWAY:-172.30.250.1}"
   CONTAINER_IP="${CONTAINER_IP:-172.30.250.2}"
   TRUSTED_PROXIES="${TRUSTED_PROXIES:-${DOCKER_GATEWAY}/32}"
+  NOTIFICATIONS_DISABLED="${NOTIFICATIONS_DISABLED:-false}"
   validate_image_reference "$IMAGE"
   validate_positive_int "$BACKUP_KEEP_COUNT" ZENO_BACKUP_KEEP_COUNT
   validate_positive_int "$FAILED_STATE_KEEP_COUNT" ZENO_FAILED_STATE_KEEP_COUNT
@@ -203,6 +208,7 @@ load_existing_env_defaults() {
   validate_non_negative_int "$MIN_FREE_BYTES" ZENO_MIN_FREE_BYTES
   validate_positive_int "$DB_CHECK_TIMEOUT_SECONDS" ZENO_DB_CHECK_TIMEOUT_SECONDS
   validate_bool "$VERIFY_ATTESTATION" ZENO_VERIFY_ATTESTATION
+  validate_bool "$NOTIFICATIONS_DISABLED" ZENO_NOTIFICATIONS_DISABLED
 }
 
 compose_from() {
@@ -610,11 +616,20 @@ verify_official_image_attestation() {
   local verifier="$extract_dir/gh_${gh_version}_linux_${gh_arch}/bin/gh"
   [ -x "$verifier" ] || fail "provenance verifier 缺少可执行文件"
   local certificate_identity="https://github.com/shuijiao1/Zeno/.github/workflows/docker.yml@refs/tags/v${TARGET_VERSION_LABEL}"
-  if "$verifier" attestation verify "oci://${IMAGE}" --repo "$REPO" --bundle-from-oci --cert-identity "$certificate_identity" --deny-self-hosted-runners >/dev/null 2>&1; then
-    return 0
+  # gh requires a token even when it reads attestations from a public OCI
+  # registry. Use a short-lived, pull-only anonymous GHCR token rather than
+  # requiring every self-hosting user to authenticate the GitHub CLI.
+  local verifier_token="${GH_TOKEN:-}"
+  if [ -z "$verifier_token" ]; then
+    local token_response
+    token_response=$(curl -fsSL --max-time 30 \
+      'https://ghcr.io/token?scope=repository%3Ashuijiao1%2Fzeno%3Apull') \
+      || fail "获取公开 GHCR provenance 验证凭据失败"
+    verifier_token=$(printf '%s' "$token_response" | sed -n 's/.*"token":"\([^"]*\)".*/\1/p')
+    [ -n "$verifier_token" ] || fail "公开 GHCR provenance 验证凭据格式无效"
   fi
-  echo "警告: OCI 内置 provenance 不匹配 GitHub workflow identity，改用 GitHub attestation API 验证。" >&2
-  "$verifier" attestation verify "oci://${IMAGE}" --repo "$REPO" --cert-identity "$certificate_identity" --deny-self-hosted-runners >/dev/null \
+  GH_TOKEN="$verifier_token" "$verifier" attestation verify "oci://${IMAGE}" --repo "$REPO" \
+    --bundle-from-oci --cert-identity "$certificate_identity" --deny-self-hosted-runners >/dev/null \
     || fail "官方镜像 provenance 验证失败"
 }
 
@@ -930,6 +945,7 @@ ZENO_HOST_PORT=${HOST_PORT}
 TZ=${TZ_VALUE}
 ZENO_UID=${ZENO_UID}
 ZENO_GID=${ZENO_GID}
+ZENO_NOTIFICATIONS_DISABLED=${NOTIFICATIONS_DISABLED}
 ZENO_TRUSTED_PROXIES=${TRUSTED_PROXIES}
 ZENO_DOCKER_SUBNET=${DOCKER_SUBNET}
 ZENO_DOCKER_GATEWAY=${DOCKER_GATEWAY}

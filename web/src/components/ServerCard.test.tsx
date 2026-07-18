@@ -4,8 +4,8 @@ import type { HomeCardNode } from '../types'
 import { ServerCard } from './ServerCard'
 
 const baseNode: HomeCardNode = {
-  id: 'hytron',
-  displayName: 'Hytron',
+  id: 'example-node-a',
+  displayName: 'Example Node A',
   status: 'online',
   os: 'debian',
   osVersion: '13',
@@ -41,7 +41,7 @@ describe('ServerCard', () => {
     expect(html).toContain('node-head')
     expect(html).toContain('node-specs')
     expect(html).toContain('node-usage')
-    expect(html).toContain('<p>Hytron</p>')
+    expect(html).toContain('<p>Example Node A</p>')
     expect(html).toContain('node-dot status-offline')
     expect(html).not.toContain('node-offline-watermark')
     expect(html).not.toContain('离线')
@@ -54,7 +54,7 @@ describe('ServerCard', () => {
     expect(html).toContain('node-head')
     expect(html).toContain('node-specs')
     expect(html).toContain('node-usage')
-    expect(html).toContain('Hytron')
+    expect(html).toContain('Example Node A')
     expect(html).toContain('永久')
     expect(html).toContain('>流量</span>')
     expect(html).not.toContain('>负载</span>')

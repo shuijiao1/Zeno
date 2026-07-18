@@ -24,38 +24,38 @@ func TestNotificationMessageTextUsesMaskedIPv4AndCompactStatusFormat(t *testing.
 	}{
 		{
 			name:  "offline",
-			event: notificationEvent{EventType: "node_offline", NodeName: "Zouter", NodeIP: "203.0.113.9", PreviousStatus: "online", Status: "offline"},
-			want:  "🔴[离线] Zouter(203.0.***.***)",
+			event: notificationEvent{EventType: "node_offline", NodeName: "Example Relay", NodeIP: "203.0.113.9", PreviousStatus: "online", Status: "offline"},
+			want:  "🔴[离线] Example Relay(203.0.***.***)",
 		},
 		{
 			name:  "offline recovery",
-			event: notificationEvent{EventType: "node_offline", NodeName: "Zouter", NodeIP: "203.0.113.9", PreviousStatus: "offline", Status: "online"},
-			want:  "🟢[恢复] Zouter(203.0.***.***)",
+			event: notificationEvent{EventType: "node_offline", NodeName: "Example Relay", NodeIP: "203.0.113.9", PreviousStatus: "offline", Status: "online"},
+			want:  "🟢[恢复] Example Relay(203.0.***.***)",
 		},
 		{
 			name:  "cpu warning",
-			event: notificationEvent{EventType: "probe_unhealthy", NodeName: "Zouter", NodeIP: "203.0.113.9", PreviousStatus: "online", Status: "warning", Detail: "CPU持续占用过高"},
-			want:  "⚠️[警告] Zouter(203.0.***.***)CPU持续占用过高",
+			event: notificationEvent{EventType: "probe_unhealthy", NodeName: "Example Relay", NodeIP: "203.0.113.9", PreviousStatus: "online", Status: "warning", Detail: "CPU持续占用过高"},
+			want:  "⚠️[警告] Example Relay(203.0.***.***)CPU持续占用过高",
 		},
 		{
 			name:  "cpu recovery",
-			event: notificationEvent{EventType: "probe_unhealthy", NodeName: "Zouter", NodeIP: "203.0.113.9", PreviousStatus: "warning", Status: "online", Detail: "CPU恢复正常"},
-			want:  "🟢[恢复] Zouter(203.0.***.***)CPU恢复正常",
+			event: notificationEvent{EventType: "probe_unhealthy", NodeName: "Example Relay", NodeIP: "203.0.113.9", PreviousStatus: "warning", Status: "online", Detail: "CPU恢复正常"},
+			want:  "🟢[恢复] Example Relay(203.0.***.***)CPU恢复正常",
 		},
 		{
 			name:  "renewal due future",
-			event: notificationEvent{EventType: "renewal_due", NodeName: "Sharon", Detail: "还有 1 天到期，2026-07-10"},
-			want:  "⚠️[到期] Sharon 将于 1 天后（2026-7-10）到期",
+			event: notificationEvent{EventType: "renewal_due", NodeName: "Example Harbor", Detail: "还有 1 天到期，2026-07-10"},
+			want:  "⚠️[到期] Example Harbor 将于 1 天后（2026-7-10）到期",
 		},
 		{
 			name:  "renewal due today",
-			event: notificationEvent{EventType: "renewal_due", NodeName: "Sharon", Detail: "今天到期，2026-07-10"},
-			want:  "⚠️[到期] Sharon 今天（2026-7-10）到期",
+			event: notificationEvent{EventType: "renewal_due", NodeName: "Example Harbor", Detail: "今天到期，2026-07-10"},
+			want:  "⚠️[到期] Example Harbor 今天（2026-7-10）到期",
 		},
 		{
 			name:  "renewal due expired",
-			event: notificationEvent{EventType: "renewal_due", NodeName: "Sharon", Detail: "已过期 2 天，2026-07-10"},
-			want:  "⚠️[到期] Sharon 已于 2 天前（2026-7-10）到期",
+			event: notificationEvent{EventType: "renewal_due", NodeName: "Example Harbor", Detail: "已过期 2 天，2026-07-10"},
+			want:  "⚠️[到期] Example Harbor 已于 2 天前（2026-7-10）到期",
 		},
 	}
 	for _, tt := range cases {
@@ -75,7 +75,7 @@ func TestDispatchAgentStatusNotificationDedupesActiveWarningsUntilRecovery(t *te
 	defer store.Close()
 	enableTestNotificationCredentialEncryption(t, store)
 	ctx := context.Background()
-	if err := store.SeedPreviewData(ctx, PreviewSeedOptions{NodeID: "hytron", DisplayName: "Hytron", CountryCode: "HK", AgentToken: "test-agent-token"}); err != nil {
+	if err := store.SeedPreviewData(ctx, PreviewSeedOptions{NodeID: "example-node-a", DisplayName: "Example Node A", CountryCode: "HK", AgentToken: "test-agent-token"}); err != nil {
 		t.Fatalf("seed preview data: %v", err)
 	}
 	enabled := true
@@ -86,8 +86,8 @@ func TestDispatchAgentStatusNotificationDedupesActiveWarningsUntilRecovery(t *te
 	telegram := newTelegramTestCapture(t)
 	h := &handler{store: store, notificationSender: newHTTPNotificationSender(telegram.server.Client(), telegram.server.URL), liveHub: newLiveUpdateHub(), presence: newAgentPresenceManager()}
 	warning := notificationStatusTransition{
-		Previous: notificationNodeSnapshot{ID: "hytron", DisplayName: "Hytron", Status: "online", PublicIPv4: "203.0.113.9"},
-		Current:  notificationNodeSnapshot{ID: "hytron", DisplayName: "Hytron", Status: "warning", PublicIPv4: "203.0.113.9"},
+		Previous: notificationNodeSnapshot{ID: "example-node-a", DisplayName: "Example Node A", Status: "online", PublicIPv4: "203.0.113.9"},
+		Current:  notificationNodeSnapshot{ID: "example-node-a", DisplayName: "Example Node A", Status: "warning", PublicIPv4: "203.0.113.9"},
 		Detail:   "CPU持续占用过高",
 	}
 	h.dispatchAgentStatusNotification(store, warning, time.Unix(1783491510, 0))
@@ -106,8 +106,8 @@ func TestDispatchAgentStatusNotificationDedupesActiveWarningsUntilRecovery(t *te
 	}
 
 	recovery := notificationStatusTransition{
-		Previous: notificationNodeSnapshot{ID: "hytron", DisplayName: "Hytron", Status: "warning", PublicIPv4: "203.0.113.9"},
-		Current:  notificationNodeSnapshot{ID: "hytron", DisplayName: "Hytron", Status: "online", PublicIPv4: "203.0.113.9"},
+		Previous: notificationNodeSnapshot{ID: "example-node-a", DisplayName: "Example Node A", Status: "warning", PublicIPv4: "203.0.113.9"},
+		Current:  notificationNodeSnapshot{ID: "example-node-a", DisplayName: "Example Node A", Status: "online", PublicIPv4: "203.0.113.9"},
 		Detail:   "CPU恢复正常",
 	}
 	h.dispatchAgentStatusNotification(store, recovery, time.Unix(1783491600, 0))
@@ -131,7 +131,7 @@ func TestNotificationOutboxPersistsFailureAndRetriesAfterRestart(t *testing.T) {
 	defer store.Close()
 	enableTestNotificationCredentialEncryption(t, store)
 	ctx := context.Background()
-	if err := store.SeedPreviewData(ctx, PreviewSeedOptions{NodeID: "hytron", DisplayName: "Hytron", CountryCode: "HK", AgentToken: "test-agent-token"}); err != nil {
+	if err := store.SeedPreviewData(ctx, PreviewSeedOptions{NodeID: "example-node-a", DisplayName: "Example Node A", CountryCode: "HK", AgentToken: "test-agent-token"}); err != nil {
 		t.Fatalf("seed preview data: %v", err)
 	}
 	enabled := true
@@ -139,7 +139,7 @@ func TestNotificationOutboxPersistsFailureAndRetriesAfterRestart(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create notification channel: %v", err)
 	}
-	event := notificationEvent{EventType: "node_offline", Label: "离线", NodeID: "hytron", NodeName: "Hytron", PreviousStatus: "online", Status: "offline", TS: time.Now().UTC().Format(time.RFC3339)}
+	event := notificationEvent{EventType: "node_offline", Label: "离线", NodeID: "example-node-a", NodeName: "Example Node A", PreviousStatus: "online", Status: "offline", TS: time.Now().UTC().Format(time.RFC3339)}
 	queued, err := store.QueueNotificationEvent(ctx, event, []notificationDispatchChannel{{ID: channel.ID, Name: channel.Name, Destination: channel.Destination, Credential: "super-secret-bot-token", Type: "telegram"}})
 	if err != nil || !queued {
 		t.Fatalf("queue event = %v, %v", queued, err)
@@ -182,7 +182,7 @@ func TestRenewalNotificationOutboxRetriesWithoutLosingRenewalMessage(t *testing.
 	defer store.Close()
 	enableTestNotificationCredentialEncryption(t, store)
 	ctx := context.Background()
-	if err := store.SeedPreviewData(ctx, PreviewSeedOptions{NodeID: "hytron", DisplayName: "Hytron", CountryCode: "HK", AgentToken: "token"}); err != nil {
+	if err := store.SeedPreviewData(ctx, PreviewSeedOptions{NodeID: "example-node-a", DisplayName: "Example Node A", CountryCode: "HK", AgentToken: "token"}); err != nil {
 		t.Fatalf("seed preview data: %v", err)
 	}
 	enabled := true
@@ -190,7 +190,7 @@ func TestRenewalNotificationOutboxRetriesWithoutLosingRenewalMessage(t *testing.
 	if err != nil {
 		t.Fatalf("create notification channel: %v", err)
 	}
-	event := notificationEvent{EventType: "renewal_due", Label: "续费", NodeID: "hytron", NodeName: "Hytron", Status: "renewal_due", TS: time.Now().UTC().Format(time.RFC3339), Detail: "还有 3 天到期，2026-07-14"}
+	event := notificationEvent{EventType: "renewal_due", Label: "续费", NodeID: "example-node-a", NodeName: "Example Node A", Status: "renewal_due", TS: time.Now().UTC().Format(time.RFC3339), Detail: "还有 3 天到期，2026-07-14"}
 	queued, err := store.QueueNotificationEvent(ctx, event, []notificationDispatchChannel{{ID: channel.ID, Name: channel.Name, Destination: channel.Destination, Credential: "super-secret-bot-token", Type: "telegram"}})
 	if err != nil || !queued {
 		t.Fatalf("queue renewal event = %v, %v", queued, err)

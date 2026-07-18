@@ -1016,9 +1016,15 @@ func (s *SQLiteStore) Summary(ctx context.Context) (SummaryResponse, error) {
 	if err != nil {
 		return SummaryResponse{}, err
 	}
+	if nodes == nil {
+		nodes = []Node{}
+	}
 	homeSummaries, services, latencySummaries, err := s.summaryAggregates(ctx)
 	if err != nil {
 		return SummaryResponse{}, err
+	}
+	if services == nil {
+		services = []ServiceTarget{}
 	}
 	for index := range nodes {
 		nodes[index].LatencySummary = homeSummaries[nodes[index].ID]

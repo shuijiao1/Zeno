@@ -45,7 +45,7 @@ Zeno 当前已经具备完整预览闭环：
 2. 保持绿色项目边界：不加旧系统兼容，不引入远控/命令执行。
 3. 保持已确认 UI：主页卡片、详情页密度、Admin 分区和列表/弹窗结构不随手重设计；弹窗表单统一按分区组织，避免所有字段挤在一块。
 4. Admin / Public API 响应继续使用 explicit DTO，不返回 token、secret、hash、credential、bearer 等敏感字段。
-5. 部署切片结束时清理 build/tmp，确认 Hytron 服务 active、`/health` OK、本地 git clean。
+5. 部署切片结束时清理 build/tmp，确认 Example Node A 服务 active、`/health` OK、本地 git clean。
 
 ## 下一批建议切片
 

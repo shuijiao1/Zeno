@@ -59,23 +59,23 @@ func TestPruneRawHistoryDeletesInBatchesAndKeepsRecentRows(t *testing.T) {
 	}
 	defer store.Close()
 	ctx := context.Background()
-	if err := store.SeedPreviewData(ctx, PreviewSeedOptions{NodeID: "hytron", DisplayName: "Hytron", CountryCode: "HK", AgentToken: "token"}); err != nil {
+	if err := store.SeedPreviewData(ctx, PreviewSeedOptions{NodeID: "example-node-a", DisplayName: "Example Node A", CountryCode: "HK", AgentToken: "token"}); err != nil {
 		t.Fatalf("seed preview data: %v", err)
 	}
 	oldTS := time.Now().UTC().Add(-rawHistoryRetention - time.Hour).Unix()
 	recentTS := time.Now().UTC().Unix()
 	for i := 0; i < historyRetentionBatchSize+17; i++ {
-		if _, err := store.db.ExecContext(ctx, `INSERT INTO state_samples (node_id, ts, cpu_percent) VALUES ('hytron', ?, 1)`, oldTS-int64(i)); err != nil {
+		if _, err := store.db.ExecContext(ctx, `INSERT INTO state_samples (node_id, ts, cpu_percent) VALUES ('example-node-a', ?, 1)`, oldTS-int64(i)); err != nil {
 			t.Fatalf("insert old state %d: %v", i, err)
 		}
-		if _, err := store.db.ExecContext(ctx, `INSERT INTO probe_rounds (node_id, target_id, ts, type, sent, received, loss_percent) VALUES ('hytron', 'google-dns', ?, 'ping', 1, 1, 0)`, oldTS-int64(i)); err != nil {
+		if _, err := store.db.ExecContext(ctx, `INSERT INTO probe_rounds (node_id, target_id, ts, type, sent, received, loss_percent) VALUES ('example-node-a', 'google-dns', ?, 'ping', 1, 1, 0)`, oldTS-int64(i)); err != nil {
 			t.Fatalf("insert old probe round %d: %v", i, err)
 		}
 	}
-	if _, err := store.db.ExecContext(ctx, `INSERT INTO state_samples (node_id, ts, cpu_percent) VALUES ('hytron', ?, 2)`, recentTS); err != nil {
+	if _, err := store.db.ExecContext(ctx, `INSERT INTO state_samples (node_id, ts, cpu_percent) VALUES ('example-node-a', ?, 2)`, recentTS); err != nil {
 		t.Fatalf("insert recent state: %v", err)
 	}
-	if _, err := store.db.ExecContext(ctx, `INSERT INTO probe_rounds (node_id, target_id, ts, type, sent, received, loss_percent) VALUES ('hytron', 'google-dns', ?, 'ping', 1, 1, 0)`, recentTS); err != nil {
+	if _, err := store.db.ExecContext(ctx, `INSERT INTO probe_rounds (node_id, target_id, ts, type, sent, received, loss_percent) VALUES ('example-node-a', 'google-dns', ?, 'ping', 1, 1, 0)`, recentTS); err != nil {
 		t.Fatalf("insert recent probe round: %v", err)
 	}
 	for i := 0; i < historyRetentionBatchSize+3; i++ {

@@ -274,7 +274,7 @@ func TestResourceAlertRulesUseDurationWindowAverage(t *testing.T) {
 	}
 	defer store.Close()
 	ctx := context.Background()
-	if _, err := store.CreateAdminNode(ctx, AdminNodeCreateRequest{ID: "hytron", DisplayName: "Hytron", CountryCode: "HK"}); err != nil {
+	if _, err := store.CreateAdminNode(ctx, AdminNodeCreateRequest{ID: "example-node-a", DisplayName: "Example Node A", CountryCode: "HK"}); err != nil {
 		t.Fatalf("create node: %v", err)
 	}
 
@@ -289,10 +289,10 @@ func TestResourceAlertRulesUseDurationWindowAverage(t *testing.T) {
 			DiskUsedBytes:    1024,
 			DiskTotalBytes:   4096,
 		}
-		if err := store.InsertAgentState(ctx, "hytron", state); err != nil {
+		if err := store.InsertAgentState(ctx, "example-node-a", state); err != nil {
 			t.Fatalf("insert state at %s: %v", ts, err)
 		}
-		transition, err := store.RecordAgentStateAlertRuleTransition(ctx, "hytron", ts, state)
+		transition, err := store.RecordAgentStateAlertRuleTransition(ctx, "example-node-a", ts, state)
 		if err != nil {
 			t.Fatalf("record alert transition at %s: %v", ts, err)
 		}
@@ -336,7 +336,7 @@ func TestAdminAlertRulesRejectUnauthorizedUnknownAndInvalidRequests(t *testing.T
 		{name: "patch renewal threshold fractional days", method: http.MethodPatch, path: "/api/admin/v1/alert-rules/renewal_due", body: `{"threshold":1.5}`, adminToken: "admin-pass", wantStatus: http.StatusBadRequest},
 		{name: "patch negative duration", method: http.MethodPatch, path: "/api/admin/v1/alert-rules/cpu_high", body: `{"duration_sec":-1}`, adminToken: "admin-pass", wantStatus: http.StatusBadRequest},
 		{name: "patch blank scope node", method: http.MethodPatch, path: "/api/admin/v1/alert-rules/cpu_high", body: `{"scope_node_ids":[""]}`, adminToken: "admin-pass", wantStatus: http.StatusBadRequest},
-		{name: "patch duplicate scope node", method: http.MethodPatch, path: "/api/admin/v1/alert-rules/cpu_high", body: `{"scope_node_ids":["hytron","hytron"]}`, adminToken: "admin-pass", wantStatus: http.StatusBadRequest},
+		{name: "patch duplicate scope node", method: http.MethodPatch, path: "/api/admin/v1/alert-rules/cpu_high", body: `{"scope_node_ids":["example-node-a","example-node-a"]}`, adminToken: "admin-pass", wantStatus: http.StatusBadRequest},
 		{name: "patch unknown scope node", method: http.MethodPatch, path: "/api/admin/v1/alert-rules/cpu_high", body: `{"scope_node_ids":["missing"]}`, adminToken: "admin-pass", wantStatus: http.StatusBadRequest},
 		{name: "delete unsupported", method: http.MethodDelete, path: "/api/admin/v1/alert-rules/cpu_high", adminToken: "admin-pass", wantStatus: http.StatusMethodNotAllowed},
 	}
@@ -372,7 +372,7 @@ func TestNotificationDispatchRequiresEnabledAlertRuleForEvent(t *testing.T) {
 	if _, err := store.UpdateAdminNotificationType(ctx, "node_offline", AdminNotificationTypeUpdateRequest{Enabled: &enabled}); err != nil {
 		t.Fatalf("enable node_offline notification type: %v", err)
 	}
-	label, channels, err := store.EnabledNotificationChannelsForEvent(ctx, "node_offline", "hytron")
+	label, channels, err := store.EnabledNotificationChannelsForEvent(ctx, "node_offline", "example-node-a")
 	if err != nil {
 		t.Fatalf("enabled channels before disabling rule: %v", err)
 	}
@@ -384,7 +384,7 @@ func TestNotificationDispatchRequiresEnabledAlertRuleForEvent(t *testing.T) {
 	if _, err := store.UpdateAdminAlertRule(ctx, "node_offline", AdminAlertRuleUpdateRequest{Enabled: &disabled}); err != nil {
 		t.Fatalf("disable node offline rule: %v", err)
 	}
-	label, channels, err = store.EnabledNotificationChannelsForEvent(ctx, "node_offline", "hytron")
+	label, channels, err = store.EnabledNotificationChannelsForEvent(ctx, "node_offline", "example-node-a")
 	if err != nil {
 		t.Fatalf("enabled channels after disabling rule: %v", err)
 	}
@@ -400,7 +400,7 @@ func TestAdminAlertRuleScopeCanLimitAndClearServers(t *testing.T) {
 	}
 	defer store.Close()
 	ctx := context.Background()
-	if err := store.SeedPreviewData(ctx, PreviewSeedOptions{NodeID: "hytron", DisplayName: "Hytron", CountryCode: "HK", AgentToken: "test-agent-token"}); err != nil {
+	if err := store.SeedPreviewData(ctx, PreviewSeedOptions{NodeID: "example-node-a", DisplayName: "Example Node A", CountryCode: "HK", AgentToken: "test-agent-token"}); err != nil {
 		t.Fatalf("seed preview data: %v", err)
 	}
 	if _, err := store.CreateAdminNode(ctx, AdminNodeCreateRequest{ID: "backup", DisplayName: "Backup", CountryCode: "US", DisplayOrder: 9}); err != nil {
@@ -502,7 +502,7 @@ func TestAlertRuleScopeLimitsStateEvaluationAndCurrentStates(t *testing.T) {
 	}
 	defer store.Close()
 	ctx := context.Background()
-	if err := store.SeedPreviewData(ctx, PreviewSeedOptions{NodeID: "hytron", DisplayName: "Hytron", CountryCode: "HK", AgentToken: "test-agent-token"}); err != nil {
+	if err := store.SeedPreviewData(ctx, PreviewSeedOptions{NodeID: "example-node-a", DisplayName: "Example Node A", CountryCode: "HK", AgentToken: "test-agent-token"}); err != nil {
 		t.Fatalf("seed preview data: %v", err)
 	}
 	if _, err := store.CreateAdminNode(ctx, AdminNodeCreateRequest{ID: "backup", DisplayName: "Backup", CountryCode: "US"}); err != nil {
@@ -515,7 +515,7 @@ func TestAlertRuleScopeLimitsStateEvaluationAndCurrentStates(t *testing.T) {
 	}
 
 	ts := time.Now().UTC()
-	hytronTransition, err := store.RecordAgentStateAlertRuleTransition(ctx, "hytron", ts, AgentStateRequest{
+	exampleNodeATransition, err := store.RecordAgentStateAlertRuleTransition(ctx, "example-node-a", ts, AgentStateRequest{
 		TS:               ts.Unix(),
 		CPUPercent:       95,
 		MemoryUsedBytes:  512,
@@ -524,10 +524,10 @@ func TestAlertRuleScopeLimitsStateEvaluationAndCurrentStates(t *testing.T) {
 		DiskTotalBytes:   4096,
 	})
 	if err != nil {
-		t.Fatalf("record hytron state: %v", err)
+		t.Fatalf("record example-node-a state: %v", err)
 	}
-	if hytronTransition.Current.Status != "online" {
-		t.Fatalf("hytron status = %+v, want online because cpu_high is scoped to backup", hytronTransition.Current)
+	if exampleNodeATransition.Current.Status != "online" {
+		t.Fatalf("example-node-a status = %+v, want online because cpu_high is scoped to backup", exampleNodeATransition.Current)
 	}
 	backupTransition, err := store.RecordAgentStateAlertRuleTransition(ctx, "backup", ts, AgentStateRequest{
 		TS:               ts.Unix(),
@@ -548,12 +548,12 @@ func TestAlertRuleScopeLimitsStateEvaluationAndCurrentStates(t *testing.T) {
 	if err := store.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM alert_rule_states WHERE rule_id = 'cpu_high' AND node_id = 'backup' AND active = 1`).Scan(&activeBackupCPU); err != nil {
 		t.Fatalf("count backup cpu state: %v", err)
 	}
-	var activeHytronCPU int
-	if err := store.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM alert_rule_states WHERE rule_id = 'cpu_high' AND node_id = 'hytron' AND active = 1`).Scan(&activeHytronCPU); err != nil {
-		t.Fatalf("count hytron cpu state: %v", err)
+	var activeExampleNodeACPU int
+	if err := store.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM alert_rule_states WHERE rule_id = 'cpu_high' AND node_id = 'example-node-a' AND active = 1`).Scan(&activeExampleNodeACPU); err != nil {
+		t.Fatalf("count example-node-a cpu state: %v", err)
 	}
-	if activeBackupCPU != 1 || activeHytronCPU != 0 {
-		t.Fatalf("active scoped CPU states backup=%d hytron=%d, want backup only", activeBackupCPU, activeHytronCPU)
+	if activeBackupCPU != 1 || activeExampleNodeACPU != 0 {
+		t.Fatalf("active scoped CPU states backup=%d example-node-a=%d, want backup only", activeBackupCPU, activeExampleNodeACPU)
 	}
 }
 
@@ -565,7 +565,7 @@ func TestNotificationDispatchRespectsAlertRuleNodeScope(t *testing.T) {
 	defer store.Close()
 	enableTestNotificationCredentialEncryption(t, store)
 	ctx := context.Background()
-	if err := store.SeedPreviewData(ctx, PreviewSeedOptions{NodeID: "hytron", DisplayName: "Hytron", CountryCode: "HK", AgentToken: "test-agent-token"}); err != nil {
+	if err := store.SeedPreviewData(ctx, PreviewSeedOptions{NodeID: "example-node-a", DisplayName: "Example Node A", CountryCode: "HK", AgentToken: "test-agent-token"}); err != nil {
 		t.Fatalf("seed preview data: %v", err)
 	}
 	if _, err := store.CreateAdminNode(ctx, AdminNodeCreateRequest{ID: "backup", DisplayName: "Backup", CountryCode: "US"}); err != nil {
@@ -583,12 +583,12 @@ func TestNotificationDispatchRespectsAlertRuleNodeScope(t *testing.T) {
 		t.Fatalf("scope node_offline rule: %v", err)
 	}
 
-	label, hytronChannels, err := store.EnabledNotificationChannelsForEvent(ctx, "node_offline", "hytron")
+	label, exampleNodeAChannels, err := store.EnabledNotificationChannelsForEvent(ctx, "node_offline", "example-node-a")
 	if err != nil {
-		t.Fatalf("hytron channels: %v", err)
+		t.Fatalf("example-node-a channels: %v", err)
 	}
-	if label != "离线" || len(hytronChannels) != 0 {
-		t.Fatalf("hytron channels label=%q len=%d, want no channels outside node scope", label, len(hytronChannels))
+	if label != "离线" || len(exampleNodeAChannels) != 0 {
+		t.Fatalf("example-node-a channels label=%q len=%d, want no channels outside node scope", label, len(exampleNodeAChannels))
 	}
 	label, backupChannels, err := store.EnabledNotificationChannelsForEvent(ctx, "node_offline", "backup")
 	if err != nil {

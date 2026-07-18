@@ -83,9 +83,9 @@ describe('homeTrafficTotalsForNodes', () => {
   })
 })
 
-const hytronNode: AdminNode = {
-  id: 'hytron',
-  displayName: 'Hytron',
+const exampleNodeANode: AdminNode = {
+  id: 'example-node-a',
+  displayName: 'Example Node A',
   status: 'online',
   countryCode: 'HK',
   region: 'Hong Kong',
@@ -101,7 +101,7 @@ const hytronNode: AdminNode = {
   lastSeenAt: '2026-07-03T00:00:00Z',
   createdAt: '2026-07-02T00:00:00Z',
   updatedAt: '2026-07-03T00:00:00Z',
-  hostname: 'hytron-real',
+  hostname: 'example-node-a-real',
   osName: 'debian',
   osVersion: '13',
   kernel: '6.12.0',
@@ -116,7 +116,7 @@ const hytronNode: AdminNode = {
 }
 
 const backupNode: AdminNode = {
-  ...hytronNode,
+  ...exampleNodeANode,
   id: 'backup',
   displayName: 'Backup',
   status: 'no_data',
@@ -125,9 +125,9 @@ const backupNode: AdminNode = {
   agentVersion: undefined,
 }
 
-const hytronTarget: AdminProbeTarget = {
-  id: 'hytron-local',
-  name: 'Hytron',
+const exampleNodeATarget: AdminProbeTarget = {
+  id: 'example-node-a-local',
+  name: 'Example Node A',
   type: 'tcping',
   address: '127.0.0.1',
   port: 18980,
@@ -137,7 +137,7 @@ const hytronTarget: AdminProbeTarget = {
   displayOrder: 20,
   enabled: true,
   assignments: [
-    { nodeId: 'hytron', nodeDisplayName: 'Hytron', enabled: true },
+    { nodeId: 'example-node-a', nodeDisplayName: 'Example Node A', enabled: true },
     { nodeId: 'backup', nodeDisplayName: 'Backup', enabled: false },
   ],
 }
@@ -154,7 +154,7 @@ const pingTarget: AdminProbeTarget = {
   displayOrder: 10,
   enabled: true,
   assignments: [
-    { nodeId: 'hytron', nodeDisplayName: 'Hytron', enabled: true },
+    { nodeId: 'example-node-a', nodeDisplayName: 'Example Node A', enabled: true },
   ],
 }
 
@@ -170,7 +170,7 @@ const httpTarget: AdminProbeTarget = {
   displayOrder: 30,
   enabled: true,
   assignments: [
-    { nodeId: 'hytron', nodeDisplayName: 'Hytron', enabled: true },
+    { nodeId: 'example-node-a', nodeDisplayName: 'Example Node A', enabled: true },
   ],
 }
 
@@ -253,8 +253,8 @@ function renderAdmin(section: 'nodes' | 'targets' | 'notifications' | 'account' 
       adminState={{
         kind: 'ready',
         account: { username: 'admin' },
-        nodes: [hytronNode, backupNode],
-        targets: [hytronTarget, pingTarget, httpTarget],
+        nodes: [exampleNodeANode, backupNode],
+        targets: [exampleNodeATarget, pingTarget, httpTarget],
         notificationChannels: [telegramChannel],
         alertRules,
       }}
@@ -263,7 +263,7 @@ function renderAdmin(section: 'nodes' | 'targets' | 'notifications' | 'account' 
       onAdminAccountUpdate={async () => {}}
       onAdminNodeCreate={async () => undefined}
       onAdminNodeUpdate={() => {}}
-      onAdminInstallCommand={async () => ({ nodeId: 'hytron', command: 'install command', commands: { linux: 'install command' } })}
+      onAdminInstallCommand={async () => ({ nodeId: 'example-node-a', command: 'install command', commands: { linux: 'install command' } })}
       onAdminProbeTargetCreate={() => {}}
       onAdminProbeTargetUpdate={() => {}}
       onAdminNotificationChannelCreate={() => {}}
@@ -469,7 +469,7 @@ describe('AdminDashboard', () => {
     expect(html).not.toContain(['刷', '新'].join(''))
     expect(html).not.toContain('修改密码</button>')
     expect(html).toContain('服务器列表')
-    expect(html).toContain('Hytron')
+    expect(html).toContain('Example Node A')
     expect(html).not.toContain('admin-overview-panel')
   })
 
@@ -741,7 +741,7 @@ describe('AdminDashboard', () => {
 
     expect(html).toContain('服务器列表')
     expect(html).toContain('admin-list')
-    expect(html).toContain('Hytron')
+    expect(html).toContain('Example Node A')
     expect(html).not.toContain('<span>状态</span>')
     expect(html).not.toContain('data-label="状态"')
     expect(html).toContain('Agent 版本')
@@ -754,7 +754,7 @@ describe('AdminDashboard', () => {
     expect(html).not.toContain('debian 13')
     expect(html).not.toContain('2026-08-01')
     expect(html).not.toContain('月付')
-    expect(html).not.toContain('sharon · 🇭🇰 HK · 顺序 10')
+    expect(html).not.toContain('example-harbor · 🇭🇰 HK · 顺序 10')
     expect(html).not.toContain('顺序 10')
     expect(html).toContain('服务器排序')
     expect(html).not.toContain('name="node-sort"')
@@ -764,8 +764,8 @@ describe('AdminDashboard', () => {
     expect(html).not.toContain('整理顺序')
     expect(html).not.toContain('上移')
     expect(html).not.toContain('下移')
-    expect(html).toContain('aria-label="编辑服务器 Hytron"')
-    expect(html).toContain('aria-label="删除服务器 Hytron"')
+    expect(html).toContain('aria-label="编辑服务器 Example Node A"')
+    expect(html).toContain('aria-label="删除服务器 Example Node A"')
     expect(html).toContain('admin-row-action is-icon')
     expect(html).toContain('admin-row-action is-icon is-danger')
     expect(html).not.toContain('admin-node-card')
@@ -787,13 +787,13 @@ describe('AdminDashboard', () => {
     expect(html).not.toContain('<span>状态</span>')
     expect(html).not.toContain('data-label="状态"')
     expect(html).not.toContain('>启用中<')
-    expect(html).not.toContain('hytron-local')
+    expect(html).not.toContain('example-node-a-local')
     expect(html).not.toContain('顺序 20')
     expect(html).toContain('127.0.0.1:18980')
     expect(html).not.toContain('3 次 / 1200ms / 60s')
     expect(html).toContain('1 / 2 服务器启用')
-    expect(html).toContain('aria-label="编辑目标 Hytron"')
-    expect(html).toContain('aria-label="删除目标 Hytron"')
+    expect(html).toContain('aria-label="编辑目标 Example Node A"')
+    expect(html).toContain('aria-label="删除目标 Example Node A"')
     expect(html).toContain('admin-row-action is-icon')
     expect(html).toContain('admin-row-action is-icon is-danger')
     expect(html).not.toContain('停用目标')
@@ -801,7 +801,7 @@ describe('AdminDashboard', () => {
     expect(html).not.toContain('全节点停用')
     expect(html).not.toContain('上移')
     expect(html).not.toContain('下移')
-    expect(html.indexOf('Example ICMP')).toBeLessThan(html.indexOf('Hytron'))
+    expect(html.indexOf('Example ICMP')).toBeLessThan(html.indexOf('Example Node A'))
     expect(html).not.toContain('admin-target-card')
     expect(html).not.toContain('name="target-name"')
     expect(html).not.toContain('保存目标')

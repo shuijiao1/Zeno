@@ -28,12 +28,12 @@ func TestPendingRenewalNotificationsSkipsPermanentNode(t *testing.T) {
 	}
 	defer store.Close()
 	ctx := context.Background()
-	if err := store.SeedPreviewData(ctx, PreviewSeedOptions{NodeID: "hytron", DisplayName: "Hytron", CountryCode: "HK", AgentToken: "token"}); err != nil {
+	if err := store.SeedPreviewData(ctx, PreviewSeedOptions{NodeID: "example-node-a", DisplayName: "Example Node A", CountryCode: "HK", AgentToken: "token"}); err != nil {
 		t.Fatalf("seed preview data: %v", err)
 	}
 	expiryDate := time.Now().UTC().Add(24 * time.Hour).Format("2006-01-02")
 	permanent := true
-	if _, err := store.UpdateAdminNode(ctx, "hytron", AdminNodeUpdateRequest{ExpiryDate: &expiryDate, ExpiryPermanent: &permanent}); err != nil {
+	if _, err := store.UpdateAdminNode(ctx, "example-node-a", AdminNodeUpdateRequest{ExpiryDate: &expiryDate, ExpiryPermanent: &permanent}); err != nil {
 		t.Fatalf("set permanent expiry: %v", err)
 	}
 	enabled := true

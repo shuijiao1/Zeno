@@ -34,9 +34,12 @@ ARG ZENO_GID=10001
 LABEL org.opencontainers.image.title="Zeno" \
   org.opencontainers.image.description="Lightweight self-hosted server monitor" \
   org.opencontainers.image.source="https://github.com/shuijiao1/Zeno" \
+  org.opencontainers.image.url="https://github.com/shuijiao1/Zeno" \
+  org.opencontainers.image.licenses="MIT" \
   org.opencontainers.image.version="${VERSION}" \
   org.opencontainers.image.revision="${REVISION}"
 RUN apt-get update \
+  && apt-get install -y --no-install-recommends --only-upgrade libcap2 \
   && apt-get install -y --no-install-recommends ca-certificates curl iputils-ping tzdata \
   && rm -rf /var/lib/apt/lists/* \
   && groupadd --system --gid "${ZENO_GID}" zeno \
@@ -46,6 +49,7 @@ RUN apt-get update \
 WORKDIR /opt/zeno
 COPY --from=go-builder /out/zeno-controller /usr/local/bin/zeno-controller
 COPY --from=web-builder /src/web/dist /opt/zeno/web
+COPY LICENSE THIRD_PARTY_NOTICES.txt /usr/share/doc/zeno/
 RUN chown -R zeno:zeno /opt/zeno/web /usr/local/bin/zeno-controller
 ENV TZ=Asia/Shanghai
 EXPOSE 18980

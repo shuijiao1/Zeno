@@ -4,7 +4,7 @@ Zeno Controller 官方自部署方式是 Docker Compose 一键安装器。Contro
 
 ## 1. 安装 Controller
 
-准备一台已安装 Docker 和 Docker Compose v2 的 Linux 服务器，执行：
+准备一台支持 `amd64`、`arm64` 或 `arm/v6`、已安装 Docker Engine 24+ 和 Docker Compose 2.20+ 的 Linux 服务器。安装器必须以 root 运行（直接 root 或 `sudo`）。建议至少 1 vCPU、512 MiB 可用内存、1 GiB 可用磁盘；节点数、历史保留和 SQLite 备份增长时应相应增加。执行：
 
 ```bash
 sudo bash -o pipefail -c 'curl -fsSL https://zeno.shuijiao.de | bash'
@@ -21,6 +21,8 @@ sudo bash -o pipefail -c 'curl -fsSL https://zeno.shuijiao.de | bash'
 ```
 
 默认监听 `127.0.0.1:18980`，Controller 容器以固定非 root 用户 `10001:10001` 运行。不要把该端口直接暴露到公网；请通过 Caddy、Nginx 或其他 HTTPS 反向代理提供访问。
+
+仓库根目录的 Compose 是安装器模板，不是“clone 后直接 up”的完整安装包：所需 `.env`、权限和 notification keyring/authority secrets 由安装器生成并维护。不要在空 clone 中直接 `docker compose up`，也不要手工编辑安装目录中的 Compose 后期待升级器保留未知修改。
 
 指定安装目录、端口或明确镜像版本时，把变量传给安装器：
 
@@ -42,6 +44,33 @@ Caddy 示例：
 zeno.example.com {
     reverse_proxy 127.0.0.1:18980
 }
+```
+
+Nginx 示例（WebSocket upgrade 必须转发）：
+
+```nginx
+map $http_upgrade $connection_upgrade { default upgrade; '' close; }
+server {
+    listen 443 ssl http2;
+    server_name zeno.example.com;
+    # ssl_certificate / ssl_certificate_key 按你的 ACME 客户端配置
+    location / {
+        proxy_pass http://127.0.0.1:18980;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-Proto https;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection $connection_upgrade;
+    }
+}
+```
+
+同机反代通常使用安装器默认的 Docker gateway trusted proxy。反代在另一台机器时，重新运行安装器并设置其**实际来源 IP/CIDR**，不要信任整个互联网或宽泛私网：
+
+```bash
+sudo env ZENO_TRUSTED_PROXIES=192.0.2.10/32 \
+  bash -o pipefail -c 'curl -fsSL https://zeno.shuijiao.de | bash'
 ```
 
 验证 Controller：
@@ -115,6 +144,62 @@ Public summary 中新服务器应从 `no_data` 变为 `online` 或 `warning`。
 
 安装器默认保留最近 5 份完整安装备份。`data/` 由运行 UID/GID `10001:10001` 持有；`secrets/` 目录应为 `root:10001`、模式 `0750`，secret 文件应为 `root:10001`、模式 `0640`。不要把 secrets 改为运行用户所有。
 
-## 8. 产品边界
+可执行的离线备份示例（会短暂停服以获得 SQLite 与 keyring 一致快照）：
+
+```bash
+sudo sh -eu -c '
+  cd /opt/zeno
+  docker compose stop zeno
+  trap "docker compose start zeno" EXIT
+  dst="/var/backups/zeno/$(date -u +%Y%m%dT%H%M%SZ)"
+  install -d -m 0700 "$dst"
+  cp -a -- .env docker-compose.yml data secrets "$dst/"
+  (cd "$dst" && find . -type f -print0 | sort -z | xargs -0 sha256sum > MANIFEST.sha256)
+'
+```
+
+恢复前先校验 manifest，停止 Controller，把当前目录另存，再将同一备份中的 `.env`、Compose、`data/`、`secrets/` 一起恢复；详细权限与失败回滚步骤见 [UPGRADE.md](UPGRADE.md)。不要只恢复数据库或只恢复 keyring。
+
+## 8. 忘记管理员密码
+
+官方镜像提供离线恢复模式。它将用户名重置为 `admin`、把密码重置为安装时 bootstrap secret，并撤销所有 Admin session；不会更改 Agent token。先做完整备份，再执行：
+
+```bash
+cd /opt/zeno
+sudo docker compose stop zeno
+sudo docker compose run --rm --no-deps zeno \
+  -db /data/zeno.db \
+  -reset-admin-password-file /run/secrets/zeno_admin_token
+sudo docker compose up -d zeno
+curl -fsS http://127.0.0.1:18980/ready
+```
+
+登录后立即设置新密码。不要把 bootstrap secret 输出到 shell history、Issue 或日志。
+
+## 9. 卸载
+
+先创建并验证最终备份。以下命令会删除容器/网络，但保留 `/opt/zeno` 数据：
+
+```bash
+cd /opt/zeno
+sudo docker compose down
+```
+
+确认不再需要恢复后，才由管理员手工删除 `/opt/zeno` 和对应备份。Zeno 安装器不会修改 DNS、Caddy/Nginx 或防火墙，因此这些入口也必须由管理员单独移除。不要使用 `down -v` 或通配路径删除未知数据。
+
+## 10. 数据收集与公开边界
 
 当前版本不提供远程终端、文件管理、远程命令执行或脚本任务，也不提供 Nezha、Komari、Kulin 的兼容 API。
+
+Agent 采集并上报：主机名、OS/kernel/架构/虚拟化、CPU/内存/swap/磁盘、进程与 TCP 连接计数、网络接口累计量与速率、uptime、best-effort 公网 IPv4/IPv6 和 GeoIP 国家码，以及管理员配置的 ICMP/TCP/HTTP 探测结果。Controller 保存节点管理字段、流量历史、探测样本和通知状态。Public page/API 会展示管理员配置的名称/地区、在线状态、资源与流量摘要、到期/配额信息和探测统计；不会公开 runtime/enrollment token、通知凭据、完整私有配置或数据库。公网 IP 是否作为节点展示字段使用应由管理员在发布前检查；不要把 Admin 权限授予不可信用户。
+
+故障排查顺序：`/ready` → `docker compose ps` → `docker compose logs --tail=200 zeno` → 反代 TLS/WebSocket → Agent 服务状态/日志 → [SUPPORT.md](../SUPPORT.md)。
+
+## English operational summary
+
+- Run the installer as root/sudo on Linux `amd64`, `arm64`, or `arm/v6`. Current baseline: Docker Engine 24+, Compose 2.20+, 1 vCPU, 512 MiB free memory, 1 GiB free disk.
+- The repository Compose file is an **installer-managed template**, not a complete clone-and-up deployment. The installer creates `.env`, keyrings, permissions, backups, and the loopback binding.
+- Keep `18980` on loopback. Terminate TLS in Caddy/Nginx, forward WebSocket upgrade headers, and list only the proxy's real source in `ZENO_TRUSTED_PROXIES`.
+- Back up `.env`, Compose, `data/`, and `secrets/` together while stopped; verify the manifest and restore the same snapshot together. The offline `-reset-admin-password-file` command above resets the username to `admin`, revokes sessions, and does not rotate Agent credentials.
+- `docker compose down` removes the isolated stack but intentionally preserves `/opt/zeno`; remove data/backups only after a verified final backup. Zeno does not manage DNS, reverse proxies, or firewall rules.
+- Agent collection/public-page boundaries and the troubleshooting order are specified above. See [COMPATIBILITY.md](COMPATIBILITY.md) for supported Controller/Agent combinations.
