@@ -13,7 +13,7 @@ ARG VERSION=dev
 ENV VITE_BUILD_ID=${VERSION}
 RUN npm run build
 
-FROM --platform=$BUILDPLATFORM golang:1.25.12-bookworm@sha256:a9c020ee3d1508c7be5435c262434e3d3fc1d0e76a11afeb9ddae7d60bc86aa4 AS go-builder
+FROM --platform=$BUILDPLATFORM golang:1.26.5-bookworm@sha256:1ecb7edf62a0408027bd5729dfd6b1b8766e578e8df93995b225dfd0944eb651 AS go-builder
 WORKDIR /src
 COPY go.mod go.sum ./
 RUN go mod download
