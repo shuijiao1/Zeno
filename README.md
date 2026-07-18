@@ -118,8 +118,12 @@ Agent 只负责上报，不会修改 Controller，也不会打开远程命令入
 使用明确版本重新运行安全安装器；它会执行 provenance 校验、离线备份、SQLite 检查和失败自动恢复：
 
 ```bash
-sudo env ZENO_IMAGE=ghcr.io/shuijiao1/zeno:vX.Y.Z \
-  bash -o pipefail -c 'curl -fsSL https://zeno.shuijiao.de | bash'
+version=vX.Y.Z
+curl -fsS "https://zeno.shuijiao.de/$version/install.sh" -o install.sh
+curl -fsS "https://zeno.shuijiao.de/$version/install.sh.sha256" -o install.sh.sha256
+sha256sum -c install.sh.sha256
+sudo env ZENO_IMAGE="ghcr.io/shuijiao1/zeno:$version" bash install.sh
+rm -f install.sh install.sh.sha256
 ```
 
 检查健康状态：

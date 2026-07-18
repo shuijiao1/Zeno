@@ -118,8 +118,12 @@ See [`docs/UPGRADE.md`](docs/UPGRADE.md) for upgrade and rollback notes.
 Run the safety installer again with an explicit version. It verifies provenance, creates an offline backup, checks SQLite, and automatically restores a failed upgrade:
 
 ```bash
-sudo env ZENO_IMAGE=ghcr.io/shuijiao1/zeno:vX.Y.Z \
-  bash -o pipefail -c 'curl -fsSL https://zeno.shuijiao.de | bash'
+version=vX.Y.Z
+curl -fsS "https://zeno.shuijiao.de/$version/install.sh" -o install.sh
+curl -fsS "https://zeno.shuijiao.de/$version/install.sh.sha256" -o install.sh.sha256
+sha256sum -c install.sh.sha256
+sudo env ZENO_IMAGE="ghcr.io/shuijiao1/zeno:$version" bash install.sh
+rm -f install.sh install.sh.sha256
 ```
 
 Health check:
