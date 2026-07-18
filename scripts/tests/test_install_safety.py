@@ -226,6 +226,7 @@ class InstallSafetyTest(unittest.TestCase):
         timeout = fake_bin / 'timeout'
         timeout.write_text(textwrap.dedent(r'''#!/usr/bin/env bash
             set -euo pipefail
+            echo "timeout $*" >> "${FAKE_DOCKER_LOG:?}"
             shift 2
             if [ "${FAIL_STAGE:-}" = "db_timeout" ] && [[ "$*" == *"${ZENO_INSTALL_DIR:?}/data:/data"* ]]; then
               mkdir -p "${FAKE_DOCKER_STATE:?}"
@@ -469,6 +470,33 @@ class InstallSafetyTest(unittest.TestCase):
         self.assertNotEqual(result.returncode, 0, result.stdout)
         self.assertIn('已恢复旧版本', result.stderr)
         self.assertIn('ZENO_IMAGE=zeno-rollback:', env_text)
+
+    def test_database_check_timeout_defaults_is_persisted_and_passed_to_controller(self):
+        with tempfile.TemporaryDirectory() as td:
+            result, install_dir, log_text = self.run_install(pathlib.Path(td))
+            env_text = (install_dir / '.env').read_text()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn('ZENO_DB_CHECK_TIMEOUT=10m', env_text)
+        self.assertIn('timeout --foreground 10m docker run --rm', log_text)
+        self.assertIn('-check-db-timeout 10m', log_text)
+
+    def test_database_check_timeout_accepts_custom_duration(self):
+        with tempfile.TemporaryDirectory() as td:
+            result, install_dir, log_text = self.run_install(
+                pathlib.Path(td), extra_env={'ZENO_DB_CHECK_TIMEOUT': '20m'})
+            env_text = (install_dir / '.env').read_text()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn('ZENO_DB_CHECK_TIMEOUT=20m', env_text)
+        self.assertIn('-check-db-timeout 20m', log_text)
+
+    def test_database_check_timeout_rejects_zero_negative_and_excessive_values(self):
+        for value in ('0s', '-1s', '25h', '1441m', '86401s'):
+            with self.subTest(value=value), tempfile.TemporaryDirectory() as td:
+                result, _, log_text = self.run_install(
+                    pathlib.Path(td), extra_env={'ZENO_DB_CHECK_TIMEOUT': value})
+            self.assertNotEqual(result.returncode, 0, result.stdout)
+            self.assertIn('ZENO_DB_CHECK_TIMEOUT', result.stderr)
+            self.assertNotIn('compose:stop:', log_text)
 
     def test_restore_quick_check_uses_scratch_so_backup_manifest_survives_db_writes(self):
         with tempfile.TemporaryDirectory() as td:

@@ -5,14 +5,46 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/shuijiao1/zeno/internal/controller/api"
 )
+
+func TestDBCheckTimeoutDefaultsAndValidation(t *testing.T) {
+	if defaultDBCheckTimeout != 10*time.Minute {
+		t.Fatalf("default timeout = %s, want 10m", defaultDBCheckTimeout)
+	}
+	for _, timeout := range []time.Duration{0, -time.Second, maximumDBCheckTimeout + time.Nanosecond} {
+		if err := validateDBCheckTimeout(timeout); err == nil {
+			t.Fatalf("validateDBCheckTimeout(%s) succeeded, want error", timeout)
+		}
+	}
+	for _, timeout := range []time.Duration{time.Nanosecond, defaultDBCheckTimeout, maximumDBCheckTimeout} {
+		if err := validateDBCheckTimeout(timeout); err != nil {
+			t.Fatalf("validateDBCheckTimeout(%s): %v", timeout, err)
+		}
+	}
+}
+
+func TestCheckSQLiteDatabaseQuickCheckAndCanceledContext(t *testing.T) {
+	dbPath := filepath.Join(t.TempDir(), "zeno.db")
+	if err := checkSQLiteDatabase(context.Background(), dbPath, defaultDBCheckTimeout); err != nil {
+		t.Fatalf("quick check: %v", err)
+	}
+
+	canceled, cancel := context.WithCancel(context.Background())
+	cancel()
+	err := checkSQLiteDatabase(canceled, dbPath, defaultDBCheckTimeout)
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("canceled quick check error = %v, want context.Canceled", err)
+	}
+}
 
 func TestBuildHandlerUsesSQLiteStoreWhenDBPathProvided(t *testing.T) {
 	runtime, err := buildController(handlerConfig{DBPath: filepath.Join(t.TempDir(), "zeno.db")})

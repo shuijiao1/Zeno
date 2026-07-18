@@ -8,6 +8,7 @@
 
 | Controller | Agent | 状态 | 说明 |
 | --- | --- | --- | --- |
+| v1.1.1 | v0.6.3 | 支持 | v1.1.0 patch；大型 SQLite 升级检查默认允许 10 分钟，可配置且保持失败自动回滚 |
 | v1.1.0 | v0.6.3 | 支持 | 发布时完整验证：enrollment、heartbeat、state、host/identity、network/disk、ICMP/TCP/HTTP 探测与离线恢复 |
 | v1.1.0 | v0.6.2 | 支持 | 兼容升级；Controller 可先升级，Agent 无需批量滚动 |
 | v1.0.1 | v0.6.2 | 支持 | 上一稳定组合 |
@@ -37,6 +38,7 @@
 
 | Controller | Agent | Status | Notes |
 | --- | --- | --- | --- |
+| v1.1.1 | v0.6.3 | Supported | v1.1.0 patch; large SQLite upgrade checks default to 10 minutes, remain configurable, and still roll back on failure |
 | v1.1.0 | v0.6.3 | Supported | Release validation covers enrollment, heartbeat, state, host/identity, network/disk, ICMP/TCP/HTTP probes, and offline recovery |
 | v1.1.0 | v0.6.2 | Supported | Compatible upgrade path; the Controller can be upgraded first without a fleet-wide Agent rollout |
 | v1.0.1 | v0.6.2 | Supported | Previous stable combination |

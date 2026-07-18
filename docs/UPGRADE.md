@@ -12,6 +12,8 @@ Zeno Controller 推荐并支持通过仓库一键安装器管理 Docker Compose 
 
 备份包含 `.env`、`docker-compose.yml`、`data/` 和 `secrets/`，并带完整性 marker 和 SHA-256 manifest。默认保留最近 **5** 份完整安装备份，可通过 `ZENO_BACKUP_KEEP_COUNT` 调整。安装器会在备份副本和当前数据库上执行 SQLite `quick_check`，启动后等待 `/ready`；失败时使用固定的旧镜像 ID 和完整备份自动恢复。
 
+`quick_check` 的默认上限为 **10 分钟**，而不是 Controller 普通运行时请求超时。大型 SQLite 数据库可能需要数分钟。可在升级命令中设置 `ZENO_DB_CHECK_TIMEOUT=20m`（支持整数 `s`、`m`、`h`，必须大于 0 且不超过 `24h`）；安装器会把该值写入 `.env` 供后续升级复用，并同时传给 Controller 的专用 `-check-db-timeout`。检查失败或超时仍会触发自动恢复，不要通过删除超时或跳过检查来升级。
+
 生产环境仍应把这些目录纳入独立的定期异机备份。
 
 ## 2. 使用明确版本升级
@@ -23,7 +25,7 @@ version=vX.Y.Z
 curl -fsS "https://zeno.shuijiao.de/$version/install.sh" -o install.sh
 curl -fsS "https://zeno.shuijiao.de/$version/install.sh.sha256" -o install.sh.sha256
 sha256sum -c install.sh.sha256
-sudo env ZENO_IMAGE="ghcr.io/shuijiao1/zeno:$version" bash install.sh
+sudo env ZENO_IMAGE="ghcr.io/shuijiao1/zeno:$version" ZENO_DB_CHECK_TIMEOUT=10m bash install.sh
 rm -f install.sh install.sh.sha256
 ```
 
@@ -83,4 +85,4 @@ https://zeno.shuijiao.de/vX.Y.Z/install.sh.sha256
 
 ## English summary
 
-Use the installer for upgrades; it creates a stopped, complete backup, checks SQLite, pins the previous image ID, waits for readiness, and restores the complete snapshot on failure. Upgrade and rollback to an immutable `vX.Y.Z` or digest—not `latest`—and restore `.env`, Compose, `data/`, and `secrets/` from the same backup. For reproducible upgrades, download `/vX.Y.Z/install.sh` and `/vX.Y.Z/install.sh.sha256`, verify the checksum, and pin `ZENO_IMAGE` to that same version. The unversioned URL remains a convenience entry point for the currently recommended stable release.
+Use the installer for upgrades; it creates a stopped, complete backup, checks SQLite, pins the previous image ID, waits for readiness, and restores the complete snapshot on failure. SQLite checks default to 10 minutes; large databases may take several minutes, so set `ZENO_DB_CHECK_TIMEOUT=20m` when needed (integer `s`, `m`, or `h`, maximum `24h`). The value is persisted and passed to the Controller's dedicated `-check-db-timeout`; timeout or check failure still rolls back. Upgrade and rollback to an immutable `vX.Y.Z` or digest—not `latest`—and restore `.env`, Compose, `data/`, and `secrets/` from the same backup. For reproducible upgrades, download `/vX.Y.Z/install.sh` and `/vX.Y.Z/install.sh.sha256`, verify the checksum, and pin `ZENO_IMAGE` to that same version. The unversioned URL remains a convenience entry point for the currently recommended stable release.
