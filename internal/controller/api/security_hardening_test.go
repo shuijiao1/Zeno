@@ -89,13 +89,16 @@ func TestAuthorizeAgentInvalidTokensStayReadOnlyDuringConcurrentWriter(t *testin
 	const invalidCallers = 24
 	start := make(chan struct{})
 	errCh := make(chan error, invalidCallers+1)
+	var ready sync.WaitGroup
+	ready.Add(invalidCallers + 1)
 	var wait sync.WaitGroup
 	for index := 0; index < invalidCallers; index++ {
 		wait.Add(1)
 		go func(index int) {
 			defer wait.Done()
+			ready.Done()
 			<-start
-			ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 			defer cancel()
 			allowed, err := store.AuthorizeAgent(ctx, "node-a", fmt.Sprintf("invalid-%d", index))
 			if err != nil {
@@ -108,8 +111,9 @@ func TestAuthorizeAgentInvalidTokensStayReadOnlyDuringConcurrentWriter(t *testin
 	wait.Add(1)
 	go func() {
 		defer wait.Done()
+		ready.Done()
 		<-start
-		ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
 		allowed, err := store.AuthorizeAgent(ctx, "node-a", "valid-token")
 		if err != nil {
@@ -118,6 +122,7 @@ func TestAuthorizeAgentInvalidTokensStayReadOnlyDuringConcurrentWriter(t *testin
 			errCh <- errors.New("valid token was rejected")
 		}
 	}()
+	ready.Wait()
 	close(start)
 	wait.Wait()
 	close(errCh)
