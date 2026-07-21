@@ -180,6 +180,21 @@ svg { display: block; }
   transition: color 150ms ease, transform 150ms ease;
 }
 .brand-logo { margin-right: 4px; display: inline-flex; align-items: center; justify-content: flex-start; }
+.brand-logo-fallback {
+  width: 32px;
+  height: 32px;
+  flex: 0 0 32px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  background: var(--blue);
+  color: #fff;
+  font-size: 15px;
+  font-weight: 600;
+  line-height: 1;
+  box-shadow: 0 8px 18px -14px var(--blue);
+}
 .brand img { width: 32px; height: 32px; object-fit: cover; object-position: top; border: 0; }
 .brand span:last-child { white-space: nowrap; }
 .brand:hover { color: var(--blue); transform: translateY(-1px); }
@@ -437,27 +452,27 @@ svg { display: block; }
 .admin-panel--login { min-height: min(760px, calc(100dvh - 72px)); display: flex; flex-direction: column; }
 .admin-panel--login .admin-login-card { margin: auto auto; }
 .admin-login-card {
-  width: min(100%, 420px);
+  width: min(100%, 440px);
   margin: 24px auto 0;
   display: grid;
   grid-template-columns: 1fr;
   align-items: stretch;
-  gap: 13px;
-  padding: 18px;
+  gap: 20px;
+  padding: 26px 24px;
   border: 1px solid var(--border);
   border-radius: var(--radius-card);
   background: var(--surface-strong);
   box-shadow: var(--zeno-card-shadow);
 }
 .admin-login-card p { margin: 0 0 4px; color: var(--muted); font-size: 13px; font-weight: 500; }
-.admin-login-card strong { font-size: 15px; font-weight: 500; }
-.admin-login-title { text-align: center; }
+.admin-login-card strong { font-size: 16px; font-weight: 500; }
+.admin-login-title { padding-bottom: 2px; text-align: center; }
 .admin-login-error { grid-column: 1 / -1; margin: 0; color: var(--red); font-size: 13px; font-weight: 500; }
-.admin-login-card label { display: flex; flex-direction: column; gap: 5px; color: var(--muted); font-size: 12px; font-weight: 500; }
+.admin-login-card label { display: flex; flex-direction: column; gap: 8px; color: var(--muted); font-size: 13px; font-weight: 500; }
 .admin-login-card input {
   width: 100%;
   min-width: 0;
-  height: 38px;
+  height: 42px;
   padding: 0 12px;
   border: 1px solid var(--border);
   border-radius: var(--radius-field);
@@ -515,6 +530,7 @@ svg { display: block; }
   box-shadow: 0 8px 20px -18px var(--blue);
   transform: translateY(-1px);
 }
+.admin-login-card > button { height: 42px; margin-top: 2px; }
 .admin-login-card button:hover,
 .admin-primary-action:hover,
 .admin-section-actions .admin-primary-action:hover,
@@ -2491,7 +2507,7 @@ svg { display: block; }
   .admin-server-sort-item strong { order: 2; font-size: 14px; }
   .admin-drag-handle { order: 3; font-size: 17px; letter-spacing: -5px; }
   .admin-modal-backdrop { align-items: flex-end; padding: 8px; }
-  .admin-login-card { grid-template-columns: 1fr; align-items: stretch; padding: 12px; gap: 10px; }
+  .admin-login-card { grid-template-columns: 1fr; align-items: stretch; padding: 20px 16px; gap: 18px; }
   .admin-node-section,
   .admin-target-section,
   .admin-notification-section,

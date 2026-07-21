@@ -145,7 +145,7 @@ func (request *AdminSettingsUpdateRequest) normalize() error {
 	if request.LogoURL != nil {
 		changed = true
 		trimmed := strings.TrimSpace(*request.LogoURL)
-		if trimmed == "" || !validSettingsAssetURL(trimmed) {
+		if trimmed != "" && !validSettingsAssetURL(trimmed) {
 			return errInvalidAdminSettingsUpdate
 		}
 		request.LogoURL = &trimmed

@@ -150,6 +150,40 @@ func TestAdminSettingsRequiresTokenAndRejectsInvalidValues(t *testing.T) {
 	}
 }
 
+func TestAdminSettingsAllowsBlankLogoURL(t *testing.T) {
+	store, err := OpenSQLiteStore(filepath.Join(t.TempDir(), "zeno.db"))
+	if err != nil {
+		t.Fatalf("open sqlite store: %v", err)
+	}
+	defer store.Close()
+	handler := NewHandler(HandlerOptions{Store: store, AdminTokenHash: HashAdminToken("admin-pass")})
+
+	recorder := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodPatch, "/api/admin/v1/settings", strings.NewReader(`{"logo_url":"   "}`))
+	request.Header.Set("X-Admin-Token", "admin-pass")
+	handler.ServeHTTP(recorder, request)
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("blank logo patch status = %d, want 200; body=%s", recorder.Code, recorder.Body.String())
+	}
+	var response struct {
+		Settings SiteSettings `json:"settings"`
+	}
+	if err := json.NewDecoder(recorder.Body).Decode(&response); err != nil {
+		t.Fatalf("decode blank logo response: %v", err)
+	}
+	if response.Settings.LogoURL != "" {
+		t.Fatalf("blank logo URL = %q, want empty", response.Settings.LogoURL)
+	}
+
+	settings, err := store.PublicSettings(context.Background())
+	if err != nil {
+		t.Fatalf("public settings after blank logo patch: %v", err)
+	}
+	if settings.LogoURL != "" {
+		t.Fatalf("persisted blank logo URL = %q, want empty", settings.LogoURL)
+	}
+}
+
 func TestValidAgentControllerURLRequiresHTTPSOutsideLoopback(t *testing.T) {
 	tests := []struct {
 		url  string

@@ -397,6 +397,22 @@ describe('HomeTopPanel', () => {
     expect(html).not.toContain(['service', 'status', 'panel'].join('-'))
   })
 
+  it('renders a circular Z brand avatar when the logo URL is blank', () => {
+    const html = renderToStaticMarkup(
+      <HomeTopPanel
+        {...overviewProps}
+        settings={{ ...settings, logoUrl: '' }}
+        onHome={() => {}}
+        onAdmin={() => {}}
+      />,
+    )
+
+    expect(html).toContain('class="brand-logo-fallback"')
+    expect(html).toContain('role="img"')
+    expect(html).toContain('aria-label="水饺监控 logo"')
+    expect(html).toContain('>Z</span>')
+  })
+
   it('only exposes the background control after it is ready and reports its pressed state', () => {
     const waiting = renderToStaticMarkup(<HomeTopPanel {...overviewProps} settings={settings} onHome={() => {}} onAdmin={() => {}} />)
     expect(waiting).toContain('nav-icon-button-placeholder')
@@ -510,6 +526,8 @@ describe('AdminDashboard', () => {
     expect(html).toContain('name="site-subtitle"')
     expect(html).toContain('VPS 状态总览')
     expect(html).toContain('name="logo-url"')
+    expect(html).toContain('placeholder="可留空"')
+    expect(html).not.toContain('留空显示字母 Z')
     expect(html).toContain('/assets/logo/custom.png')
     expect(html).toContain('头像 / Logo URL')
     expect(html).not.toContain('/assets/avatar/custom.webp')
@@ -574,6 +592,7 @@ describe('AdminDashboard', () => {
     }
 
     expect(validateAdminSettingsInput(baseInput)).toBeNull()
+    expect(validateAdminSettingsInput({ ...baseInput, logoUrl: '' })).toBeNull()
     expect(validateAdminSettingsInput({ ...baseInput, logoUrl: 'http://example.com/logo.png' })).toContain('头像 / Logo URL')
     expect(validateAdminSettingsInput({ ...baseInput, desktopBackgroundUrl: 'javascript:alert(1)' })).toContain('电脑端背景图 URL')
     expect(validateAdminSettingsInput({ ...baseInput, mobileBackgroundUrl: '//example.com/bg.png' })).toContain('手机端背景图 URL')

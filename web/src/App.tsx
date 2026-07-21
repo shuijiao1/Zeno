@@ -1276,12 +1276,18 @@ export function HomeTopPanel({ settings = defaultSettings, onHome, onAdmin, onTh
 }
 
 function BrandLogo({ logoUrl, siteTitle }: { logoUrl?: string; siteTitle?: string }) {
-  const source = (logoUrl || defaultSettings.logoUrl).trim() || defaultSettings.logoUrl
+  const source = (logoUrl ?? '').trim()
   const [currentSource, setCurrentSource] = useState(source)
+  const [showLetterFallback, setShowLetterFallback] = useState(source === '')
 
   useEffect(() => {
     setCurrentSource(source)
+    setShowLetterFallback(source === '')
   }, [source])
+
+  if (showLetterFallback) {
+    return <span className="brand-logo-fallback" role="img" aria-label={`${siteTitle || 'Zeno'} logo`}>Z</span>
+  }
 
   return (
     <img
@@ -1293,6 +1299,7 @@ function BrandLogo({ logoUrl, siteTitle }: { logoUrl?: string; siteTitle?: strin
       onError={() => {
         if (currentSource !== defaultSettings.logoUrl) setCurrentSource(defaultSettings.logoUrl)
         else if (currentSource !== fallbackLogoUrl) setCurrentSource(fallbackLogoUrl)
+        else setShowLetterFallback(true)
       }}
     />
   )
@@ -1693,7 +1700,7 @@ function AdminSettingsSection({ settings, onUpdate }: { settings: AdminSettings;
             </label>
             <label>
               <span>头像 / Logo URL</span>
-              <input name="logo-url" autoComplete="off" defaultValue={settings.logoUrl} />
+              <input name="logo-url" autoComplete="off" defaultValue={settings.logoUrl} placeholder="可留空" />
             </label>
           </div>
         </AdminFormSection>
