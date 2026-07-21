@@ -21,6 +21,22 @@ func TestExpiryLabelValueUsesBillingCycleForNextRenewal(t *testing.T) {
 	}
 }
 
+func TestExpiredRecurringDateRollsForwardForSummaryAndNotifications(t *testing.T) {
+	now := time.Date(2026, 7, 19, 10, 0, 0, 0, time.UTC)
+	expiryDate := sql.NullString{String: "2026-07-18", Valid: true}
+	billingCycle := sql.NullString{String: "月付", Valid: true}
+
+	label := expiryLabelValue(expiryDate, billingCycle, false, now)
+	if label != "余 30 天" {
+		t.Fatalf("expiry label = %q, want expired recurring date to roll forward as 余 30 天", label)
+	}
+
+	dueDate, ok := renewalNotificationDueDate(expiryDate.String, billingCycle, now)
+	if !ok || dueDate.Format("2006-01-02") != "2026-08-18" {
+		t.Fatalf("renewal due date = %s, ok = %v, want 2026-08-18", dueDate.Format("2006-01-02"), ok)
+	}
+}
+
 func TestPendingRenewalNotificationsSkipsPermanentNode(t *testing.T) {
 	store, err := OpenSQLiteStore(filepath.Join(t.TempDir(), "zeno.db"))
 	if err != nil {
@@ -85,6 +101,19 @@ func TestExpiryLabelValueKeepsRawDateWhenBillingCycleUnknown(t *testing.T) {
 	)
 	if label != "2026-08-10" {
 		t.Fatalf("expiry label = %q, want raw date without a recurring billing cycle", label)
+	}
+}
+
+func TestExpiryLabelValueKeepsExpiredRawDateWhenBillingCycleUnknown(t *testing.T) {
+	now := time.Date(2026, 7, 19, 10, 0, 0, 0, time.UTC)
+	label := expiryLabelValue(
+		sql.NullString{String: "2026-07-18", Valid: true},
+		sql.NullString{String: "一次性", Valid: true},
+		false,
+		now,
+	)
+	if label != "2026-07-18" {
+		t.Fatalf("expiry label = %q, want unknown billing cycle to keep the one-time raw date", label)
 	}
 }
 

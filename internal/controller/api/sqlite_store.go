@@ -2965,24 +2965,32 @@ func billingCycleMonths(value sql.NullString) int {
 }
 
 func nextBillingCycleDate(rawDate string, cycleMonths int, now time.Time) (time.Time, bool) {
-	finalDate, err := time.ParseInLocation("2006-01-02", strings.TrimSpace(rawDate), time.UTC)
+	anchorDate, err := time.ParseInLocation("2006-01-02", strings.TrimSpace(rawDate), time.UTC)
 	if err != nil || cycleMonths <= 0 {
 		return time.Time{}, false
 	}
 	today := dateOnlyUTC(now)
-	finalDate = dateOnlyUTC(finalDate)
-	if finalDate.Before(today) {
-		return finalDate, true
-	}
-	nextDate := finalDate
+	anchorDate = dateOnlyUTC(anchorDate)
+
+	yearsApart := today.Year() - anchorDate.Year()
+	monthsApart := yearsApart*12 + int(today.Month()-anchorDate.Month())
 	offsetMonths := 0
+	if monthsApart > 0 {
+		offsetMonths = (monthsApart / cycleMonths) * cycleMonths
+	}
+	nextDate := addMonthsFromAnchorClampedUTC(anchorDate, offsetMonths)
+	for nextDate.Before(today) {
+		offsetMonths += cycleMonths
+		nextDate = addMonthsFromAnchorClampedUTC(anchorDate, offsetMonths)
+	}
 	for {
-		previous := addMonthsFromAnchorClampedUTC(finalDate, offsetMonths-cycleMonths)
+		previousOffset := offsetMonths - cycleMonths
+		previous := addMonthsFromAnchorClampedUTC(anchorDate, previousOffset)
 		if previous.Before(today) {
 			break
 		}
+		offsetMonths = previousOffset
 		nextDate = previous
-		offsetMonths -= cycleMonths
 	}
 	return nextDate, true
 }
