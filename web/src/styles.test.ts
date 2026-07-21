@@ -47,8 +47,9 @@ describe('homepage and admin shell layout', () => {
 
   it('does not leave touch-tapped header icon buttons in the desktop hover accent state', () => {
     expect(styles).toContain('@media (hover: hover) and (pointer: fine)')
-    expect(styles).toContain('.nav-icon-button:hover { background: #eff6ff; color: var(--blue); transform: translateY(-1px); box-shadow: 0 6px 18px -14px var(--blue); }')
-    expect(styles).toContain('.home-top-card .nav-icon-button:not(.is-solid):hover')
+    expect(styles).toContain('.nav-icon-button:hover:not(:disabled) { background: #eff6ff; color: var(--blue); transform: translateY(-1px); box-shadow: 0 6px 18px -14px var(--blue); }')
+    expect(styles).toContain('.nav-icon-button:disabled { cursor: default; opacity: .45; }')
+    expect(styles).toContain('.home-top-card .nav-icon-button:not(.is-solid):hover:not(:disabled)')
   })
 
   it('keeps mobile homepage server cards aligned to the top card width', () => {

@@ -413,17 +413,27 @@ describe('HomeTopPanel', () => {
     expect(html).toContain('>Z</span>')
   })
 
-  it('only exposes the background control after it is ready and reports its pressed state', () => {
+  it('always renders the background control and enables it only when it is ready', () => {
     const waiting = renderToStaticMarkup(<HomeTopPanel {...overviewProps} settings={settings} onHome={() => {}} onAdmin={() => {}} />)
-    expect(waiting).toContain('nav-icon-button-placeholder')
-    expect(waiting).not.toContain('aria-label="开启背景图"')
-    expect(waiting).not.toContain('aria-label="关闭背景图"')
+    expect(waiting).toContain('aria-label="背景图未配置"')
+    expect(waiting).toContain('aria-pressed="false"')
+    expect(waiting).toContain('disabled=""')
+    expect(waiting).not.toContain('nav-icon-button-placeholder')
+
+    const loading = renderToStaticMarkup(
+      <HomeTopPanel {...overviewProps} settings={settings} onHome={() => {}} onAdmin={() => {}} backgroundEnabled />,
+    )
+    expect(loading).toContain('aria-label="背景图加载中"')
+    expect(loading).toContain('aria-pressed="true"')
+    expect(loading).toContain('disabled=""')
+    expect(loading).toContain('nav-icon-button is-solid')
 
     const ready = renderToStaticMarkup(
       <HomeTopPanel {...overviewProps} settings={settings} onHome={() => {}} onAdmin={() => {}} onBackgroundToggle={() => {}} backgroundEnabled={false} />,
     )
     expect(ready).toContain('aria-label="开启背景图"')
     expect(ready).toContain('aria-pressed="false"')
+    expect(ready).not.toContain('disabled=""')
     expect(ready).not.toContain('nav-icon-button-placeholder')
   })
 

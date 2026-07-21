@@ -270,9 +270,10 @@ svg { display: block; }
 }
 .nav-icon-button.is-solid { background: var(--blue); color: #fff; border-color: var(--blue); }
 .nav-icon-button.is-muted { opacity: .45; }
+.nav-icon-button:disabled { cursor: default; opacity: .45; }
 @media (hover: hover) and (pointer: fine) {
-  .nav-icon-button:hover { background: #eff6ff; color: var(--blue); transform: translateY(-1px); box-shadow: 0 6px 18px -14px var(--blue); }
-  .nav-icon-button.is-solid:hover { background: color-mix(in srgb, var(--blue) 88%, #fff 12%); color: #fff; }
+  .nav-icon-button:hover:not(:disabled) { background: #eff6ff; color: var(--blue); transform: translateY(-1px); box-shadow: 0 6px 18px -14px var(--blue); }
+  .nav-icon-button.is-solid:hover:not(:disabled) { background: color-mix(in srgb, var(--blue) 88%, #fff 12%); color: #fff; }
 }
 .nav-icon-button svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.75; stroke-linecap: round; stroke-linejoin: round; }
 
@@ -327,7 +328,7 @@ svg { display: block; }
 .home-top-card .nav-icon-button { background: var(--control-bg); }
 .home-top-card .nav-icon-button.is-solid { background: var(--blue); color: #fff; }
 @media (hover: hover) and (pointer: fine) {
-  .home-top-card .nav-icon-button:not(.is-solid):hover { background: color-mix(in srgb, var(--control-bg) 84%, var(--blue) 10%); color: var(--blue); }
+  .home-top-card .nav-icon-button:not(.is-solid):hover:not(:disabled) { background: color-mix(in srgb, var(--control-bg) 84%, var(--blue) 10%); color: var(--blue); }
 }
 .home-top-card .home-summary {
   display: grid;
@@ -498,7 +499,6 @@ svg { display: block; }
   touch-action: manipulation;
   transition: background-color 150ms ease, border-color 150ms ease, color 150ms ease, box-shadow 150ms ease, transform 150ms ease;
 }
-.nav-icon-button-placeholder { visibility: hidden; pointer-events: none; }
 .admin-login-card button,
 .admin-primary-action,
 .admin-section-actions .admin-primary-action,

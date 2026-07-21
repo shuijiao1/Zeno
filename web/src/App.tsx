@@ -1160,7 +1160,7 @@ export function App() {
           onAdminSettingsUpdate={updateAdminSettingsDetails}
           onThemeChange={setThemeMode}
           onBackgroundToggle={backgroundToggle}
-          backgroundEnabled={backgroundEnabled}
+          backgroundEnabled={hasBackgroundImage}
         />
       )}
 
@@ -1183,7 +1183,7 @@ export function App() {
           onBack={navigateHome}
           onRangeChange={setNodeLatencyRange}
           onStateRangeChange={setStateRange}
-          topHeader={<DashboardHeader settings={effectiveSettings} onHome={navigateHome} onAdmin={navigateAdmin} onThemeChange={setThemeMode} onBackgroundToggle={backgroundToggle} backgroundEnabled={backgroundEnabled} />}
+          topHeader={<DashboardHeader settings={effectiveSettings} onHome={navigateHome} onAdmin={navigateAdmin} onThemeChange={setThemeMode} onBackgroundToggle={backgroundToggle} backgroundEnabled={hasBackgroundImage} />}
         />
       )}
 
@@ -1201,7 +1201,7 @@ export function App() {
           canUseExtendedRanges={hasAdminToken}
           onBack={navigateHome}
           onRangeChange={setServiceLatencyRange}
-          topHeader={<DashboardHeader settings={effectiveSettings} onHome={navigateHome} onAdmin={navigateAdmin} onThemeChange={setThemeMode} onBackgroundToggle={backgroundToggle} backgroundEnabled={backgroundEnabled} />}
+          topHeader={<DashboardHeader settings={effectiveSettings} onHome={navigateHome} onAdmin={navigateAdmin} onThemeChange={setThemeMode} onBackgroundToggle={backgroundToggle} backgroundEnabled={hasBackgroundImage} />}
         />
       )}
 
@@ -1224,7 +1224,7 @@ export function App() {
             onAdmin={navigateAdmin}
             onThemeChange={setThemeMode}
             onBackgroundToggle={backgroundToggle}
-            backgroundEnabled={backgroundEnabled}
+            backgroundEnabled={hasBackgroundImage}
           />
 
           <section className="server-card-list" aria-label="server cards">
@@ -1266,7 +1266,7 @@ interface HomeTopPanelProps extends HomeOverviewPanelProps {
   backgroundEnabled?: boolean
 }
 
-export function HomeTopPanel({ settings = defaultSettings, onHome, onAdmin, onThemeChange, onBackgroundToggle, backgroundEnabled = true, ...overview }: HomeTopPanelProps) {
+export function HomeTopPanel({ settings = defaultSettings, onHome, onAdmin, onThemeChange, onBackgroundToggle, backgroundEnabled = false, ...overview }: HomeTopPanelProps) {
   return (
     <section className="home-top-card" aria-label="homepage control panel">
       <DashboardHeader settings={settings} onHome={onHome} onAdmin={onAdmin} onThemeChange={onThemeChange} onBackgroundToggle={onBackgroundToggle} backgroundEnabled={backgroundEnabled} />
@@ -1305,12 +1305,15 @@ function BrandLogo({ logoUrl, siteTitle }: { logoUrl?: string; siteTitle?: strin
   )
 }
 
-function DashboardHeader({ settings = defaultSettings, onHome, onAdmin, adminLabel = '后台', trailingAction, onThemeChange, onBackgroundToggle, backgroundEnabled = true }: DashboardHeaderProps) {
+function DashboardHeader({ settings = defaultSettings, onHome, onAdmin, adminLabel = '后台', trailingAction, onThemeChange, onBackgroundToggle, backgroundEnabled = false }: DashboardHeaderProps) {
   const [themeMenuOpen, setThemeMenuOpen] = useState(false)
   const themeMenuRef = useRef<HTMLDivElement>(null)
   const themeMode = settings.theme
   const currentTheme = resolvedTheme(themeMode)
   const currentThemeLabel = headerThemeOptions.find((option) => option.value === themeMode)?.label ?? '跟随系统'
+  const backgroundControlLabel = onBackgroundToggle
+    ? (backgroundEnabled ? '关闭背景图' : '开启背景图')
+    : (backgroundEnabled ? '背景图加载中' : '背景图未配置')
 
   useEffect(() => {
     if (!themeMenuOpen || typeof window === 'undefined') return undefined
@@ -1354,11 +1357,7 @@ function DashboardHeader({ settings = defaultSettings, onHome, onAdmin, adminLab
             </div>
           )}
         </div>
-        {onBackgroundToggle ? (
-          <button className={`nav-icon-button${backgroundEnabled ? ' is-solid' : ''}`} type="button" aria-label={backgroundEnabled ? '关闭背景图' : '开启背景图'} aria-pressed={backgroundEnabled} onClick={onBackgroundToggle}><ImageMinusIcon /><span className="sr-only">开关背景图</span></button>
-        ) : (
-          <span className="nav-icon-button nav-icon-button-placeholder" aria-hidden="true" />
-        )}
+        <button className={`nav-icon-button${backgroundEnabled ? ' is-solid' : ''}`} type="button" aria-label={backgroundControlLabel} aria-pressed={backgroundEnabled} disabled={!onBackgroundToggle} onClick={onBackgroundToggle}><ImageMinusIcon /><span className="sr-only">开关背景图</span></button>
         {trailingAction}
       </nav>
     </header>
