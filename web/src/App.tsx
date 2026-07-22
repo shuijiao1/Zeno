@@ -25,7 +25,7 @@ export { adminTokenMaxAgeMs } from './lib/adminToken'
 
 type LoadState =
   | { kind: 'loading' }
-  | { kind: 'ready'; data: SummaryData; storedAt?: number; stale?: boolean }
+  | { kind: 'ready'; data: SummaryData }
   | { kind: 'error'; message: string }
 
 const renewalDayOptions = [0, 1, 3, 7, 15, 30]
@@ -103,19 +103,19 @@ function seedNodeStateFromSummary(summary: SummaryData | null, nodeId: string, r
 type LatencyLoadState =
   | { kind: 'idle' }
   | { kind: 'loading' }
-  | { kind: 'ready'; data: NodeLatencyData; freshness?: DataFreshness }
+  | { kind: 'ready'; data: NodeLatencyData }
   | { kind: 'error'; message: string }
 
 type StateHistoryLoadState =
   | { kind: 'idle' }
   | { kind: 'loading' }
-  | { kind: 'ready'; data: NodeStateData; freshness?: DataFreshness }
+  | { kind: 'ready'; data: NodeStateData }
   | { kind: 'error'; message: string }
 
 type ServiceLatencyLoadState =
   | { kind: 'idle' }
   | { kind: 'loading' }
-  | { kind: 'ready'; data: ServiceLatencyData; freshness?: DataFreshness }
+  | { kind: 'ready'; data: ServiceLatencyData }
   | { kind: 'error'; message: string }
 
 type AdminLoadState =
@@ -142,12 +142,6 @@ type HomeRealtimeSnapshot = {
   nodes: HomeCardNode[]
   upSpeed: number
   downSpeed: number
-}
-
-type DataFreshness = {
-  stale: boolean
-  storedAt?: number
-  source?: 'cache' | 'summary' | 'http' | 'ws'
 }
 
 const detailHttpFallbackDelayMs = 1800
@@ -403,7 +397,7 @@ export function applyDocumentBranding(settings: AdminSettings) {
 export function App() {
   const initialSummary = loadStoredSummary()
   const [state, setState] = useState<LoadState>(() => {
-    return initialSummary ? { kind: 'ready', data: initialSummary.data, storedAt: initialSummary.storedAt, stale: initialSummary.stale } : { kind: 'loading' }
+    return initialSummary ? { kind: 'ready', data: initialSummary.data } : { kind: 'loading' }
   })
   const [route, setRoute] = useState<DashboardRoute>(() => parseDashboardRoute(window.location.pathname))
   const [nodeLatencyRange, setNodeLatencyRange] = useState('1d')
@@ -541,12 +535,11 @@ export function App() {
       setHomeRealtimeSnapshot(homeRealtimeSnapshotForNodes(data.nodes))
     }
     const applySummaryData = (data: SummaryData) => {
-      const storedAt = Date.now()
-      rememberSummary(data, storedAt)
+      rememberSummary(data, Date.now())
       summaryRef.current = data
       if (!cancelled) {
         refreshHomeRealtimeSnapshot(data)
-        setState({ kind: 'ready', data, storedAt, stale: false })
+        setState({ kind: 'ready', data })
       }
     }
     const stopLiveSummary = startResilientLiveData<SummaryData>({
@@ -557,7 +550,7 @@ export function App() {
       onError: (error) => {
         if (cancelled) return
         const message = error instanceof Error ? error.message : 'summary request failed'
-        setState((current) => (current.kind === 'ready' ? { ...current, stale: true } : { kind: 'error', message }))
+        setState((current) => (current.kind === 'ready' ? current : { kind: 'error', message }))
       },
     })
     return () => {
@@ -605,18 +598,14 @@ export function App() {
     const seeded = cached ?? seedNodeLatencyFromSummary(summaryRef.current, route.nodeId, nodeLatencyRange)
     if (sessionCached) nodeLatencyCacheRef.current.set(cacheKey, sessionCached.data, sessionCached.storedAt)
     if (seeded) {
-      setLatencyState({
-        kind: 'ready',
-        data: seeded,
-        freshness: sessionCached ? { stale: sessionCached.stale, storedAt: sessionCached.storedAt, source: 'cache' } : memoryCached ? { stale: memoryCached.stale, storedAt: memoryCached.storedAt, source: 'cache' } : { stale: true, source: 'summary' },
-      })
+      setLatencyState({ kind: 'ready', data: seeded })
     } else {
       setLatencyState((current) => (current.kind === 'ready' && current.data.nodeId === route.nodeId ? current : { kind: 'loading' }))
     }
-    const applyLatencyData = (data: NodeLatencyData, source: 'http' | 'ws') => {
+    const applyLatencyData = (data: NodeLatencyData) => {
       nodeLatencyCacheRef.current.set(cacheKey, data)
       rememberDetailData(nodeLatencyCachePrefix, route.nodeId, nodeLatencyRange, data)
-      if (!cancelled) setLatencyState({ kind: 'ready', data, freshness: { stale: false, storedAt: Date.now(), source } })
+      if (!cancelled) setLatencyState({ kind: 'ready', data })
     }
     const useLiveStream = !rangeRequiresAdmin(nodeLatencyRange)
     const requestToken = useLiveStream ? undefined : adminToken
@@ -631,7 +620,7 @@ export function App() {
         const unauthorized = isHTTPUnauthorizedError(error)
         if (unauthorized && requestTokenIdentity && !expireAdminSession(requestTokenIdentity)) return
         setLatencyState((current) => (current.kind === 'ready'
-          ? { ...current, freshness: { ...current.freshness, stale: true } }
+          ? current
           : { kind: 'error', message: unauthorized ? '登录已过期，请重新登录。' : error instanceof Error ? error.message : 'latency request failed' }))
       },
     })
@@ -655,18 +644,14 @@ export function App() {
     const seeded = cached ?? seedNodeStateFromSummary(summaryRef.current, route.nodeId, stateRange)
     if (sessionCached) nodeStateCacheRef.current.set(cacheKey, sessionCached.data, sessionCached.storedAt)
     if (seeded) {
-      setStateHistoryState({
-        kind: 'ready',
-        data: seeded,
-        freshness: sessionCached ? { stale: sessionCached.stale, storedAt: sessionCached.storedAt, source: 'cache' } : memoryCached ? { stale: memoryCached.stale, storedAt: memoryCached.storedAt, source: 'cache' } : { stale: true, source: 'summary' },
-      })
+      setStateHistoryState({ kind: 'ready', data: seeded })
     } else {
       setStateHistoryState({ kind: 'loading' })
     }
-    const applyStateData = (data: NodeStateData, source: 'http' | 'ws') => {
+    const applyStateData = (data: NodeStateData) => {
       nodeStateCacheRef.current.set(cacheKey, data)
       rememberDetailData(nodeStateCachePrefix, route.nodeId, stateRange, data)
-      if (!cancelled) setStateHistoryState({ kind: 'ready', data, freshness: { stale: false, storedAt: Date.now(), source } })
+      if (!cancelled) setStateHistoryState({ kind: 'ready', data })
     }
     const useLiveStream = !rangeRequiresAdmin(stateRange)
     const requestToken = useLiveStream ? undefined : adminToken
@@ -681,7 +666,7 @@ export function App() {
         const unauthorized = isHTTPUnauthorizedError(error)
         if (unauthorized && requestTokenIdentity && !expireAdminSession(requestTokenIdentity)) return
         setStateHistoryState((current) => (current.kind === 'ready'
-          ? { ...current, freshness: { ...current.freshness, stale: true } }
+          ? current
           : { kind: 'error', message: unauthorized ? '登录已过期，请重新登录。' : error instanceof Error ? error.message : 'state request failed' }))
       },
     })
@@ -695,11 +680,11 @@ export function App() {
     if (state.kind !== 'ready' || route.kind !== 'node') return
     const latencySeed = seedNodeLatencyFromSummary(state.data, route.nodeId, nodeLatencyRange)
     if (latencySeed) {
-      setLatencyState((current) => (current.kind === 'loading' || current.kind === 'idle' ? { kind: 'ready', data: latencySeed, freshness: { stale: true, source: 'summary' } } : current))
+      setLatencyState((current) => (current.kind === 'loading' || current.kind === 'idle' ? { kind: 'ready', data: latencySeed } : current))
     }
     const stateSeed = seedNodeStateFromSummary(state.data, route.nodeId, stateRange)
     if (stateSeed) {
-      setStateHistoryState((current) => (current.kind === 'loading' || current.kind === 'idle' ? { kind: 'ready', data: stateSeed, freshness: { stale: true, source: 'summary' } } : current))
+      setStateHistoryState((current) => (current.kind === 'loading' || current.kind === 'idle' ? { kind: 'ready', data: stateSeed } : current))
     }
   }, [state, route, nodeLatencyRange, stateRange])
 
@@ -716,18 +701,14 @@ export function App() {
     const cached = memoryCached?.data ?? sessionCached?.data ?? null
     if (cached) {
       if (sessionCached) serviceLatencyCacheRef.current.set(cacheKey, sessionCached.data, sessionCached.storedAt)
-      setServiceLatencyState({
-        kind: 'ready',
-        data: cached,
-        freshness: sessionCached ? { stale: sessionCached.stale, storedAt: sessionCached.storedAt, source: 'cache' } : { stale: memoryCached?.stale ?? false, storedAt: memoryCached?.storedAt, source: 'cache' },
-      })
+      setServiceLatencyState({ kind: 'ready', data: cached })
     } else {
       setServiceLatencyState({ kind: 'loading' })
     }
-    const applyServiceLatencyData = (data: ServiceLatencyData, source: 'http' | 'ws') => {
+    const applyServiceLatencyData = (data: ServiceLatencyData) => {
       serviceLatencyCacheRef.current.set(cacheKey, data)
       rememberDetailData(serviceLatencyCachePrefix, route.targetId, serviceLatencyRange, data)
-      if (!cancelled) setServiceLatencyState({ kind: 'ready', data, freshness: { stale: false, storedAt: Date.now(), source } })
+      if (!cancelled) setServiceLatencyState({ kind: 'ready', data })
     }
     const useLiveStream = !rangeRequiresAdmin(serviceLatencyRange)
     const requestToken = useLiveStream ? undefined : adminToken
@@ -742,7 +723,7 @@ export function App() {
         const unauthorized = isHTTPUnauthorizedError(error)
         if (unauthorized && requestTokenIdentity && !expireAdminSession(requestTokenIdentity)) return
         setServiceLatencyState((current) => (current.kind === 'ready'
-          ? { ...current, freshness: { ...current.freshness, stale: true } }
+          ? current
           : { kind: 'error', message: unauthorized ? '登录已过期，请重新登录。' : error instanceof Error ? error.message : 'service latency request failed' }))
       },
     })
@@ -1122,14 +1103,6 @@ export function App() {
   const downSpeed = currentRealtimeSnapshot.downSpeed
   const hasBackgroundImage = (effectiveSettings.desktopBackgroundUrl || effectiveSettings.backgroundUrl || effectiveSettings.mobileBackgroundUrl).trim() !== ''
   const hasAdminToken = adminToken !== ''
-  const publicDataMayBeStale = state.kind === 'ready' && (
-    state.stale === true
-    || (route.kind === 'node' && (
-      (latencyState.kind === 'ready' && latencyState.freshness?.stale === true)
-      || (stateHistoryState.kind === 'ready' && stateHistoryState.freshness?.stale === true)
-    ))
-    || (route.kind === 'service' && serviceLatencyState.kind === 'ready' && serviceLatencyState.freshness?.stale === true)
-  )
 
   return (
     <main className="kulin-shell" data-theme={effectiveSettings.theme} data-background={hasBackgroundImage ? 'on' : 'off'} style={shellStyleForSettings(effectiveSettings)}>
@@ -1166,7 +1139,6 @@ export function App() {
 
       {route.kind !== 'admin' && state.kind === 'loading' && <section className="state-panel">正在读取 Controller API…</section>}
       {route.kind !== 'admin' && state.kind === 'error' && <section className="state-panel is-error">API 读取失败：{state.message}</section>}
-      {route.kind !== 'admin' && publicDataMayBeStale && <div className="data-stale-notice" role="status">数据可能已过期</div>}
 
       {state.kind === 'ready' && route.kind === 'node' && selectedNode && (
         <LatencyDetail

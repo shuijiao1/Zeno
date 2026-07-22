@@ -11,15 +11,6 @@
 }
 .state-panel.is-error { color: var(--red); }
 
-.data-stale-notice {
-  width: 100%;
-  max-width: 1024px;
-  margin: 10px auto 0;
-  color: var(--muted);
-  font-size: 12px;
-  text-align: center;
-}
-
 .detail-container {
   display: flex;
   flex-direction: column;
