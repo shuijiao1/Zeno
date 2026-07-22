@@ -1467,60 +1467,61 @@ export function AdminDashboard({
         )}
 
         {hasAdminToken && (
-          <>
-            <div className="admin-toolbar">
+          <div className="admin-workbench">
+            <aside className="admin-navigation-rail" aria-label="后台功能">
               <AdminSectionNav
                 activeSection={activeSection}
                 onSectionChange={setActiveSection}
               />
+            </aside>
+            <div className="admin-workspace">
+              {adminState.kind === 'loading' && showAdminLoading && <div className="admin-state-card">加载中…</div>}
+              {authState.kind === 'error' && <div className="admin-state-card is-error">{authState.message}</div>}
+              {adminState.kind === 'error' && <div className="admin-state-card is-error">Admin API 读取失败：{adminState.message}</div>}
+
+              {adminState.kind === 'ready' && activeSection === 'nodes' && (
+                <AdminNodeSection
+                  nodes={adminState.nodes}
+                  targets={adminState.targets}
+                  onCreate={onAdminNodeCreate}
+                  onUpdate={onAdminNodeUpdate}
+                  onDelete={onAdminNodeDelete}
+                  onInstallCommand={onAdminInstallCommand}
+                />
+              )}
+
+              {adminState.kind === 'ready' && activeSection === 'targets' && (
+                <AdminTargetSection
+                  targets={adminState.targets}
+                  nodes={adminState.nodes}
+                  onCreate={onAdminProbeTargetCreate}
+                  onUpdate={onAdminProbeTargetUpdate}
+                  onDelete={onAdminProbeTargetDelete}
+                />
+              )}
+
+              {adminState.kind === 'ready' && activeSection === 'account' && (
+                <AdminAccountSection account={adminState.account} onUpdate={onAdminAccountUpdate} />
+              )}
+
+              {adminState.kind === 'ready' && activeSection === 'settings' && (
+                <AdminSettingsSection settings={settings} onUpdate={onAdminSettingsUpdate} />
+              )}
+
+              {adminState.kind === 'ready' && activeSection === 'notifications' && (
+                <AdminNotificationsSection
+                  channels={adminState.notificationChannels}
+                  onChannelCreate={onAdminNotificationChannelCreate}
+                  onChannelUpdate={onAdminNotificationChannelUpdate}
+                  onChannelDelete={onAdminNotificationChannelDelete}
+                  onChannelTest={onAdminNotificationChannelTest}
+                  rules={adminState.alertRules}
+                  nodes={adminState.nodes}
+                  onRuleUpdate={onAdminAlertRuleUpdate}
+                />
+              )}
             </div>
-
-            {adminState.kind === 'loading' && showAdminLoading && <div className="admin-state-card">加载中…</div>}
-            {authState.kind === 'error' && <div className="admin-state-card is-error">{authState.message}</div>}
-            {adminState.kind === 'error' && <div className="admin-state-card is-error">Admin API 读取失败：{adminState.message}</div>}
-
-            {adminState.kind === 'ready' && activeSection === 'nodes' && (
-              <AdminNodeSection
-                nodes={adminState.nodes}
-                targets={adminState.targets}
-                onCreate={onAdminNodeCreate}
-                onUpdate={onAdminNodeUpdate}
-                onDelete={onAdminNodeDelete}
-                onInstallCommand={onAdminInstallCommand}
-              />
-            )}
-
-            {adminState.kind === 'ready' && activeSection === 'targets' && (
-              <AdminTargetSection
-                targets={adminState.targets}
-                nodes={adminState.nodes}
-                onCreate={onAdminProbeTargetCreate}
-                onUpdate={onAdminProbeTargetUpdate}
-                onDelete={onAdminProbeTargetDelete}
-              />
-            )}
-
-            {adminState.kind === 'ready' && activeSection === 'account' && (
-              <AdminAccountSection account={adminState.account} onUpdate={onAdminAccountUpdate} />
-            )}
-
-            {adminState.kind === 'ready' && activeSection === 'settings' && (
-              <AdminSettingsSection settings={settings} onUpdate={onAdminSettingsUpdate} />
-            )}
-
-            {adminState.kind === 'ready' && activeSection === 'notifications' && (
-              <AdminNotificationsSection
-                channels={adminState.notificationChannels}
-                onChannelCreate={onAdminNotificationChannelCreate}
-                onChannelUpdate={onAdminNotificationChannelUpdate}
-                onChannelDelete={onAdminNotificationChannelDelete}
-                onChannelTest={onAdminNotificationChannelTest}
-                rules={adminState.alertRules}
-                nodes={adminState.nodes}
-                onRuleUpdate={onAdminAlertRuleUpdate}
-              />
-            )}
-          </>
+          </div>
         )}
       </section>
     </div>
@@ -1543,6 +1544,7 @@ function AdminSectionNav({ activeSection, onSectionChange }: { activeSection: Ad
           key={section.id}
           type="button"
           data-active={activeSection === section.id}
+          aria-current={activeSection === section.id ? 'page' : undefined}
           onClick={() => onSectionChange(section.id)}
         >
           <span>{section.label}</span>
@@ -1964,15 +1966,28 @@ function moveAdminNodeInOrder(nodeIds: string[], sourceId: string, targetId: str
 function AdminNodeSortModal({ nodes, onSave, onClose }: { nodes: AdminNode[]; onSave: (nodes: AdminNode[]) => MaybePromise; onClose: () => void }) {
   const [orderedIds, setOrderedIds] = useState(() => nodes.map((node) => node.id))
   const [draggedNodeId, setDraggedNodeId] = useState<string | null>(null)
+  const [dropTargetNodeId, setDropTargetNodeId] = useState<string | null>(null)
   const [submitting, setSubmitting] = useState(false)
   const [formError, setFormError] = useState<string | null>(null)
+  const [sortAnnouncement, setSortAnnouncement] = useState('')
   const nodeById = new Map(nodes.map((node) => [node.id, node]))
   const orderedNodes = orderedIds.map((nodeId) => nodeById.get(nodeId)).filter((node): node is AdminNode => Boolean(node))
+  const hasChanges = orderedNodes.some((node, index) => node.id !== nodes[index]?.id)
   const moveNode = (sourceId: string, targetId: string) => {
     setOrderedIds((currentIds) => moveAdminNodeInOrder(currentIds, sourceId, targetId))
   }
+  const moveNodeByStep = (nodeId: string, step: -1 | 1) => {
+    const sourceIndex = orderedIds.indexOf(nodeId)
+    const targetIndex = sourceIndex + step
+    const targetId = orderedIds[targetIndex]
+    const node = nodeById.get(nodeId)
+    if (!targetId || !node) return
+    moveNode(nodeId, targetId)
+    setSortAnnouncement(`${node.displayName} 已调整为第 ${targetIndex + 1} 位`)
+  }
   const handleDragStart = (event: DragEvent<HTMLElement>, nodeId: string) => {
     setDraggedNodeId(nodeId)
+    setDropTargetNodeId(null)
     event.dataTransfer.effectAllowed = 'move'
     event.dataTransfer.setData('text/plain', nodeId)
   }
@@ -1980,8 +1995,19 @@ function AdminNodeSortModal({ nodes, onSave, onClose }: { nodes: AdminNode[]; on
     event.preventDefault()
     const sourceId = draggedNodeId || event.dataTransfer.getData('text/plain')
     if (!sourceId || sourceId === targetId) return
-    moveNode(sourceId, targetId)
-    setDraggedNodeId(sourceId)
+    event.dataTransfer.dropEffect = 'move'
+    setDropTargetNodeId(targetId)
+  }
+  const handleDrop = (event: DragEvent<HTMLElement>, targetId: string) => {
+    event.preventDefault()
+    const sourceId = draggedNodeId || event.dataTransfer.getData('text/plain')
+    if (sourceId && sourceId !== targetId) {
+      moveNode(sourceId, targetId)
+      const node = nodeById.get(sourceId)
+      const targetIndex = orderedIds.indexOf(targetId)
+      if (node && targetIndex >= 0) setSortAnnouncement(`${node.displayName} 已调整为第 ${targetIndex + 1} 位`)
+    }
+    setDropTargetNodeId(null)
   }
   const saveOrder = () => {
     setSubmitting(true)
@@ -1992,41 +2018,75 @@ function AdminNodeSortModal({ nodes, onSave, onClose }: { nodes: AdminNode[]; on
   }
 
   return (
-    <AdminModalLayer><div className="admin-modal-backdrop" role="presentation">
-      <div className="admin-modal" role="dialog" aria-modal="true" aria-label="服务器排序">
-        <header className="admin-modal-header">
-          <div>
-              <h3>服务器排序</h3>
+    <AdminModal title="服务器排序" className="admin-server-sort-modal" onClose={onClose}>
+      <div className="admin-server-sort-layout">
+        <section className="admin-server-sort-workspace" aria-label="调整服务器顺序">
+          <header className="admin-server-sort-intro">
+            <div>
+              <strong>展示顺序</strong>
+              <span>共 {orderedNodes.length} 台服务器</span>
+            </div>
+            <p>拖动条目，或使用上下按钮调整顺序。</p>
+          </header>
+          <div className="admin-server-sort-list" role="list" aria-label="服务器排序列表">
+            {orderedNodes.map((node, index) => {
+              const sortMeta = [node.region, node.publicIPv4].filter(Boolean).join(' · ') || '服务器'
+              const isFirst = index === 0
+              const isLast = index === orderedNodes.length - 1
+              return (
+                <article
+                  className={`admin-server-sort-item${draggedNodeId === node.id ? ' is-dragging' : ''}${dropTargetNodeId === node.id ? ' is-drop-target' : ''}`}
+                  role="listitem"
+                  draggable
+                  key={node.id}
+                  aria-grabbed={draggedNodeId === node.id}
+                  onDragStart={(event) => handleDragStart(event, node.id)}
+                  onDragOver={(event) => handleDragOver(event, node.id)}
+                  onDrop={(event) => handleDrop(event, node.id)}
+                  onDragEnd={() => { setDraggedNodeId(null); setDropTargetNodeId(null) }}
+                >
+                  <span className="admin-server-sort-index" aria-label={`第 ${index + 1} 位`}>{index + 1}</span>
+                  <span className="admin-server-sort-server">
+                    <ServerFlag countryCode={node.countryCode} className="admin-server-sort-flag" />
+                    <span>
+                      <strong>{node.displayName}</strong>
+                      <small>{sortMeta}</small>
+                    </span>
+                  </span>
+                  <div className="admin-server-sort-controls" aria-label={`${node.displayName} 的排序操作`}>
+                    <button type="button" aria-label={`将 ${node.displayName} 上移`} title="上移" disabled={isFirst} onClick={() => moveNodeByStep(node.id, -1)}>↑</button>
+                    <button type="button" aria-label={`将 ${node.displayName} 下移`} title="下移" disabled={isLast} onClick={() => moveNodeByStep(node.id, 1)}>↓</button>
+                  </div>
+                  <span className="admin-drag-handle" aria-hidden="true">⠿</span>
+                </article>
+              )
+            })}
           </div>
-          <button className="admin-modal-close" type="button" aria-label="关闭" onClick={onClose}>×</button>
-        </header>
-        <div className="admin-modal-body">
-          <div className="admin-server-sort-list" role="list" aria-label="拖动排序服务器">
+          <p className="sr-only" aria-live="polite" aria-atomic="true">{sortAnnouncement}</p>
+        </section>
+
+        <aside className="admin-server-sort-preview" aria-label="前台展示预览">
+          <div className="admin-server-sort-preview__heading">
+            <strong>前台预览</strong>
+            <span>保存后生效</span>
+          </div>
+          <ol>
             {orderedNodes.map((node, index) => (
-              <article
-                className={`admin-server-sort-item${draggedNodeId === node.id ? ' is-dragging' : ''}`}
-                role="listitem"
-                draggable
-                key={node.id}
-                onDragStart={(event) => handleDragStart(event, node.id)}
-                onDragOver={(event) => handleDragOver(event, node.id)}
-                onDrop={(event) => event.preventDefault()}
-                onDragEnd={() => setDraggedNodeId(null)}
-              >
-                <span className="admin-drag-handle" aria-hidden="true">⋮⋮</span>
-                <span className="admin-server-sort-index">{index + 1}</span>
+              <li key={node.id}>
+                <span>{index + 1}</span>
+                <ServerFlag countryCode={node.countryCode} className="admin-server-sort-preview__flag" />
                 <strong>{node.displayName}</strong>
-              </article>
+              </li>
             ))}
-          </div>
-          <div className="admin-modal-actions">
-            {formError && <span className="admin-inline-note admin-modal-action-note is-error">{formError}</span>}
-            <button type="button" onClick={onClose}>取消</button>
-            <button className="admin-primary-action" type="button" onClick={saveOrder} disabled={submitting}>{submitting ? '保存中…' : '保存排序'}</button>
-          </div>
-        </div>
+          </ol>
+        </aside>
       </div>
-    </div></AdminModalLayer>
+      <div className="admin-modal-actions admin-server-sort-actions">
+        {formError && <span className="admin-inline-note admin-modal-action-note is-error">{formError}</span>}
+        <button type="button" onClick={onClose} disabled={submitting}>取消</button>
+        <button className="admin-primary-action" type="button" onClick={saveOrder} disabled={submitting || !hasChanges}>{submitting ? '保存中…' : '保存排序'}</button>
+      </div>
+    </AdminModal>
   )
 }
 
