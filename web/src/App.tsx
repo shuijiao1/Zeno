@@ -2021,15 +2021,10 @@ function AdminNodeSortModal({ nodes, onSave, onClose }: { nodes: AdminNode[]; on
       <div className="admin-server-sort-layout">
         <section className="admin-server-sort-workspace" aria-label="调整服务器顺序">
           <header className="admin-server-sort-intro">
-            <div>
-              <strong>展示顺序</strong>
-              <span>共 {orderedNodes.length} 台服务器</span>
-            </div>
-            <p>拖动条目，或使用上下按钮调整顺序。</p>
+            <p>拖动服务器，或使用上下按钮调整顺序。</p>
           </header>
           <div className="admin-server-sort-list" role="list" aria-label="服务器排序列表">
             {orderedNodes.map((node, index) => {
-              const sortMeta = [node.region, node.publicIPv4].filter(Boolean).join(' · ') || '服务器'
               const isFirst = index === 0
               const isLast = index === orderedNodes.length - 1
               return (
@@ -2046,11 +2041,7 @@ function AdminNodeSortModal({ nodes, onSave, onClose }: { nodes: AdminNode[]; on
                 >
                   <span className="admin-server-sort-index" aria-label={`第 ${index + 1} 位`}>{index + 1}</span>
                   <span className="admin-server-sort-server">
-                    <ServerFlag countryCode={node.countryCode} className="admin-server-sort-flag" />
-                    <span>
-                      <strong>{node.displayName}</strong>
-                      <small>{sortMeta}</small>
-                    </span>
+                    <strong>{node.displayName}</strong>
                   </span>
                   <div className="admin-server-sort-controls" aria-label={`${node.displayName} 的排序操作`}>
                     <button type="button" aria-label={`将 ${node.displayName} 上移`} title="上移" disabled={isFirst} onClick={() => moveNodeByStep(node.id, -1)}>↑</button>
@@ -2063,22 +2054,6 @@ function AdminNodeSortModal({ nodes, onSave, onClose }: { nodes: AdminNode[]; on
           </div>
           <p className="sr-only" aria-live="polite" aria-atomic="true">{sortAnnouncement}</p>
         </section>
-
-        <aside className="admin-server-sort-preview" aria-label="前台展示预览">
-          <div className="admin-server-sort-preview__heading">
-            <strong>前台预览</strong>
-            <span>保存后生效</span>
-          </div>
-          <ol>
-            {orderedNodes.map((node, index) => (
-              <li key={node.id}>
-                <span>{index + 1}</span>
-                <ServerFlag countryCode={node.countryCode} className="admin-server-sort-preview__flag" />
-                <strong>{node.displayName}</strong>
-              </li>
-            ))}
-          </ol>
-        </aside>
       </div>
       <div className="admin-modal-actions admin-server-sort-actions">
         {formError && <span className="admin-inline-note admin-modal-action-note is-error">{formError}</span>}

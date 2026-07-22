@@ -1920,32 +1920,26 @@ svg { display: block; }
   border-color: color-mix(in srgb, var(--red) 60%, var(--border));
   background: color-mix(in srgb, var(--red) 88%, #000);
 }
-.admin-modal.admin-server-sort-modal { width: min(980px, 100%); }
+.admin-modal.admin-server-sort-modal {
+  width: min(620px, 100%);
+  padding: 16px;
+}
+.admin-server-sort-modal .admin-modal-header { padding-bottom: 10px; }
+.admin-server-sort-modal .admin-modal-header h3 { font-size: 21px; }
 .admin-server-sort-layout {
   min-width: 0;
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(218px, .42fr);
-  gap: 18px;
-  margin-top: 18px;
+  margin-top: 10px;
 }
 .admin-server-sort-workspace { min-width: 0; }
 .admin-server-sort-intro {
-  display: flex;
-  align-items: flex-end;
-  justify-content: space-between;
-  gap: 14px;
-  margin-bottom: 10px;
+  margin-bottom: 7px;
 }
-.admin-server-sort-intro > div { min-width: 0; display: grid; gap: 3px; }
-.admin-server-sort-intro strong { color: var(--foreground); font-size: 14px; font-weight: 500; }
-.admin-server-sort-intro span,
-.admin-server-sort-intro p { margin: 0; color: var(--muted); font-size: 12px; font-weight: 500; line-height: 1.5; }
-.admin-server-sort-intro p { max-width: 252px; text-align: right; }
+.admin-server-sort-intro p { margin: 0; color: var(--muted); font-size: 11px; font-weight: 500; line-height: 1.45; }
 .admin-server-sort-list {
   display: grid;
-  gap: 6px;
+  gap: 3px;
   margin: 0;
-  padding: 6px;
+  padding: 4px;
   border: 1px solid var(--border);
   border-radius: var(--radius-card);
   background: color-mix(in srgb, var(--surface-soft) 72%, transparent);
@@ -1953,12 +1947,12 @@ svg { display: block; }
 .admin-server-sort-item {
   position: relative;
   min-width: 0;
-  min-height: 62px;
+  min-height: 40px;
   display: grid;
-  grid-template-columns: 30px minmax(0, 1fr) auto 18px;
+  grid-template-columns: 23px minmax(0, 1fr) auto 15px;
   align-items: center;
-  gap: 10px;
-  padding: 9px 10px;
+  gap: 6px;
+  padding: 5px 7px;
   border: 1px solid transparent;
   border-radius: calc(var(--radius-card) - 3px);
   background: var(--surface-strong);
@@ -1970,23 +1964,20 @@ svg { display: block; }
 .admin-server-sort-item:active { cursor: grabbing; }
 .admin-server-sort-item.is-dragging { opacity: .58; transform: scale(.985); }
 .admin-server-sort-item.is-drop-target { border-color: var(--blue); box-shadow: inset 0 2px 0 var(--blue), 0 10px 22px -22px var(--blue); }
-.admin-server-sort-server { min-width: 0; display: flex; align-items: center; gap: 9px; }
-.admin-server-sort-server > span:last-child { min-width: 0; display: grid; gap: 2px; }
+.admin-server-sort-server { min-width: 0; display: flex; align-items: center; }
 .admin-server-sort-server strong {
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
   color: var(--foreground);
-  font-size: 14px;
+  font-size: 13px;
   font-weight: 500;
 }
-.admin-server-sort-server small { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--muted); font-size: 11px; font-weight: 500; }
-.admin-server-sort-flag { flex: none; font-size: 16px; }
-.admin-server-sort-controls { display: inline-flex; align-items: center; gap: 4px; }
+.admin-server-sort-controls { display: inline-flex; align-items: center; gap: 2px; }
 .admin-server-sort-controls button {
-  width: 28px;
-  height: 28px;
+  width: 25px;
+  height: 25px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -1995,7 +1986,7 @@ svg { display: block; }
   border-radius: var(--radius-field);
   background: transparent;
   color: var(--muted);
-  font-size: 16px;
+  font-size: 14px;
   line-height: 1;
   cursor: pointer;
   transition: border-color 150ms ease, background-color 150ms ease, color 150ms ease, transform 150ms ease;
@@ -2003,39 +1994,22 @@ svg { display: block; }
 .admin-server-sort-controls button:hover:not(:disabled),
 .admin-server-sort-controls button:focus-visible { border-color: color-mix(in srgb, var(--blue) 26%, var(--border)); background: color-mix(in srgb, var(--blue) 9%, transparent); color: var(--blue); }
 .admin-server-sort-controls button:disabled { opacity: .32; cursor: not-allowed; }
-.admin-drag-handle { justify-self: end; color: color-mix(in srgb, var(--muted) 72%, transparent); font-size: 18px; line-height: 1; }
+.admin-drag-handle { justify-self: end; color: color-mix(in srgb, var(--muted) 72%, transparent); font-size: 15px; line-height: 1; }
 .admin-server-sort-index {
-  width: 30px;
-  height: 30px;
+  width: 23px;
+  height: 23px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   border-radius: var(--radius-pill);
   background: color-mix(in srgb, var(--blue) 8%, var(--surface-soft));
   color: var(--blue);
-  font-size: 12px;
+  font-size: 10px;
   font-weight: 500;
   font-variant-numeric: tabular-nums;
 }
-.admin-server-sort-preview {
-  min-width: 0;
-  align-self: stretch;
-  display: flex;
-  flex-direction: column;
-  padding: 14px;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-card);
-  background: color-mix(in srgb, var(--surface-soft) 72%, transparent);
-}
-.admin-server-sort-preview__heading { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; padding: 0 2px 10px; border-bottom: 1px solid var(--border); }
-.admin-server-sort-preview__heading strong { color: var(--foreground); font-size: 13px; font-weight: 500; }
-.admin-server-sort-preview__heading span { color: var(--muted); font-size: 11px; font-weight: 500; white-space: nowrap; }
-.admin-server-sort-preview ol { min-width: 0; display: grid; gap: 2px; margin: 10px 0 0; padding: 0; list-style: none; }
-.admin-server-sort-preview li { min-width: 0; min-height: 30px; display: grid; grid-template-columns: 20px 18px minmax(0, 1fr); align-items: center; gap: 7px; color: var(--muted); font-size: 12px; }
-.admin-server-sort-preview li > span { color: var(--muted); font-variant-numeric: tabular-nums; }
-.admin-server-sort-preview li strong { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--foreground); font-weight: 500; }
-.admin-server-sort-preview__flag { font-size: 13px; }
-.admin-server-sort-actions { margin-top: 18px; }
+.admin-server-sort-actions { gap: 8px; margin-top: 12px; padding-top: 10px; }
+.admin-server-sort-actions button { min-height: 34px; padding: 0 12px; font-size: 13px; }
 .admin-state-card {
   padding: 18px;
   border: 1px solid var(--border);
@@ -2561,25 +2535,21 @@ svg { display: block; }
   .admin-alert-rule-list .admin-row-actions.admin-icon-actions { grid-column: 1 / -1; grid-row: auto; width: 100%; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); justify-content: stretch; }
   .admin-notification-list .admin-row-action.is-icon,
   .admin-alert-rule-list .admin-row-action.is-icon { width: 100%; flex: 1 1 auto; border-radius: var(--radius-field); }
-  .admin-server-sort-layout { display: block; margin-top: 14px; }
-  .admin-server-sort-intro { align-items: flex-start; margin-bottom: 10px; }
-  .admin-server-sort-intro p { max-width: 152px; font-size: 11px; line-height: 1.45; }
-  .admin-server-sort-list { gap: 5px; margin: 0; padding: 5px; }
+  .admin-server-sort-layout { margin-top: 10px; }
+  .admin-server-sort-intro { margin-bottom: 6px; }
+  .admin-server-sort-list { gap: 3px; margin: 0; padding: 4px; }
   .admin-server-sort-item {
-    grid-template-columns: 27px minmax(0, 1fr) auto 16px;
-    gap: 7px;
-    min-height: 58px;
-    padding: 7px 8px;
+    grid-template-columns: 22px minmax(0, 1fr) auto 14px;
+    gap: 5px;
+    min-height: 38px;
+    padding: 4px 6px;
   }
-  .admin-server-sort-index { width: 27px; height: 27px; font-size: 11px; }
-  .admin-server-sort-server { gap: 7px; }
+  .admin-server-sort-index { width: 22px; height: 22px; font-size: 10px; }
   .admin-server-sort-server strong { font-size: 13px; }
-  .admin-server-sort-server small { font-size: 10px; }
-  .admin-server-sort-flag { font-size: 14px; }
   .admin-server-sort-controls { gap: 2px; }
-  .admin-server-sort-controls button { width: 30px; height: 32px; font-size: 17px; }
-  .admin-drag-handle { font-size: 16px; }
-  .admin-server-sort-preview { display: none; }
+  .admin-server-sort-controls button { width: 26px; height: 26px; font-size: 14px; }
+  .admin-drag-handle { font-size: 14px; }
+  .admin-server-sort-actions { margin-top: 10px; padding-top: 8px; }
   .admin-modal-backdrop { align-items: flex-end; padding: 8px; }
   .admin-login-card { grid-template-columns: 1fr; align-items: stretch; padding: 20px 16px; gap: 18px; }
   .admin-node-section,
