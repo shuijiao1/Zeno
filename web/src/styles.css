@@ -1964,7 +1964,8 @@ svg { display: block; }
 .admin-server-sort-item:active { cursor: grabbing; }
 .admin-server-sort-item.is-dragging { opacity: .58; transform: scale(.985); }
 .admin-server-sort-item.is-drop-target { border-color: var(--blue); box-shadow: inset 0 2px 0 var(--blue), 0 10px 22px -22px var(--blue); }
-.admin-server-sort-server { min-width: 0; display: flex; align-items: center; }
+.admin-server-sort-server { min-width: 0; display: flex; align-items: center; gap: 6px; }
+.admin-server-sort-flag { flex: none; font-size: 14px; }
 .admin-server-sort-server strong {
   min-width: 0;
   overflow: hidden;

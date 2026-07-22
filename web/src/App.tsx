@@ -2041,6 +2041,7 @@ function AdminNodeSortModal({ nodes, onSave, onClose }: { nodes: AdminNode[]; on
                 >
                   <span className="admin-server-sort-index" aria-label={`第 ${index + 1} 位`}>{index + 1}</span>
                   <span className="admin-server-sort-server">
+                    <ServerFlag countryCode={node.countryCode} className="admin-server-sort-flag" />
                     <strong>{node.displayName}</strong>
                   </span>
                   <div className="admin-server-sort-controls" aria-label={`${node.displayName} 的排序操作`}>
