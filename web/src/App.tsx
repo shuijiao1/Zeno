@@ -311,8 +311,8 @@ function storedThemeOverride(): AdminTheme | null {
 }
 
 function storedBackgroundEnabled(): boolean {
-  if (typeof window === 'undefined') return true
-  return window.localStorage.getItem('zeno_background_enabled') !== 'false'
+  if (typeof window === 'undefined') return false
+  return window.localStorage.getItem('zeno_background_enabled') === 'true'
 }
 
 function systemTheme(): Exclude<AdminTheme, 'system'> {
@@ -1467,61 +1467,60 @@ export function AdminDashboard({
         )}
 
         {hasAdminToken && (
-          <div className="admin-workbench">
-            <aside className="admin-navigation-rail" aria-label="后台功能">
+          <>
+            <div className="admin-toolbar">
               <AdminSectionNav
                 activeSection={activeSection}
                 onSectionChange={setActiveSection}
               />
-            </aside>
-            <div className="admin-workspace">
-              {adminState.kind === 'loading' && showAdminLoading && <div className="admin-state-card">加载中…</div>}
-              {authState.kind === 'error' && <div className="admin-state-card is-error">{authState.message}</div>}
-              {adminState.kind === 'error' && <div className="admin-state-card is-error">Admin API 读取失败：{adminState.message}</div>}
-
-              {adminState.kind === 'ready' && activeSection === 'nodes' && (
-                <AdminNodeSection
-                  nodes={adminState.nodes}
-                  targets={adminState.targets}
-                  onCreate={onAdminNodeCreate}
-                  onUpdate={onAdminNodeUpdate}
-                  onDelete={onAdminNodeDelete}
-                  onInstallCommand={onAdminInstallCommand}
-                />
-              )}
-
-              {adminState.kind === 'ready' && activeSection === 'targets' && (
-                <AdminTargetSection
-                  targets={adminState.targets}
-                  nodes={adminState.nodes}
-                  onCreate={onAdminProbeTargetCreate}
-                  onUpdate={onAdminProbeTargetUpdate}
-                  onDelete={onAdminProbeTargetDelete}
-                />
-              )}
-
-              {adminState.kind === 'ready' && activeSection === 'account' && (
-                <AdminAccountSection account={adminState.account} onUpdate={onAdminAccountUpdate} />
-              )}
-
-              {adminState.kind === 'ready' && activeSection === 'settings' && (
-                <AdminSettingsSection settings={settings} onUpdate={onAdminSettingsUpdate} />
-              )}
-
-              {adminState.kind === 'ready' && activeSection === 'notifications' && (
-                <AdminNotificationsSection
-                  channels={adminState.notificationChannels}
-                  onChannelCreate={onAdminNotificationChannelCreate}
-                  onChannelUpdate={onAdminNotificationChannelUpdate}
-                  onChannelDelete={onAdminNotificationChannelDelete}
-                  onChannelTest={onAdminNotificationChannelTest}
-                  rules={adminState.alertRules}
-                  nodes={adminState.nodes}
-                  onRuleUpdate={onAdminAlertRuleUpdate}
-                />
-              )}
             </div>
-          </div>
+
+            {adminState.kind === 'loading' && showAdminLoading && <div className="admin-state-card">加载中…</div>}
+            {authState.kind === 'error' && <div className="admin-state-card is-error">{authState.message}</div>}
+            {adminState.kind === 'error' && <div className="admin-state-card is-error">Admin API 读取失败：{adminState.message}</div>}
+
+            {adminState.kind === 'ready' && activeSection === 'nodes' && (
+              <AdminNodeSection
+                nodes={adminState.nodes}
+                targets={adminState.targets}
+                onCreate={onAdminNodeCreate}
+                onUpdate={onAdminNodeUpdate}
+                onDelete={onAdminNodeDelete}
+                onInstallCommand={onAdminInstallCommand}
+              />
+            )}
+
+            {adminState.kind === 'ready' && activeSection === 'targets' && (
+              <AdminTargetSection
+                targets={adminState.targets}
+                nodes={adminState.nodes}
+                onCreate={onAdminProbeTargetCreate}
+                onUpdate={onAdminProbeTargetUpdate}
+                onDelete={onAdminProbeTargetDelete}
+              />
+            )}
+
+            {adminState.kind === 'ready' && activeSection === 'account' && (
+              <AdminAccountSection account={adminState.account} onUpdate={onAdminAccountUpdate} />
+            )}
+
+            {adminState.kind === 'ready' && activeSection === 'settings' && (
+              <AdminSettingsSection settings={settings} onUpdate={onAdminSettingsUpdate} />
+            )}
+
+            {adminState.kind === 'ready' && activeSection === 'notifications' && (
+              <AdminNotificationsSection
+                channels={adminState.notificationChannels}
+                onChannelCreate={onAdminNotificationChannelCreate}
+                onChannelUpdate={onAdminNotificationChannelUpdate}
+                onChannelDelete={onAdminNotificationChannelDelete}
+                onChannelTest={onAdminNotificationChannelTest}
+                rules={adminState.alertRules}
+                nodes={adminState.nodes}
+                onRuleUpdate={onAdminAlertRuleUpdate}
+              />
+            )}
+          </>
         )}
       </section>
     </div>

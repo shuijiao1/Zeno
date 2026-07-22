@@ -552,66 +552,50 @@ svg { display: block; }
   transform: none;
   box-shadow: none;
 }
-.admin-workbench {
-  min-width: 0;
-  margin-top: 18px;
-  display: grid;
-  grid-template-columns: 154px minmax(0, 1fr);
-  align-items: start;
-  gap: 18px;
-}
-.admin-navigation-rail {
-  position: sticky;
-  top: 18px;
-  min-width: 0;
-  padding: 6px;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-card);
-  background: color-mix(in srgb, var(--surface-soft) 84%, transparent);
-  box-shadow: inset 0 1px 0 var(--zeno-card-highlight);
-}
-.admin-workspace { min-width: 0; }
-.admin-section-nav {
-  display: grid;
-  gap: 3px;
-}
-.admin-section-nav button {
-  position: relative;
-  width: 100%;
-  min-height: 39px;
+.admin-toolbar {
+  margin-top: 16px;
   display: flex;
   align-items: center;
-  justify-content: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+.admin-section-nav {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-card);
+  background: var(--surface-soft);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .6);
+}
+.admin-section-nav button {
+  --admin-nav-accent: var(--blue);
+  min-width: 72px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   gap: 0;
-  padding: 0 11px 0 14px;
+  padding: 9px 12px;
   border: 0;
   border-radius: var(--radius-field);
   background: transparent;
   color: color-mix(in srgb, var(--foreground) 72%, transparent);
-  text-align: left;
-  transition: background-color 150ms ease, color 150ms ease, box-shadow 150ms ease, transform 150ms ease;
+  text-align: center;
+  transition: background-color 150ms ease, color 150ms ease, box-shadow 150ms ease;
 }
-.admin-section-nav button::before {
-  content: '';
-  position: absolute;
-  left: 5px;
-  top: 50%;
-  width: 3px;
-  height: 16px;
-  border-radius: var(--radius-pill);
-  background: var(--blue);
-  opacity: 0;
-  transform: translateY(-50%);
-  transition: opacity 150ms ease;
-}
-.admin-section-nav button:hover { background: color-mix(in srgb, var(--blue) 7%, transparent); color: var(--blue); }
+.admin-section-nav button:nth-child(1) { --admin-nav-accent: var(--blue); }
+.admin-section-nav button:nth-child(2) { --admin-nav-accent: var(--purple); }
+.admin-section-nav button:nth-child(3) { --admin-nav-accent: var(--green); }
+.admin-section-nav button:nth-child(4) { --admin-nav-accent: var(--orange); }
+.admin-section-nav button:nth-child(5) { --admin-nav-accent: #0ea5e9; }
+.admin-section-nav button:hover { background: color-mix(in srgb, var(--admin-nav-accent) 10%, transparent); color: var(--admin-nav-accent); }
 .admin-section-nav button[data-active='true'] {
-  background: color-mix(in srgb, var(--blue) 12%, var(--surface-strong));
-  color: var(--blue);
-  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--blue) 17%, transparent);
+  background: var(--admin-nav-accent);
+  color: #fff;
+  box-shadow: 0 8px 20px -16px var(--admin-nav-accent);
 }
-.admin-section-nav button[data-active='true']::before { opacity: 1; }
-.admin-section-nav span { font-size: 13px; font-weight: 500; }
+.admin-section-nav span { font-size: 15px; font-weight: 500; }
 .admin-help-note {
   margin: 12px 2px 0;
   color: var(--muted);
@@ -625,7 +609,7 @@ svg { display: block; }
 .admin-alert-rule-section,
 .admin-account-section,
 .admin-settings-section {
-  margin-top: 0;
+  margin-top: 18px;
   padding: 20px;
   border: 1px solid var(--border);
   border-radius: var(--radius-card);
@@ -2502,8 +2486,7 @@ svg { display: block; }
   .admin-container { gap: 14px; }
   .admin-panel { min-height: calc(100dvh - 92px); }
   .admin-panel--login { min-height: calc(100dvh - 28px); }
-  .admin-workbench { margin-top: 14px; grid-template-columns: 1fr; gap: 12px; }
-  .admin-navigation-rail { position: static; padding: 0; border: 0; border-radius: 0; background: transparent; box-shadow: none; }
+  .admin-toolbar { flex-direction: column; align-items: stretch; }
   .admin-section-nav {
     width: 100%;
     display: grid;
@@ -2514,8 +2497,6 @@ svg { display: block; }
     overflow: hidden;
   }
   .admin-section-nav button { min-width: 0; min-height: 38px; padding: 0 5px; border-radius: var(--radius-field); }
-  .admin-section-nav button { justify-content: center; padding-inline: 4px; text-align: center; }
-  .admin-section-nav button::before { display: none; }
   .admin-section-nav span { font-size: 12px; }
   .admin-section-heading { align-items: center; gap: 8px; flex-wrap: nowrap; }
   .admin-section-heading > div { min-width: 0; }
